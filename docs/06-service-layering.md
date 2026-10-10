@@ -1,0 +1,76 @@
+# Service Layering: libgui-wayland vs. the SDE Session
+
+**Status:** Living document · **Date:** 2026-10-10
+**Related:** [`01-objectives.md`](01-objectives.md) · [`02-compositor-decision.md`](02-compositor-decision.md) · [`03-engineering-conventions.md`](03-engineering-conventions.md) · [`04-known-gaps.md`](04-known-gaps.md)
+
+This records a principle we keep coming back to, so we don't re-litigate it:
+**which side of the libgui-wayland / SDE boundary does a Serenity service belong
+on?**
+
+---
+
+## 1. The principle
+
+- **`libgui-wayland` is a self-contained, compositor-agnostic client stack.**
+  A LibGUI/LibWindowServer application must run under **any** Wayland compositor
+  with no SDE present. Every Serenity service it needs therefore has an
+  **in-process fallback**. This is already the shape: `LibWM` stands up
+  in-process portal servers (WindowServer, clipboard, config, launch,
+  filesystem-access) over socketpairs.
+
+- **SDE is the session.** Services that are inherently **session-scoped** — a
+  shared handler database, seat/input, notifications, applets — belong in the
+  compositor/session, **not duplicated inside every application process**.
+
+- **Resolution rule:** *prefer the session service when it is present, otherwise
+  fall back to the in-process one.*
+
+## 2. How the rule is already plumbed
+
+`LibWM` intercepts connects to well-known portal paths and maps them onto
+in-process socketpairs (`LibWM::make_portal()`):
+
+```
+/tmp/portal/window
+/tmp/session/<id>/portal/{clipboard,launch,config,filesystemaccess}
+```
+
+A session service can take over one of those paths by listening there itself;
+`make_portal()` then **passes the client through** to it instead of the
+in-process fallback. That is the single hook the rule needs.
+
+## 3. Applied to `LaunchServer`
+
+- **`libgui-wayland` (fallback):** the in-process `LaunchServerConnection` keeps
+  the behaviour it has always had — resolve handlers from
+  `/etc/LaunchServer.ini` `[FileType]`/`[Protocol]`, plus the editor as a generic
+  alternate, and spawn the matching binary. It must stay able to open files with
+  the compositor-agnostic guarantee intact.
+- **SDE (session service):** a `LaunchServer` that owns the launch portal when
+  SDE is running and does the **richer** resolution — the `.af` `AppFile`
+  launcher metadata (`[Launcher] FileTypes=` / `MimeTypes=` / `Protocols=`),
+  mime types, and later user preferences and the allow-list.
+- **One implementation, two hosts.** To avoid duplicating the resolution, the
+  logic lives in a **dependency-light** shared component (a `LibCore`-only
+  library, `LibLaunch`) that `LibDesktop::AppFile`, the in-process fallback and
+  the SDE `LaunchServer` all use.
+
+  It specifically **cannot** live in `LibDesktop` as-is: `AppFile.h` pulls in
+  `LibGUI` (for `icon()`), and `LibGUI` depends on `libwindowserver`, so a
+  dependency on `LibDesktop` from the shim would be a build-order cycle.
+
+## 4. Why do this now
+
+- The `.af` handler database, seat management, notifications and the like all
+  want **one owner**; doing it now avoids baking more per-app duplication into
+  the shim.
+- The fallback rule preserves the compositor-agnostic guarantee, and the same
+  "session service, else in-process" shape will be reused for the next service.
+
+## 5. Constraints
+
+- The in-process fallback must keep working **unchanged** for stand-alone use —
+  no regression. Cover it with a headless test, with and without an external
+  `LaunchServer` present.
+- Prefer a **lean SDE `LaunchServer`** that reuses the shared resolver over
+  pulling in the whole SerenityOS service (deps, allow-list, user preferences).

@@ -637,6 +637,7 @@ in §14.
 - Rendering model — `Userland/Libraries/LibGUI/Painter.h` (subclass of `Gfx::Painter`); `Userland/Libraries/LibGfx/Painter.{h,cpp}` (CPU scanline rasteriser); `LibGfx/CMakeLists.txt` and `LibGUI/CMakeLists.txt` (no `LibGPU`/`LibGL` dependency); `Userland/Libraries/LibGPU/` (GPU abstraction used by `LibGL`/`LibSoftGPU`, not LibGUI).
 - Shell — `Userland/Services/Taskbar/{main,TaskbarWindow,TaskbarButton,QuickLaunchWidget,ClockWidget,ShutdownDialog}.cpp`; `Userland/Services/WindowServer/AppletManager.cpp`; `Userland/Services/WindowServer/WindowManagerServer.ipc`; `Base/etc/WindowServer.ini` (`[Applet] Order=…`); `Userland/Services/WindowServer/WindowType.h` (`LibGUI/WindowType.h` re-exports it).
 - `libgui-wayland` / LibWindowServer `DESIGN.md` — <https://github.com/jmalcolm137/libgui-wayland/blob/main/DESIGN.md> (per-compositor backend policy, WindowServer protocol disposition).
+- Service layering (which Serenity service belongs in `libgui-wayland` vs. the SDE session; the "prefer the session service, else in-process fallback" rule) — [`06-service-layering.md`](06-service-layering.md).
 
 ---
 
