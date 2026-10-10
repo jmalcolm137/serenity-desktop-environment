@@ -200,7 +200,9 @@ Compositor-facing detail lives in [`06-compositor-gaps.md`](06-compositor-gaps.m
   `libgui-wayland` and spawned on demand by `LibWM` (a socketpair handed over via
   `SOCKET_TAKEOVER`); `SQLServer` is hosted with a listening socket handed over
   (see `07-systemserver-roles.md` §2.3). **Help** renders the SerenityOS man pages
-  (relocated from `Base/usr/share/man`); **Browser** loads pages. The session seeds
-  the skeleton user config (`scripts/seed-serenity-home.sh`) that `Browser` reads
-  at startup.
+  (relocated from `Base/usr/share/man`); **Browser** loads pages, including
+  `https://` — HTTPS verifies against the host trust store (LibTLS patch `0024`).
+  The session seeds the skeleton user config (`scripts/seed-serenity-home.sh`) that
+  `Browser` reads at startup. Known limit: LibTLS cannot parse ECDSA roots
+  (`id-ecPublicKey`), so it skips them; RSA roots load and verify fine.
 - Documented: bitmap-font zoom limitation (`02-compositor-decision.md` §11).

@@ -118,6 +118,10 @@ headless tests use it so they cannot disturb a live session).
 - The SerenityOS resource tree (`/res`, `/etc`, `/bin`) is redirected to a host
   tree via `SERENITY_RES_ROOT` / `LIBWM_DEFAULT_RES`, and `/bin/X` handler paths
   map to host binaries (`Process::resolve_executable_path`, `SDE_APP_BIN_DIR`).
+- SerenityOS's CA bundle lives at `/etc/cacert.pem`; the host has none, so
+  `LibTLS` falls back to the system trust store
+  (`/etc/ssl/certs/ca-certificates.crt`, …) — patch `0024`. DNS already uses the
+  host resolver (`Core::System::getaddrinfo`).
 
 ## 3. The systemd mapping
 
