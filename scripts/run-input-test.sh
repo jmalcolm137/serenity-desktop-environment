@@ -99,6 +99,21 @@ env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
     > "$RUNTIME/drag.log" 2>&1 || true
 sleep 1
 
+# Alt+Tab opens the window switcher (current workspace); releasing Alt activates
+# the selection (WS3).
+env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
+    --key 56 press --key 15 press --key 15 release --key 56 release \
+    --sleep 200 \
+    > "$RUNTIME/switcher.log" 2>&1 || true
+sleep 1
+
+# Super+Tab opens it in all-workspaces mode (WS3).
+env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
+    --key 125 press --key 15 press --key 15 release --key 125 release \
+    --sleep 200 \
+    > "$RUNTIME/switcher-all.log" 2>&1 || true
+sleep 1
+
 # Ctrl+Alt+Right switches to the next workspace (WS1).
 env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
     --key 29 press --key 56 press --key 106 press \
@@ -135,6 +150,11 @@ check "switched to workspace 0,1"
 check "tiled wm_id=1 as 1"
 # WS2: dragging the titlebar to the right edge tiled it right (Right == 2).
 check "tiled wm_id=1 as 2"
+# WS3: Alt+Tab listed the current workspace's windows and releasing the modifier
+# activated the selection.
+check "WindowSwitcher: showing 1 windows (mode=0)"
+check "WindowSwitcher: showing 1 windows (mode=1)"
+check "WindowSwitcher: activating wm_id=1"
 # The thumbnail-capture spike (docs/09 §3): the toplevel's pixels were read back
 # into a bitmap of the client's size.
 check "thumbnail for wm_id=1 is 320x200"

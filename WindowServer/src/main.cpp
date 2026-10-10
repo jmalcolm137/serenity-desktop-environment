@@ -23,6 +23,7 @@
 #include "Model.h"
 #include "Overlays.h"
 #include "WindowManager.h"
+#include "WindowSwitcher.h"
 
 #include <LibCore/ArgsParser.h>
 #include <LibCore/Directory.h>
@@ -108,6 +109,7 @@ static void arrange_layers(Server&, wlr_output*);
 static Output* output_for(Server&, wlr_output*);
 static void output_manager_send_configuration(Server&);
 static i32 g_next_wm_id { 1 };
+static u64 g_focus_order_counter { 0 };
 static Gfx::Palette* g_palette { nullptr };
 
 struct FrameIcons {
@@ -214,6 +216,8 @@ void focus_toplevel(Server& server, Toplevel* toplevel)
     if (!toplevel)
         return;
 
+    toplevel->focus_order = ++g_focus_order_counter;
+
     wlr_surface* previous_surface = server.seat->keyboard_state.focused_surface;
     wlr_surface* surface = toplevel->xdg_toplevel->base->surface;
     if (previous_surface == surface)
@@ -312,6 +316,14 @@ static void keyboard_key(wl_listener* listener, void* data)
             handled |= WindowManager::handle_workspace_key(server, syms[i], modifiers);
         for (int i = 0; i < syms_count; ++i)
             handled |= WindowManager::handle_tile_key(server, syms[i], modifiers);
+    }
+    {
+        // The window switcher (Alt+Tab / Super+Tab) grabs the keyboard while open.
+        bool switcher_handled = false;
+        for (int i = 0; i < syms_count; ++i)
+            switcher_handled |= WindowSwitcher::handle_key(server, syms[i], modifiers, event->state == WL_KEYBOARD_KEY_STATE_PRESSED);
+        if (switcher_handled)
+            return;
     }
     for (int i = 0; i < syms_count; ++i)
         handled |= WindowManager::handle_super_key(server, syms[i], modifiers, event->state == WL_KEYBOARD_KEY_STATE_PRESSED);
@@ -1244,6 +1256,9 @@ static void toplevel_commit(wl_listener* listener, void*)
     toplevel_update_frame(*toplevel);
     maybe_dump_thumbnail(*toplevel);
     WindowManager::emit_window_state(*toplevel);
+    // Keep the window switcher's live thumbnails current while it is open (WS3).
+    if (WindowSwitcher::is_visible())
+        WindowSwitcher::refresh(*toplevel->server);
 }
 
 static void toplevel_destroy(wl_listener* listener, void*)
@@ -1946,6 +1961,13 @@ static Gfx::IntRect primary_usable_area(Server& server)
     return { box.x, box.y, box.width, box.height };
 }
 
+// The current theme palette, for the window switcher (WS3).
+static Gfx::Palette const& current_palette(Server&)
+{
+    VERIFY(g_palette);
+    return *g_palette;
+}
+
 static void arrange_layers(Server& server, wlr_output* output)
 {
     if (!output)
@@ -2539,6 +2561,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
         warnln("WindowServer: could not listen on {}", wm_portal);
     // Let the window manager call back into the compositor's focus/menu code.
     WindowManager::set_host_hooks({ focus_toplevel, open_window_menu, primary_usable_area, toplevel_report_position, toplevel_begin_interactive });
+    WindowSwitcher::set_host_hooks({ current_palette, focus_toplevel, WindowManager::switch_workspace });
     // Bring the workspace grid up from the config, and follow later edits.
     WindowManager::load_workspaces(*server);
     Config::watch([&] { WindowManager::load_workspaces(*server); });

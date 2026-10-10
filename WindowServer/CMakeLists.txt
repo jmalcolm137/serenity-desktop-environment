@@ -46,6 +46,7 @@ add_executable(WindowServer
     src/Config.cpp
     src/Overlays.cpp
     src/WindowManager.cpp
+    src/WindowSwitcher.cpp
     "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-window-protocol.c")
 
 target_include_directories(WindowServer PRIVATE

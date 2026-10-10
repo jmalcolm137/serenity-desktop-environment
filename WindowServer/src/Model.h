@@ -166,6 +166,9 @@ struct Toplevel {
     u32 workspace_row { 0 };
     u32 workspace_column { 0 };
     i32 wm_id { 0 };
+    // Monotonic focus sequence, so the window switcher can list windows
+    // most-recently-focused first (mirroring Serenity's window stack). WS3.
+    u64 focus_order { 0 };
     wlr_foreign_toplevel_handle_v1* foreign_handle { nullptr };
     wl_listener map { };
     wl_listener unmap { };
