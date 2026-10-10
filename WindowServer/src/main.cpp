@@ -2422,12 +2422,18 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     g_server = server.ptr();
 
     // The WindowServer serves the WindowManagerServer protocol (the shell's
-    // Taskbar protocol), just like SerenityOS's WindowServer does.
-    ::mkdir("/tmp/portal", 0755);
-    ::unlink("/tmp/portal/wm");
+    // Taskbar protocol), just like SerenityOS's WindowServer does. The socket
+    // path can be overridden so tests can run isolated from a live session.
+    ByteString wm_portal { "/tmp/portal/wm" };
+    if (auto const* override_path = getenv("SDE_WM_PORTAL_PATH"); override_path && *override_path) {
+        wm_portal = override_path;
+    } else {
+        ::mkdir("/tmp/portal", 0755);
+    }
+    ::unlink(wm_portal.characters());
     auto wm_server = Core::LocalServer::construct();
-    if (!wm_server->listen("/tmp/portal/wm"sv))
-        warnln("WindowServer: could not listen on /tmp/portal/wm");
+    if (!wm_server->listen(wm_portal))
+        warnln("WindowServer: could not listen on {}", wm_portal);
     wm_server->on_accept = [](NonnullOwnPtr<Core::LocalSocket> socket) {
         g_wm_connections.append(WindowManagerServerConnection::create(move(socket)));
     };
