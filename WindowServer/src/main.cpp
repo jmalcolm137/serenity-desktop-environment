@@ -1299,7 +1299,14 @@ static void paint_window_menu(Server& server, WindowMenu& menu)
 
         auto text_rect = entry.rect.translated(stripe_width + 6, 0);
 
-        if (entry.icon) {
+        if (entry.checkable) {
+            // Checkable items show a check mark in the stripe rather than an
+            // icon, matching SerenityOS's window menus.
+            Gfx::IntRect check_rect { entry.rect.x() + 6, 0, 12, 12 };
+            check_rect.center_vertically_within(text_rect);
+            if (entry.checked)
+                painter.draw_text(check_rect, "\xE2\x9C\x93"sv, Gfx::TextAlignment::Center, text_color);
+        } else if (entry.icon) {
             Gfx::IntRect icon_rect { entry.rect.x() + 3, 0, entry.icon->width(), entry.icon->height() };
             icon_rect.center_vertically_within(text_rect);
             if (entry.enabled)
