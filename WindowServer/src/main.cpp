@@ -273,6 +273,16 @@ struct Server {
     uint32_t resize_edges { 0 };
     bool frame_grab { false };
 
+    // Implicit pointer grab: while a client button is held, keep the pointer
+    // focused on the surface that received the press and forward motion to it,
+    // even if the cursor crosses into another surface. wlroots' seat forgets the
+    // pressed button when pointer focus changes, so without this the eventual
+    // release is silently dropped and the client stays stuck mid-press.
+    wlr_surface* pointer_grab_surface { nullptr };
+    double pointer_grab_origin_x { 0 };
+    double pointer_grab_origin_y { 0 };
+    uint32_t pointer_buttons_down { 0 };
+
     // Pointer interaction with window chrome (titlebar buttons, titlebar drags
     // and resize borders), mirroring SerenityOS's WindowFrame/Button state.
     Toplevel* pressed_button_toplevel { nullptr };
@@ -702,6 +712,21 @@ static void process_cursor_motion(Server& server, uint32_t time)
         return;
     }
 
+    // Implicit grab: a client button is down, so keep delivering motion to the
+    // surface that received the press until it is released.
+    if (server.pointer_grab_surface) {
+        if (server.seat->pointer_state.focused_surface != server.pointer_grab_surface) {
+            // The grabbed surface went away (e.g. the client disconnected).
+            server.pointer_grab_surface = nullptr;
+            server.pointer_buttons_down = 0;
+        } else {
+            wlr_seat_pointer_notify_motion(server.seat, time,
+                server.cursor->x - server.pointer_grab_origin_x,
+                server.cursor->y - server.pointer_grab_origin_y);
+            return;
+        }
+    }
+
     auto hit = hit_test_frame(server, server.cursor->x, server.cursor->y);
     update_button_hover(server, hit);
     update_button_pressed(server, hit);
@@ -770,14 +795,26 @@ static void cursor_button(wl_listener* listener, void* data)
         return;
     }
 
-    wlr_seat_pointer_notify_button(server->seat, event->time_msec, event->button, event->state);
+    auto serial = wlr_seat_pointer_notify_button(server->seat, event->time_msec, event->button, event->state);
     if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {
+        if (server->pointer_buttons_down > 0)
+            --server->pointer_buttons_down;
+        if (server->pointer_buttons_down == 0)
+            server->pointer_grab_surface = nullptr;
         reset_cursor_mode(*server);
     } else {
         double sx = 0;
         double sy = 0;
         wlr_surface* surface = nullptr;
         focus_toplevel(*server, toplevel_at(*server, server->cursor->x, server->cursor->y, &surface, &sx, &sy));
+        // The seat accepted the press: remember the surface so the release finds
+        // its way back to the same client even if the cursor moves away.
+        if (serial && surface) {
+            server->pointer_grab_surface = surface;
+            server->pointer_grab_origin_x = server->cursor->x - sx;
+            server->pointer_grab_origin_y = server->cursor->y - sy;
+            ++server->pointer_buttons_down;
+        }
     }
 }
 
