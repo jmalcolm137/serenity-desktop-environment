@@ -98,7 +98,8 @@ struct Keyboard;
 struct Decoration;
 
 static void toplevel_update_frame(Toplevel&);
-static bool handle_frame_press(Server&, uint32_t button);
+static bool handle_frame_press(Server&, uint32_t button, uint32_t time);
+static void handle_frame_release(Server&, uint32_t button);
 static void arrange_layers(Server&, wlr_output*);
 static Output* output_for(Server&, wlr_output*);
 static void output_manager_send_configuration(Server&);
@@ -225,6 +226,16 @@ struct Server {
     wlr_box grab_box { };
     uint32_t resize_edges { 0 };
     bool frame_grab { false };
+
+    // Pointer interaction with window chrome (titlebar buttons, titlebar drags
+    // and resize borders), mirroring SerenityOS's WindowFrame/Button state.
+    Toplevel* pressed_button_toplevel { nullptr };
+    int pressed_button_index { -1 };
+    Toplevel* last_titlebar_press_toplevel { nullptr };
+    uint32_t last_titlebar_press_time { 0 };
+    double last_titlebar_press_x { 0 };
+    double last_titlebar_press_y { 0 };
+    bool double_click_pending { false };
 };
 
 struct Output {
@@ -252,6 +263,8 @@ struct Toplevel {
     bool frame_active { true };
     bool maximized { false };
     bool minimized { false };
+    int hovered_button { -1 };
+    int pressed_button { -1 };
     i32 wm_id { 0 };
     wlr_foreign_toplevel_handle_v1* foreign_handle { nullptr };
     wl_listener map { };
@@ -480,10 +493,125 @@ static void process_cursor_resize(Server& server)
     wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, new_right - new_left, new_bottom - new_top);
 }
 
+enum class FrameRegion {
+    None,
+    Button,
+    Titlebar,
+    Border,
+};
+
+// Where the cursor is within a window's server-side frame.
+struct FrameHit {
+    Toplevel* toplevel { nullptr };
+    FrameRegion region { FrameRegion::None };
+    int button_index { -1 };
+    uint32_t edges { 0 };
+    Gfx::IntPoint local;
+};
+
+static FrameHit hit_test_frame(Server& server, double x, double y)
+{
+    FrameHit hit;
+    for (size_t index = server.toplevels.size(); index-- > 0;) {
+        auto& toplevel = *server.toplevels[index];
+        if (toplevel.minimized)
+            continue;
+
+        auto* node = &toplevel.scene_tree->node;
+        Gfx::IntRect frame_rect { static_cast<int>(node->x), static_cast<int>(node->y), toplevel.frame_size.width(), toplevel.frame_size.height() };
+        if (frame_rect.is_empty() || !frame_rect.contains({ static_cast<int>(x), static_cast<int>(y) }))
+            continue;
+
+        hit.toplevel = &toplevel;
+        hit.local = { static_cast<int>(x) - static_cast<int>(node->x), static_cast<int>(y) - static_cast<int>(node->y) };
+
+        for (size_t button_index = 0; button_index < toplevel.button_rects.size(); ++button_index) {
+            if (toplevel.button_rects[button_index].contains(hit.local)) {
+                hit.region = FrameRegion::Button;
+                hit.button_index = static_cast<int>(button_index);
+                return hit;
+            }
+        }
+
+        // The titlebar, expanded two pixels downwards (as in SerenityOS) so the
+        // seam between it and the content is not a resize handle.
+        Gfx::IntRect titlebar_rect {
+            toplevel.frame_left, 0,
+            toplevel.frame_size.width() - toplevel.frame_left - toplevel.frame_right,
+            min(toplevel.frame_top + 2, toplevel.frame_size.height())
+        };
+        if (titlebar_rect.contains(hit.local)) {
+            hit.region = FrameRegion::Titlebar;
+            return hit;
+        }
+
+        constexpr int resize_border = 4;
+        uint32_t edges = 0;
+        if (hit.local.x() < resize_border)
+            edges |= WLR_EDGE_LEFT;
+        if (hit.local.x() >= toplevel.frame_size.width() - resize_border)
+            edges |= WLR_EDGE_RIGHT;
+        if (hit.local.y() < resize_border)
+            edges |= WLR_EDGE_TOP;
+        if (hit.local.y() >= toplevel.frame_size.height() - resize_border)
+            edges |= WLR_EDGE_BOTTOM;
+        if (edges) {
+            hit.region = FrameRegion::Border;
+            hit.edges = edges;
+        }
+        return hit;
+    }
+    return hit;
+}
+
+static char const* resize_cursor_name(uint32_t edges)
+{
+    bool left = edges & WLR_EDGE_LEFT;
+    bool right = edges & WLR_EDGE_RIGHT;
+    bool top = edges & WLR_EDGE_TOP;
+    bool bottom = edges & WLR_EDGE_BOTTOM;
+    if ((left && top) || (right && bottom))
+        return "nwse-resize";
+    if ((right && top) || (left && bottom))
+        return "nesw-resize";
+    if (left || right)
+        return "ew-resize";
+    if (top || bottom)
+        return "ns-resize";
+    return "default";
+}
+
+static void update_button_hover(Server& server, FrameHit const& hit)
+{
+    for (auto& toplevel : server.toplevels) {
+        int hovered = -1;
+        if (toplevel.ptr() == hit.toplevel && hit.region == FrameRegion::Button)
+            hovered = hit.button_index;
+        if (toplevel->hovered_button != hovered) {
+            toplevel->hovered_button = hovered;
+            toplevel_update_frame(*toplevel);
+        }
+    }
+}
+
+static void update_button_pressed(Server& server, FrameHit const& hit)
+{
+    auto* toplevel = server.pressed_button_toplevel;
+    if (!toplevel)
+        return;
+    bool over = hit.toplevel == toplevel && hit.region == FrameRegion::Button && hit.button_index == server.pressed_button_index;
+    int pressed = over ? server.pressed_button_index : -1;
+    if (toplevel->pressed_button != pressed) {
+        toplevel->pressed_button = pressed;
+        toplevel_update_frame(*toplevel);
+    }
+}
+
 static void process_cursor_motion(Server& server, uint32_t time)
 {
     if (server.cursor_mode == CursorMode::Move) {
         process_cursor_move(server);
+        wlr_cursor_set_xcursor(server.cursor, server.cursor_manager, "grabbing");
         return;
     }
     if (server.cursor_mode == CursorMode::Resize) {
@@ -491,19 +619,29 @@ static void process_cursor_motion(Server& server, uint32_t time)
         return;
     }
 
+    auto hit = hit_test_frame(server, server.cursor->x, server.cursor->y);
+    update_button_hover(server, hit);
+    update_button_pressed(server, hit);
+
     double sx = 0;
     double sy = 0;
     wlr_surface* surface = nullptr;
-    auto* toplevel = toplevel_at(server, server.cursor->x, server.cursor->y, &surface, &sx, &sy);
-    if (!toplevel)
-        wlr_cursor_set_xcursor(server.cursor, server.cursor_manager, "default");
+    if (hit.region == FrameRegion::None)
+        toplevel_at(server, server.cursor->x, server.cursor->y, &surface, &sx, &sy);
 
     if (surface) {
+        if (server.seat->pointer_state.focused_surface != surface)
+            wlr_cursor_set_xcursor(server.cursor, server.cursor_manager, "default");
         wlr_seat_pointer_notify_enter(server.seat, surface, sx, sy);
         wlr_seat_pointer_notify_motion(server.seat, time, sx, sy);
     } else {
         wlr_seat_pointer_clear_focus(server.seat);
     }
+
+    // Set the cursor for our chrome last: clearing client focus above resets it
+    // to the default arrow, so the resize cursor must come after.
+    if (hit.region != FrameRegion::None)
+        wlr_cursor_set_xcursor(server.cursor, server.cursor_manager, hit.region == FrameRegion::Border ? resize_cursor_name(hit.edges) : "default");
 }
 
 static void cursor_motion(wl_listener* listener, void* data)
@@ -531,13 +669,13 @@ static void cursor_button(wl_listener* listener, void* data)
     auto* event = static_cast<wlr_pointer_button_event*>(data);
 
     if (event->state == WL_POINTER_BUTTON_STATE_PRESSED) {
-        if (handle_frame_press(*server, event->button)) {
+        if (handle_frame_press(*server, event->button, event->time_msec)) {
             server->frame_grab = true;
             return;
         }
     } else if (server->frame_grab) {
         server->frame_grab = false;
-        reset_cursor_mode(*server);
+        handle_frame_release(*server, event->button);
         return;
     }
 
@@ -760,13 +898,16 @@ static void toplevel_update_frame(Toplevel& toplevel)
     theme.paint_normal_frame(painter, state, Gfx::WindowTheme::WindowMode::Other, content_rect, title, *icon, *g_palette, leftmost_button, 0, false);
 
     toplevel.button_rects.clear_with_capacity();
+    float icon_opacity = toplevel.frame_active ? 1.0f : (g_palette->window_title_button_inactive_alpha() / 255.0f);
     for (size_t index = 0; index < buttons.size(); ++index) {
         // layout_buttons() returns rects in frame coordinates, which is also what
         // the frame bitmap and cursor hit-testing use.
         auto button_rect = buttons[index];
         toplevel.button_rects.append(button_rect);
+        bool pressed = toplevel.pressed_button == static_cast<int>(index);
+        bool hovered = toplevel.hovered_button == static_cast<int>(index);
         if (!g_palette->title_buttons_icon_only())
-            Gfx::StylePainter::paint_button(painter, button_rect, *g_palette, Gfx::ButtonStyle::Normal, false, false);
+            Gfx::StylePainter::paint_button(painter, button_rect, *g_palette, Gfx::ButtonStyle::Normal, pressed, hovered);
         RefPtr<Gfx::Bitmap> button_icon;
         if (index == 0)
             button_icon = g_frame_icons.close;
@@ -774,8 +915,12 @@ static void toplevel_update_frame(Toplevel& toplevel)
             button_icon = toplevel.maximized ? g_frame_icons.restore : g_frame_icons.maximize;
         else if (index == 2)
             button_icon = g_frame_icons.minimize;
-        if (button_icon)
-            painter.blit(button_rect.center().translated(-(button_icon->width() / 2), -(button_icon->height() / 2)), *button_icon, button_icon->rect());
+        if (button_icon) {
+            auto icon_location = button_rect.center().translated(-(button_icon->width() / 2), -(button_icon->height() / 2));
+            if (pressed)
+                icon_location.translate_by(1, 1);
+            painter.blit(icon_location, *button_icon, button_icon->rect(), icon_opacity);
+        }
     }
 
     wlr_scene_node_set_position(&toplevel.content_tree->node, toplevel.frame_left, toplevel.frame_top);
@@ -877,6 +1022,8 @@ static void toplevel_begin_interactive(Toplevel& toplevel, CursorMode mode, uint
         server.grab_box.y += toplevel.scene_tree->node.y;
         server.resize_edges = edges;
     }
+
+    wlr_cursor_set_xcursor(server.cursor, server.cursor_manager, mode == CursorMode::Move ? "grabbing" : resize_cursor_name(edges));
 }
 
 static void toplevel_close(Toplevel& toplevel)
@@ -915,56 +1062,89 @@ static void toplevel_toggle_minimized(Toplevel& toplevel)
         wlr_foreign_toplevel_handle_v1_set_minimized(toplevel.foreign_handle, toplevel.minimized);
 }
 
-static bool handle_frame_press(Server& server, uint32_t button)
+static bool handle_frame_press(Server& server, uint32_t button, uint32_t time)
 {
-    if (button != BTN_LEFT)
+    auto hit = hit_test_frame(server, server.cursor->x, server.cursor->y);
+    auto* toplevel = hit.toplevel;
+    if (!toplevel)
         return false;
 
-    int cursor_x = (int)server.cursor->x;
-    int cursor_y = (int)server.cursor->y;
-    for (size_t index = server.toplevels.size(); index-- > 0;) {
-        auto& toplevel = *server.toplevels[index];
-        if (toplevel.minimized)
-            continue;
-
-        auto* node = &toplevel.scene_tree->node;
-        Gfx::IntRect frame_rect { node->x, node->y, toplevel.frame_size.width(), toplevel.frame_size.height() };
-        if (frame_rect.is_empty() || !frame_rect.contains({ cursor_x, cursor_y }))
-            continue;
-
-        Gfx::IntPoint local { cursor_x - node->x, cursor_y - node->y };
-        for (size_t button_index = 0; button_index < toplevel.button_rects.size(); ++button_index) {
-            if (!toplevel.button_rects[button_index].contains(local))
-                continue;
-            if (button_index == 0)
-                toplevel_close(toplevel);
-            else if (button_index == 1)
-                toplevel_toggle_maximized(toplevel);
-            else if (button_index == 2)
-                toplevel_toggle_minimized(toplevel);
+    if (button == BTN_LEFT) {
+        if (hit.region == FrameRegion::Button) {
+            // Track the button until release, like SerenityOS's Button: the
+            // action fires only if the cursor is still over it on mouse up.
+            server.pressed_button_toplevel = toplevel;
+            server.pressed_button_index = hit.button_index;
+            server.double_click_pending = false;
+            toplevel->hovered_button = hit.button_index;
+            toplevel->pressed_button = hit.button_index;
+            toplevel_update_frame(*toplevel);
             return true;
         }
 
-        if (local.y() < toplevel.frame_top) {
-            toplevel_begin_interactive(toplevel, CursorMode::Move, 0);
+        if (hit.region == FrameRegion::Titlebar) {
+            focus_toplevel(server, toplevel);
+            // Decide on release whether this is a double click; a first click
+            // still starts a move so single-click dragging feels immediate.
+            bool same_window = server.last_titlebar_press_toplevel == toplevel;
+            double dx = server.cursor->x - server.last_titlebar_press_x;
+            double dy = server.cursor->y - server.last_titlebar_press_y;
+            server.double_click_pending = same_window
+                && (time - server.last_titlebar_press_time) < 300
+                && (dx * dx + dy * dy) <= (6 * 6);
+            server.last_titlebar_press_toplevel = toplevel;
+            server.last_titlebar_press_time = time;
+            server.last_titlebar_press_x = server.cursor->x;
+            server.last_titlebar_press_y = server.cursor->y;
+            toplevel_begin_interactive(*toplevel, CursorMode::Move, 0);
             return true;
         }
 
-        constexpr int resize_border = 4;
-        uint32_t edges = 0;
-        if (local.x() < resize_border)
-            edges |= WLR_EDGE_LEFT;
-        if (local.x() >= toplevel.frame_size.width() - resize_border)
-            edges |= WLR_EDGE_RIGHT;
-        if (local.y() >= toplevel.frame_size.height() - resize_border)
-            edges |= WLR_EDGE_BOTTOM;
-        if (edges) {
-            toplevel_begin_interactive(toplevel, CursorMode::Resize, edges);
+        if (hit.region == FrameRegion::Border) {
+            focus_toplevel(server, toplevel);
+            server.double_click_pending = false;
+            toplevel_begin_interactive(*toplevel, CursorMode::Resize, hit.edges);
             return true;
         }
-        return false;
     }
+
+    // Right-clicking the titlebar opens the window menu (not implemented yet).
+    if (button == BTN_RIGHT && hit.region == FrameRegion::Titlebar) {
+        focus_toplevel(server, toplevel);
+        server.double_click_pending = false;
+        return true;
+    }
+
     return false;
+}
+
+static void handle_frame_release(Server& server, uint32_t)
+{
+    if (server.pressed_button_toplevel) {
+        auto* toplevel = server.pressed_button_toplevel;
+        int index = server.pressed_button_index;
+        bool activate = toplevel->pressed_button == index;
+        toplevel->pressed_button = -1;
+        server.pressed_button_toplevel = nullptr;
+        server.pressed_button_index = -1;
+        toplevel_update_frame(*toplevel);
+        if (activate) {
+            if (index == 0)
+                toplevel_close(*toplevel);
+            else if (index == 1)
+                toplevel_toggle_maximized(*toplevel);
+            else if (index == 2)
+                toplevel_toggle_minimized(*toplevel);
+        }
+        return;
+    }
+
+    if (server.cursor_mode == CursorMode::Move && server.double_click_pending) {
+        if (auto* toplevel = server.grabbed_toplevel)
+            toplevel_toggle_maximized(*toplevel);
+    }
+    server.double_click_pending = false;
+    reset_cursor_mode(server);
 }
 
 static void toplevel_request_move(wl_listener* listener, void*)
@@ -1522,6 +1702,8 @@ static ErrorOr<void> initialize(Server& server)
     server.cursor = wlr_cursor_create();
     wlr_cursor_attach_output_layout(server.cursor, server.output_layout);
     server.cursor_manager = wlr_xcursor_manager_create(nullptr, 24);
+    wlr_xcursor_manager_load(server.cursor_manager, 1);
+    wlr_cursor_set_xcursor(server.cursor, server.cursor_manager, "default");
 
     server.cursor_motion.notify = cursor_motion;
     wl_signal_add(&server.cursor->events.motion, &server.cursor_motion);
