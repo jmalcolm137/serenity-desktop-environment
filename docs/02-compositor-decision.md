@@ -603,17 +603,24 @@ Option D/labwc or to KWin with a KDE backend and lose little of the shell work.
 | Surface roles | `xdg-shell`, `wlr-layer-shell-unstable-v1` |
 | Decorations | `xdg-decoration-unstable-v1` (SSD) |
 | Window types | Serenity `WindowType` semantics. `LibWindowServer` maps the shell types (`Taskbar`, `Applet`, `Desktop`) directly onto `wlr-layer-shell` roles; the rest are `xdg-shell` toplevels with compositor-drawn frames (no `app_id` hint) |
-| Shell session (WMServer) | `WindowManagerServer` requests + `WindowManagerClient` events (windows, workspaces, applet area, super-key, quick-launch) |
-| Window management (shell) | `wlr-foreign-toplevel-management-unstable-v1` |
+| Shell session (WMServer) | `WindowManagerServer` requests + `WindowManagerClient` events (windows, workspaces, applet area, super-key, quick-launch); **plus** the standard `ext-workspace-v1` and `ext-foreign-toplevel-list-v1` for third-party panels (P8) |
+| Window management (shell) | `ext-foreign-toplevel-list-v1` **+** `wlr-foreign-toplevel-management-unstable-v1` (legacy) |
+| Activation / attention | `xdg-activation-v1` |
 | Outputs / config | `wl_output`, `zxdg_output_v1`, `wlr-output-management-unstable-v1` |
-| Capture (switcher/screenshots) | `ext-image-copy-capture-v1` / `wlr-screencopy-unstable-v1` (+ portal) |
+| Scaling | `wp-fractional-scale-v1` (staging) + `wp_viewporter` (stable) |
+| Color management | `wp-color-management-v1` (staging; HDR) — R6 |
+| Capture (switcher/screenshots) | `ext-image-copy-capture-v1` + `ext-image-capture-source-v1` / `wlr-screencopy-unstable-v1` (legacy) (+ portal) |
 | Input | `wl_seat`, `wl_pointer`, `wl_keyboard`, `wl_touch`, `wlr-virtual-pointer`, `wlr-virtual-keyboard` |
-| Clipboard / DnD | `wl_data_device`, `wlr-data-control` / `ext-data-control` |
-| Idle / lock | `ext-idle-notify-v1`, `ext-session-lock-v1` |
-| Cursors | `cursor-shape-v1`, `wlr-cursor-shape`, theme via portal |
-| Shortcuts | `org.freedesktop.portal.GlobalShortcuts`, `wlr-foreign-toplevel` activation |
+| Transient seats | `ext-transient-seat-v1` |
+| Clipboard / DnD | `wl_data_device`, `ext-data-control-v1` / `wlr-data-control` (legacy) |
+| Idle / lock | `ext-idle-notify-v1`, `zwp_idle_inhibit_v1`, `ext-session-lock-v1` |
+| Output power (DPMS) | `wlr-output-power-management-unstable-v1` |
+| Session save/restore | `xdg-session-management-v1` (staging) |
+| Cursors | `wp-cursor-shape-v1` / `wlr-cursor-shape`, theme via `XCURSOR_*` + portal |
+| Shortcuts | `org.freedesktop.portal.GlobalShortcuts`, `zwp_keyboard_shortcuts_inhibit_manager_v1` |
 | X11 apps | XWayland (wlroots) |
-| Settings / appearance | `org.freedesktop.portal.Settings` + per-compositor backend |
+| Settings / appearance | `org.freedesktop.portal.Settings` (+ an SDE backend) |
+| Portals (`xdg-desktop-portal`) | Screenshot/ScreenCast/RemoteDesktop/InputCapture/GlobalShortcuts/Settings; backend `xdg-desktop-portal-wlr` (+ `-gtk` fallback) |
 
 For the live support status of each protocol above — and to compare our target
 inventory against what wlroots-based compositors (sway, Hyprland, labwc, …) and

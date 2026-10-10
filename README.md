@@ -49,7 +49,7 @@ Milestone progress (see [`docs/01-objectives.md`](docs/01-objectives.md) §11):
 | **R1** | Compositor bring-up | Done — nested, headless (CI-tested) and DRM/libinput session paths |
 | **R2** | Shell v1 | Done — Taskbar, WindowManagerServer, wallpaper, Desktop, file icons, Launch |
 | **R3** | Serenity look & behaviours | Done — window chrome, switcher, snapping, workspaces, applet area, notifications, tooltips; font-parity decision recorded (zoom deferred to R4/G5) |
-| **R4** | Session & settings | Started — R4.1 session safety net compositor side landed (idle/inhibit/lock/DPMS); lock UI/auth outstanding; see `docs/11-r4-implementation-plan.md` |
+| **R4** | Session & settings | Started — R4.1 session safety net (idle/inhibit/DPMS + standard `ext-session-lock-v1`; swaylock via `SDE_LOCK_CMD`); native lock client deferred; see `docs/11-r4-implementation-plan.md` |
 | **R5** | Compatibility & ecosystem | Not started |
 | **R6** | Hardening & packaging | Not started |
 

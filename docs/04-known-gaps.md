@@ -137,10 +137,15 @@ keymap/IME, input-device config) are catalogued in
 - **Session safety net (R4.1)** — compositor side landed: `WindowServer` now
   serves `ext-idle-notify-v1`, `zwp_idle_inhibit_v1`, `wlr-output-power-management`
   (DPMS) and `ext-session-lock-v1` (per-output lock surfaces, `locked` once every
-  output is covered, input routed to the lock surface while locked). Verified by
-  `scripts/run-idle-test.sh` and `scripts/run-lock-test.sh`. **Remaining:** a real
-  lock client with authentication (SerenityOS has no lock screen) and dim/blank
-  before lock.
+  output is covered, input routed to the lock surface on the output under the
+  cursor; `Super+L` locks). It is a **standard** `ext-session-lock-v1` server, so
+  any conformant locker works — the session uses **swaylock** for now via
+  `SDE_LOCK_CMD`. Verified by `scripts/run-idle-test.sh` and
+  `scripts/run-lock-test.sh` (including a two-output lock). **Future deliverable:**
+  a native SDE lock client (still a plain `ext-session-lock-v1` client, portable to
+  other compositors); see [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md)
+  §9. Remaining: dim/blank before lock, and re-configuring lock surfaces on output
+  resize/scale.
 
 - **Session lifecycle (G6 / W5).** No greet/login, session start, autostart,
   save/restore, lock, logout, reboot, or shut-down; no SystemServer-style
@@ -186,8 +191,12 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   `keyboard-shortcuts-inhibit`, `relative-pointer`/`pointer-constraints`/
   `pointer-gestures`, `presentation-time`, `fractional-scale`/`wp-viewporter`,
   `content-type`, `tearing-control` are all absent.
-- **Portals (G7).** No screenshot/screencast/settings/global-shortcuts/
-  remote-desktop/input-capture portal strategy.
+- **`xdg-desktop-portal` (G7).** No freedesktop-portal strategy yet (distinct
+  from SDE's own Serenity "portals"): a backend for a wlroots compositor
+  (`xdg-desktop-portal-wlr` for Screenshot/ScreenCast, `-gtk` fallback), a
+  `portals.conf` mapping, an SDE **Settings** backend (`color-scheme`,
+  `accent-color`) for R4.4/R4.7, and RemoteDesktop/InputCapture/GlobalShortcuts
+  for R5 (see [`08-compositor-gaps.md`](08-compositor-gaps.md) §3).
 - **Text input / IME (G5) and accessibility (G1).** `text-input-v3` /
   `input-method-v2`, AT-SPI, sticky keys, magnifier and high contrast are absent.
 

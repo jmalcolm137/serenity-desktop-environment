@@ -139,6 +139,17 @@ These extend and are consistent with LibWindowServer's existing principles.
   person" ethos; prefer small, scriptable, headless-testable pieces.
 - **P7 — BSD-2, upstream-friendly.** Every generally useful change is written to
   be proposed upstream.
+- **P8 — Wayland-native and interoperable.** Prefer the **standard** protocol:
+  use Wayland's stable/staging `xdg_*`, `ext_*` and `wp_*` extensions wherever one
+  exists, and fall back to `wlr-*` or an SDE-private protocol **only when there is
+  none** (document why). Expose the standard globals so third-party clients —
+  panels (`waybar`), lockers (`swaylock`), idle daemons (`swayidle`), clipboard
+  managers (`wl-clipboard`), portals, screenshot tools — work unmodified; and make
+  our own components (lock client, idle daemon, settings backends) **portable
+  clients** that run under other compositors without SDE-specific protocols. Keep
+  the private surface (`serenity-window`) minimal and scoped to Serenity shell
+  parity. See [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §2
+  for the protocol posture.
 
 ## 7. Architecture overview
 
@@ -285,4 +296,12 @@ risks are:
 
 - SerenityOS — <https://github.com/SerenityOS/serenity>; `Userland/Services/WindowServer/{WindowManager,WindowFrame,WindowSwitcher,AppletManager,Overlays,Compositor,ScreenLayout}.cpp`; `Userland/Services/WindowServer/{WindowServer,WindowManagerServer,WindowManagerClient}.ipc`.
 - `libgui-wayland` / LibWindowServer — <https://github.com/jmalcolm137/libgui-wayland> (see `DESIGN.md`).
-- Wayland protocols — <https://wayland.app/protocols/>.
+- Wayland protocols — <https://wayland.app/protocols/>; the canonical set is
+  `wayland-protocols` (stable/staging), <https://gitlab.freedesktop.org/wayland/wayland-protocols>.
+- `xdg-desktop-portal` (+ backends such as `xdg-desktop-portal-wlr`/`-gtk`) —
+  <https://flatpak.github.io/xdg-desktop-portal/>; the freedesktop D-Bus portals
+  (FileChooser, Screenshot, ScreenCast, RemoteDesktop, InputCapture,
+  GlobalShortcuts, **Settings**). Distinct from SerenityOS's own IPC "portals"
+  (see [`06-service-layering.md`](06-service-layering.md)).
+- `wlroots` — <https://gitlab.freedesktop.org/wlroots/wlroots>; the pinned version
+  (`0.20.2`) supplies the standard protocol managers SDE uses.

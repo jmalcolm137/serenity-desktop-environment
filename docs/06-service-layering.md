@@ -25,6 +25,14 @@ on?**
 - **Resolution rule:** *prefer the session service when it is present, otherwise
   fall back to the in-process one.*
 
+> **Naming note — two kinds of "portal".** The paths above are **SerenityOS**
+> portals: SDE's own IPC endpoints under `/tmp/session/<id>/portal/…`. They are
+> unrelated to the freedesktop **`xdg-desktop-portal`** D-Bus service
+> (FileChooser, Screenshot, ScreenCast, RemoteDesktop, InputCapture,
+> GlobalShortcuts, Settings). When this document says "portal" it means the
+> former; `xdg-desktop-portal` is always named in full. See
+> [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §2.1.
+
 ## 2. How the rule is already plumbed
 
 `LibWM` intercepts connects to well-known portal paths and maps them onto

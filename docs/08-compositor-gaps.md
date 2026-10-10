@@ -80,11 +80,15 @@ protocols but nothing owns them per milestone and nothing tests them.
 - **Presentation & scaling (N3, N5).** No `presentation-time`, `wp-viewporter`,
   `fractional-scale-v1`, `wp-single-pixel-buffer`, `content-type-v1`,
   `tearing-control`, `commit-timing`/`fifo`, or dmabuf feedback/explicit sync.
-- **Portals (G7).** Only cursors/settings are hinted. No strategy for
-  `xdg-desktop-portal-wlr` (screenshot, screencast), Settings
-  (`org.freedesktop.portal.Settings`), GlobalShortcuts, RemoteDesktop, or
-  InputCapture. Note that the theme broker will eventually need to interoperate
-  with the Settings portal's `color-scheme`.
+- **Portals (G7).** No `xdg-desktop-portal` strategy. The project's *Serenity*
+  portals (`/tmp/session/<id>/portal/…`) are unrelated to the freedesktop
+  `xdg-desktop-portal`. Needed: a backend selection for a wlroots compositor
+  (`xdg-desktop-portal-wlr` for Screenshot/ScreenCast, `-gtk` as fallback) plus a
+  `portals.conf` mapping; an SDE **Settings** portal backend (`color-scheme`,
+  `accent-color`, `contrast`) for R4; and, for R5, RemoteDesktop/InputCapture/
+  GlobalShortcuts (lean on `ext-image-copy-capture-v1` + PipeWire). Note the theme
+  broker will eventually need to interoperate with the Settings portal's
+  `color-scheme`.
 - **XWayland (G7).** A single R5 bullet today; rootless XWayland, scaling,
   clipboard/DnD integration and rootful fallback is a large feature that needs
   its own plan.
