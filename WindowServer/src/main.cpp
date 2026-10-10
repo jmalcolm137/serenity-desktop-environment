@@ -19,7 +19,9 @@
 #include <AK/StdLibExtras.h>
 #include <AK/Vector.h>
 
+#include "Model.h"
 #include "Overlays.h"
+#include "WindowManager.h"
 
 #include <LibCore/ArgsParser.h>
 #include <LibCore/Directory.h>
@@ -43,11 +45,7 @@
 #include <LibGfx/WindowTheme.h>
 #include <LibIPC/Connection.h>
 #include <LibMain/Main.h>
-#include <WindowServer/WindowManagerClientEndpoint.h>
-#include <WindowServer/WindowManagerServerEndpoint.h>
 #include <WindowServer/WindowType.h>
-
-#include "WindowManagerServerDefaultStub.h"
 
 #include <ctime>
 #include <drm_fourcc.h>
@@ -92,22 +90,8 @@ extern "C" {
 
 namespace {
 
-enum class CursorMode {
-    Passthrough,
-    Move,
-    Resize,
-};
-
-struct Server;
-struct Output;
-struct Toplevel;
-
 // Tell the client where its window actually is (the compositor places it).
 static void toplevel_report_position(Toplevel& toplevel);
-struct Popup;
-struct LayerSurface;
-struct Keyboard;
-struct Decoration;
 
 static void toplevel_update_frame(Toplevel&);
 static bool handle_frame_press(Server&, uint32_t button, uint32_t time);
@@ -120,9 +104,6 @@ static bool window_menu_handle_key(Server&, xkb_keysym_t);
 static void arrange_layers(Server&, wlr_output*);
 static Output* output_for(Server&, wlr_output*);
 static void output_manager_send_configuration(Server&);
-static void wm_emit_state(Toplevel&);
-static void wm_emit_removed(Toplevel&);
-static Toplevel* find_toplevel_by_wm_id(i32);
 static i32 g_next_wm_id { 1 };
 static Gfx::Palette* g_palette { nullptr };
 
@@ -251,220 +232,6 @@ static RefPtr<Gfx::Bitmap> load_icon(ByteString const& resource_root, StringView
     return nullptr;
 }
 
-// The window menu shown by right-clicking a titlebar (or clicking its icon),
-// mirroring SerenityOS's Window::ensure_window_menu().
-enum class WindowMenuAction {
-    MinimizeOrUnminimize,
-    MaximizeOrRestore,
-    Move,
-    ToggleWindowRollUp,
-    ToggleMenubarVisibility,
-    ToggleAlwaysOnTop,
-    Close,
-};
-
-struct WindowMenuEntry {
-    bool is_separator { false };
-    ByteString text; // Ampersands mark the keyboard shortcut, as in SerenityOS.
-    WindowMenuAction action { WindowMenuAction::Close };
-    bool enabled { true };
-    bool checkable { false };
-    bool checked { false };
-    bool is_default { false };
-    RefPtr<Gfx::Bitmap> icon;
-    Gfx::IntRect rect; // Relative to the menu's top-left.
-};
-
-struct WindowMenu {
-    bool open { false };
-    // Set while the button press that opened the menu is still waiting for its
-    // release; that release must not dismiss the freshly opened menu.
-    bool ignore_release { false };
-    Toplevel* toplevel { nullptr };
-    Vector<WindowMenuEntry> entries;
-    Gfx::IntRect rect; // Screen coordinates.
-    int hovered_index { -1 };
-    int pressed_index { -1 };
-    OwnPtr<ChromeNode> node; // The menu's scene node, in overlay_tree.
-};
-
-struct Server {
-    wl_display* display { nullptr };
-    wlr_backend* backend { nullptr };
-    wlr_renderer* renderer { nullptr };
-    wlr_allocator* allocator { nullptr };
-    wlr_scene* scene { nullptr };
-    wlr_scene_output_layout* scene_layout { nullptr };
-    wlr_output_layout* output_layout { nullptr };
-    // Per-layer scene trees, in bottom-to-top order, so layer surfaces stack
-    // correctly relative to ordinary windows (the flat scene root does not).
-    wlr_scene_tree* background_tree { nullptr };
-    wlr_scene_tree* bottom_tree { nullptr };
-    wlr_scene_tree* windows_tree { nullptr };
-    wlr_scene_tree* top_tree { nullptr };
-    wlr_scene_tree* overlay_tree { nullptr };
-    wlr_xdg_shell* xdg_shell { nullptr };
-    wlr_layer_shell_v1* layer_shell { nullptr };
-    wlr_foreign_toplevel_manager_v1* foreign_toplevel_manager { nullptr };
-    wlr_output_manager_v1* output_manager { nullptr };
-    wlr_cursor* cursor { nullptr };
-    wlr_xcursor_manager* cursor_manager { nullptr };
-    wlr_seat* seat { nullptr };
-    wlr_output* primary_output { nullptr };
-
-    wl_listener new_output { };
-    wl_listener new_xdg_toplevel { };
-    wl_listener new_xdg_popup { };
-    wl_listener new_layer_surface { };
-    wl_listener new_toplevel_decoration { };
-    wl_listener output_manager_apply { };
-    wl_listener output_manager_test { };
-    wl_listener new_input { };
-    wl_listener cursor_motion { };
-    wl_listener cursor_motion_absolute { };
-    wl_listener cursor_button { };
-    wl_listener cursor_axis { };
-    wl_listener cursor_frame { };
-    wl_listener seat_request_cursor { };
-    wl_listener seat_pointer_focus_change { };
-    wl_listener seat_request_set_selection { };
-
-    Vector<NonnullOwnPtr<Output>> outputs;
-    Vector<NonnullOwnPtr<Toplevel>> toplevels;
-    Vector<NonnullOwnPtr<Popup>> popups;
-    Vector<NonnullOwnPtr<LayerSurface>> layer_surfaces;
-    Vector<NonnullOwnPtr<Keyboard>> keyboards;
-    Vector<NonnullOwnPtr<Decoration>> decorations;
-    // serenity_window_manager resources, so the compositor can ask a client to
-    // dismiss its menus (see maybe_dismiss_layer_menus).
-    Vector<wl_resource*> serenity_window_managers;
-
-    CursorMode cursor_mode { CursorMode::Passthrough };
-    Toplevel* grabbed_toplevel { nullptr };
-    double grab_x { 0 };
-    double grab_y { 0 };
-    wlr_box grab_box { };
-    uint32_t resize_edges { 0 };
-    bool frame_grab { false };
-    bool show_desktop { false };
-
-    // Implicit pointer grab: while a client button is held, keep the pointer
-    // focused on the surface that received the press and forward motion to it,
-    // even if the cursor crosses into another surface. wlroots' seat forgets the
-    // pressed button when pointer focus changes, so without this the eventual
-    // release is silently dropped and the client stays stuck mid-press.
-    wlr_surface* pointer_grab_surface { nullptr };
-    double pointer_grab_origin_x { 0 };
-    double pointer_grab_origin_y { 0 };
-    uint32_t pointer_buttons_down { 0 };
-
-    // Pointer interaction with window chrome (titlebar buttons, titlebar drags
-    // and resize borders), mirroring SerenityOS's WindowFrame/Button state.
-    Toplevel* pressed_button_toplevel { nullptr };
-    int pressed_button_index { -1 };
-    Toplevel* last_titlebar_press_toplevel { nullptr };
-    uint32_t last_titlebar_press_time { 0 };
-    double last_titlebar_press_x { 0 };
-    double last_titlebar_press_y { 0 };
-    bool double_click_pending { false };
-
-    // The (single) window menu, if any is open.
-    WindowMenu window_menu;
-};
-
-struct Output {
-    Server* server { nullptr };
-    wlr_output* output { nullptr };
-    wlr_box usable_area { };
-    wlr_scene_buffer* background { nullptr };
-    Gfx::IntSize background_size;
-    wl_listener frame { };
-    wl_listener request_state { };
-    wl_listener destroy { };
-};
-
-struct Toplevel {
-    Server* server { nullptr };
-    wlr_xdg_toplevel* xdg_toplevel { nullptr };
-    wlr_scene_tree* scene_tree { nullptr };
-    wlr_scene_tree* content_tree { nullptr };
-    wlr_scene_buffer* frame_buffer { nullptr };
-    int frame_left { 0 };
-    int frame_top { 0 };
-    int frame_right { 0 };
-    int frame_bottom { 0 };
-    Gfx::IntSize frame_size;
-    Vector<Gfx::IntRect> button_rects;
-    Gfx::IntSize restore_size;
-    Gfx::IntPoint restore_position;
-    bool frame_active { true };
-    bool maximized { false };
-    bool minimized { false };
-    bool fullscreen { false };
-    // Minimized specifically by "Show Desktop"; restored by toggling it again.
-    bool hidden_by_show_desktop { false };
-    bool always_on_top { false };
-    bool rolled_up { false };
-    int hovered_button { -1 };
-    int pressed_button { -1 };
-    Gfx::IntRect titlebar_icon_rect;
-    wl_resource* chrome { nullptr };
-    // The decoration object, if any; the server-side mode is applied once the
-    // surface is initialized (set_mode schedules a configure).
-    wlr_xdg_toplevel_decoration_v1* decoration { nullptr };
-    bool menubar_visible { true };
-    i32 wm_id { 0 };
-    wlr_foreign_toplevel_handle_v1* foreign_handle { nullptr };
-    wl_listener map { };
-    wl_listener unmap { };
-    wl_listener commit { };
-    wl_listener destroy { };
-    wl_listener request_move { };
-    wl_listener request_resize { };
-    wl_listener request_maximize { };
-    wl_listener request_fullscreen { };
-    wl_listener set_title { };
-    wl_listener set_app_id { };
-    wl_listener foreign_request_activate { };
-    wl_listener foreign_request_close { };
-};
-
-struct Popup {
-    Server* server { nullptr };
-    wlr_xdg_popup* xdg_popup { nullptr };
-    wl_listener commit { };
-    wl_listener destroy { };
-};
-
-struct LayerSurface {
-    Server* server { nullptr };
-    wlr_layer_surface_v1* layer_surface { nullptr };
-    wlr_scene_layer_surface_v1* scene { nullptr };
-    wlr_output* output { nullptr };
-    // True for client menu popups (the "serenity-menu" namespace): these take no
-    // input grab, so an outside press must dismiss them (see cursor_button).
-    bool is_menu { false };
-    wl_listener map { };
-    wl_listener unmap { };
-    wl_listener commit { };
-    wl_listener destroy { };
-};
-
-struct Keyboard {
-    Server* server { nullptr };
-    wlr_keyboard* keyboard { nullptr };
-    wl_listener modifiers { };
-    wl_listener key { };
-    wl_listener destroy { };
-};
-
-struct Decoration {
-    Server* server { nullptr };
-    Toplevel* toplevel { nullptr };
-    wlr_xdg_toplevel_decoration_v1* decoration { nullptr };
-    wl_listener request_mode { };
-    wl_listener destroy { };
-};
 
 template<typename T>
 static void remove_owned(Vector<NonnullOwnPtr<T>>& list, T* object)
@@ -482,7 +249,7 @@ static Toplevel* toplevel_from_handle(wlr_foreign_toplevel_handle_v1* handle)
     return static_cast<Toplevel*>(handle->data);
 }
 
-static void focus_toplevel(Server& server, Toplevel* toplevel)
+void focus_toplevel(Server& server, Toplevel* toplevel)
 {
     if (!toplevel)
         return;
@@ -1398,7 +1165,7 @@ static void toplevel_map(wl_listener* listener, void*)
     if (toplevel->foreign_handle && toplevel->server->primary_output)
         wlr_foreign_toplevel_handle_v1_output_enter(toplevel->foreign_handle, toplevel->server->primary_output);
     focus_toplevel(*toplevel->server, toplevel);
-    wm_emit_state(*toplevel);
+    WindowManager::emit_window_state(*toplevel);
 }
 
 static void toplevel_unmap(wl_listener* listener, void*)
@@ -1425,7 +1192,7 @@ static void toplevel_commit(wl_listener* listener, void*)
     }
     toplevel_update_foreign(*toplevel);
     toplevel_update_frame(*toplevel);
-    wm_emit_state(*toplevel);
+    WindowManager::emit_window_state(*toplevel);
 }
 
 static void toplevel_destroy(wl_listener* listener, void*)
@@ -1461,7 +1228,7 @@ static void toplevel_destroy(wl_listener* listener, void*)
     // detaches wlroots' listener before the xdg_surface itself goes away.
     wlr_scene_node_destroy(&toplevel->scene_tree->node);
     dbgln("WindowServer: toplevel destroyed wm_id={}", toplevel->wm_id);
-    wm_emit_removed(*toplevel);
+    WindowManager::emit_window_removed(*toplevel);
     remove_owned(server.toplevels, toplevel);
 }
 
@@ -1661,7 +1428,7 @@ static void close_window_menu(Server& server)
         menu.node->set_visible(false);
 }
 
-static void open_window_menu(Server& server, Toplevel& toplevel, Gfx::IntPoint position)
+void open_window_menu(Server& server, Toplevel& toplevel, Gfx::IntPoint position)
 {
     close_window_menu(server);
 
@@ -2007,7 +1774,7 @@ static void toplevel_foreign_request_activate(wl_listener* listener, void*)
     Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, foreign_request_activate);
     focus_toplevel(*toplevel->server, toplevel);
-    wm_emit_state(*toplevel);
+    WindowManager::emit_window_state(*toplevel);
 }
 
 static void toplevel_foreign_request_close(wl_listener* listener, void*)
@@ -2372,159 +2139,6 @@ static void output_manager_test(wl_listener* listener, void* data)
     output_manager_apply_or_test(*server, static_cast<wlr_output_configuration_v1*>(data), true);
 }
 
-// --- WindowManagerServer (the shell's Taskbar protocol) --------------------
-//
-// In SerenityOS the WindowServer itself serves WindowManagerServer; so do we.
-// The compositor is the source of truth for window state, so it answers the
-// Taskbar's protocol directly (no bridging shim, no custom protocol).
-
-static Server* g_server { nullptr };
-
-// The compositor's end of the Serenity WindowManagerServer protocol.
-class WindowManagerServerConnection final
-    : public IPC::Connection<WindowManagerServerEndpoint, WindowManagerClientEndpoint>
-    , public ::SDE::WindowManagerServerDefaultStub
-    , public WindowManagerClientEndpoint::Proxy<WindowManagerServerEndpoint> {
-public:
-    static NonnullRefPtr<WindowManagerServerConnection> create(NonnullOwnPtr<Core::LocalSocket> socket)
-    {
-        return adopt_ref(*new WindowManagerServerConnection(move(socket)));
-    }
-
-    i32 manager_window_id() const { return m_manager_window_id; }
-
-    virtual void set_event_mask(u32 event_mask) override { m_event_mask = event_mask; }
-
-    virtual void set_manager_window(i32 window_id) override
-    {
-        m_manager_window_id = window_id;
-        if (!g_server)
-            return;
-        for (auto& toplevel : g_server->toplevels)
-            wm_emit_state(*toplevel);
-    }
-
-    virtual void set_active_window(i32, i32 window_id) override
-    {
-        if (!g_server)
-            return;
-        if (auto* toplevel = find_toplevel_by_wm_id(window_id)) {
-            if (toplevel->minimized) {
-                toplevel->minimized = false;
-                wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
-            }
-            focus_toplevel(*g_server, toplevel);
-            wm_emit_state(*toplevel);
-        }
-    }
-
-    virtual void set_window_minimized(i32, i32 window_id, bool minimized) override
-    {
-        if (!g_server)
-            return;
-        if (auto* toplevel = find_toplevel_by_wm_id(window_id)) {
-            toplevel->minimized = minimized;
-            wlr_scene_node_set_enabled(&toplevel->scene_tree->node, !minimized);
-            wm_emit_state(*toplevel);
-        }
-    }
-
-    virtual void toggle_show_desktop() override
-    {
-        if (!g_server)
-            return;
-        auto& server = *g_server;
-        server.show_desktop = !server.show_desktop;
-        for (auto& toplevel : server.toplevels) {
-            bool changed = false;
-            if (server.show_desktop) {
-                if (!toplevel->minimized) {
-                    toplevel->hidden_by_show_desktop = true;
-                    toplevel->minimized = true;
-                    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
-                    changed = true;
-                }
-            } else if (toplevel->hidden_by_show_desktop) {
-                toplevel->hidden_by_show_desktop = false;
-                toplevel->minimized = false;
-                wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
-                changed = true;
-            }
-            if (changed)
-                wm_emit_state(*toplevel);
-        }
-    }
-    virtual void start_window_resize(i32, i32, i32) override { }
-    virtual void popup_window_menu(i32, i32 window_id, Gfx::IntPoint screen_position) override
-    {
-        // Right-clicking a Taskbar window-list button opens the window menu. The
-        // compositor already renders that menu for the titlebar, so reuse it (the
-        // layout clamps it on-screen, which places it above the Taskbar).
-        if (!g_server)
-            return;
-        if (auto* toplevel = find_toplevel_by_wm_id(window_id))
-            open_window_menu(*g_server, *toplevel, screen_position);
-    }
-    // The Taskbar reports each button's rect for a minimise/restore animation the
-    // compositor does not implement; deliberately not consumed (see known-gaps).
-    virtual void set_window_taskbar_rect(i32, i32, Gfx::IntRect const&) override { }
-
-    // Applets are now layer surfaces positioned by the compositor, so the
-    // shell's applet-area position no longer needs the WindowServer to lay
-    // them out.
-    virtual void set_applet_area_position(Gfx::IntPoint) override { }
-
-    virtual void set_workspace(u32, u32) override { }
-    virtual void set_keymap(ByteString const&) override { }
-
-private:
-    explicit WindowManagerServerConnection(NonnullOwnPtr<Core::LocalSocket> socket)
-        : IPC::Connection<WindowManagerServerEndpoint, WindowManagerClientEndpoint>(*this, move(socket))
-        , WindowManagerClientEndpoint::Proxy<WindowManagerServerEndpoint>(*this, { })
-    {
-    }
-
-    i32 m_manager_window_id { -1 };
-    u32 m_event_mask { 0 };
-};
-
-static Vector<NonnullRefPtr<WindowManagerServerConnection>> g_wm_connections;
-
-static Toplevel* find_toplevel_by_wm_id(i32 wm_id)
-{
-    if (!g_server)
-        return nullptr;
-    for (auto& toplevel : g_server->toplevels) {
-        if (toplevel->wm_id == wm_id)
-            return toplevel.ptr();
-    }
-    return nullptr;
-}
-
-static void wm_emit_state(Toplevel& toplevel)
-{
-    StringView title;
-    if (toplevel.xdg_toplevel->title)
-        title = StringView { toplevel.xdg_toplevel->title, strlen(toplevel.xdg_toplevel->title) };
-    for (auto& connection : g_wm_connections) {
-        if (connection->manager_window_id() < 0)
-            continue;
-        // Chrome windows (the panel, applets, the desktop) are layer surfaces,
-        // not toplevels, so nothing reported here is chrome.
-        connection->async_window_state_changed(connection->manager_window_id(), 0, toplevel.wm_id, 0, 0,
-            toplevel.frame_active && !toplevel.minimized, false, toplevel.minimized, false,
-            static_cast<i32>(WindowServer::WindowType::Normal), ByteString { title },
-            Gfx::IntRect { 0, 0, 0, 0 }, Optional<i32> { });
-    }
-}
-
-static void wm_emit_removed(Toplevel& toplevel)
-{
-    for (auto& connection : g_wm_connections) {
-        if (connection->manager_window_id() >= 0)
-            connection->async_window_removed(connection->manager_window_id(), 0, toplevel.wm_id);
-    }
-}
 
 // --- serenity-window (compositor -> LibWindowServer chrome control) --------
 
@@ -2836,8 +2450,6 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     dbgln("WindowServer: running on WAYLAND_DISPLAY={}", socket);
     spawn_startup_command(startup_command);
 
-    g_server = server.ptr();
-
     // The WindowServer serves the WindowManagerServer protocol (the shell's
     // Taskbar protocol), just like SerenityOS's WindowServer does. The socket
     // path can be overridden so tests can run isolated from a live session.
@@ -2851,8 +2463,10 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     auto wm_server = Core::LocalServer::construct();
     if (!wm_server->listen(wm_portal))
         warnln("WindowServer: could not listen on {}", wm_portal);
-    wm_server->on_accept = [](NonnullOwnPtr<Core::LocalSocket> socket) {
-        g_wm_connections.append(WindowManagerServerConnection::create(move(socket)));
+    // Let the window manager call back into the compositor's focus/menu code.
+    WindowManager::set_host_hooks({ focus_toplevel, open_window_menu });
+    wm_server->on_accept = [&](NonnullOwnPtr<Core::LocalSocket> socket) {
+        WindowManager::accept_connection(*server, move(socket));
     };
 
     // One event loop for both Wayland events (via a notifier) and the in-process
