@@ -104,8 +104,11 @@ static void toplevel_report_position(Toplevel& toplevel);
 
 // Idle notification (R4.1): reset the seat's idle timer on input.
 static void notify_activity(Server& server);
-// While the session is locked, input goes to the lock surface.
-static wlr_surface* locked_surface(Server& server);
+// While the session is locked, input goes to the lock surface on the output
+// under the cursor.
+static LockSurface* lock_surface_at_cursor(Server& server);
+// Spawn the configured lock client (R4.1); a standard ext-session-lock-v1 client.
+static void spawn_lock_client();
 
 static void toplevel_update_frame(Toplevel&);
 static bool handle_frame_press(Server&, uint32_t button, uint32_t time);
@@ -276,15 +279,30 @@ static void keyboard_modifiers(wl_listener* listener, void*)
     wlr_seat_keyboard_notify_modifiers(keyboard->server->seat, &keyboard->keyboard->modifiers);
 }
 
-static bool handle_keybinding(Server& server, xkb_keysym_t sym)
+static bool handle_keybinding(Server& server, xkb_keysym_t sym, uint32_t modifiers)
 {
-    switch (sym) {
-    case XKB_KEY_Escape:
-        wl_display_terminate(server.display);
-        return true;
-    default:
-        return false;
+    // Super+L locks the session (spawns a standard ext-session-lock-v1 client,
+    // swaylock by default).
+    if (modifiers & WLR_MODIFIER_LOGO) {
+        switch (sym) {
+        case XKB_KEY_l:
+        case XKB_KEY_L:
+            spawn_lock_client();
+            return true;
+        default:
+            break;
+        }
     }
+    if (modifiers & WLR_MODIFIER_ALT) {
+        switch (sym) {
+        case XKB_KEY_Escape:
+            wl_display_terminate(server.display);
+            return true;
+        default:
+            break;
+        }
+    }
+    return false;
 }
 
 static void keyboard_key(wl_listener* listener, void* data)
@@ -311,9 +329,9 @@ static void keyboard_key(wl_listener* listener, void* data)
 
     // While the session is locked, keys go to the lock surface, not the shell.
     if (server.locked) {
-        if (auto* surface = locked_surface(server)) {
+        if (auto* lock = lock_surface_at_cursor(server)) {
             wlr_seat_set_keyboard(server.seat, keyboard->keyboard);
-            wlr_seat_keyboard_notify_enter(server.seat, surface, keyboard->keyboard->keycodes, keyboard->keyboard->num_keycodes, &keyboard->keyboard->modifiers);
+            wlr_seat_keyboard_notify_enter(server.seat, lock->lock_surface->surface, keyboard->keyboard->keycodes, keyboard->keyboard->num_keycodes, &keyboard->keyboard->modifiers);
             wlr_seat_keyboard_notify_key(server.seat, event->time_msec, event->keycode, event->state);
         }
         return;
@@ -348,9 +366,9 @@ static void keyboard_key(wl_listener* listener, void* data)
     }
     for (int i = 0; i < syms_count; ++i)
         handled |= WindowManager::handle_super_key(server, syms[i], modifiers, event->state == WL_KEYBOARD_KEY_STATE_PRESSED);
-    if ((modifiers & WLR_MODIFIER_ALT) && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+    if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
         for (int i = 0; i < syms_count; ++i)
-            handled |= handle_keybinding(server, syms[i]);
+            handled |= handle_keybinding(server, syms[i], modifiers);
     }
 
     if (!handled) {
@@ -568,9 +586,13 @@ static void process_cursor_motion(Server& server, uint32_t time)
 {
     // While the session is locked, only the lock surface receives input.
     if (server.locked) {
-        if (auto* surface = locked_surface(server)) {
-            wlr_seat_pointer_notify_enter(server.seat, surface, server.cursor->x, server.cursor->y);
-            wlr_seat_pointer_notify_motion(server.seat, time, server.cursor->x, server.cursor->y);
+        if (auto* lock = lock_surface_at_cursor(server)) {
+            wlr_box box { };
+            wlr_output_layout_get_box(server.output_layout, lock->lock_surface->output, &box);
+            double x = server.cursor->x - box.x;
+            double y = server.cursor->y - box.y;
+            wlr_seat_pointer_notify_enter(server.seat, lock->lock_surface->surface, x, y);
+            wlr_seat_pointer_notify_motion(server.seat, time, x, y);
         }
         return;
     }
@@ -692,8 +714,13 @@ static void cursor_button(wl_listener* listener, void* data)
     notify_activity(*server);
 
     if (server->locked) {
-        if (auto* surface = locked_surface(*server))
-            wlr_seat_pointer_notify_enter(server->seat, surface, server->cursor->x, server->cursor->y);
+        if (auto* lock = lock_surface_at_cursor(*server)) {
+            wlr_box box { };
+            wlr_output_layout_get_box(server->output_layout, lock->lock_surface->output, &box);
+            double x = server->cursor->x - box.x;
+            double y = server->cursor->y - box.y;
+            wlr_seat_pointer_notify_enter(server->seat, lock->lock_surface->surface, x, y);
+        }
         wlr_seat_pointer_notify_button(server->seat, event->time_msec, event->button, event->state);
         return;
     }
@@ -2422,11 +2449,40 @@ static void output_power_set_mode(wl_listener* listener, void* data)
 // telling the client the session is locked, and must not deliver input to normal
 // clients while locked.
 
-static wlr_surface* locked_surface(Server& server)
+static void spawn_lock_client()
+{
+    // A standard ext-session-lock-v1 client, so any conformant locker works.
+    // swaylock is the default; override with SDE_LOCK_CMD (gtklock, hyprlock, a
+    // future SDE-native client, ...).
+    char const* command = getenv("SDE_LOCK_CMD");
+    if (!command || !*command)
+        command = "swaylock";
+    dbgln("WindowServer: locking via '{}'", command);
+    if (fork() == 0) {
+        execl("/bin/sh", "/bin/sh", "-c", command, static_cast<char*>(nullptr));
+        _exit(127);
+    }
+}
+
+static LockSurface* lock_surface_for_output(Server& server, wlr_output* output)
 {
     for (auto& lock : server.lock_surfaces) {
+        if (lock->lock_surface && lock->lock_surface->output == output && lock->lock_surface->surface)
+            return lock.ptr();
+    }
+    return nullptr;
+}
+
+static LockSurface* lock_surface_at_cursor(Server& server)
+{
+    // Prefer the lock surface on the output under the cursor; fall back to any
+    // (e.g. a headless/cursorless client).
+    auto* output = wlr_output_layout_output_at(server.output_layout, server.cursor->x, server.cursor->y);
+    if (auto* lock = lock_surface_for_output(server, output))
+        return lock;
+    for (auto& lock : server.lock_surfaces) {
         if (lock->lock_surface && lock->lock_surface->surface)
-            return lock->lock_surface->surface;
+            return lock.ptr();
     }
     return nullptr;
 }
@@ -2449,9 +2505,13 @@ static void lock_surface_commit(wl_listener* listener, void*)
     if (server.session_lock && !server.locked && covered >= static_cast<int>(server.outputs.size())) {
         wlr_session_lock_v1_send_locked(server.session_lock);
         server.locked = true;
-        if (auto* surface = locked_surface(server)) {
+        // Give the keyboard to a lock surface (the primary output's, else any).
+        auto* lock = lock_surface_for_output(server, server.primary_output);
+        if (!lock)
+            lock = lock_surface_at_cursor(server);
+        if (lock) {
             if (auto* keyboard = wlr_seat_get_keyboard(server.seat))
-                wlr_seat_keyboard_notify_enter(server.seat, surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+                wlr_seat_keyboard_notify_enter(server.seat, lock->lock_surface->surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
         }
         dbgln("WindowServer: session locked");
     }
