@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fetch and build the pinned wlroots used by serenity-window-server.
+# Fetch and build the pinned wlroots used by WindowServer.
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,7 +17,7 @@ fi
 # consumer cannot parse:
 #   * C99 array parameters: `void f(const float x[static 4])`
 #   * an identifier named `namespace` in the wlr-layer-shell protocol
-# Neutralize both (inert for the generated API) so serenity-window-server can be
+# Neutralize both (inert for the generated API) so WindowServer can be
 # written in Serenity-style C++. Applied idempotently.
 find "$WLROOTS_SRC/include" -name '*.h' -print0 \
     | xargs -0 sed -i -E 's/\[static[[:space:]]+(restrict[[:space:]]+)?([^]]+)\]/[\2]/g'

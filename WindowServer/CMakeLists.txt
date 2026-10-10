@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(serenity-window-server CXX)
+project(WindowServer CXX)
 
 # The Serenity Desktop Environment's Wayland compositor.
 #
@@ -26,32 +26,34 @@ foreach(_lib ak coreminimal corebasic core gfx unicode ipc compress crypto riff 
     find_library(LAGOM_${_lib} NAMES lagom-${_lib} PATHS "${SERENITY_BUILD_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
 endforeach()
 
-add_executable(serenity-window-server src/main.cpp)
+add_executable(WindowServer src/main.cpp)
 
-target_include_directories(serenity-window-server PRIVATE
+target_include_directories(WindowServer PRIVATE
     ${WLROOTS_INCLUDE_DIRS}
     ${WAYLAND_SERVER_INCLUDE_DIRS}
     ${XKBCOMMON_INCLUDE_DIRS}
     ${DRM_INCLUDE_DIRS}
     "${SERENITY_SRC}"
     "${SERENITY_SRC}/Userland/Libraries"
-    "${SERENITY_BUILD_DIR}")
+    "${SERENITY_SRC}/Userland/Services"
+    "${SERENITY_BUILD_DIR}"
+    "${SERENITY_BUILD_DIR}/Userland/Services")
 
-target_compile_options(serenity-window-server PRIVATE -Wno-literal-suffix -fno-exceptions)
-target_compile_definitions(serenity-window-server PRIVATE WLR_USE_UNSTABLE)
+target_compile_options(WindowServer PRIVATE -Wno-literal-suffix -fno-exceptions)
+target_compile_definitions(WindowServer PRIVATE WLR_USE_UNSTABLE)
 
 if (DEFINED WLROOTS_PROTOCOL_INCLUDE_DIR)
-    target_include_directories(serenity-window-server PRIVATE "${WLROOTS_PROTOCOL_INCLUDE_DIR}")
+    target_include_directories(WindowServer PRIVATE "${WLROOTS_PROTOCOL_INCLUDE_DIR}")
 endif()
 
-target_link_directories(serenity-window-server PRIVATE
+target_link_directories(WindowServer PRIVATE
     ${WLROOTS_LIBRARY_DIRS}
     ${WAYLAND_SERVER_LIBRARY_DIRS}
     ${XKBCOMMON_LIBRARY_DIRS}
     ${DRM_LIBRARY_DIRS}
     "${SERENITY_BUILD_DIR}/lib")
 
-target_link_libraries(serenity-window-server PRIVATE
+target_link_libraries(WindowServer PRIVATE
     ${WLROOTS_LIBRARIES}
     ${WAYLAND_SERVER_LIBRARIES}
     ${XKBCOMMON_LIBRARIES}
@@ -72,6 +74,6 @@ target_link_libraries(serenity-window-server PRIVATE
     ${LAGOM_threading}
     ${LAGOM_main})
 
-set_target_properties(serenity-window-server PROPERTIES
+set_target_properties(WindowServer PROPERTIES
     BUILD_RPATH "${SERENITY_BUILD_DIR}/lib"
     INSTALL_RPATH "${SERENITY_BUILD_DIR}/lib")

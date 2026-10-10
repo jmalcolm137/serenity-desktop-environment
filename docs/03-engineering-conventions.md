@@ -68,7 +68,7 @@ to be upstreamable.
 
 ## D5 — wlroots is a C dependency behind a C++ platform layer
 
-`serenity-window-server` uses **wlroots** for the display/input plumbing. wlroots is a C library,
+`WindowServer` uses **wlroots** for the display/input plumbing. wlroots is a C library,
 so:
 
 - wrap wlroots includes in `extern "C" { … }` (its headers lack the guards);

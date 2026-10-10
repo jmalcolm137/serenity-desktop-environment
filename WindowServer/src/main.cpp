@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: BSD-2-Clause
  *
- * serenity-window-server: the Serenity Desktop Environment's Wayland compositor.
+ * WindowServer: the Serenity Desktop Environment's Wayland compositor.
  *
  * Phase 0 skeleton. It uses wlroots for the display/input plumbing and
  * SerenityOS userland (AK, LibCore, ...) for everything we write, following
@@ -19,9 +19,13 @@
 #include <AK/Vector.h>
 
 #include <LibCore/ArgsParser.h>
+#include <LibCore/EventLoop.h>
 #include <LibCore/File.h>
+#include <LibCore/LocalServer.h>
+#include <LibCore/Notifier.h>
 #include <LibCore/ResourceImplementation.h>
 #include <LibCore/ResourceImplementationFile.h>
+#include <LibCore/Socket.h>
 #include <LibGfx/Bitmap.h>
 #include <LibGfx/Font/FontDatabase.h>
 #include <LibGfx/ImageFormats/PNGWriter.h>
@@ -31,13 +35,20 @@
 #include <LibGfx/StylePainter.h>
 #include <LibGfx/SystemTheme.h>
 #include <LibGfx/WindowTheme.h>
+#include <LibIPC/Connection.h>
 #include <LibMain/Main.h>
+#include <WindowServer/WindowManagerClientEndpoint.h>
+#include <WindowServer/WindowManagerServerEndpoint.h>
+#include <WindowServer/WindowType.h>
+
+#include "WindowManagerServerDefaultStub.h"
 
 #include <ctime>
 #include <drm_fourcc.h>
 #include <linux/input-event-codes.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 // wlroots is a C library and does not wrap its headers in extern "C", so we do.
@@ -91,6 +102,12 @@ static bool handle_frame_press(Server&, uint32_t button);
 static void arrange_layers(Server&, wlr_output*);
 static Output* output_for(Server&, wlr_output*);
 static void output_manager_send_configuration(Server&);
+static void arrange_applets(Server&);
+static void wm_emit_state(Toplevel&);
+static void wm_emit_removed(Toplevel&);
+static void wm_emit_applet_area(Server&);
+static Toplevel* find_toplevel_by_wm_id(i32);
+static i32 g_next_wm_id { 1 };
 static Gfx::Palette* g_palette { nullptr };
 
 struct FrameIcons {
@@ -178,6 +195,7 @@ struct Server {
     wlr_xcursor_manager* cursor_manager { nullptr };
     wlr_seat* seat { nullptr };
     wlr_output* primary_output { nullptr };
+    Gfx::IntPoint applet_area_position;
 
     wl_listener new_output { };
     wl_listener new_xdg_toplevel { };
@@ -239,6 +257,9 @@ struct Toplevel {
     bool maximized { false };
     bool minimized { false };
     bool is_panel { false };
+    bool is_applet { false };
+    int applet_width { 0 };
+    i32 wm_id { 0 };
     wlr_foreign_toplevel_handle_v1* foreign_handle { nullptr };
     wl_listener map { };
     wl_listener unmap { };
@@ -693,7 +714,7 @@ static void server_new_output(wl_listener* listener, void* data)
     if (!server->primary_output)
         server->primary_output = wlr_output;
 
-    dbgln("serenity-window-server: output '{}' {}x{}", wlr_output->name ? wlr_output->name : "?", wlr_output->width, wlr_output->height);
+    dbgln("WindowServer: output '{}' {}x{}", wlr_output->name ? wlr_output->name : "?", wlr_output->width, wlr_output->height);
     server->outputs.append(move(output));
     arrange_layers(*server, wlr_output);
     output_manager_send_configuration(*server);
@@ -742,9 +763,26 @@ static void toplevel_update_frame(Toplevel& toplevel)
             }
             wlr_scene_node_set_position(&toplevel.content_tree->node, 0, 0);
             wlr_scene_node_set_position(&toplevel.scene_tree->node, box.x, box.y + box.height - content_height);
-            output->panel_reserve_bottom = content_height;
-            arrange_layers(*toplevel.server, output->output);
+            if (output->panel_reserve_bottom != content_height) {
+                output->panel_reserve_bottom = content_height;
+                arrange_layers(*toplevel.server, output->output);
+            }
         }
+        return;
+    }
+
+    bool const is_applet = xdg_toplevel->app_id && strcmp(xdg_toplevel->app_id, "serenity-applet") == 0;
+    toplevel.is_applet = is_applet;
+    if (is_applet) {
+        // Applets are composited into the shell's applet area; the WindowServer
+        // lays them out and reports the total size to the shell.
+        toplevel.applet_width = content_width;
+        if (toplevel.frame_buffer) {
+            wlr_scene_node_destroy(&toplevel.frame_buffer->node);
+            toplevel.frame_buffer = nullptr;
+        }
+        wlr_scene_node_set_position(&toplevel.content_tree->node, 0, 0);
+        arrange_applets(*toplevel.server);
         return;
     }
 
@@ -793,11 +831,11 @@ static void toplevel_update_frame(Toplevel& toplevel)
 
     wlr_scene_node_set_position(&toplevel.content_tree->node, toplevel.frame_left, toplevel.frame_top);
 
-    if (auto const* dump_path = getenv("SERENITY_WINDOW_SERVER_DUMP_FRAME"); dump_path && *dump_path) {
+    if (auto const* dump_path = getenv("WINDOWSERVER_DUMP_FRAME"); dump_path && *dump_path) {
         if (auto encoded = Gfx::PNGWriter::encode(*bitmap); !encoded.is_error()) {
             if (auto file = Core::File::open(StringView { dump_path, strlen(dump_path) }, Core::File::OpenMode::Write); !file.is_error()) {
                 if (auto write_result = file.value()->write_until_depleted(encoded.value()); write_result.is_error())
-                    warnln("serenity-window-server: could not write the frame dump: {}", write_result.error());
+                    warnln("WindowServer: could not write the frame dump: {}", write_result.error());
             }
         }
     }
@@ -818,7 +856,7 @@ static void toplevel_map(wl_listener* listener, void*)
     Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, map);
     toplevel_update_foreign(*toplevel);
-    dbgln("serenity-window-server: toplevel mapped title='{}' app_id='{}'",
+    dbgln("WindowServer: toplevel mapped title='{}' app_id='{}'",
         toplevel->xdg_toplevel->title ? toplevel->xdg_toplevel->title : "",
         toplevel->xdg_toplevel->app_id ? toplevel->xdg_toplevel->app_id : "");
     toplevel->frame_active = true;
@@ -826,6 +864,7 @@ static void toplevel_map(wl_listener* listener, void*)
     if (toplevel->foreign_handle && toplevel->server->primary_output)
         wlr_foreign_toplevel_handle_v1_output_enter(toplevel->foreign_handle, toplevel->server->primary_output);
     focus_toplevel(*toplevel->server, toplevel);
+    wm_emit_state(*toplevel);
 }
 
 static void toplevel_unmap(wl_listener* listener, void*)
@@ -841,6 +880,8 @@ static void toplevel_unmap(wl_listener* listener, void*)
             arrange_layers(*toplevel->server, output->output);
         }
     }
+    if (toplevel->is_applet)
+        arrange_applets(*toplevel->server);
 }
 
 static void toplevel_commit(wl_listener* listener, void*)
@@ -851,6 +892,7 @@ static void toplevel_commit(wl_listener* listener, void*)
         wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
     toplevel_update_foreign(*toplevel);
     toplevel_update_frame(*toplevel);
+    wm_emit_state(*toplevel);
 }
 
 static void toplevel_destroy(wl_listener* listener, void*)
@@ -878,6 +920,9 @@ static void toplevel_destroy(wl_listener* listener, void*)
             arrange_layers(*toplevel->server, output->output);
         }
     }
+    if (toplevel->is_applet)
+        arrange_applets(*toplevel->server);
+    wm_emit_removed(*toplevel);
     remove_owned(server.toplevels, toplevel);
 }
 
@@ -1040,6 +1085,7 @@ static void toplevel_foreign_request_activate(wl_listener* listener, void*)
     Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, foreign_request_activate);
     focus_toplevel(*toplevel->server, toplevel);
+    wm_emit_state(*toplevel);
 }
 
 static void toplevel_foreign_request_close(wl_listener* listener, void*)
@@ -1094,6 +1140,7 @@ static void server_new_xdg_toplevel(wl_listener* listener, void* data)
     wl_signal_add(&xdg_toplevel->events.set_app_id, &toplevel->set_app_id);
 
     server->toplevels.append(move(toplevel));
+    server->toplevels.last()->wm_id = g_next_wm_id++;
 }
 
 static void popup_commit(wl_listener* listener, void*)
@@ -1181,9 +1228,13 @@ static void arrange_layers(Server& server, wlr_output* output)
         }
     }
 
-    if (output_state) {
+    if (output_state
+        && (output_state->usable_area.width != usable_area.width
+            || output_state->usable_area.height != usable_area.height
+            || output_state->usable_area.x != usable_area.x
+            || output_state->usable_area.y != usable_area.y)) {
         output_state->usable_area = usable_area;
-        dbgln("serenity-window-server: usable area for '{}': {}x{} at {},{}", output->name ? output->name : "?",
+        dbgln("WindowServer: usable area for '{}': {}x{} at {},{}", output->name ? output->name : "?",
             usable_area.width, usable_area.height, usable_area.x, usable_area.y);
     }
 }
@@ -1242,7 +1293,7 @@ static void server_new_layer_surface(wl_listener* listener, void* data)
     layer->server = server;
     layer->layer_surface = layer_surface;
     layer->output = layer_surface->output;
-    dbgln("serenity-window-server: layer surface namespace='{}'", layer_surface->layer_namespace ? layer_surface->layer_namespace : "");
+    dbgln("WindowServer: layer surface namespace='{}'", layer_surface->layer_namespace ? layer_surface->layer_namespace : "");
     layer->scene = wlr_scene_layer_surface_v1_create(&server->scene->tree, layer_surface);
     layer->scene->tree->node.data = layer.ptr();
     layer_surface->data = layer.ptr();
@@ -1363,6 +1414,179 @@ static void output_manager_test(wl_listener* listener, void* data)
     output_manager_apply_or_test(*server, static_cast<wlr_output_configuration_v1*>(data), true);
 }
 
+// --- WindowManagerServer (the shell's Taskbar protocol) --------------------
+//
+// In SerenityOS the WindowServer itself serves WindowManagerServer; so do we.
+// The compositor is the source of truth for window state, so it answers the
+// Taskbar's protocol directly (no bridging shim, no custom protocol).
+
+static Server* g_server { nullptr };
+
+static void arrange_applets(Server& server)
+{
+    constexpr int applet_spacing = 4;
+    constexpr int applet_area_height = 19;
+
+    int total_width = 0;
+    int count = 0;
+    for (auto& toplevel : server.toplevels) {
+        if (!toplevel->is_applet || toplevel->minimized)
+            continue;
+        total_width += toplevel->applet_width + applet_spacing;
+        ++count;
+    }
+    if (count > 0)
+        total_width -= applet_spacing;
+    if (total_width < 0)
+        total_width = 0;
+
+    int x = server.applet_area_position.x();
+    for (auto& toplevel : server.toplevels) {
+        if (!toplevel->is_applet || toplevel->minimized)
+            continue;
+        wlr_scene_node_set_position(&toplevel->scene_tree->node, x, server.applet_area_position.y());
+        x += toplevel->applet_width + applet_spacing;
+    }
+
+    wm_emit_applet_area(server);
+}
+
+// The compositor's end of the Serenity WindowManagerServer protocol.
+class WindowManagerServerConnection final
+    : public IPC::Connection<WindowManagerServerEndpoint, WindowManagerClientEndpoint>
+    , public ::SDE::WindowManagerServerDefaultStub
+    , public WindowManagerClientEndpoint::Proxy<WindowManagerServerEndpoint> {
+public:
+    static NonnullRefPtr<WindowManagerServerConnection> create(NonnullOwnPtr<Core::LocalSocket> socket)
+    {
+        return adopt_ref(*new WindowManagerServerConnection(move(socket)));
+    }
+
+    i32 manager_window_id() const { return m_manager_window_id; }
+
+    virtual void set_event_mask(u32 event_mask) override { m_event_mask = event_mask; }
+
+    virtual void set_manager_window(i32 window_id) override
+    {
+        m_manager_window_id = window_id;
+        if (!g_server)
+            return;
+        for (auto& toplevel : g_server->toplevels)
+            wm_emit_state(*toplevel);
+        wm_emit_applet_area(*g_server);
+    }
+
+    virtual void set_active_window(i32, i32 window_id) override
+    {
+        if (!g_server)
+            return;
+        if (auto* toplevel = find_toplevel_by_wm_id(window_id)) {
+            if (toplevel->minimized) {
+                toplevel->minimized = false;
+                wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
+            }
+            focus_toplevel(*g_server, toplevel);
+            wm_emit_state(*toplevel);
+        }
+    }
+
+    virtual void set_window_minimized(i32, i32 window_id, bool minimized) override
+    {
+        if (!g_server)
+            return;
+        if (auto* toplevel = find_toplevel_by_wm_id(window_id)) {
+            toplevel->minimized = minimized;
+            wlr_scene_node_set_enabled(&toplevel->scene_tree->node, !minimized);
+            wm_emit_state(*toplevel);
+        }
+    }
+
+    virtual void toggle_show_desktop() override { }
+    virtual void start_window_resize(i32, i32, i32) override { }
+    virtual void popup_window_menu(i32, i32, Gfx::IntPoint) override { }
+    virtual void set_window_taskbar_rect(i32, i32, Gfx::IntRect const&) override { }
+
+    virtual void set_applet_area_position(Gfx::IntPoint position) override
+    {
+        if (!g_server)
+            return;
+        g_server->applet_area_position = position;
+        arrange_applets(*g_server);
+    }
+
+    virtual void set_workspace(u32, u32) override { }
+    virtual void set_keymap(ByteString const&) override { }
+
+private:
+    explicit WindowManagerServerConnection(NonnullOwnPtr<Core::LocalSocket> socket)
+        : IPC::Connection<WindowManagerServerEndpoint, WindowManagerClientEndpoint>(*this, move(socket))
+        , WindowManagerClientEndpoint::Proxy<WindowManagerServerEndpoint>(*this, { })
+    {
+    }
+
+    i32 m_manager_window_id { -1 };
+    u32 m_event_mask { 0 };
+};
+
+static Vector<NonnullRefPtr<WindowManagerServerConnection>> g_wm_connections;
+
+static Toplevel* find_toplevel_by_wm_id(i32 wm_id)
+{
+    if (!g_server)
+        return nullptr;
+    for (auto& toplevel : g_server->toplevels) {
+        if (toplevel->wm_id == wm_id)
+            return toplevel.ptr();
+    }
+    return nullptr;
+}
+
+static void wm_emit_state(Toplevel& toplevel)
+{
+    bool is_chrome = toplevel.is_panel || toplevel.is_applet;
+    StringView title;
+    if (toplevel.xdg_toplevel->title)
+        title = StringView { toplevel.xdg_toplevel->title, strlen(toplevel.xdg_toplevel->title) };
+    for (auto& connection : g_wm_connections) {
+        if (connection->manager_window_id() < 0)
+            continue;
+        connection->async_window_state_changed(connection->manager_window_id(), 0, toplevel.wm_id, 0, 0,
+            toplevel.frame_active && !toplevel.minimized, false, toplevel.minimized, is_chrome,
+            static_cast<i32>(WindowServer::WindowType::Normal), ByteString { title },
+            Gfx::IntRect { 0, 0, 0, 0 }, Optional<i32> { });
+    }
+}
+
+static void wm_emit_removed(Toplevel& toplevel)
+{
+    for (auto& connection : g_wm_connections) {
+        if (connection->manager_window_id() >= 0)
+            connection->async_window_removed(connection->manager_window_id(), 0, toplevel.wm_id);
+    }
+}
+
+static void wm_emit_applet_area(Server& server)
+{
+    constexpr int applet_spacing = 4;
+    constexpr int applet_area_height = 19;
+    int total_width = 0;
+    int count = 0;
+    for (auto& toplevel : server.toplevels) {
+        if (!toplevel->is_applet || toplevel->minimized)
+            continue;
+        total_width += toplevel->applet_width + applet_spacing;
+        ++count;
+    }
+    if (count > 0)
+        total_width -= applet_spacing;
+    if (total_width < 0)
+        total_width = 0;
+    for (auto& connection : g_wm_connections) {
+        if (connection->manager_window_id() >= 0)
+            connection->async_applet_area_size_changed(connection->manager_window_id(), Gfx::IntSize { total_width, applet_area_height });
+    }
+}
+
 // --- setup ----------------------------------------------------------------
 
 static ErrorOr<void> initialize(Server& server)
@@ -1453,7 +1677,7 @@ static ByteString add_socket(Server& server, ByteString const& requested)
     if (!requested.is_empty()) {
         if (wl_display_add_socket(server.display, requested.characters()) == 0)
             return requested;
-        warnln("serenity-window-server: could not add socket '{}'", requested);
+        warnln("WindowServer: could not add socket '{}'", requested);
     }
     auto const* socket = wl_display_add_socket_auto(server.display);
     return socket ? ByteString(socket) : ByteString { };
@@ -1492,7 +1716,7 @@ static ErrorOr<void> initialize_gfx()
     g_frame_icons.maximize = load_icon(resource_root, "window-maximize"sv, "upward-triangle"sv);
     g_frame_icons.restore = load_icon(resource_root, "window-restore"sv, "upward-triangle"sv);
 
-    dbgln("serenity-window-server: loaded the Serenity theme from {}", resource_root);
+    dbgln("WindowServer: loaded the Serenity theme from {}", resource_root);
     return { };
 }
 
@@ -1513,28 +1737,51 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
 
     auto server = make<Server>();
     if (auto result = initialize(*server); result.is_error()) {
-        warnln("serenity-window-server: {}", result.error());
+        warnln("WindowServer: {}", result.error());
         return 1;
     }
 
     auto socket = add_socket(*server, socket_name.to_byte_string());
     if (socket.is_empty()) {
-        warnln("serenity-window-server: failed to create a Wayland socket");
+        warnln("WindowServer: failed to create a Wayland socket");
         return 1;
     }
 
     if (!wlr_backend_start(server->backend)) {
-        warnln("serenity-window-server: failed to start the backend");
+        warnln("WindowServer: failed to start the backend");
         wl_display_destroy(server->display);
         return 1;
     }
 
     setenv("WAYLAND_DISPLAY", socket.characters(), true);
-    dbgln("serenity-window-server: running on WAYLAND_DISPLAY={}", socket);
+    dbgln("WindowServer: running on WAYLAND_DISPLAY={}", socket);
     spawn_startup_command(startup_command);
 
-    wl_display_run(server->display);
+    g_server = server.ptr();
+
+    // The WindowServer serves the WindowManagerServer protocol (the shell's
+    // Taskbar protocol), just like SerenityOS's WindowServer does.
+    ::mkdir("/tmp/portal", 0755);
+    ::unlink("/tmp/portal/wm");
+    auto wm_server = Core::LocalServer::construct();
+    if (!wm_server->listen("/tmp/portal/wm"sv))
+        warnln("WindowServer: could not listen on /tmp/portal/wm");
+    wm_server->on_accept = [](NonnullOwnPtr<Core::LocalSocket> socket) {
+        g_wm_connections.append(WindowManagerServerConnection::create(move(socket)));
+    };
+
+    // One event loop for both Wayland events (via a notifier) and the in-process
+    // WindowManagerServer IPC connections.
+    Core::EventLoop loop;
+    auto* wayland_loop = wl_display_get_event_loop(server->display);
+    auto display_notifier = Core::Notifier::construct(wl_event_loop_get_fd(wayland_loop), Core::Notifier::Type::Read);
+    display_notifier->on_activation = [&] {
+        wl_event_loop_dispatch(wayland_loop, 0);
+        wl_display_flush_clients(server->display);
+    };
+
+    int result = loop.exec();
     wl_display_destroy_clients(server->display);
     wl_display_destroy(server->display);
-    return 0;
+    return result;
 }

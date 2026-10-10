@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Verify serenity-window-server's layer-shell exclusive zones: a 30px TOP panel
+# Verify WindowServer's layer-shell exclusive zones: a 30px TOP panel
 # anchored to the bottom must shrink the output's usable area from 720 to 690.
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
 WLROOTS_SRC="${WLROOTS_SRC:-$SDE_ROOT/third_party/wlroots}"
-COMP="$SDE_ROOT/build/window-server/serenity-window-server"
+COMP="$SDE_ROOT/build/WindowServer/WindowServer"
 TOOLS_BUILD="$SDE_ROOT/build/layer-test"
 XML="$WLROOTS_SRC/protocol/wlr-layer-shell-unstable-v1.xml"
 
