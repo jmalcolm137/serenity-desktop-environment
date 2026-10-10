@@ -79,6 +79,9 @@ extern "C" {
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
 #include <xkbcommon/xkbcommon.h>
+
+// Generated from WindowServer/protocol/serenity-window.xml.
+#include "serenity-window-server-protocol.h"
 }
 
 namespace {
@@ -192,6 +195,7 @@ enum class WindowMenuAction {
     MaximizeOrRestore,
     Move,
     ToggleWindowRollUp,
+    ToggleMenubarVisibility,
     ToggleAlwaysOnTop,
     Close,
 };
@@ -313,6 +317,8 @@ struct Toplevel {
     int hovered_button { -1 };
     int pressed_button { -1 };
     Gfx::IntRect titlebar_icon_rect;
+    wl_resource* chrome { nullptr };
+    bool menubar_visible { true };
     i32 wm_id { 0 };
     wlr_foreign_toplevel_handle_v1* foreign_handle { nullptr };
     wl_listener map { };
@@ -1315,6 +1321,7 @@ static void open_window_menu(Server& server, Toplevel& toplevel, Gfx::IntPoint p
     add_item(ByteString { "&Move" }, WindowMenuAction::Move, !toplevel.minimized && !toplevel.maximized, g_frame_icons.move);
     add_separator();
     add_item(ByteString { "&Roll Up" }, WindowMenuAction::ToggleWindowRollUp, true, nullptr, false, true, toplevel.rolled_up);
+    add_item(ByteString { "Menu &Bar" }, WindowMenuAction::ToggleMenubarVisibility, true, nullptr, false, true, toplevel.menubar_visible);
     add_separator();
     add_item(ByteString { "Always on &Top" }, WindowMenuAction::ToggleAlwaysOnTop, true, g_frame_icons.pin, false, true, toplevel.always_on_top);
     add_separator();
@@ -1368,6 +1375,11 @@ static void activate_window_menu_item(Server& server, int index)
     case WindowMenuAction::ToggleWindowRollUp:
         toplevel->rolled_up = !toplevel->rolled_up;
         toplevel_update_frame(*toplevel);
+        break;
+    case WindowMenuAction::ToggleMenubarVisibility:
+        toplevel->menubar_visible = !toplevel->menubar_visible;
+        if (toplevel->chrome)
+            serenity_toplevel_send_menubar_visibility(toplevel->chrome, toplevel->menubar_visible ? 1 : 0);
         break;
     case WindowMenuAction::ToggleAlwaysOnTop:
         toplevel->always_on_top = !toplevel->always_on_top;
@@ -2036,6 +2048,68 @@ static void wm_emit_removed(Toplevel& toplevel)
     }
 }
 
+// --- serenity-window (compositor -> LibWindowServer chrome control) --------
+
+static void serenity_toplevel_resource_destroy(wl_resource* resource)
+{
+    auto* toplevel = static_cast<Toplevel*>(wl_resource_get_user_data(resource));
+    if (toplevel && toplevel->chrome == resource)
+        toplevel->chrome = nullptr;
+}
+
+static void serenity_toplevel_request_destroy(wl_client*, wl_resource* resource)
+{
+    wl_resource_destroy(resource);
+}
+
+static struct serenity_toplevel_interface const s_serenity_toplevel_implementation = {
+    .destroy = serenity_toplevel_request_destroy,
+};
+
+static void serenity_window_manager_get_toplevel(wl_client* client, wl_resource* resource, uint32_t id, wl_resource* surface_resource)
+{
+    auto& server = *static_cast<Server*>(wl_resource_get_user_data(resource));
+    auto* wlr_surface = wlr_surface_from_resource(surface_resource);
+
+    Toplevel* toplevel = nullptr;
+    for (auto& candidate : server.toplevels) {
+        if (candidate->xdg_toplevel && candidate->xdg_toplevel->base->surface == wlr_surface) {
+            toplevel = candidate.ptr();
+            break;
+        }
+    }
+    if (!toplevel) {
+        wl_resource_post_error(resource, WL_DISPLAY_ERROR_INVALID_OBJECT, "unknown wl_surface");
+        return;
+    }
+
+    auto* chrome = wl_resource_create(client, &serenity_toplevel_interface, 1, id);
+    if (!chrome) {
+        wl_client_post_no_memory(client);
+        return;
+    }
+    wl_resource_set_implementation(chrome, &s_serenity_toplevel_implementation, toplevel, serenity_toplevel_resource_destroy);
+    toplevel->chrome = chrome;
+
+    // Bring the client up to date with the current menubar visibility.
+    if (!toplevel->menubar_visible)
+        serenity_toplevel_send_menubar_visibility(chrome, 0);
+}
+
+static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t version, uint32_t id)
+{
+    auto& server = *static_cast<Server*>(data);
+    auto* resource = wl_resource_create(client, &serenity_window_manager_interface, min(version, 1u), id);
+    if (!resource) {
+        wl_client_post_no_memory(client);
+        return;
+    }
+    static struct serenity_window_manager_interface const implementation = {
+        .get_toplevel = serenity_window_manager_get_toplevel,
+    };
+    wl_resource_set_implementation(resource, &implementation, &server, nullptr);
+}
+
 // --- setup ----------------------------------------------------------------
 
 static ErrorOr<void> initialize(Server& server)
@@ -2085,6 +2159,7 @@ static ErrorOr<void> initialize(Server& server)
     }
 
     server.foreign_toplevel_manager = wlr_foreign_toplevel_manager_v1_create(server.display);
+    wl_global_create(server.display, &serenity_window_manager_interface, 1, &server, serenity_window_manager_bind);
 
     server.output_manager = wlr_output_manager_v1_create(server.display);
     server.output_manager_apply.notify = output_manager_apply;

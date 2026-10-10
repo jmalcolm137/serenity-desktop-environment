@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(WindowServer CXX)
+project(WindowServer C CXX)
 
 # The Serenity Desktop Environment's Wayland compositor.
 #
@@ -26,7 +26,24 @@ foreach(_lib ak coreminimal corebasic core gfx unicode ipc compress crypto riff 
     find_library(LAGOM_${_lib} NAMES lagom-${_lib} PATHS "${SERENITY_BUILD_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
 endforeach()
 
-add_executable(WindowServer src/main.cpp)
+# serenity-window: compositor -> LibWindowServer chrome control (see the XML).
+find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
+set(SERENITY_WINDOW_PROTOCOL_DIR "${CMAKE_CURRENT_BINARY_DIR}/protocol")
+file(MAKE_DIRECTORY "${SERENITY_WINDOW_PROTOCOL_DIR}")
+set(SERENITY_WINDOW_XML "${CMAKE_CURRENT_SOURCE_DIR}/protocol/serenity-window.xml")
+add_custom_command(
+    OUTPUT
+        "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-window-server-protocol.h"
+        "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-window-protocol.c"
+    COMMAND "${WAYLAND_SCANNER}" server-header "${SERENITY_WINDOW_XML}" "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-window-server-protocol.h"
+    COMMAND "${WAYLAND_SCANNER}" private-code "${SERENITY_WINDOW_XML}" "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-window-protocol.c"
+    DEPENDS "${SERENITY_WINDOW_XML}"
+    VERBATIM
+)
+
+add_executable(WindowServer
+    src/main.cpp
+    "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-window-protocol.c")
 
 target_include_directories(WindowServer PRIVATE
     ${WLROOTS_INCLUDE_DIRS}
@@ -36,6 +53,7 @@ target_include_directories(WindowServer PRIVATE
     "${SERENITY_SRC}"
     "${SERENITY_SRC}/Userland/Libraries"
     "${SERENITY_SRC}/Userland/Services"
+    "${SERENITY_WINDOW_PROTOCOL_DIR}"
     "${SERENITY_BUILD_DIR}"
     "${SERENITY_BUILD_DIR}/Userland/Services")
 
