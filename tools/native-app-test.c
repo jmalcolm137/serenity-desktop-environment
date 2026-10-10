@@ -103,6 +103,30 @@ static void toplevel_close(void* data, struct xdg_toplevel* tl)
 
 static struct xdg_toplevel_listener const toplevel_listener = { toplevel_configure, toplevel_close };
 
+// Bind a seat + keyboard so the compositor can focus this window (the tile
+// keybindings act on the focused window).
+static struct wl_seat* seat;
+static struct wl_keyboard* keyboard;
+
+static void keyboard_keymap(void* d, struct wl_keyboard* k, uint32_t format, int32_t fd, uint32_t size) { (void)d; (void)k; (void)format; (void)size; close(fd); }
+static void keyboard_enter(void* d, struct wl_keyboard* k, uint32_t serial, struct wl_surface* s, struct wl_array* keys) { (void)d; (void)k; (void)serial; (void)s; (void)keys; }
+static void keyboard_leave(void* d, struct wl_keyboard* k, uint32_t serial, struct wl_surface* s) { (void)d; (void)k; (void)serial; (void)s; }
+static void keyboard_key(void* d, struct wl_keyboard* k, uint32_t serial, uint32_t time, uint32_t key, uint32_t state) { (void)d; (void)k; (void)serial; (void)time; (void)key; (void)state; }
+static void keyboard_modifiers(void* d, struct wl_keyboard* k, uint32_t serial, uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group) { (void)d; (void)k; (void)serial; (void)depressed; (void)latched; (void)locked; (void)group; }
+static void keyboard_repeat_info(void* d, struct wl_keyboard* k, int32_t rate, int32_t delay) { (void)d; (void)k; (void)rate; (void)delay; }
+static struct wl_keyboard_listener const keyboard_listener = { keyboard_keymap, keyboard_enter, keyboard_leave, keyboard_key, keyboard_modifiers, keyboard_repeat_info };
+
+static void seat_capabilities(void* d, struct wl_seat* s, uint32_t capabilities)
+{
+    (void)d;
+    if ((capabilities & WL_SEAT_CAPABILITY_KEYBOARD) && !keyboard) {
+        keyboard = wl_seat_get_keyboard(s);
+        wl_keyboard_add_listener(keyboard, &keyboard_listener, NULL);
+    }
+}
+static void seat_name(void* d, struct wl_seat* s, char const* name) { (void)d; (void)s; (void)name; }
+static struct wl_seat_listener const seat_listener = { seat_capabilities, seat_name };
+
 static void registry_global(void* data, struct wl_registry* registry, uint32_t name, char const* interface, uint32_t version)
 {
     (void)data;
@@ -113,6 +137,10 @@ static void registry_global(void* data, struct wl_registry* registry, uint32_t n
         shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
     else if (strcmp(interface, xdg_wm_base_interface.name) == 0)
         wm_base = wl_registry_bind(registry, name, &xdg_wm_base_interface, 1);
+    else if (strcmp(interface, wl_seat_interface.name) == 0) {
+        seat = wl_registry_bind(registry, name, &wl_seat_interface, 1);
+        wl_seat_add_listener(seat, &seat_listener, NULL);
+    }
 }
 
 static void registry_remove(void* data, struct wl_registry* registry, uint32_t name)

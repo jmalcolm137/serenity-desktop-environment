@@ -28,6 +28,7 @@ extern "C" {
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/util/edges.h>
 }
 
 namespace WindowManager {
@@ -160,6 +161,170 @@ Toplevel* find_toplevel_by_wm_id(Server& server, i32 wm_id)
     return nullptr;
 }
 
+// --- snapping (WS2) ---------------------------------------------------------
+
+static Toplevel* focused_toplevel(Server& server)
+{
+    auto* surface = server.seat->keyboard_state.focused_surface;
+    if (!surface)
+        return nullptr;
+    auto* xdg_toplevel = wlr_xdg_toplevel_try_from_wlr_surface(surface);
+    if (!xdg_toplevel)
+        return nullptr;
+    auto* content_tree = static_cast<wlr_scene_tree*>(xdg_toplevel->base->data);
+    if (!content_tree)
+        return nullptr;
+    auto* frame_tree = content_tree->node.parent;
+    if (!frame_tree)
+        return nullptr;
+    return static_cast<Toplevel*>(frame_tree->node.data);
+}
+
+static Gfx::IntRect usable_area(Server& server)
+{
+    if (g_hooks.primary_usable_area)
+        return g_hooks.primary_usable_area(server);
+    return {};
+}
+
+static void apply_tile_geometry(Toplevel& toplevel, Gfx::IntRect const& rect, uint32_t xdg_edges)
+{
+    wlr_xdg_toplevel_set_tiled(toplevel.xdg_toplevel, xdg_edges);
+    wlr_xdg_toplevel_set_maximized(toplevel.xdg_toplevel, toplevel.tile_type == WindowTileType::Maximized);
+    wlr_scene_node_set_position(&toplevel.scene_tree->node, rect.x(), rect.y());
+    if (g_hooks.report_position)
+        g_hooks.report_position(toplevel);
+    wlr_xdg_toplevel_set_size(toplevel.xdg_toplevel,
+        max(1, rect.width() - toplevel.frame_left - toplevel.frame_right),
+        max(1, rect.height() - toplevel.frame_top - toplevel.frame_bottom));
+}
+
+static void set_untiled(Toplevel& toplevel)
+{
+    toplevel.tile_type = WindowTileType::None;
+    toplevel.maximized = false;
+    wlr_xdg_toplevel_set_tiled(toplevel.xdg_toplevel, 0);
+    wlr_xdg_toplevel_set_maximized(toplevel.xdg_toplevel, false);
+    wlr_scene_node_set_position(&toplevel.scene_tree->node, toplevel.restore_position.x(), toplevel.restore_position.y());
+    if (g_hooks.report_position)
+        g_hooks.report_position(toplevel);
+    wlr_xdg_toplevel_set_size(toplevel.xdg_toplevel, toplevel.restore_size.width(), toplevel.restore_size.height());
+}
+
+static void set_tiled(Server& server, Toplevel& toplevel, WindowTileType type)
+{
+    // Remember where to restore to on the first tile.
+    if (toplevel.tile_type == WindowTileType::None) {
+        toplevel.restore_size = { toplevel.xdg_toplevel->base->geometry.width, toplevel.xdg_toplevel->base->geometry.height };
+        toplevel.restore_position = { toplevel.scene_tree->node.x, toplevel.scene_tree->node.y };
+    }
+
+    auto area = usable_area(server);
+    if (area.is_empty())
+        return;
+
+    Gfx::IntRect rect = area;
+    uint32_t xdg_edges = 0;
+    switch (type) {
+    case WindowTileType::Left:
+        rect.set_width(area.width() / 2);
+        xdg_edges = WLR_EDGE_LEFT | WLR_EDGE_TOP | WLR_EDGE_BOTTOM;
+        break;
+    case WindowTileType::Right:
+        rect.set_x(area.x() + area.width() / 2);
+        rect.set_width(area.width() - area.width() / 2);
+        xdg_edges = WLR_EDGE_RIGHT | WLR_EDGE_TOP | WLR_EDGE_BOTTOM;
+        break;
+    case WindowTileType::Top:
+        rect.set_height(area.height() / 2);
+        xdg_edges = WLR_EDGE_TOP | WLR_EDGE_LEFT | WLR_EDGE_RIGHT;
+        break;
+    case WindowTileType::Bottom:
+        rect.set_y(area.y() + area.height() / 2);
+        rect.set_height(area.height() - area.height() / 2);
+        xdg_edges = WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT;
+        break;
+    case WindowTileType::HorizontallyMaximized:
+        xdg_edges = WLR_EDGE_TOP | WLR_EDGE_BOTTOM;
+        break;
+    case WindowTileType::VerticallyMaximized:
+        xdg_edges = WLR_EDGE_LEFT | WLR_EDGE_RIGHT;
+        break;
+    case WindowTileType::Maximized:
+        xdg_edges = WLR_EDGE_LEFT | WLR_EDGE_RIGHT | WLR_EDGE_TOP | WLR_EDGE_BOTTOM;
+        break;
+    default:
+        break;
+    }
+
+    toplevel.tile_type = type;
+    toplevel.maximized = type == WindowTileType::Maximized;
+    apply_tile_geometry(toplevel, rect, xdg_edges);
+    emit_window_state(toplevel);
+    dbgln("WindowServer: tiled wm_id={} as {}", toplevel.wm_id, to_underlying(type));
+}
+
+bool handle_tile_key(Server& server, u32 keysym, u32 modifiers)
+{
+    // Plain Super (or Super+Alt); Ctrl/Shift combos belong to other bindings.
+    if ((modifiers & WLR_MODIFIER_LOGO) == 0)
+        return false;
+    if ((modifiers & (WLR_MODIFIER_CTRL | WLR_MODIFIER_SHIFT)) != 0)
+        return false;
+    bool const with_alt = (modifiers & WLR_MODIFIER_ALT) != 0;
+
+    auto* toplevel = focused_toplevel(server);
+    if (!toplevel)
+        return false;
+
+    if (!with_alt && keysym == XKB_KEY_Up) {
+        if (toplevel->maximized)
+            set_untiled(*toplevel);
+        else
+            set_tiled(server, *toplevel, WindowTileType::Maximized);
+        return true;
+    }
+    if (!with_alt && keysym == XKB_KEY_Down) {
+        if (toplevel->maximized) {
+            set_untiled(*toplevel);
+        } else {
+            toplevel->minimized = true;
+            update_toplevel_visibility(*toplevel);
+            emit_window_state(*toplevel);
+        }
+        return true;
+    }
+    if (!with_alt && keysym == XKB_KEY_Left) {
+        if (toplevel->tile_type == WindowTileType::Left)
+            set_untiled(*toplevel);
+        else
+            set_tiled(server, *toplevel, WindowTileType::Left);
+        return true;
+    }
+    if (!with_alt && keysym == XKB_KEY_Right) {
+        if (toplevel->tile_type == WindowTileType::Right)
+            set_untiled(*toplevel);
+        else
+            set_tiled(server, *toplevel, WindowTileType::Right);
+        return true;
+    }
+    if (with_alt && (keysym == XKB_KEY_Left || keysym == XKB_KEY_Right)) {
+        if (toplevel->tile_type == WindowTileType::HorizontallyMaximized)
+            set_untiled(*toplevel);
+        else
+            set_tiled(server, *toplevel, WindowTileType::HorizontallyMaximized);
+        return true;
+    }
+    if (with_alt && (keysym == XKB_KEY_Up || keysym == XKB_KEY_Down)) {
+        if (toplevel->tile_type == WindowTileType::VerticallyMaximized)
+            set_untiled(*toplevel);
+        else
+            set_tiled(server, *toplevel, WindowTileType::VerticallyMaximized);
+        return true;
+    }
+    return false;
+}
+
 // --- workspaces (WS1) -------------------------------------------------------
 
 static u32 s_rows { 2 };
@@ -212,15 +377,7 @@ void switch_workspace(Server& server, u32 row, u32 column, bool carry_focused)
         return;
 
     // Carry the focused window into the target stack (Ctrl+Shift+Alt+arrow).
-    Toplevel* carried = nullptr;
-    if (carry_focused && server.seat->keyboard_state.focused_surface) {
-        if (auto* focused = wlr_xdg_toplevel_try_from_wlr_surface(server.seat->keyboard_state.focused_surface)) {
-            if (auto* content_tree = static_cast<wlr_scene_tree*>(focused->base->data)) {
-                if (auto* frame_tree = content_tree->node.parent)
-                    carried = static_cast<Toplevel*>(frame_tree->node.data);
-            }
-        }
-    }
+    Toplevel* carried = carry_focused ? focused_toplevel(server) : nullptr;
 
     s_current_row = row;
     s_current_column = column;

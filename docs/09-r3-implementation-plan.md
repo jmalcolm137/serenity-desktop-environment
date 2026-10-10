@@ -15,43 +15,51 @@ this document owns sequencing and the critical path.
 
 - R0, R1 and R2 are done; R2's loose ends are closed or explicitly reassigned
   (see `04-known-gaps.md`, "R2 follow-up").
-- R3 is **half-landed**: SSD Serenity window chrome, the window menu, fullscreen,
-  Show Desktop, theme-broker restyle and wallpaper already work. The *behaviours*
-  — switcher, snapping, workspaces, applet area, notifications, tooltips — are not
-  started.
-- R3 is the only milestone that both defines the product "feel" and is already
-  under way, so it is the critical path.
+- The R3 **foundation** (§2) has landed, both **spikes** (§3) are resolved, and
+  **WS1 workspaces** is complete. **WS2 snapping** is in progress (keyboard
+  snapping is in the working tree; drag-to-edge and the overlays remain).
+  WS3–WS6 are not started. R3 remains the critical path.
 
-**Strategy:** finish R3 before taking on R4+ breadth. The service scaffolding
-(`LaunchServer`, `ImageDecoder`, the layering/SystemServer-role work) is now
-sufficient; stop adding services or shell polish until the behaviours land.
+| Step | Status |
+|---|---|
+| Foundation — module split, overlays, config, input harness (§2) | **Done** |
+| Spikes — thumbnail capture, NotificationServer reuse (§3) | **Done** |
+| WS1 — workspaces | **Done** |
+| WS2 — snapping + overlays | **In progress** |
+| WS3 — switcher | Not started |
+| WS4 — applet area | Not started |
+| WS5 — notifications | Not started (plumbing ready; §3) |
+| WS6 — tooltips | Not started |
+| WS7 — font parity | Decision only |
 
-## 2. Foundation before features
+**Strategy (unchanged):** finish R3 before taking on R4+ breadth. The service
+scaffolding (`LaunchServer`, `ImageDecoder`, the layering/SystemServer-role work)
+is sufficient; stop adding services or shell polish until the behaviours land.
 
-Every remaining R3 feature lands in a policy area that SerenityOS keeps as its
-own class (`WindowManager`, `WindowSwitcher`, `Overlays`, `AppletManager`). Build
-that structure first — doing four features inside one 2,800-line `main.cpp` is
-where the schedule goes. This is §3 of [`05-r3-plan.md`](05-r3-plan.md), promoted
-here to the first task.
+## 2. Foundation (landed)
 
-1. **Module split.** Extract `Overlays`, then `WindowManager`,
-   `WindowSwitcher`, `AppletManager`, leaving `main.cpp` as wiring. Keep wlroots
-   behind the C++ platform layer (D5).
-2. **Overlay + snapshot infrastructure.** A persistent LibGfx-drawn chrome node in
-   `overlay_tree`, and a way to snapshot a toplevel's scene subtree into a
-   `wlr_buffer` for thumbnails. Shared by snapping (preview) and the switcher.
-3. **Compositor config — pull forward from R4.** Workspaces grid, snapping
-   behaviour, keybindings and applet order all need a config schema and live
-   reload, and no milestone currently owns one. Extend the existing
-   `$XDG_CONFIG_HOME/sde` state directory (already used for wallpaper/theme)
-   rather than inventing a second mechanism. Retrofitting config after the
-   features exist is far more expensive.
-4. **Scriptable tests.** Extend the headless harness with virtual keyboard/pointer
-   so R3 behaviours are testable from the first feature, not bolted on later.
+Every remaining R3 feature lands in a policy area SerenityOS keeps as its own
+class. That structure is now in place, so features are no longer written into the
+monolith:
 
-**First commit:** extract `Overlays` plus the snapshot helper. It is the smallest
-piece that both de-risks the switcher and forces the module split in a controlled
-way.
+1. **Module split — done.** `Overlays`, `WindowManager` and the shared `Model` are
+   out of `main.cpp`
+   (`WindowServer/src/{Overlays,WindowManager,Config,Model}.{h,cpp}`); `main.cpp`
+   is now wiring plus the policies not yet extracted. `WindowSwitcher` and
+   `AppletManager` still land with WS3/WS4.
+2. **Overlay + snapshot infrastructure — done.** `ChromeNode` renders LibGfx
+   chrome into a scene buffer in `overlay_tree`; `snapshot_toplevel()` reads a
+   toplevel's client buffer into a `Gfx::Bitmap` (spike §3). Shared by snapping
+   and the switcher.
+3. **Compositor config — done.** `Config` reads `WindowServer.ini`
+   (`[Workspaces]`, `[Applet] Order`, …) with the SerenityOS defaults overlaid by
+   the user's file under `$XDG_CONFIG_HOME/sde`, plus live reload.
+4. **Scriptable tests — done.** Virtual keyboard/pointer in the headless harness
+   (`scripts/run-input-test.sh`), asserting the window menu, workspace switching
+   and thumbnail capture.
+
+The `main.cpp` monolith the plan warned about is gone; the remaining split work is
+`WindowSwitcher` (WS3) and `AppletManager` (WS4), extracted with their features.
 
 ## 3. De-risk before committing (time-boxed spikes)
 
@@ -63,8 +71,8 @@ that depend on them, each with a clear exit criterion and a fallback.
 | **Thumbnail capture** | Composite the toplevel scene subtree into a buffer, or use `ext-image-copy-capture`? | A cached per-toplevel thumbnail that renders in the switcher; fallback to icon + stale frame. Decides WS3's implementation. |
 | **NotificationServer reuse** | Does the unmodified SerenityOS `NotificationServer` run as a session client under `WindowType::Notification`, or do we need a shim + banner client? | A banner appears with correct window-type semantics; fallback to the service-shim pattern. |
 
-Both are listed as risks in [`05-r3-plan.md`](05-r3-plan.md) §7; this document
-schedules them as prerequisites rather than late surprises.
+Both are **resolved** (outcomes below) and recorded as closed in §8; they were
+scheduled as prerequisites rather than late surprises.
 
 ### Spike outcomes
 
@@ -107,17 +115,25 @@ schedules them as prerequisites rather than late surprises.
                      tooltips  (cross-repo; independent)
 ```
 
-1. **Workspaces (WS1)** — the keystone. Unblocks the switcher's "all windows"
-   mode and makes the already-running WorkspacePicker applet live. Includes
-   `set_workspace`, `workspace_changed`, the Super-key WMS events and the window
-   stack grid.
-2. **Snapping + overlays (WS2)** — shares the overlay infrastructure.
-3. **Switcher with live thumbnails (WS3)** — depends on 1 and 2.
-4. **Applet area (WS4)** — independent; needs the applet placement-channel
-   decision first.
-5. **Notifications (WS5)** — independent; gated on the §3 spike.
-6. **Tooltips (WS6)** — cross-repo (a host change in `libgui-wayland`);
-   independent, can run in parallel.
+1. **Workspaces (WS1) — done.** The stack grid, `set_workspace`/
+   `workspace_changed`, the real `(row, column)` in `window_state_changed`,
+   Ctrl+Alt+arrow switching, the Super-key WMS events, and the verified
+   WorkspacePicker applet.
+2. **Snapping + overlays (WS2) — in progress.** Keyboard snapping has landed in
+   the working tree (`WindowTileType`, Super+arrow maximize/minimize/tile and
+   Super+Alt horizontal/vertical maximize, propagating `xdg_toplevel`
+   tiled/maximized state). Remaining: drag-to-edge snapping, the
+   `TileWindowOverlay`/`WindowGeometryOverlay` previews, and wiring
+   `start_window_resize`.
+3. **Switcher with live thumbnails (WS3) — not started.** The
+   `snapshot_toplevel()` helper is ready.
+4. **Applet area (WS4) — not started.** `Config::applet_order()` is exposed.
+5. **Notifications (WS5) — not started; plumbing ready.** See the §3 spike
+   outcome: the unmodified server hosts and `WindowType::Notification` maps to an
+   overlay banner; the remaining blocker is the `LibGUI::Notification` client IPC
+   bug.
+6. **Tooltips (WS6) — not started.** Cross-repo (a host change in
+   `libgui-wayland`); independent, can run in parallel.
 
 Work-item detail, SerenityOS references and per-item exit tests live in
 [`05-r3-plan.md`](05-r3-plan.md) §4.
@@ -158,9 +174,9 @@ headless test (§2.4); menus, popups and IME remain manual.
 
 | Risk / decision | Owner step | Note |
 |---|---|---|
-| Thumbnail capture path | §3 spike | Determines WS3; fallback to icon + stale frame |
-| NotificationServer reuse | §3 spike | Fallback: shim + banner client |
-| Applet placement channel | WS4 | Compositor offsets vs a `serenity-window` extension |
-| Tooltips need a host change | WS6 | In `libgui-wayland`; cross-repo coordination |
-| Config location/schema | §2.3 | Extend `$XDG_CONFIG_HOME/sde`; define keys before features need them |
-| `main.cpp` split scope | §2.1 | Time-box; keep behaviour identical while extracting |
+| Thumbnail capture path | §3 spike | **Resolved** — client-buffer readback; DMA-BUF falls back to the app icon |
+| NotificationServer reuse | §3 spike | **Resolved** — reuse; remaining `LibGUI::Notification` IPC bug is WS5 |
+| Config location/schema | §2.3 | **Resolved** — `WindowServer.ini` + live reload under `$XDG_CONFIG_HOME/sde` |
+| `main.cpp` split scope | §2.1 | **Done** — `Overlays`/`WindowManager`/`Model` extracted |
+| Applet placement channel | WS4 | Open — compositor offsets vs a `serenity-window` extension |
+| Tooltips need a host change | WS6 | Open — in `libgui-wayland`; cross-repo coordination |

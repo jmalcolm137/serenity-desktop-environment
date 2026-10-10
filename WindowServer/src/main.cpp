@@ -310,6 +310,8 @@ static void keyboard_key(wl_listener* listener, void* data)
     if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
         for (int i = 0; i < syms_count; ++i)
             handled |= WindowManager::handle_workspace_key(server, syms[i], modifiers);
+        for (int i = 0; i < syms_count; ++i)
+            handled |= WindowManager::handle_tile_key(server, syms[i], modifiers);
     }
     for (int i = 0; i < syms_count; ++i)
         handled |= WindowManager::handle_super_key(server, syms[i], modifiers, event->state == WL_KEYBOARD_KEY_STATE_PRESSED);
@@ -769,6 +771,17 @@ static void server_new_input(wl_listener* listener, void* data)
 
         wlr_seat_set_keyboard(server->seat, keyboard->keyboard);
         server->keyboards.append(move(keyboard));
+
+        // If a window is already mapped but has no keyboard focus (e.g. the first
+        // keyboard just appeared), focus the topmost one so keybindings act on it.
+        if (!server->seat->keyboard_state.focused_surface) {
+            for (auto it = server->toplevels.rbegin(); it != server->toplevels.rend(); ++it) {
+                if (!(*it)->minimized) {
+                    focus_toplevel(*server, it->ptr());
+                    break;
+                }
+            }
+        }
         break;
     }
     case WLR_INPUT_DEVICE_POINTER:
@@ -1915,6 +1928,16 @@ static Output* output_for(Server& server, wlr_output* output)
     return nullptr;
 }
 
+// The primary output's usable area (the window-manager tiling target, WS2).
+static Gfx::IntRect primary_usable_area(Server& server)
+{
+    wlr_box box { };
+    wlr_output_layout_get_box(server.output_layout, server.primary_output, &box);
+    if (auto* output_state = output_for(server, server.primary_output); output_state && !wlr_box_empty(&output_state->usable_area))
+        box = output_state->usable_area;
+    return { box.x, box.y, box.width, box.height };
+}
+
 static void arrange_layers(Server& server, wlr_output* output)
 {
     if (!output)
@@ -2507,7 +2530,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     if (!wm_server->listen(wm_portal))
         warnln("WindowServer: could not listen on {}", wm_portal);
     // Let the window manager call back into the compositor's focus/menu code.
-    WindowManager::set_host_hooks({ focus_toplevel, open_window_menu });
+    WindowManager::set_host_hooks({ focus_toplevel, open_window_menu, primary_usable_area, toplevel_report_position });
     // Bring the workspace grid up from the config, and follow later edits.
     WindowManager::load_workspaces(*server);
     Config::watch([&] { WindowManager::load_workspaces(*server); });

@@ -27,6 +27,9 @@ namespace WindowManager {
 struct HostHooks {
     void (*focus_toplevel)(Server&, Toplevel*) { nullptr };
     void (*open_window_menu)(Server&, Toplevel&, Gfx::IntPoint) { nullptr };
+    // WS2: the primary output's usable area, and telling a client where we put it.
+    Gfx::IntRect (*primary_usable_area)(Server&) { nullptr };
+    void (*report_position)(Toplevel&) { nullptr };
 };
 void set_host_hooks(HostHooks);
 
@@ -68,5 +71,8 @@ bool handle_workspace_key(Server&, u32 keysym, u32 modifiers);
 // Super-key shortcuts the Taskbar expects (WindowManagerClient.ipc):
 // Super, Super+Space, Super+D and Super+digit.
 bool handle_super_key(Server&, u32 keysym, u32 modifiers, bool pressed);
+
+// Snapping (WS2): Super+arrows maximize/minimize/tile the focused window.
+bool handle_tile_key(Server&, u32 keysym, u32 modifiers);
 
 }

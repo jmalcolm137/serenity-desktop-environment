@@ -63,6 +63,22 @@ enum class CursorMode {
     Resize,
 };
 
+// SerenityOS WindowTileType: how a window is snapped to the output.
+enum class WindowTileType {
+    None,
+    Left,
+    Right,
+    Top,
+    Bottom,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+    VerticallyMaximized,
+    HorizontallyMaximized,
+    Maximized,
+};
+
 struct Server;
 struct Output;
 struct Toplevel;
@@ -132,6 +148,7 @@ struct Toplevel {
     bool frame_active { true };
     bool maximized { false };
     bool minimized { false };
+    WindowTileType tile_type { WindowTileType::None };
     bool fullscreen { false };
     // Minimized specifically by "Show Desktop"; restored by toggling it again.
     bool hidden_by_show_desktop { false };

@@ -85,6 +85,14 @@ env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
     > "$RUNTIME/ws.log" 2>&1 || true
 sleep 1
 
+# Super+Left tiles the focused window to the left half (WS2).
+env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
+    --key 125 press --key 105 press \
+    --key 105 release --key 125 release \
+    --sleep 200 \
+    > "$RUNTIME/tile.log" 2>&1 || true
+sleep 1
+
 kill "$COMP_PID" 2>/dev/null || true
 wait "$COMP_PID" 2>/dev/null || true
 
@@ -109,6 +117,8 @@ check "toplevel mapped title='SDE Native Test'"
 check "window menu opened for wm_id="
 # WS1: Ctrl+Alt+Right switched to the next workspace stack.
 check "switched to workspace 0,1"
+# WS2: Super+Left tiled the focused window (WindowTileType::Left == 1).
+check "tiled wm_id=1 as 1"
 # The thumbnail-capture spike (docs/09 §3): the toplevel's pixels were read back
 # into a bitmap of the client's size.
 check "thumbnail for wm_id=1 is 320x200"
