@@ -944,10 +944,18 @@ static void cursor_button(wl_listener* listener, void* data)
     auto* event = static_cast<wlr_pointer_button_event*>(data);
 
     if (server->window_menu.open) {
-        if (event->state == WL_POINTER_BUTTON_STATE_PRESSED)
+        if (event->state == WL_POINTER_BUTTON_STATE_PRESSED) {
             window_menu_handle_press(*server, event->button);
-        else
+        } else {
             window_menu_handle_release(*server, event->button);
+            // The menu swallows the button, so no implicit client grab is active.
+            // Clear it here: the press that opened the menu incremented the count
+            // via the normal path and its release never gets that far, which
+            // otherwise leaves the grab (and its coordinate origin) stuck and
+            // misroutes later pointer events.
+            server->pointer_buttons_down = 0;
+            server->pointer_grab_surface = nullptr;
+        }
         return;
     }
 
