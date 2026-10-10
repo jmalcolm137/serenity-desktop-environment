@@ -19,6 +19,8 @@
 #include <AK/StdLibExtras.h>
 #include <AK/Vector.h>
 
+#include "Overlays.h"
+
 #include <LibCore/ArgsParser.h>
 #include <LibCore/Directory.h>
 #include <LibCore/EventLoop.h>
@@ -249,54 +251,6 @@ static RefPtr<Gfx::Bitmap> load_icon(ByteString const& resource_root, StringView
     return nullptr;
 }
 
-// A wlr_buffer backed by a Gfx::Bitmap, so LibGfx-drawn chrome (window frames,
-// overlays) can be presented through the wlroots scene graph.
-struct BitmapBuffer {
-    wlr_buffer base { };
-    NonnullRefPtr<Gfx::Bitmap> bitmap;
-
-    explicit BitmapBuffer(NonnullRefPtr<Gfx::Bitmap> bitmap_)
-        : bitmap(move(bitmap_))
-    {
-    }
-};
-
-static void bitmap_buffer_destroy(wlr_buffer* buffer)
-{
-    auto* self = reinterpret_cast<BitmapBuffer*>(buffer);
-    wlr_buffer_finish(buffer);
-    delete self;
-}
-
-static bool bitmap_buffer_get_dmabuf(wlr_buffer*, wlr_dmabuf_attributes*) { return false; }
-static bool bitmap_buffer_get_shm(wlr_buffer*, wlr_shm_attributes*) { return false; }
-
-static bool bitmap_buffer_begin_data_ptr_access(wlr_buffer* buffer, uint32_t, void** data, uint32_t* format, size_t* stride)
-{
-    auto* self = reinterpret_cast<BitmapBuffer*>(buffer);
-    *data = self->bitmap->scanline_u8(0);
-    *format = DRM_FORMAT_ARGB8888;
-    *stride = self->bitmap->pitch();
-    return true;
-}
-
-static void bitmap_buffer_end_data_ptr_access(wlr_buffer*) { }
-
-static constexpr struct wlr_buffer_impl BITMAP_BUFFER_IMPL = {
-    .destroy = bitmap_buffer_destroy,
-    .get_dmabuf = bitmap_buffer_get_dmabuf,
-    .get_shm = bitmap_buffer_get_shm,
-    .begin_data_ptr_access = bitmap_buffer_begin_data_ptr_access,
-    .end_data_ptr_access = bitmap_buffer_end_data_ptr_access,
-};
-
-static wlr_buffer* bitmap_buffer_create(NonnullRefPtr<Gfx::Bitmap> bitmap)
-{
-    auto* buffer = new BitmapBuffer(move(bitmap));
-    wlr_buffer_init(&buffer->base, &BITMAP_BUFFER_IMPL, buffer->bitmap->width(), buffer->bitmap->height());
-    return &buffer->base;
-}
-
 // The window menu shown by right-clicking a titlebar (or clicking its icon),
 // mirroring SerenityOS's Window::ensure_window_menu().
 enum class WindowMenuAction {
@@ -331,9 +285,7 @@ struct WindowMenu {
     Gfx::IntRect rect; // Screen coordinates.
     int hovered_index { -1 };
     int pressed_index { -1 };
-    RefPtr<Gfx::Bitmap> bitmap;
-    wlr_scene_tree* tree { nullptr };
-    wlr_scene_buffer* buffer { nullptr };
+    OwnPtr<ChromeNode> node; // The menu's scene node, in overlay_tree.
 };
 
 struct Server {
@@ -1603,66 +1555,58 @@ static void paint_window_menu(Server& server, WindowMenu& menu)
     constexpr int stripe_width = 24;
     auto& font = Gfx::FontDatabase::default_font();
 
-    auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, menu.rect.size()).release_value_but_fixme_should_propagate_errors();
-    Gfx::Painter painter(*bitmap);
+    if (!menu.node)
+        menu.node = make<ChromeNode>(*server.overlay_tree);
+    menu.node->set_rect(menu.rect);
+    menu.node->render([&](Gfx::Painter& painter) {
+        Gfx::IntRect rect { { }, menu.rect.size() };
+        painter.draw_rect(rect, Gfx::Color::Black);
+        painter.fill_rect(rect.shrunken(2, 2), g_palette->menu_base());
+        painter.fill_rect(Gfx::IntRect { frame, frame, stripe_width, menu.rect.height() - frame * 2 }, g_palette->menu_stripe());
 
-    Gfx::IntRect rect { { }, menu.rect.size() };
-    painter.draw_rect(rect, Gfx::Color::Black);
-    painter.fill_rect(rect.shrunken(2, 2), g_palette->menu_base());
-    painter.fill_rect(Gfx::IntRect { frame, frame, stripe_width, menu.rect.height() - frame * 2 }, g_palette->menu_stripe());
+        for (size_t i = 0; i < menu.entries.size(); ++i) {
+            auto& entry = menu.entries[i];
+            if (entry.is_separator) {
+                int y = entry.rect.center().y() - 1;
+                Gfx::IntPoint p1 { stripe_width + frame + 4, y };
+                Gfx::IntPoint p2 { menu.rect.width() - 7, y };
+                painter.draw_line(p1, p2, g_palette->threed_shadow1());
+                painter.draw_line(p1.translated(0, 1), p2.translated(0, 1), g_palette->threed_highlight());
+                continue;
+            }
 
-    for (size_t i = 0; i < menu.entries.size(); ++i) {
-        auto& entry = menu.entries[i];
-        if (entry.is_separator) {
-            int y = entry.rect.center().y() - 1;
-            Gfx::IntPoint p1 { stripe_width + frame + 4, y };
-            Gfx::IntPoint p2 { menu.rect.width() - 7, y };
-            painter.draw_line(p1, p2, g_palette->threed_shadow1());
-            painter.draw_line(p1.translated(0, 1), p2.translated(0, 1), g_palette->threed_highlight());
-            continue;
+            bool hovered = static_cast<int>(i) == menu.hovered_index && entry.enabled;
+            Gfx::Color text_color = g_palette->menu_base_text();
+            if (hovered) {
+                painter.fill_rect(entry.rect, g_palette->menu_selection());
+                painter.draw_rect(entry.rect, g_palette->menu_selection().darkened());
+                text_color = g_palette->menu_selection_text();
+            } else if (!entry.enabled) {
+                text_color = Gfx::Color::MidGray;
+            }
+
+            auto text_rect = entry.rect.translated(stripe_width + 6, 0);
+
+            if (entry.checkable) {
+                // Checkable items show a check mark in the stripe rather than an
+                // icon, matching SerenityOS's window menus.
+                Gfx::IntRect check_rect { entry.rect.x() + 6, 0, 12, 12 };
+                check_rect.center_vertically_within(text_rect);
+                if (entry.checked)
+                    painter.draw_text(check_rect, "\xE2\x9C\x93"sv, Gfx::TextAlignment::Center, text_color);
+            } else if (entry.icon) {
+                Gfx::IntRect icon_rect { entry.rect.x() + 3, 0, entry.icon->width(), entry.icon->height() };
+                icon_rect.center_vertically_within(text_rect);
+                if (entry.enabled)
+                    painter.blit(icon_rect.location(), *entry.icon, entry.icon->rect());
+                else
+                    painter.blit_disabled(icon_rect.location(), *entry.icon, entry.icon->rect(), *g_palette);
+            }
+
+            auto const& use_font = entry.is_default ? font.bold_variant() : font;
+            painter.draw_ui_text(text_rect, entry.text, use_font, Gfx::TextAlignment::CenterLeft, text_color);
         }
-
-        bool hovered = static_cast<int>(i) == menu.hovered_index && entry.enabled;
-        Gfx::Color text_color = g_palette->menu_base_text();
-        if (hovered) {
-            painter.fill_rect(entry.rect, g_palette->menu_selection());
-            painter.draw_rect(entry.rect, g_palette->menu_selection().darkened());
-            text_color = g_palette->menu_selection_text();
-        } else if (!entry.enabled) {
-            text_color = Gfx::Color::MidGray;
-        }
-
-        auto text_rect = entry.rect.translated(stripe_width + 6, 0);
-
-        if (entry.checkable) {
-            // Checkable items show a check mark in the stripe rather than an
-            // icon, matching SerenityOS's window menus.
-            Gfx::IntRect check_rect { entry.rect.x() + 6, 0, 12, 12 };
-            check_rect.center_vertically_within(text_rect);
-            if (entry.checked)
-                painter.draw_text(check_rect, "\xE2\x9C\x93"sv, Gfx::TextAlignment::Center, text_color);
-        } else if (entry.icon) {
-            Gfx::IntRect icon_rect { entry.rect.x() + 3, 0, entry.icon->width(), entry.icon->height() };
-            icon_rect.center_vertically_within(text_rect);
-            if (entry.enabled)
-                painter.blit(icon_rect.location(), *entry.icon, entry.icon->rect());
-            else
-                painter.blit_disabled(icon_rect.location(), *entry.icon, entry.icon->rect(), *g_palette);
-        }
-
-        auto const& use_font = entry.is_default ? font.bold_variant() : font;
-        painter.draw_ui_text(text_rect, entry.text, use_font, Gfx::TextAlignment::CenterLeft, text_color);
-    }
-
-    if (!menu.buffer) {
-        menu.tree = wlr_scene_tree_create(server.overlay_tree);
-        menu.buffer = wlr_scene_buffer_create(menu.tree, nullptr);
-    }
-    menu.bitmap = bitmap;
-    wlr_scene_node_set_position(&menu.tree->node, menu.rect.x(), menu.rect.y());
-    auto* buffer = bitmap_buffer_create(*menu.bitmap);
-    wlr_scene_buffer_set_buffer(menu.buffer, buffer);
-    wlr_buffer_drop(buffer);
+    });
 }
 
 static void layout_window_menu(Server& server, WindowMenu& menu)
@@ -1713,8 +1657,8 @@ static void close_window_menu(Server& server)
     menu.hovered_index = -1;
     menu.pressed_index = -1;
     menu.entries.clear_with_capacity();
-    if (menu.tree)
-        wlr_scene_node_set_enabled(&menu.tree->node, false);
+    if (menu.node)
+        menu.node->set_visible(false);
 }
 
 static void open_window_menu(Server& server, Toplevel& toplevel, Gfx::IntPoint position)
@@ -1764,9 +1708,8 @@ static void open_window_menu(Server& server, Toplevel& toplevel, Gfx::IntPoint p
     layout_window_menu(server, menu);
     paint_window_menu(server, menu);
 
-    wlr_scene_node_raise_to_top(&menu.tree->node);
-    wlr_scene_node_set_enabled(&menu.tree->node, true);
-    wlr_scene_node_set_enabled(&menu.buffer->node, true);
+    menu.node->raise_to_top();
+    menu.node->set_visible(true);
 }
 
 static void update_window_menu_hover(Server& server, double x, double y)

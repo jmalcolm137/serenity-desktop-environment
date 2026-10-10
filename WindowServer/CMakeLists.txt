@@ -43,6 +43,7 @@ add_custom_command(
 
 add_executable(WindowServer
     src/main.cpp
+    src/Overlays.cpp
     "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-window-protocol.c")
 
 target_include_directories(WindowServer PRIVATE
