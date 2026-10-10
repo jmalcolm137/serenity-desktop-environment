@@ -43,6 +43,7 @@ add_custom_command(
 
 add_executable(WindowServer
     src/main.cpp
+    src/AppletManager.cpp
     src/Config.cpp
     src/Overlays.cpp
     src/WindowManager.cpp

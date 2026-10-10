@@ -20,6 +20,7 @@
 #include <string.h>
 #include <xkbcommon/xkbcommon.h>
 
+#include "AppletManager.h"
 #include "Config.h"
 #include "Overlays.h"
 #include "WindowManagerServerDefaultStub.h"
@@ -133,9 +134,12 @@ public:
     // compositor does not implement; deliberately not consumed (see known-gaps).
     virtual void set_window_taskbar_rect(i32, i32, Gfx::IntRect const&) override { }
 
-    // Applets are layer surfaces positioned by the compositor, so the shell's
-    // applet-area position no longer needs the WindowServer to lay them out.
-    virtual void set_applet_area_position(Gfx::IntPoint) override { }
+    // Applets are layer surfaces; the compositor owns their layout (WS4). The
+    // Taskbar tells us where the applet area sits and we place each applet.
+    virtual void set_applet_area_position(Gfx::IntPoint position) override
+    {
+        AppletManager::set_position(m_server, position);
+    }
 
     virtual void set_workspace(u32 row, u32 column) override
     {
@@ -610,6 +614,14 @@ void emit_window_removed(Toplevel& toplevel)
     for (auto& connection : g_connections) {
         if (connection->manager_window_id() >= 0)
             connection->async_window_removed(connection->manager_window_id(), 0, toplevel.wm_id);
+    }
+}
+
+void tell_wms_applet_area_size_changed(Server&, Gfx::IntSize size)
+{
+    for (auto& connection : g_connections) {
+        if (connection->manager_window_id() >= 0)
+            connection->async_applet_area_size_changed(connection->manager_window_id(), size);
     }
 }
 

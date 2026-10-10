@@ -42,6 +42,9 @@ void accept_connection(Server&, NonnullOwnPtr<Core::LocalSocket>);
 void emit_window_state(Toplevel&);
 void emit_window_removed(Toplevel&);
 
+// Tell every Taskbar the applet-area size changed (WS4).
+void tell_wms_applet_area_size_changed(Server&, Gfx::IntSize);
+
 Toplevel* find_toplevel_by_wm_id(Server&, i32 wm_id);
 
 // --- workspaces (WS1) -------------------------------------------------------

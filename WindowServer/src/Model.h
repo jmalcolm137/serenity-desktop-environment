@@ -199,6 +199,11 @@ struct LayerSurface {
     // True for client menu popups (the "serenity-menu" namespace): these take no
     // input grab, so an outside press must dismiss them (see cursor_button).
     bool is_menu { false };
+    // True for applets ("serenity-applet[:<name>]"): the compositor lays these
+    // out in the Taskbar's applet area (WS4, AppletManager). applet_name is the
+    // suffix, matched against [Applet] Order.
+    bool is_applet { false };
+    ByteString applet_name;
     wl_listener map { };
     wl_listener unmap { };
     wl_listener commit { };

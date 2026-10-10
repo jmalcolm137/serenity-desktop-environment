@@ -22,6 +22,7 @@
 #include "Config.h"
 #include "Model.h"
 #include "Overlays.h"
+#include "AppletManager.h"
 #include "WindowManager.h"
 #include "WindowSwitcher.h"
 
@@ -2008,6 +2009,10 @@ static void arrange_layers(Server& server, wlr_output* output)
         dbgln("WindowServer: usable area for '{}': {}x{} at {},{}", output->name ? output->name : "?",
             usable_area.width, usable_area.height, usable_area.x, usable_area.y);
     }
+
+    // The layer-shell arrange resets every node's position, so re-apply the
+    // applet-area layout last (WS4).
+    AppletManager::relayout(server);
 }
 
 static void layer_surface_commit(wl_listener* listener, void*)
@@ -2065,6 +2070,7 @@ static void server_new_layer_surface(wl_listener* listener, void* data)
     layer->layer_surface = layer_surface;
     layer->output = layer_surface->output;
     layer->is_menu = layer_surface->layer_namespace && !strcmp(layer_surface->layer_namespace, "serenity-menu");
+    layer->is_applet = AppletManager::parse_namespace(layer_surface->layer_namespace, layer->applet_name);
     dbgln("WindowServer: layer surface namespace='{}'", layer_surface->layer_namespace ? layer_surface->layer_namespace : "");
     wlr_scene_tree* layer_parent = server->background_tree;
     switch (layer_surface->pending.layer) {
@@ -2562,6 +2568,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     // Let the window manager call back into the compositor's focus/menu code.
     WindowManager::set_host_hooks({ focus_toplevel, open_window_menu, primary_usable_area, toplevel_report_position, toplevel_begin_interactive });
     WindowSwitcher::set_host_hooks({ current_palette, focus_toplevel, WindowManager::switch_workspace });
+    AppletManager::set_host_hooks({ WindowManager::tell_wms_applet_area_size_changed, primary_usable_area });
     // Bring the workspace grid up from the config, and follow later edits.
     WindowManager::load_workspaces(*server);
     Config::watch([&] { WindowManager::load_workspaces(*server); });
