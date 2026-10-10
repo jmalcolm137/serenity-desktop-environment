@@ -288,6 +288,7 @@ struct Server {
     wlr_box grab_box { };
     uint32_t resize_edges { 0 };
     bool frame_grab { false };
+    bool show_desktop { false };
 
     // Implicit pointer grab: while a client button is held, keep the pointer
     // focused on the surface that received the press and forward motion to it,
@@ -342,6 +343,8 @@ struct Toplevel {
     bool maximized { false };
     bool minimized { false };
     bool fullscreen { false };
+    // Minimized specifically by "Show Desktop"; restored by toggling it again.
+    bool hidden_by_show_desktop { false };
     bool always_on_top { false };
     bool rolled_up { false };
     int hovered_button { -1 };
@@ -2246,7 +2249,31 @@ public:
         }
     }
 
-    virtual void toggle_show_desktop() override { }
+    virtual void toggle_show_desktop() override
+    {
+        if (!g_server)
+            return;
+        auto& server = *g_server;
+        server.show_desktop = !server.show_desktop;
+        for (auto& toplevel : server.toplevels) {
+            bool changed = false;
+            if (server.show_desktop) {
+                if (!toplevel->minimized) {
+                    toplevel->hidden_by_show_desktop = true;
+                    toplevel->minimized = true;
+                    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
+                    changed = true;
+                }
+            } else if (toplevel->hidden_by_show_desktop) {
+                toplevel->hidden_by_show_desktop = false;
+                toplevel->minimized = false;
+                wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
+                changed = true;
+            }
+            if (changed)
+                wm_emit_state(*toplevel);
+        }
+    }
     virtual void start_window_resize(i32, i32, i32) override { }
     virtual void popup_window_menu(i32, i32, Gfx::IntPoint) override { }
     virtual void set_window_taskbar_rect(i32, i32, Gfx::IntRect const&) override { }
