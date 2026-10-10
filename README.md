@@ -39,7 +39,7 @@ Milestone progress (see [`docs/01-objectives.md`](docs/01-objectives.md) §11):
 |---|---|---|
 | **R0** | Design | Done |
 | **R1** | Compositor bring-up | Done — nested, headless (CI-tested) and DRM/libinput session paths |
-| **R2** | Shell v1 | In progress — Taskbar runs; Desktop/Settings/wallpaper pending |
+| **R2** | Shell v1 | In progress — Taskbar + WindowManagerServer + desktop wallpaper done; Desktop/Settings pending |
 | **R3** | Serenity look & behaviours | Started — window chrome done; switcher/snap/workspaces pending |
 | **R4** | Session & settings | Not started |
 | **R5** | Hardening & packaging | Not started |
@@ -79,4 +79,11 @@ With `WAYLAND_DISPLAY`/`DISPLAY` unset, `wlr_backend_autocreate` selects the
 DRM+libinput backend and `libseat` grants DRM master. The launcher starts the
 compositor on socket `sde`, serves the WindowManagerServer on `/tmp/portal/wm`,
 and starts the Taskbar and a TextEditor.
+
+**Desktop background.** The compositor paints the theme's `DesktopBackground`
+colour behind everything (SerenityOS's default). Set `SDE_WALLPAPER` to an
+absolute path, or to a name under `/res/wallpapers` (e.g. `sunset-retro.png`),
+and `SDE_WALLPAPER_MODE` to `center` (default), `tile`, `stretch` or `fill` to
+use a wallpaper image. (The settings work, R4/G5, will drive this through the
+WindowServer protocol instead of the environment.)
 
