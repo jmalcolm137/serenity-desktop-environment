@@ -37,6 +37,10 @@ export LD_LIBRARY_PATH="$BUILD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # docs/06-service-layering.md.
 export SDE_APP_BIN_DIR="${SDE_APP_BIN_DIR:-$BUILD/bin}"
 
+# Super+L locks the session by spawning $SDE_LOCK_CMD (default: swaylock), a
+# standard ext-session-lock-v1 client. See docs/11-r4-implementation-plan.md §9.
+export SDE_LOCK_CMD="${SDE_LOCK_CMD:-swaylock}"
+
 # Seed the SerenityOS skeleton user config, so apps that read default
 # configuration at startup (e.g. Browser) find it.
 SERENITY="$SERENITY" "$SDE_ROOT/scripts/seed-serenity-home.sh"
