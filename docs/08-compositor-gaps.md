@@ -61,8 +61,12 @@ not R5/R6.
 
 ## 3. Ecosystem compatibility (R5)
 
-The compatibility bar is undefined today; `02-compositor-decision.md` §13 lists
-protocols but nothing owns them per milestone and nothing tests them.
+The compatibility bar: **parity with KDE Plasma / KWin's standard protocol
+surface** (the broadest and most current), tracked as a matrix in
+[`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §11. The gaps
+below are what remains to reach it; `02-compositor-decision.md` §13 lists the
+protocols, nothing today tests them per-compositor except the community support
+table.
 
 - **No compatibility target or conformance suite (G7, N8).** Add "N reference
   clients run correctly" as an exit criterion — `weston-simple-*`, a GTK and a Qt

@@ -1,6 +1,6 @@
 # Serenity Desktop Environment — R4 Implementation Plan
 
-**Status:** Draft v0.2 · **Date:** 2026-10-10
+**Status:** Draft v0.3 · **Date:** 2026-10-10
 **Related:** [`01-objectives.md`](01-objectives.md) §6 (P8), §11 · [`04-known-gaps.md`](04-known-gaps.md) · [`07-systemserver-roles.md`](07-systemserver-roles.md) · [`08-compositor-gaps.md`](08-compositor-gaps.md) §1, §4 · [`09-r3-implementation-plan.md`](09-r3-implementation-plan.md) §5
 
 R0–R3 are done (see [`09-r3-implementation-plan.md`](09-r3-implementation-plan.md)).
@@ -342,9 +342,13 @@ R4 is done when:
    Input, Appearance/Effects, Workspaces — driven by a documented,
    live-reloadable config, with appearance exposed via the Settings portal;
 5. **standard protocols are exposed** so third-party tools work: `swaylock`,
-   `wayland`/`ext-workspace-v1` panels, `xdg-desktop-portal`;
-6. `Terminal` and (at least) `SystemMonitor` run;
-7. every scriptable behaviour has a headless test, and the R1–R3 suites still
+   `ext-workspace-v1` panels (`waybar`), `wl-clipboard`, `xdg-desktop-portal`;
+6. the **KDE Plasma (KWin) parity target** (§11) is met for the R4-scoped rows —
+   `xdg-session-management-v1`, `viewporter`, `wp-fractional-scale-v1`,
+   `wp-cursor-shape-v1`, `ext-workspace-v1`, `ext-foreign-toplevel-list-v1`,
+   `xdg-activation-v1` — with the rest scheduled in R5/R6;
+7. `Terminal` and (at least) `SystemMonitor` run;
+8. every scriptable behaviour has a headless test, and the R1–R3 suites still
    pass.
 
 ## 8. Risks and decisions
@@ -374,6 +378,16 @@ a corner).
 
 Documented so they are not lost; none blocks R4.
 
+- **An SDE `xdg-desktop-portal` backend.** To reach **portal parity with KDE** we
+  cannot lean on `xdg-desktop-portal-wlr` + `-gtk` alone; `xdg-desktop-portal-kde`
+  implements a broad set (Settings, GlobalShortcuts, Inhibit, InputCapture,
+  RemoteDesktop, ScreenCast, Clipboard, Wallpaper, Background, Notification,
+  FileChooser, AppChooser, Print, Secret, Email, DynamicLauncher, Access,
+  Account). Plan: ship a small **SDE portal backend** implementing at least
+  **Settings** (R4) and then **GlobalShortcuts / RemoteDesktop / InputCapture /
+  ScreenCast / Screenshot** (R5), composed with `-wlr`/`-gtk` for the rest via
+  `portals.conf`. This can land **after** R4; it is the missing half of "portal
+  parity" (§11).
 - **A native SDE lock client.** SDE uses **swaylock** (or any conformant locker)
   today: the compositor is a standard `ext-session-lock-v1` server. A native
   client is future work and **must be a plain Wayland `ext-session-lock-v1`
@@ -383,7 +397,93 @@ Documented so they are not lost; none blocks R4.
   dim/blur); **PAM** authentication; multi-output + hotplug; idle-to-lock. Until
   then `SDE_LOCK_CMD` (default `swaylock`) selects the client.
 - **A portable SDE idle daemon** (`swayidle`-equivalent) for idle-to-lock/blank.
-- **`xdg-desktop-portal` capture/input backends** — Screenshot/ScreenCast/
-  RemoteDesktop/InputCapture/GlobalShortcuts (R5), leaning on
-  `xdg-desktop-portal-wlr` once `ext-image-copy-capture-v1` is exposed.
 - **Serial console / multi-seat, VT-switch polish, suspend/resume hooks** — R4.3.
+
+## 11. Parity target: KDE Plasma (KWin)
+
+**Goal.** SDE's **standard** Wayland protocol surface should match the latest
+**KDE Plasma / KWin** (`v6.7.5`, the current stable at the time of writing; 6.8 in
+beta), so that applications, toolkits, portals and tooling behave the same as on
+Plasma. Reference: KWin's `src/wayland/` implementation set (v6.7.5 + master) and
+`xdg-desktop-portal-kde`.
+
+**Rules.** (a) Parity means the **standard/staging** protocols KWin exposes — the
+KDE-private protocols (below) are **not** parity targets, because they only serve
+KDE's own shell; SDE keeps its own minimal `serenity-window` for that role.
+(b) Where KWin uses a private protocol for a job that has a standard one, we
+prefer the **standard** (P8) — SDE may thus *exceed* KWin on interoperability.
+(c) Parity is scoped by milestone: R4 covers the session/appearance subset it
+needs; the rest is R5/R6.
+
+Legend: **✓** have · **↗** planned R4 · **→** planned R5 · **·** planned R6 ·
+**–** KWin uses a private protocol · **n/a** not applicable.
+
+| Protocol | KWin | SDE | Milestone |
+|---|---|---|---|
+| `xdg-shell` | ✓ | ✓ | — |
+| `xdg-decoration` | ✓ | ✓ | — |
+| `xdg-output` | ✓ | ✓ | — |
+| `wlr-layer-shell` | ✓ | ✓ | — |
+| `linux-dmabuf` | ✓ | wlroots | R6 |
+| `presentation-time` | ✓ | ✗ | R6 |
+| `tablet-v2` | ✓ | ✗ | R5 |
+| `viewporter` | ✓ | needed (client uses it) | R4.5 |
+| `xdg-activation-v1` | ✓ | ✗ | R4.2 / R5 |
+| `xdg-session-management-v1` | ✓ | ✗ | **R4.2** |
+| `xdg-dialog-v1` | ✓ | ✗ | R5 |
+| `xdg-foreign-v2` | ✓ | ✗ | R5 |
+| `xdg-system-bell-v1` | ✓ | ✗ | R5 |
+| `xdg-toplevel-drag-v1` | ✓ | ✗ | R5 |
+| `xdg-toplevel-icon-v1` | ✓ | ✗ | R5 |
+| `xdg-toplevel-tag-v1` | ✓ | ✗ | R5 |
+| `xwayland-shell-v1`, `xwayland-keyboard-grab-v1` | ✓ | ✗ | R5 (XWayland) |
+| `ext-idle-notify-v1` | ✓ | ✓ | R4.1 |
+| `ext-session-lock-v1` | – (private overlay) | ✓ | R4.1 |
+| `ext-workspace-v1` | – (private) | ✗ | **R4.8** |
+| `ext-foreign-toplevel-list-v1` | – (private) | ✗ | **R4.8 / R5** |
+| `ext-data-control-v1` | ✓ | ✗ | R5 |
+| `ext-image-copy-capture-v1` | – | ✗ | R5 |
+| `ext-transient-seat-v1` | ✗ | ✗ | R4.3 / R6 |
+| `ext-background-effect-v1` | ✓ | ✗ | R6 |
+| `wp-fractional-scale-v1` | ✓ | ✗ | R4.5 / R6 |
+| `wp-color-management-v1` | ✓ | ✗ | R6 |
+| `wp-color-representation-v1` | ✓ | ✗ | R6 |
+| `wp-content-type-v1` | ✓ | ✗ | R6 |
+| `wp-cursor-shape-v1` | ✓ | ✗ | **R4.7** |
+| `wp-drm-lease-v1` | ✓ | ✗ | R6 |
+| `wp-fifo-v1` | ✓ | ✗ | R6 |
+| `wp-single-pixel-buffer-v1` | ✓ | ✗ | R6 |
+| `wp-tearing-control-v1` | ✓ | ✗ | R6 |
+| `wp-alpha-modifier-v1` | ✓ | ✗ | R6 |
+| `wp-pointer-warp-v1` | ✓ | ✗ | R5 |
+| `wp-pointer-constraints-v1` | ✓ | ✗ | R5 |
+| `wp-pointer-gestures-v1` | ✓ | ✗ | R5 |
+| `wp-relative-pointer-v1` | ✓ | ✗ | R5 |
+| `wp-primary-selection-v1` | ✓ | ✗ | R5 |
+| `wp-keyboard-shortcuts-inhibit-v1` | ✓ | ✗ | R5 |
+| `wp-linux-drm-syncobj-v1` | ✓ | ✗ | R6 |
+| `xdpip` (`xx-pip-v1`) | ✓ (private) | ✗ | R6 (private) |
+
+**KDE-private protocols (NOT parity targets).** `org_kde_kwin_*`
+(plasma-shell, plasma-window-management, plasma-virtual-desktop, output-device,
+output-management, output-order, primary-output, screen-edge, lockscreen-overlay,
+idle/timeout, dpms, keystate, fake-input, appmenu, blur, contrast, shadow, slide,
+server-decoration[-palette], surface-extension, external-brightness), `zkde_screencast`,
+`text-input-v2`, `wl_eglstream_controller`, `frog-color-management`, and the
+`xx-` experiments. SDE replaces these roles with standard protocols
+(`ext-workspace-v1`, `ext-foreign-toplevel-list-v1`, `ext-session-lock-v1`,
+`xdg-activation-v1`, …) plus its minimal `serenity-window`.
+
+**Portal parity.** `xdg-desktop-portal-kde` implements nearly every portal
+interface; `xdg-desktop-portal-wlr` + `-gtk` cover only part of that. Reaching
+portal parity with Plasma therefore requires an **SDE portal backend** (§10),
+starting with **Settings** for R4 (appearance) and growing in R5.
+
+**Exit criterion (added to §7).** SDE advertises and correctly handles the
+standard protocols in the table, and third-party clients that rely on KWin's
+standard surface (toolkits, `waybar`/`ext-workspace-v1`, `swaylock`,
+`wl-clipboard`, portals) work unmodified. The protocol inventory in
+[`02-compositor-decision.md`](02-compositor-decision.md) §13 and the per-compositor
+**Wayland protocols support table**
+(<https://absurdlysuspicious.github.io/wayland-protocols-table/>) are the
+tracking references.

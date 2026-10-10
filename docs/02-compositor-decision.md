@@ -625,7 +625,11 @@ Option D/labwc or to KWin with a KDE backend and lose little of the shell work.
 For the live support status of each protocol above — and to compare our target
 inventory against what wlroots-based compositors (sway, Hyprland, labwc, …) and
 others actually expose — see the community **Wayland protocols support table**
-in §14.
+in §14. The concrete **parity target is KDE Plasma / KWin** (the broadest standard
+protocol surface): see [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md)
+§11 for the KWin-vs-SDE matrix and the milestone for each protocol. KDE's private
+`org_kde_kwin_*` protocols are **not** parity targets; SDE keeps its minimal
+`serenity-window` for the equivalent shell roles (P8).
 
 ## 14. References
 
