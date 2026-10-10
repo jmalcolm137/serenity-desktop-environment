@@ -107,11 +107,8 @@ keymap/IME, input-device config) are catalogued in
   "Set as wallpaper" on an image. Still inert: Fonts / Monitor / Workspaces /
   Effects (no display, input or font backends yet).
 - **ComboBox dropdowns (W6, host).** Resolved — see "Recently resolved".
-- **Wallpaper thumbnails (W6/W7, host).** `FileSystemModel` thumbnails fail with
-  `connect: No such file or directory` — there is no **ImageDecoder** service on
-  the portal bus, so the Background tab's wallpaper previews render as plain
-  icons. Needs the ImageDecoder portal (or an in-process decoder) like the other
-  services.
+- **Wallpaper thumbnails (W6/W7, host).** Resolved — see "Recently resolved"
+  (`ImageDecoder` is served in-process).
 - **Application enablement (W7).** `SystemMonitor` (needs `/proc`), `MouseSettings`,
   `Debugger`, `CrashReporter` feasibility not yet addressed. `Terminal` runs.
 - **Web engine / `WebContent` service (W7, host).** `Help` and `Browser` are
@@ -188,4 +185,11 @@ Compositor-facing detail lives in [`06-compositor-gaps.md`](06-compositor-gaps.m
   patterns (`/etc` absent from the sparse checkout); Serenity `/bin/X` helper
   paths not resolved to host binaries (launching failed with ENOENT); Launch
   service implemented (handler resolution + spawn).
+- **`ImageDecoder` portal** — served in-process by libgui-wayland
+  (`LibWM` hosts SerenityOS's `ImageDecoder::ConnectionFromClient` on the `image`
+  socketpair). This fixes the `FileSystemModel`/wallpaper thumbnails
+  (`connect: No such file or directory`) and lets **ImageViewer** decode images.
+  No SDE session service: see `06-service-layering.md` §4 for why (the upstream
+  service is a single-client system service; a session instance would be a
+  sharing optimisation only).
 - Documented: bitmap-font zoom limitation (`02-compositor-decision.md` §11).

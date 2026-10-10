@@ -32,7 +32,7 @@ in-process socketpairs (`LibWM::make_portal()`):
 
 ```
 /tmp/portal/window
-/tmp/session/<id>/portal/{clipboard,launch,config,filesystemaccess}
+/tmp/session/<id>/portal/{clipboard,launch,config,filesystemaccess,image}
 ```
 
 A session service can take over one of those paths by listening there itself;
@@ -59,7 +59,37 @@ in-process fallback. That is the single hook the rule needs.
   `LibGUI` (for `icon()`), and `LibGUI` depends on `libwindowserver`, so a
   dependency on `LibDesktop` from the shim would be a build-order cycle.
 
-## 4. Why do this now
+## 4. `ImageDecoder`: in-process only
+
+SerenityOS already ships an `ImageDecoder` **service**
+(`Userland/Services/ImageDecoder/`) that apps reach over
+`/tmp/session/<id>/portal/image`. It is a *Serenity system service*: `SystemServer`
+spawns it and hands it its client socket, and it serves exactly **one client per
+process** — its `die()` quits the event loop and the background thread when that
+client goes away. Under SDE there is no `SystemServer`, so the upstream service
+*process* cannot be used as-is.
+
+We reuse its **implementation class**
+(`ImageDecoder::ConnectionFromClient`) as libgui-wayland's **in-process fallback**:
+`LibWM` stands up a server-side decoder on the `image` socketpair, so an
+application decodes images with no SDE and no external service — same as the
+other portals.
+
+Unlike `LaunchServer`, we do **not** add an SDE session service for it. A session
+instance would only be a sharing optimisation (one decoder instead of one per
+app); it is not needed for correctness, and the upstream service does not fit the
+multi-client session model without more scaffolding. The launch service, by
+contrast, owns genuinely session-scoped state (the handler database, the launch
+allow-list), which is why it is the one we host in the session.
+
+The class needs one small upstreamable patch
+(`patches/0022-imagedecoder-in-process-host.patch`): an opt-out
+(`set_exit_when_client_disconnects(false)`) so that a client disconnecting does
+not quit the **host application's** event loop and background thread. The
+in-process host sets it; the standalone service keeps the default (exit with its
+sole client).
+
+## 5. Why do this now
 
 - The `.af` handler database, seat management, notifications and the like all
   want **one owner**; doing it now avoids baking more per-app duplication into
@@ -67,7 +97,7 @@ in-process fallback. That is the single hook the rule needs.
 - The fallback rule preserves the compositor-agnostic guarantee, and the same
   "session service, else in-process" shape will be reused for the next service.
 
-## 5. Constraints
+## 6. Constraints
 
 - The in-process fallback must keep working **unchanged** for stand-alone use —
   no regression. Cover it with a headless test, with and without an external
@@ -75,7 +105,7 @@ in-process fallback. That is the single hook the rule needs.
 - Prefer a **lean SDE `LaunchServer`** that reuses the shared resolver over
   pulling in the whole SerenityOS service (deps, allow-list, user preferences).
 
-## 6. Status
+## 7. Status
 
 - **`LibLaunch`** (the shared resolver, `Launch::HandlerDatabase`) lives in the
   Serenity tree (LibCore + LibURL only) and is used by libgui-wayland's
