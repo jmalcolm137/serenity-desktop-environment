@@ -63,10 +63,12 @@ click was already handled and returned earlier).
   client menus.
 - **Window switcher with live thumbnails** — not implemented.
 - **Snapping** — not implemented.
-- **Workspaces** — the stack grid lands (WS1): `[Workspaces]` Rows/Columns from
-  `WindowServer.ini`, per-window `(row, column)`, `set_workspace`/`workspace_changed`
-  and Ctrl+Alt+arrows. Still to do: the Super-key WMS events and verifying the
-  unmodified WorkspacePicker applet.
+- **Workspaces** — done (WS1). The stack grid comes from `[Workspaces]` in
+  `WindowServer.ini`; `set_workspace`/`workspace_changed` and the real `(row,
+  column)` in `window_state_changed` drive the Taskbar; Ctrl+Alt+arrows switch
+  (Shift carries the focused window); the Super-key WMS events are emitted; and
+  the grid size reaches clients in `fast_greet`, so the unmodified
+  WorkspacePicker applet renders and switches.
 - **Notifications** — not implemented (NotificationServer is a stub).
 - **Tooltips** — not implemented. `GUI::Application::show_tooltip()` is a no-op in
   the port, so the Taskbar quick-launch icons, window-title buttons, clock,
