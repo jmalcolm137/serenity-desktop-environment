@@ -15,6 +15,7 @@ The stack is split across a small family of repositories:
 - [`docs/01-objectives.md`](docs/01-objectives.md) — vision, goals, non-goals, principles, architecture, success criteria.
 - [`docs/02-compositor-decision.md`](docs/02-compositor-decision.md) — options analysis for the compositor and the design decision.
 - [`docs/03-engineering-conventions.md`](docs/03-engineering-conventions.md) — binding coding/build conventions (AK/LibCore/LibGfx, SerenityOS-style `serenity_main`, host compat in the SDE).
+- [`docs/04-known-gaps.md`](docs/04-known-gaps.md) — running list of known gaps and remaining work, so nothing found during bring-up is forgotten.
 
 ## Status
 
@@ -39,7 +40,7 @@ Milestone progress (see [`docs/01-objectives.md`](docs/01-objectives.md) §11):
 |---|---|---|
 | **R0** | Design | Done |
 | **R1** | Compositor bring-up | Done — nested, headless (CI-tested) and DRM/libinput session paths |
-| **R2** | Shell v1 | In progress — Taskbar + WindowManagerServer + wallpaper + Desktop done; Settings pending |
+| **R2** | Shell v1 | Done (Launch service pending — see `docs/04-known-gaps.md`) |
 | **R3** | Serenity look & behaviours | Started — window chrome done; switcher/snap/workspaces pending |
 | **R4** | Session & settings | Not started |
 | **R5** | Hardening & packaging | Not started |
