@@ -81,13 +81,18 @@ Done: Taskbar (system menu, quick-launch, window list, clock), WindowManagerServ
   "Set as wallpaper" on an image. Still inert: Fonts / Monitor / Workspaces /
   Effects (no display, input or font backends yet).
 - **ComboBox dropdowns (W6, host).** The Background tab's **Mode** combo (and the
-  Themes tab's combos) do not list their options: a ComboBox dropdown is a real
-  `Window` of type `Popup`, which the shim still cannot position correctly (it
-  uses app-side absolute coordinates, whereas the compositor may place the parent
-  window elsewhere — menus work because they use an xdg-popup positioner). The
-  mode itself is stored in `$XDG_CONFIG_HOME/sde/wallpaper.mode`
-  (`center`/`tile`/`stretch`/`fill`) and applied live, so it can be set there
-  meanwhile.
+  Themes tab's combos) show no options. Root cause found: popup windows are
+  positioned in the app's coordinate space, but an auto-positioned window keeps
+  the `-5000,-5000` sentinel as its `rect()` — the compositor's actual placement
+  is never reported back — so the combo's `screen_relative_rect()` is off-screen
+  (x≈-4704). `ComboBox::open()` then clamps the popup rect against
+  `Desktop::the().rect()`; the intersection is empty, so the popup collapses to
+  its frame height (**2px**) and nothing is listed. (The model is fine: it has all
+  four modes.) The fix is to make an app's window coordinate space match the
+  compositor's placement (have the shim assign/report the position of
+  auto-positioned windows), after which the popup clamps correctly and can be
+  placed parent-relative like menus. Meanwhile the mode is live from
+  `$XDG_CONFIG_HOME/sde/wallpaper.mode` (`center`/`tile`/`stretch`/`fill`).
 - **Wallpaper thumbnails (W6/W7, host).** `FileSystemModel` thumbnails fail with
   `connect: No such file or directory` — there is no **ImageDecoder** service on
   the portal bus, so the Background tab's wallpaper previews render as plain
