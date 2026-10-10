@@ -1060,8 +1060,15 @@ static void server_new_output(wl_listener* listener, void* data)
 
 static void toplevel_report_position(Toplevel& toplevel)
 {
-    if (toplevel.chrome)
-        serenity_toplevel_send_position(toplevel.chrome, toplevel.scene_tree->node.x, toplevel.scene_tree->node.y);
+    if (!toplevel.chrome)
+        return;
+    // Report the *content* origin, not the frame origin: the client's coordinate
+    // space starts at its surface (which the compositor offsets by the frame
+    // inset), so screen-relative coordinates (tooltips, widget rects) must be
+    // built from the content top-left.
+    int content_x = static_cast<int>(toplevel.scene_tree->node.x) + static_cast<int>(toplevel.content_tree->node.x);
+    int content_y = static_cast<int>(toplevel.scene_tree->node.y) + static_cast<int>(toplevel.content_tree->node.y);
+    serenity_toplevel_send_position(toplevel.chrome, content_x, content_y);
 }
 
 static void toplevel_update_foreign(Toplevel& toplevel)
