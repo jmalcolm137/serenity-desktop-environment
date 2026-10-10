@@ -317,6 +317,9 @@ struct Server {
     Vector<NonnullOwnPtr<LayerSurface>> layer_surfaces;
     Vector<NonnullOwnPtr<Keyboard>> keyboards;
     Vector<NonnullOwnPtr<Decoration>> decorations;
+    // serenity_window_manager resources, so the compositor can ask a client to
+    // dismiss its menus (see maybe_dismiss_layer_menus).
+    Vector<wl_resource*> serenity_window_managers;
 
     CursorMode cursor_mode { CursorMode::Passthrough };
     Toplevel* grabbed_toplevel { nullptr };
@@ -420,6 +423,9 @@ struct LayerSurface {
     wlr_layer_surface_v1* layer_surface { nullptr };
     wlr_scene_layer_surface_v1* scene { nullptr };
     wlr_output* output { nullptr };
+    // True for client menu popups (the "serenity-menu" namespace): these take no
+    // input grab, so an outside press must dismiss them (see cursor_button).
+    bool is_menu { false };
     wl_listener map { };
     wl_listener unmap { };
     wl_listener commit { };
@@ -834,6 +840,37 @@ static void cursor_motion_absolute(wl_listener* listener, void* data)
     process_cursor_motion(*server, event->time_msec);
 }
 
+// Client menus opened from layer surfaces (the Taskbar/Desktop) are overlay layer
+// surfaces with no input grab, so wlroots will not route an outside press to
+// them and the client cannot dismiss them. On a press that lands on another
+// client's surface, ask the menu owner to close its menus.
+static void maybe_dismiss_layer_menus(Server& server)
+{
+    LayerSurface* menu_layer = nullptr;
+    for (auto& layer : server.layer_surfaces) {
+        if (!layer->is_menu || !layer->layer_surface || !layer->layer_surface->surface)
+            continue;
+        if (!layer->layer_surface->surface->mapped)
+            continue;
+        menu_layer = layer.ptr();
+        break;
+    }
+    if (!menu_layer)
+        return;
+
+    auto* owner_client = wl_resource_get_client(menu_layer->layer_surface->resource);
+    auto* focused = server.seat->pointer_state.focused_surface;
+    // A press on one of the owner's own surfaces (its button, or the menu itself)
+    // is handled by the client; only presses elsewhere need dismissing.
+    if (focused && wl_resource_get_client(focused->resource) == owner_client)
+        return;
+
+    for (auto* manager : server.serenity_window_managers) {
+        if (wl_resource_get_client(manager) == owner_client)
+            serenity_window_manager_send_dismiss_menus(manager);
+    }
+}
+
 static void cursor_button(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
@@ -861,9 +898,12 @@ static void cursor_button(wl_listener* listener, void* data)
         return;
     }
 
+    // Dismiss client menus (opened from layer surfaces) on an outside press.
+    if (event->state == WL_POINTER_BUTTON_STATE_PRESSED)
+        maybe_dismiss_layer_menus(*server);
+
     auto serial = wlr_seat_pointer_notify_button(server->seat, event->time_msec, event->button, event->state);
-    if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {
-        if (server->pointer_buttons_down > 0)
+    if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {        if (server->pointer_buttons_down > 0)
             --server->pointer_buttons_down;
         if (server->pointer_buttons_down == 0)
             server->pointer_grab_surface = nullptr;
@@ -2152,6 +2192,7 @@ static void server_new_layer_surface(wl_listener* listener, void* data)
     layer->server = server;
     layer->layer_surface = layer_surface;
     layer->output = layer_surface->output;
+    layer->is_menu = layer_surface->layer_namespace && !strcmp(layer_surface->layer_namespace, "serenity-menu");
     dbgln("WindowServer: layer surface namespace='{}'", layer_surface->layer_namespace ? layer_surface->layer_namespace : "");
     wlr_scene_tree* layer_parent = server->background_tree;
     switch (layer_surface->pending.layer) {
@@ -2501,6 +2542,12 @@ static void serenity_window_manager_get_toplevel(wl_client* client, wl_resource*
         serenity_toplevel_send_menubar_visibility(chrome, 0);
 }
 
+static void serenity_window_manager_resource_destroy(wl_resource* resource)
+{
+    if (auto* server = static_cast<Server*>(wl_resource_get_user_data(resource)))
+        server->serenity_window_managers.remove_first_matching([&](auto* candidate) { return candidate == resource; });
+}
+
 static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t version, uint32_t id)
 {
     auto& server = *static_cast<Server*>(data);
@@ -2512,7 +2559,8 @@ static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t
     static struct serenity_window_manager_interface const implementation = {
         .get_toplevel = serenity_window_manager_get_toplevel,
     };
-    wl_resource_set_implementation(resource, &implementation, &server, nullptr);
+    wl_resource_set_implementation(resource, &implementation, &server, serenity_window_manager_resource_destroy);
+    server.serenity_window_managers.append(resource);
 }
 
 // --- setup ----------------------------------------------------------------
