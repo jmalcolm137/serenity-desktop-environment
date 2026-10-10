@@ -81,8 +81,11 @@ click was already handled and returned earlier).
   the port, so the Taskbar quick-launch icons, window-title buttons, clock,
   Show-Desktop button and applets show no hover text (all of which SerenityOS
   provides). Needs a tooltip window near the widget/cursor.
-- **Applet area / system tray parity** — applets run as layer surfaces, but
-  applet-area position/semantics are no-ops.
+- **Applet area / system tray parity** — done (WS4). The compositor lays applets
+  out (AppletManager) right-to-left by `[Applet] Order`, emits
+  `applet_area_size_changed` and consumes `set_applet_area_position`, with the
+  Taskbar sizing and positioning the area. Applets are identified by the
+  `serenity-applet:<name>` layer namespace.
 - **Font parity** — fixed to the bitmap Katica family; size-based zoom is a no-op.
   Theme switching (Taskbar ▸ Themes) works: the list is read under the resource
   root, the theme is loaded/recoloured in-process, and a shared broker file

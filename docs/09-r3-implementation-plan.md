@@ -16,8 +16,8 @@ this document owns sequencing and the critical path.
 - R0, R1 and R2 are done; R2's loose ends are closed or explicitly reassigned
   (see `04-known-gaps.md`, "R2 follow-up").
 - The R3 **foundation** (§2) has landed, both **spikes** (§3) are resolved, and
-  **WS1 workspaces**, **WS2 snapping** and **WS3 switcher** are complete.
-  WS4–WS6 are not started. R3 remains the critical path.
+  **WS1 workspaces**, **WS2 snapping**, **WS3 switcher** and **WS4 applet area**
+  are complete. WS5–WS6 are not started. R3 remains the critical path.
 
 | Step | Status |
 |---|---|
@@ -26,7 +26,7 @@ this document owns sequencing and the critical path.
 | WS1 — workspaces | **Done** |
 | WS2 — snapping + overlays | **Done** |
 | WS3 — switcher | **Done** |
-| WS4 — applet area | Not started |
+| WS4 — applet area | **Done** |
 | WS5 — notifications | Not started (plumbing ready; §3) |
 | WS6 — tooltips | Not started |
 | WS7 — font parity | Decision only |
@@ -44,8 +44,8 @@ monolith:
 1. **Module split — done.** `Overlays`, `WindowManager` and the shared `Model` are
    out of `main.cpp`
    (`WindowServer/src/{Overlays,WindowManager,Config,Model}.{h,cpp}`); `main.cpp`
-   is now wiring plus the policies not yet extracted. `WindowSwitcher` (WS3) has
-   landed; `AppletManager` still lands with WS4.
+   is now wiring plus the policies not yet extracted. `WindowSwitcher` (WS3) and
+   `AppletManager` (WS4) have landed.
 2. **Overlay + snapshot infrastructure — done.** `ChromeNode` renders LibGfx
    chrome into a scene buffer in `overlay_tree`; `snapshot_toplevel()` reads a
    toplevel's client buffer into a `Gfx::Bitmap` (spike §3). Shared by snapping
@@ -58,7 +58,7 @@ monolith:
    and thumbnail capture.
 
 The `main.cpp` monolith the plan warned about is gone; `WindowSwitcher` (WS3) was
-extracted with its feature, and `AppletManager` (WS4) remains.
+extracted with its feature, and `AppletManager` (WS4) has too.
 
 ## 3. De-risk before committing (time-boxed spikes)
 
@@ -128,7 +128,12 @@ scheduled as prerequisites rather than late surprises.
    `WindowSwitcher` module listing live `snapshot_toplevel()` thumbnails, title and
    geometry through a `ChromeNode` overlay, most-recently-focused first and
    refreshed on commit while open.
-4. **Applet area (WS4) — not started.** `Config::applet_order()` is exposed.
+4. **Applet area (WS4) — done.** An `AppletManager` module collects the applet
+   layer surfaces, orders them by `[Applet] Order` (`Config::applet_order()`) and
+   lays them out right-to-left; it emits `applet_area_size_changed` and consumes
+   `set_applet_area_position`. The applet's name travels in its layer namespace
+   (`serenity-applet:<name>`, set by libgui-wayland), so no protocol extension was
+   needed. See the placement-channel decision below.
 5. **Notifications (WS5) — not started; plumbing ready.** See the §3 spike
    outcome: the unmodified server hosts and `WindowType::Notification` maps to an
    overlay banner; the remaining blocker is the `LibGUI::Notification` client IPC
@@ -179,5 +184,5 @@ headless test (§2.4); menus, popups and IME remain manual.
 | NotificationServer reuse | §3 spike | **Resolved** — reuse; remaining `LibGUI::Notification` IPC bug is WS5 |
 | Config location/schema | §2.3 | **Resolved** — `WindowServer.ini` + live reload under `$XDG_CONFIG_HOME/sde` |
 | `main.cpp` split scope | §2.1 | **Done** — `Overlays`/`WindowManager`/`Model` extracted |
-| Applet placement channel | WS4 | Open — compositor offsets vs a `serenity-window` extension |
+| Applet placement channel | WS4 | Done — the compositor owns the layout (offsets the applet layer surfaces); the applet's identity (its name, for `[Applet] Order`) travels in the layer namespace, so no `serenity-window` extension was needed |
 | Tooltips need a host change | WS6 | Open — in `libgui-wayland`; cross-repo coordination |
