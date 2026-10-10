@@ -10,6 +10,7 @@
 #include <AK/Optional.h>
 #include <AK/Vector.h>
 #include <LibCore/Socket.h>
+#include <LibGfx/Painter.h>
 #include <LibGfx/Point.h>
 #include <LibGfx/Rect.h>
 #include <LibIPC/Connection.h>
@@ -20,10 +21,12 @@
 #include <xkbcommon/xkbcommon.h>
 
 #include "Config.h"
+#include "Overlays.h"
 #include "WindowManagerServerDefaultStub.h"
 
 // wlroots is a C library and does not wrap its headers in extern "C", so we do.
 extern "C" {
+#include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
@@ -107,7 +110,15 @@ public:
                 emit_window_state(*toplevel);
         }
     }
-    virtual void start_window_resize(i32, i32, i32) override { }
+    virtual void start_window_resize(i32, i32 window_id, i32 resize_direction) override
+    {
+        // The Taskbar asks the compositor to begin resizing a window.
+        auto* toplevel = find_toplevel_by_wm_id(m_server, window_id);
+        if (!toplevel)
+            return;
+        if (g_hooks.begin_interactive)
+            g_hooks.begin_interactive(*toplevel, CursorMode::Resize, static_cast<uint32_t>(resize_direction));
+    }
     virtual void popup_window_menu(i32, i32 window_id, Gfx::IntPoint screen_position) override
     {
         // Right-clicking a Taskbar window-list button opens the window menu. The
@@ -187,6 +198,71 @@ static Gfx::IntRect usable_area(Server& server)
     return {};
 }
 
+// The geometry a tile type covers within the usable area.
+static Gfx::IntRect tile_rect(Gfx::IntRect const& area, WindowTileType type)
+{
+    Gfx::IntRect rect = area;
+    int const half_w = area.width() / 2;
+    int const half_h = area.height() / 2;
+    switch (type) {
+    case WindowTileType::Left:
+        rect.set_width(half_w);
+        break;
+    case WindowTileType::Right:
+        rect.set_x(area.x() + half_w);
+        rect.set_width(area.width() - half_w);
+        break;
+    case WindowTileType::Top:
+        rect.set_height(half_h);
+        break;
+    case WindowTileType::Bottom:
+        rect.set_y(area.y() + half_h);
+        rect.set_height(area.height() - half_h);
+        break;
+    case WindowTileType::TopLeft:
+        rect.set_size({ half_w, half_h });
+        break;
+    case WindowTileType::TopRight:
+        rect.set_x(area.x() + half_w);
+        rect.set_size({ area.width() - half_w, half_h });
+        break;
+    case WindowTileType::BottomLeft:
+        rect.set_y(area.y() + half_h);
+        rect.set_size({ half_w, area.height() - half_h });
+        break;
+    case WindowTileType::BottomRight:
+        rect.set_location({ area.x() + half_w, area.y() + half_h });
+        rect.set_size({ area.width() - half_w, area.height() - half_h });
+        break;
+    default:
+        break; // Maximized / horizontally / vertically maximized = the whole area
+    }
+    return rect;
+}
+
+// The xdg_toplevel tiled edges for a tile type.
+static uint32_t tile_edges(WindowTileType type)
+{
+    switch (type) {
+    case WindowTileType::Left:
+        return WLR_EDGE_LEFT | WLR_EDGE_TOP | WLR_EDGE_BOTTOM;
+    case WindowTileType::Right:
+        return WLR_EDGE_RIGHT | WLR_EDGE_TOP | WLR_EDGE_BOTTOM;
+    case WindowTileType::Top:
+        return WLR_EDGE_TOP | WLR_EDGE_LEFT | WLR_EDGE_RIGHT;
+    case WindowTileType::Bottom:
+        return WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT;
+    case WindowTileType::HorizontallyMaximized:
+        return WLR_EDGE_TOP | WLR_EDGE_BOTTOM;
+    case WindowTileType::VerticallyMaximized:
+        return WLR_EDGE_LEFT | WLR_EDGE_RIGHT;
+    case WindowTileType::Maximized:
+        return WLR_EDGE_LEFT | WLR_EDGE_RIGHT | WLR_EDGE_TOP | WLR_EDGE_BOTTOM;
+    default:
+        return 0;
+    }
+}
+
 static void apply_tile_geometry(Toplevel& toplevel, Gfx::IntRect const& rect, uint32_t xdg_edges)
 {
     wlr_xdg_toplevel_set_tiled(toplevel.xdg_toplevel, xdg_edges);
@@ -223,39 +299,8 @@ static void set_tiled(Server& server, Toplevel& toplevel, WindowTileType type)
     if (area.is_empty())
         return;
 
-    Gfx::IntRect rect = area;
-    uint32_t xdg_edges = 0;
-    switch (type) {
-    case WindowTileType::Left:
-        rect.set_width(area.width() / 2);
-        xdg_edges = WLR_EDGE_LEFT | WLR_EDGE_TOP | WLR_EDGE_BOTTOM;
-        break;
-    case WindowTileType::Right:
-        rect.set_x(area.x() + area.width() / 2);
-        rect.set_width(area.width() - area.width() / 2);
-        xdg_edges = WLR_EDGE_RIGHT | WLR_EDGE_TOP | WLR_EDGE_BOTTOM;
-        break;
-    case WindowTileType::Top:
-        rect.set_height(area.height() / 2);
-        xdg_edges = WLR_EDGE_TOP | WLR_EDGE_LEFT | WLR_EDGE_RIGHT;
-        break;
-    case WindowTileType::Bottom:
-        rect.set_y(area.y() + area.height() / 2);
-        rect.set_height(area.height() - area.height() / 2);
-        xdg_edges = WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT;
-        break;
-    case WindowTileType::HorizontallyMaximized:
-        xdg_edges = WLR_EDGE_TOP | WLR_EDGE_BOTTOM;
-        break;
-    case WindowTileType::VerticallyMaximized:
-        xdg_edges = WLR_EDGE_LEFT | WLR_EDGE_RIGHT;
-        break;
-    case WindowTileType::Maximized:
-        xdg_edges = WLR_EDGE_LEFT | WLR_EDGE_RIGHT | WLR_EDGE_TOP | WLR_EDGE_BOTTOM;
-        break;
-    default:
-        break;
-    }
+    auto rect = tile_rect(area, type);
+    uint32_t const xdg_edges = tile_edges(type);
 
     toplevel.tile_type = type;
     toplevel.maximized = type == WindowTileType::Maximized;
@@ -323,6 +368,67 @@ bool handle_tile_key(Server& server, u32 keysym, u32 modifiers)
         return true;
     }
     return false;
+}
+
+// --- drag-to-edge snapping --------------------------------------------------
+
+static OwnPtr<ChromeNode> s_tile_preview;
+static WindowTileType s_pending_tile { WindowTileType::None };
+
+void update_move_snap(Server& server, Toplevel& toplevel)
+{
+    (void)toplevel;
+    auto area = usable_area(server);
+    if (area.is_empty())
+        return;
+
+    int const edge = 48;
+    double const x = server.cursor->x;
+    double const y = server.cursor->y;
+
+    WindowTileType target = WindowTileType::None;
+    if (x <= area.x() + edge)
+        target = y <= area.y() + edge ? WindowTileType::TopLeft
+            : y >= area.bottom() - edge ? WindowTileType::BottomLeft
+                                        : WindowTileType::Left;
+    else if (x >= area.right() - edge)
+        target = y <= area.y() + edge ? WindowTileType::TopRight
+            : y >= area.bottom() - edge ? WindowTileType::BottomRight
+                                        : WindowTileType::Right;
+    else if (y <= area.y() + edge)
+        target = WindowTileType::Top;
+    else if (y >= area.bottom() - edge)
+        target = WindowTileType::Bottom;
+
+    s_pending_tile = target;
+    if (target == WindowTileType::None) {
+        if (s_tile_preview)
+            s_tile_preview->set_visible(false);
+        return;
+    }
+    if (!server.overlay_tree)
+        return;
+    if (!s_tile_preview)
+        s_tile_preview = make<ChromeNode>(*server.overlay_tree);
+
+    auto rect = tile_rect(area, target);
+    s_tile_preview->set_rect(rect);
+    s_tile_preview->render([rect](Gfx::Painter& painter) {
+        Gfx::IntRect local { { }, rect.size() };
+        painter.fill_rect(local, Gfx::Color::from_rgb(0x3b6ea5).with_alpha(0x50));
+        painter.draw_rect(local.shrunken(1, 1), Gfx::Color::from_rgb(0x9db8d2).with_alpha(0xc0));
+    });
+    s_tile_preview->set_visible(true);
+    s_tile_preview->raise_to_top();
+}
+
+void finish_move_snap(Server& server, Toplevel& toplevel)
+{
+    if (s_tile_preview)
+        s_tile_preview->set_visible(false);
+    if (s_pending_tile != WindowTileType::None)
+        set_tiled(server, toplevel, s_pending_tile);
+    s_pending_tile = WindowTileType::None;
 }
 
 // --- workspaces (WS1) -------------------------------------------------------

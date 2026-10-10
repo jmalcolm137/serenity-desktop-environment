@@ -376,6 +376,8 @@ static void process_cursor_move(Server& server)
     if (!toplevel)
         return;
     wlr_scene_node_set_position(&toplevel->scene_tree->node, server.cursor->x - server.grab_x, server.cursor->y - server.grab_y);
+    // Show the tile preview when the pointer reaches a screen edge (WS2).
+    WindowManager::update_move_snap(server, *toplevel);
 }
 
 static void process_cursor_resize(Server& server)
@@ -668,6 +670,9 @@ static void cursor_button(wl_listener* listener, void* data)
         }
     } else if (server->frame_grab) {
         server->frame_grab = false;
+        // A titlebar drag has ended: tile to the previewed edge target, if any.
+        if (server->grabbed_toplevel && server->cursor_mode == CursorMode::Move)
+            WindowManager::finish_move_snap(*server, *server->grabbed_toplevel);
         handle_frame_release(*server, event->button);
         return;
     }
@@ -678,7 +683,10 @@ static void cursor_button(wl_listener* listener, void* data)
 
     auto serial = wlr_seat_pointer_notify_button(server->seat, event->time_msec, event->button, event->state);
     if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {
-        // A drag has ended: tell the client where its window ended up.
+        // A drag has ended: tile to the previewed edge target, if any (WS2).
+        if (server->grabbed_toplevel && server->cursor_mode == CursorMode::Move)
+            WindowManager::finish_move_snap(*server, *server->grabbed_toplevel);
+        // Tell the client where its window ended up.
         if (server->grabbed_toplevel)
             toplevel_report_position(*server->grabbed_toplevel);
         if (server->pointer_buttons_down > 0)
@@ -2530,7 +2538,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     if (!wm_server->listen(wm_portal))
         warnln("WindowServer: could not listen on {}", wm_portal);
     // Let the window manager call back into the compositor's focus/menu code.
-    WindowManager::set_host_hooks({ focus_toplevel, open_window_menu, primary_usable_area, toplevel_report_position });
+    WindowManager::set_host_hooks({ focus_toplevel, open_window_menu, primary_usable_area, toplevel_report_position, toplevel_begin_interactive });
     // Bring the workspace grid up from the config, and follow later edits.
     WindowManager::load_workspaces(*server);
     Config::watch([&] { WindowManager::load_workspaces(*server); });

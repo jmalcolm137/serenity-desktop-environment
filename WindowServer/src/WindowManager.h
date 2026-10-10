@@ -30,6 +30,8 @@ struct HostHooks {
     // WS2: the primary output's usable area, and telling a client where we put it.
     Gfx::IntRect (*primary_usable_area)(Server&) { nullptr };
     void (*report_position)(Toplevel&) { nullptr };
+    // WS2: begin an interactive move/resize (start_window_resize).
+    void (*begin_interactive)(Toplevel&, CursorMode, uint32_t edges) { nullptr };
 };
 void set_host_hooks(HostHooks);
 
@@ -74,5 +76,10 @@ bool handle_super_key(Server&, u32 keysym, u32 modifiers, bool pressed);
 
 // Snapping (WS2): Super+arrows maximize/minimize/tile the focused window.
 bool handle_tile_key(Server&, u32 keysym, u32 modifiers);
+
+// WS2 drag-to-edge snapping: call while moving a window (updates the tile
+// preview) and on release (tiles to the previewed target, if any).
+void update_move_snap(Server&, Toplevel&);
+void finish_move_snap(Server&, Toplevel&);
 
 }
