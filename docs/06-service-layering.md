@@ -1,7 +1,7 @@
 # Service Layering: libgui-wayland vs. the SDE Session
 
 **Status:** Living document · **Date:** 2026-10-10
-**Related:** [`01-objectives.md`](01-objectives.md) · [`02-compositor-decision.md`](02-compositor-decision.md) · [`03-engineering-conventions.md`](03-engineering-conventions.md) · [`04-known-gaps.md`](04-known-gaps.md)
+**Related:** [`01-objectives.md`](01-objectives.md) · [`02-compositor-decision.md`](02-compositor-decision.md) · [`03-engineering-conventions.md`](03-engineering-conventions.md) · [`04-known-gaps.md`](04-known-gaps.md) · [`07-systemserver-roles.md`](07-systemserver-roles.md)
 
 This records a principle we keep coming back to, so we don't re-litigate it:
 **which side of the libgui-wayland / SDE boundary does a Serenity service belong

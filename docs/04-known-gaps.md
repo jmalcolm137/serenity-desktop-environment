@@ -1,7 +1,7 @@
 # Serenity Desktop Environment — Known Gaps & Remaining Work
 
 **Status:** Living document · **Date:** 2026-10-10
-**Related:** [`01-objectives.md`](01-objectives.md) · [`02-compositor-decision.md`](02-compositor-decision.md) · [`03-engineering-conventions.md`](03-engineering-conventions.md) · [`05-r3-plan.md`](05-r3-plan.md) · [`06-compositor-gaps.md`](06-compositor-gaps.md)
+**Related:** [`01-objectives.md`](01-objectives.md) · [`02-compositor-decision.md`](02-compositor-decision.md) · [`03-engineering-conventions.md`](03-engineering-conventions.md) · [`05-r3-plan.md`](05-r3-plan.md) · [`06-compositor-gaps.md`](06-compositor-gaps.md) · [`07-systemserver-roles.md`](07-systemserver-roles.md)
 
 This is a running, greppable list of what is known to be missing or incomplete,
 so nothing discovered during bring-up is forgotten. It is grouped by goal (G)
@@ -45,6 +45,12 @@ calls are now either handled or explicitly reassigned:
 The stale, unreachable "right-clicking the titlebar opens the window menu (not
 implemented yet)" branch in `WindowServer/src/main.cpp` has been removed (right
 click was already handled and returned earlier).
+
+- **Taskbar teardown crash — closed, not reproducible.** A SIGSEGV on Taskbar
+  teardown was suspected. It could not be reproduced across compositor loss
+  (`WaylandClient` now quits cleanly — libgui-wayland `90af711`), `SIGKILL` of the
+  Taskbar, or closing a listed window (stress-tested; all clean). Reopen with a
+  reproduction if it is seen again.
 
 ## R3 — Serenity look & behaviours (chrome done, rest pending)
 
