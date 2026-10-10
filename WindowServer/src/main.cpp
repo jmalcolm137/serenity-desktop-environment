@@ -504,10 +504,18 @@ static Toplevel* toplevel_at(Server& server, double lx, double ly, wlr_surface**
         return nullptr;
 
     *surface = scene_surface->surface;
+    // Walk up to the scene tree that belongs to an xdg toplevel. We can't just
+    // stop at the first tree with node.data set: layer surfaces (the Taskbar)
+    // store their own object there, so match against the known toplevel trees.
     wlr_scene_tree* tree = node->parent;
-    while (tree && !tree->node.data)
+    while (tree) {
+        for (auto& toplevel : server.toplevels) {
+            if (toplevel->scene_tree == tree)
+                return toplevel.ptr();
+        }
         tree = tree->node.parent;
-    return tree ? static_cast<Toplevel*>(tree->node.data) : nullptr;
+    }
+    return nullptr;
 }
 
 static void reset_cursor_mode(Server& server)
