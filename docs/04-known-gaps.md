@@ -56,6 +56,24 @@ Done: Taskbar (system menu, quick-launch, window list, clock), WindowManagerServ
   `SDE_WALLPAPER_MODE` environment variables are a deliberate stand-in (see
   `02-compositor-decision.md` §11). Fonts are fixed to the bitmap Katica family,
   so size-based zoom is a no-op.
+- **Display Settings app (W6, host).** SerenityOS's `DisplaySettings` now builds
+  and runs with all tabs (Background, Themes, Fonts, Monitor, Workspaces,
+  Effects); launch it from the desktop right-click ▸ "Display Settings" (or
+  `scripts/run-sde-app.sh DisplaySettings`). The host seams needed were `/res`
+  resource-root resolution in `stat`/`opendir` (LibCore) and the wallpaper
+  directory, plus a single-output `get_screen_layout()`. Note: apps must be
+  launched into the session with `WAYLAND_DISPLAY=sde`, not the host's display,
+  or their windows map on the host compositor — `scripts/run-sde-app.sh` wraps
+  that. **Not yet wired:** choosing a wallpaper does not reach the compositor
+  (`set_wallpaper`/`set_wallpaper_mode` are still no-ops and the compositor only
+  reads `SDE_WALLPAPER` at startup); the Themes tab works (same path as the
+  Taskbar); Fonts / Monitor / Workspaces / Effects are present but inert (no
+  display, input or font backends yet).
+- **Wallpaper thumbnails (W6/W7, host).** `FileSystemModel` thumbnails fail with
+  `connect: No such file or directory` — there is no **ImageDecoder** service on
+  the portal bus, so the Background tab's wallpaper previews render as plain
+  icons. Needs the ImageDecoder portal (or an in-process decoder) like the other
+  services.
 - **Application enablement (W7).** `SystemMonitor` (needs `/proc`), `MouseSettings`,
   `Debugger`, `CrashReporter` feasibility not yet addressed. `Terminal` runs.
 - **Web engine / `WebContent` service (W7, host).** `Help` and `Browser` are
