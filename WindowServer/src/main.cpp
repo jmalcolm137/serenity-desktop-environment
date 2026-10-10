@@ -19,6 +19,7 @@
 #include <AK/StdLibExtras.h>
 #include <AK/Vector.h>
 
+#include "Config.h"
 #include "Model.h"
 #include "Overlays.h"
 #include "WindowManager.h"
@@ -124,49 +125,6 @@ static RefPtr<Gfx::Bitmap> g_wallpaper;
 static ByteString g_wallpaper_mode { "center" };
 static Optional<Gfx::Color> g_background_color;
 
-static ByteString sde_state_dir()
-{
-    if (auto const* dir = getenv("SDE_STATE_DIR"); dir && *dir)
-        return ByteString(dir);
-    if (auto const* config = getenv("XDG_CONFIG_HOME"); config && *config)
-        return ByteString::formatted("{}/sde", config);
-    if (auto const* home = getenv("HOME"); home && *home)
-        return ByteString::formatted("{}/.config/sde", home);
-    return ByteString { "/tmp/sde" };
-}
-
-static ByteString sde_state_file(StringView name)
-{
-    return ByteString::formatted("{}/{}", sde_state_dir(), name);
-}
-
-static ByteString read_sde_state(StringView name)
-{
-    auto file = Core::File::open(sde_state_file(name), Core::File::OpenMode::Read);
-    if (file.is_error())
-        return {};
-    auto contents = file.value()->read_until_eof();
-    if (contents.is_error())
-        return {};
-    return StringView { contents.value() }.trim_whitespace().to_byte_string();
-}
-
-static void write_sde_state(StringView name, ReadonlyBytes bytes)
-{
-    if (auto file = Core::File::open(sde_state_file(name), Core::File::OpenMode::Write); !file.is_error())
-        (void)file.value()->write_until_depleted(bytes);
-}
-
-static ByteBuffer read_sde_state_bytes(StringView name)
-{
-    auto file = Core::File::open(sde_state_file(name), Core::File::OpenMode::Read);
-    if (file.is_error())
-        return {};
-    auto contents = file.value()->read_until_eof();
-    if (contents.is_error())
-        return {};
-    return contents.release_value();
-}
 
 // Raw-pixel wallpaper state (no PNG encode: that costs ~800ms and would stall
 // the applying application). Must match WallpaperHeader in the client shim
@@ -183,7 +141,7 @@ static constexpr u32 wallpaper_magic = 0x53445750; // "SDWP"
 static void write_sde_wallpaper(RefPtr<Gfx::Bitmap> const& bitmap)
 {
     if (!bitmap) {
-        write_sde_state("wallpaper.raw"sv, {});
+        Config::write_state("wallpaper.raw"sv, {});
         return;
     }
     auto const pixels = static_cast<size_t>(bitmap->pitch()) * bitmap->height();
@@ -197,12 +155,12 @@ static void write_sde_wallpaper(RefPtr<Gfx::Bitmap> const& bitmap)
     auto buffer = ByteBuffer::create_uninitialized(sizeof(header) + pixels).release_value_but_fixme_should_propagate_errors();
     memcpy(buffer.data(), &header, sizeof(header));
     memcpy(buffer.data() + sizeof(header), bitmap->scanline(0), pixels);
-    write_sde_state("wallpaper.raw"sv, buffer);
+    Config::write_state("wallpaper.raw"sv, buffer);
 }
 
 static RefPtr<Gfx::Bitmap> read_sde_wallpaper()
 {
-    auto raw = read_sde_state_bytes("wallpaper.raw"sv);
+    auto raw = Config::read_state_bytes("wallpaper.raw"sv);
     if (raw.size() <= sizeof(WallpaperHeader))
         return nullptr;
     WallpaperHeader header {};
@@ -874,11 +832,11 @@ static void load_wallpaper_state()
     g_wallpaper = read_sde_wallpaper();
 
     g_wallpaper_mode = "center";
-    if (auto mode = read_sde_state("wallpaper.mode"sv); !mode.is_empty())
+    if (auto mode = Config::read_state("wallpaper.mode"sv); !mode.is_empty())
         g_wallpaper_mode = mode.to_lowercase();
 
     g_background_color = {};
-    if (auto color = read_sde_state("wallpaper.color"sv); !color.is_empty())
+    if (auto color = Config::read_state("wallpaper.color"sv); !color.is_empty())
         g_background_color = Gfx::Color::from_string(color);
 }
 
@@ -901,18 +859,18 @@ static void apply_wallpaper_from_state(Server& server)
 // wallpaper (and "None") persist across restarts.
 static void initialize_wallpaper(ByteString const& resource_root)
 {
-    (void)Core::Directory::create(sde_state_dir(), Core::Directory::CreateDirectories::Yes);
+    (void)Core::Directory::create(Config::state_directory(), Core::Directory::CreateDirectories::Yes);
 
-    if (Core::File::open(sde_state_file("wallpaper.mode"sv), Core::File::OpenMode::Read).is_error()) {
+    if (Core::File::open(Config::state_file("wallpaper.mode"sv), Core::File::OpenMode::Read).is_error()) {
         ByteString mode { "center" };
         if (auto const* env_mode = getenv("SDE_WALLPAPER_MODE"); env_mode && *env_mode)
             mode = env_mode;
         ByteString normalized_mode = mode.to_lowercase();
-        write_sde_state("wallpaper.mode"sv, normalized_mode.bytes());
-        write_sde_state("wallpaper.color"sv, {});
+        Config::write_state("wallpaper.mode"sv, normalized_mode.bytes());
+        Config::write_state("wallpaper.color"sv, {});
         // Ensure the image file exists (empty == no wallpaper) so its content
         // watch attaches; overwrite it if the environment names a wallpaper.
-        write_sde_state("wallpaper.raw"sv, {});
+        Config::write_state("wallpaper.raw"sv, {});
         if (auto const* env_wallpaper = getenv("SDE_WALLPAPER"); env_wallpaper && *env_wallpaper) {
             ByteString path { env_wallpaper };
             if (!path.starts_with('/'))
@@ -937,7 +895,7 @@ static void watch_wallpaper_state(Server& server)
     // plus the mode/colour files); coalesce them into one reload.
     coalesce = Core::Timer::create_single_shot(30, [&server] { apply_wallpaper_from_state(server); });
     watcher = Core::FileWatcher::create().release_value_but_fixme_should_propagate_errors();
-    auto directory = sde_state_dir();
+    auto directory = Config::state_directory();
     watcher->on_change = [&server, directory](Core::FileWatcherEvent const& event) {
         if (!event.event_path.starts_with(directory))
             return;
@@ -945,7 +903,7 @@ static void watch_wallpaper_state(Server& server)
     };
     (void)watcher->add_watch(directory, Core::FileWatcherEvent::Type::ChildCreated | Core::FileWatcherEvent::Type::ChildDeleted);
     for (auto name : { "wallpaper.raw"sv, "wallpaper.mode"sv, "wallpaper.color"sv })
-        (void)watcher->add_watch(sde_state_file(name), Core::FileWatcherEvent::Type::ContentModified | Core::FileWatcherEvent::Type::MetadataModified | Core::FileWatcherEvent::Type::Deleted);
+        (void)watcher->add_watch(Config::state_file(name), Core::FileWatcherEvent::Type::ContentModified | Core::FileWatcherEvent::Type::MetadataModified | Core::FileWatcherEvent::Type::Deleted);
 }
 
 static void output_frame(wl_listener* listener, void*)
@@ -2355,6 +2313,11 @@ static ErrorOr<void> initialize_gfx()
     // Wallpaper/background: load the persisted state, seeding from
     // SDE_WALLPAPER / SDE_WALLPAPER_MODE on the first run.
     initialize_wallpaper(resource_root);
+
+    // The compositor's own configuration (WindowServer.ini) lives beside the
+    // wallpaper/theme state; load it now and reload on change.
+    Config::load();
+    Config::watch([] {});
 
     dbgln("WindowServer: loaded the Serenity theme from {}", resource_root);
     return { };
