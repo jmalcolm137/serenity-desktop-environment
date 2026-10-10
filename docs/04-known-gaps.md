@@ -61,7 +61,11 @@ click was already handled and returned earlier).
   open". It closes only on selecting an item, Escape, or a click on the owner's
   own surface. Needs a compositor-side grab (or an outside-press dismissal) for
   client menus.
-- **Window switcher with live thumbnails** — not implemented.
+- **Window switcher with live thumbnails** — done (WS3). Alt+Tab (current
+  workspace) / Super+Tab (all workspaces), Shift reverses, activate on modifier
+  release; a Serenity-style list of live thumbnails, title and geometry drawn
+  through a `ChromeNode` overlay, most-recently-focused first, refreshed on
+  commit while open.
 - **Snapping** — done (WS2). `WindowTileType` + Super+arrows
   (maximize/minimize/tile, Super+Alt horizontal/vertical maximize), drag-to-edge
   snapping with a LibGfx tile preview, `xdg_toplevel` tiled/maximized state, and

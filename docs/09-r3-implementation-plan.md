@@ -16,9 +16,8 @@ this document owns sequencing and the critical path.
 - R0, R1 and R2 are done; R2's loose ends are closed or explicitly reassigned
   (see `04-known-gaps.md`, "R2 follow-up").
 - The R3 **foundation** (§2) has landed, both **spikes** (§3) are resolved, and
-  **WS1 workspaces** is complete. **WS2 snapping** is in progress (keyboard
-  snapping is in the working tree; drag-to-edge and the overlays remain).
-  WS3–WS6 are not started. R3 remains the critical path.
+  **WS1 workspaces**, **WS2 snapping** and **WS3 switcher** are complete.
+  WS4–WS6 are not started. R3 remains the critical path.
 
 | Step | Status |
 |---|---|
@@ -26,7 +25,7 @@ this document owns sequencing and the critical path.
 | Spikes — thumbnail capture, NotificationServer reuse (§3) | **Done** |
 | WS1 — workspaces | **Done** |
 | WS2 — snapping + overlays | **Done** |
-| WS3 — switcher | Not started |
+| WS3 — switcher | **Done** |
 | WS4 — applet area | Not started |
 | WS5 — notifications | Not started (plumbing ready; §3) |
 | WS6 — tooltips | Not started |
@@ -45,8 +44,8 @@ monolith:
 1. **Module split — done.** `Overlays`, `WindowManager` and the shared `Model` are
    out of `main.cpp`
    (`WindowServer/src/{Overlays,WindowManager,Config,Model}.{h,cpp}`); `main.cpp`
-   is now wiring plus the policies not yet extracted. `WindowSwitcher` and
-   `AppletManager` still land with WS3/WS4.
+   is now wiring plus the policies not yet extracted. `WindowSwitcher` (WS3) has
+   landed; `AppletManager` still lands with WS4.
 2. **Overlay + snapshot infrastructure — done.** `ChromeNode` renders LibGfx
    chrome into a scene buffer in `overlay_tree`; `snapshot_toplevel()` reads a
    toplevel's client buffer into a `Gfx::Bitmap` (spike §3). Shared by snapping
@@ -58,8 +57,8 @@ monolith:
    (`scripts/run-input-test.sh`), asserting the window menu, workspace switching
    and thumbnail capture.
 
-The `main.cpp` monolith the plan warned about is gone; the remaining split work is
-`WindowSwitcher` (WS3) and `AppletManager` (WS4), extracted with their features.
+The `main.cpp` monolith the plan warned about is gone; `WindowSwitcher` (WS3) was
+extracted with its feature, and `AppletManager` (WS4) remains.
 
 ## 3. De-risk before committing (time-boxed spikes)
 
@@ -124,8 +123,11 @@ scheduled as prerequisites rather than late surprises.
    propagating `xdg_toplevel` tiled/maximized state; drag-to-edge snapping with a
    LibGfx `TileWindowOverlay` preview; and `start_window_resize` routed through
    the interactive resize.
-3. **Switcher with live thumbnails (WS3) — not started.** The
-   `snapshot_toplevel()` helper is ready.
+3. **Switcher with live thumbnails (WS3) — done.** Alt+Tab (current workspace) /
+   Super+Tab (all workspaces), Shift reverses, activate on modifier release; a
+   `WindowSwitcher` module listing live `snapshot_toplevel()` thumbnails, title and
+   geometry through a `ChromeNode` overlay, most-recently-focused first and
+   refreshed on commit while open.
 4. **Applet area (WS4) — not started.** `Config::applet_order()` is exposed.
 5. **Notifications (WS5) — not started; plumbing ready.** See the §3 spike
    outcome: the unmodified server hosts and `WindowType::Notification` maps to an
