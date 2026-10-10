@@ -127,6 +127,12 @@ struct FrameIcons {
 };
 static FrameIcons g_frame_icons;
 
+// Desktop background: a wallpaper image (optional) drawn over the theme's
+// background colour. Loaded from SDE_WALLPAPER / SDE_WALLPAPER_MODE until the
+// settings work (G5) can drive it through the WindowServer protocol.
+static RefPtr<Gfx::Bitmap> g_wallpaper;
+static ByteString g_wallpaper_mode { "center" };
+
 static RefPtr<Gfx::Bitmap> load_icon(ByteString const& resource_root, StringView name, StringView fallback)
 {
     auto path = ByteString::formatted("{}/icons/16x16/{}.png", resource_root, name);
@@ -304,6 +310,8 @@ struct Output {
     Server* server { nullptr };
     wlr_output* output { nullptr };
     wlr_box usable_area { };
+    wlr_scene_buffer* background { nullptr };
+    Gfx::IntSize background_size;
     wl_listener frame { };
     wl_listener request_state { };
     wl_listener destroy { };
@@ -911,10 +919,72 @@ static void server_new_input(wl_listener* listener, void* data)
 
 // --- outputs --------------------------------------------------------------
 
+// Compose the desktop background for an output: the theme's background colour,
+// optionally overlaid with a wallpaper image. Rebuilt only when the output size
+// changes.
+static void update_desktop_background(Server& server, Output& output)
+{
+    if (!g_palette)
+        return;
+    int width = output.output->width;
+    int height = output.output->height;
+    if (width <= 0 || height <= 0)
+        return;
+
+    Gfx::IntSize size { width, height };
+    if (output.background && output.background_size == size)
+        return;
+
+    auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, size).release_value_but_fixme_should_propagate_errors();
+    Gfx::Painter painter(*bitmap);
+    painter.fill_rect(bitmap->rect(), g_palette->desktop_background());
+
+    if (g_wallpaper) {
+        auto const& wallpaper = *g_wallpaper;
+        if (g_wallpaper_mode == "tile"sv) {
+            painter.draw_tiled_bitmap(bitmap->rect(), wallpaper);
+        } else if (g_wallpaper_mode == "stretch"sv) {
+            painter.draw_scaled_bitmap(bitmap->rect(), wallpaper, wallpaper.rect());
+        } else if (g_wallpaper_mode == "fill"sv && wallpaper.width() > 0 && wallpaper.height() > 0) {
+            double const scale = max(static_cast<double>(width) / wallpaper.width(), static_cast<double>(height) / wallpaper.height());
+            int const src_width = min(wallpaper.width(), static_cast<int>(width / scale));
+            int const src_height = min(wallpaper.height(), static_cast<int>(height / scale));
+            Gfx::IntRect const src { (wallpaper.width() - src_width) / 2, (wallpaper.height() - src_height) / 2, src_width, src_height };
+            painter.draw_scaled_bitmap(bitmap->rect(), wallpaper, src);
+        } else {
+            // Center (the SerenityOS default).
+            Gfx::IntPoint offset { (width - wallpaper.width()) / 2, (height - wallpaper.height()) / 2 };
+            painter.blit(offset, wallpaper, wallpaper.rect());
+        }
+    }
+
+    if (auto const* dump_path = getenv("WINDOWSERVER_DUMP_BACKGROUND"); dump_path && *dump_path) {
+        if (auto encoded = Gfx::PNGWriter::encode(*bitmap); !encoded.is_error()) {
+            if (auto file = Core::File::open(StringView { dump_path, strlen(dump_path) }, Core::File::OpenMode::Write); !file.is_error())
+                (void)file.value()->write_until_depleted(encoded.value());
+        }
+    }
+
+    auto* buffer = bitmap_buffer_create(move(bitmap));
+    if (!output.background) {
+        output.background = wlr_scene_buffer_create(&server.scene->tree, buffer);
+        wlr_scene_node_lower_to_bottom(&output.background->node);
+    } else {
+        wlr_scene_buffer_set_buffer(output.background, buffer);
+    }
+    wlr_buffer_drop(buffer);
+    output.background_size = size;
+
+    wlr_box box { };
+    wlr_output_layout_get_box(server.output_layout, output.output, &box);
+    wlr_scene_node_set_position(&output.background->node, box.x, box.y);
+}
+
 static void output_frame(wl_listener* listener, void*)
 {
     Output* output = nullptr;
     output = wl_container_of(listener, output, frame);
+    update_desktop_background(*output->server, *output);
     auto* scene_output = wlr_scene_get_scene_output(output->server->scene, output->output);
     if (!scene_output)
         return;
@@ -939,6 +1009,8 @@ static void output_destroy(wl_listener* listener, void*)
     wl_list_remove(&output->frame.link);
     wl_list_remove(&output->request_state.link);
     wl_list_remove(&output->destroy.link);
+    if (output->background)
+        wlr_scene_node_destroy(&output->background->node);
     remove_owned(output->server->outputs, output);
 }
 
@@ -977,6 +1049,7 @@ static void server_new_output(wl_listener* listener, void* data)
 
     dbgln("WindowServer: output '{}' {}x{}", wlr_output->name ? wlr_output->name : "?", wlr_output->width, wlr_output->height);
     server->outputs.append(move(output));
+    update_desktop_background(*server, *server->outputs.last());
     arrange_layers(*server, wlr_output);
     output_manager_send_configuration(*server);
 }
@@ -2377,6 +2450,22 @@ static ErrorOr<void> initialize_gfx()
     g_frame_icons.restore = load_icon(resource_root, "window-restore"sv, "upward-triangle"sv);
     g_frame_icons.move = load_icon(resource_root, "move"sv, ""sv);
     g_frame_icons.pin = load_icon(resource_root, "window-pin"sv, ""sv);
+
+    // Wallpaper: a path (absolute, or a name under /res/wallpapers) plus a mode.
+    // Defaults to the theme's background colour when unset, as in SerenityOS.
+    if (auto const* wallpaper = getenv("SDE_WALLPAPER"); wallpaper && *wallpaper) {
+        ByteString path { wallpaper };
+        if (!path.starts_with('/'))
+            path = ByteString::formatted("{}/wallpapers/{}", resource_root, path);
+        if (auto bitmap = Gfx::Bitmap::load_from_file(path); !bitmap.is_error()) {
+            g_wallpaper = bitmap.release_value();
+            dbgln("WindowServer: loaded the wallpaper '{}'", path);
+        } else {
+            warnln("WindowServer: could not load the wallpaper '{}': {}", path, bitmap.error());
+        }
+    }
+    if (auto const* mode = getenv("SDE_WALLPAPER_MODE"); mode && *mode)
+        g_wallpaper_mode = mode;
 
     dbgln("WindowServer: loaded the Serenity theme from {}", resource_root);
     return { };
