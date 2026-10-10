@@ -39,4 +39,30 @@ void emit_window_removed(Toplevel&);
 
 Toplevel* find_toplevel_by_wm_id(Server&, i32 wm_id);
 
+// --- workspaces (WS1) -------------------------------------------------------
+// A grid of window stacks (SerenityOS WindowManager); only the current stack is
+// visible. The grid comes from [Workspaces] in WindowServer.ini.
+
+// Read the grid from the config and apply it.
+void load_workspaces(Server&);
+
+u32 workspace_rows();
+u32 workspace_columns();
+u32 current_workspace_row();
+u32 current_workspace_column();
+
+// A newly mapped window joins the current stack.
+void on_toplevel_mapped(Toplevel&);
+
+// Switch to a stack (set_workspace, keybindings); optionally carry the focused
+// window along.
+void switch_workspace(Server&, u32 row, u32 column, bool carry_focused);
+
+// Set a window's scene visibility from its stack and minimized state.
+void update_toplevel_visibility(Toplevel&);
+
+// Ctrl+Alt+arrow switches stacks; add Shift to carry the focused window. Returns
+// true when the key was consumed.
+bool handle_workspace_key(Server&, u32 keysym, u32 modifiers);
+
 }

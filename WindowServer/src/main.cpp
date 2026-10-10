@@ -281,8 +281,21 @@ static void keyboard_key(wl_listener* listener, void* data)
     auto* event = static_cast<wlr_keyboard_key_event*>(data);
 
     uint32_t keycode = event->keycode + 8;
+
+    // Update the keyboard's xkb state ourselves (we handle keys before the seat
+    // does), so the modifier mask is correct for keybindings and for the client's
+    // wl_keyboard.modifiers.
+    enum xkb_key_direction direction = event->state == WL_KEYBOARD_KEY_STATE_PRESSED ? XKB_KEY_DOWN : XKB_KEY_UP;
+    auto* xkb_state = keyboard->keyboard->xkb_state;
+    xkb_state_update_key(xkb_state, keycode, direction);
+    keyboard->keyboard->modifiers.depressed = xkb_state_serialize_mods(xkb_state, XKB_STATE_MODS_DEPRESSED);
+    keyboard->keyboard->modifiers.latched = xkb_state_serialize_mods(xkb_state, XKB_STATE_MODS_LATCHED);
+    keyboard->keyboard->modifiers.locked = xkb_state_serialize_mods(xkb_state, XKB_STATE_MODS_LOCKED);
+    keyboard->keyboard->modifiers.group = xkb_state_serialize_layout(xkb_state, XKB_STATE_LAYOUT_EFFECTIVE);
+    wlr_seat_keyboard_notify_modifiers(server.seat, &keyboard->keyboard->modifiers);
+
     xkb_keysym_t const* syms = nullptr;
-    int syms_count = xkb_state_key_get_syms(keyboard->keyboard->xkb_state, keycode, &syms);
+    int syms_count = xkb_state_key_get_syms(xkb_state, keycode, &syms);
 
     bool handled = false;
     uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->keyboard);
@@ -293,6 +306,10 @@ static void keyboard_key(wl_listener* listener, void* data)
                 window_menu_handle_key(server, syms[i]);
         }
         return;
+    }
+    if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+        for (int i = 0; i < syms_count; ++i)
+            handled |= WindowManager::handle_workspace_key(server, syms[i], modifiers);
     }
     if ((modifiers & WLR_MODIFIER_ALT) && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
         for (int i = 0; i < syms_count; ++i)
@@ -1143,6 +1160,8 @@ static void toplevel_map(wl_listener* listener, void*)
     toplevel->frame_active = true;
     toplevel_update_frame(*toplevel);
     toplevel_report_position(*toplevel);
+    // The new window joins the current workspace stack.
+    WindowManager::on_toplevel_mapped(*toplevel);
     if (toplevel->foreign_handle && toplevel->server->primary_output)
         wlr_foreign_toplevel_handle_v1_output_enter(toplevel->foreign_handle, toplevel->server->primary_output);
     focus_toplevel(*toplevel->server, toplevel);
@@ -2377,7 +2396,6 @@ static ErrorOr<void> initialize_gfx()
     // The compositor's own configuration (WindowServer.ini) lives beside the
     // wallpaper/theme state; load it now and reload on change.
     Config::load();
-    Config::watch([] {});
 
     dbgln("WindowServer: loaded the Serenity theme from {}", resource_root);
     return { };
@@ -2488,6 +2506,9 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
         warnln("WindowServer: could not listen on {}", wm_portal);
     // Let the window manager call back into the compositor's focus/menu code.
     WindowManager::set_host_hooks({ focus_toplevel, open_window_menu });
+    // Bring the workspace grid up from the config, and follow later edits.
+    WindowManager::load_workspaces(*server);
+    Config::watch([&] { WindowManager::load_workspaces(*server); });
     wm_server->on_accept = [&](NonnullOwnPtr<Core::LocalSocket> socket) {
         WindowManager::accept_connection(*server, move(socket));
     };

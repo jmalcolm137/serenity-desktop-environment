@@ -23,9 +23,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
 #include <wayland-client.h>
+#include <xkbcommon/xkbcommon.h>
 
 #include "virtual-keyboard-unstable-v1-client-protocol.h"
 #include "wlr-virtual-pointer-unstable-v1-client-protocol.h"
@@ -93,8 +95,25 @@ int main(int argc, char** argv)
     }
 
     s.pointer = zwlr_virtual_pointer_manager_v1_create_virtual_pointer(s.pointer_manager, s.seat);
-    if (s.keyboard_manager)
+    if (s.keyboard_manager) {
         s.keyboard = zwp_virtual_keyboard_manager_v1_create_virtual_keyboard(s.keyboard_manager, s.seat);
+        // The compositor requires a keymap before any key event; send a default one.
+        struct xkb_context* ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+        struct xkb_keymap* keymap = xkb_keymap_new_from_names(ctx, NULL, XKB_KEYMAP_COMPILE_NO_FLAGS);
+        char* keymap_string = xkb_keymap_get_as_string(keymap, XKB_KEYMAP_FORMAT_TEXT_V1);
+        size_t length = strlen(keymap_string) + 1;
+        int fd = memfd_create("sde-keymap", MFD_CLOEXEC);
+        ftruncate(fd, length);
+        void* mapping = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+        memcpy(mapping, keymap_string, length);
+        munmap(mapping, length);
+        zwp_virtual_keyboard_v1_keymap(s.keyboard, WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1, fd, (uint32_t)length);
+        close(fd);
+        free(keymap_string);
+        xkb_keymap_unref(keymap);
+        xkb_context_unref(ctx);
+        wl_display_roundtrip(s.display);
+    }
 
     for (int i = 1; i < argc;) {
         if (!strcmp(argv[i], "--extent") && i + 2 < argc) {

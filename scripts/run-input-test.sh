@@ -38,7 +38,7 @@ cc -O2 -I "$TOOLS_BUILD" \
     "$SDE_ROOT/tools/virtual-input-test.c" \
     "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c" \
     "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c" \
-    $(pkg-config --cflags --libs wayland-client) \
+    $(pkg-config --cflags --libs wayland-client xkbcommon) \
     -o "$TOOLS_BUILD/virtual-input-test"
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-input.XXXXXX")"
@@ -75,6 +75,16 @@ env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
     > "$RUNTIME/input.log" 2>&1 || true
 sleep 1
 
+# Ctrl+Alt+Right switches to the next workspace (WS1). The window menu opened
+# above grabs the keyboard, so dismiss it first (Escape = evdev keycode 1).
+env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
+    --key 1 press --key 1 release \
+    --key 29 press --key 56 press --key 106 press \
+    --key 106 release --key 56 release --key 29 release \
+    --sleep 200 \
+    > "$RUNTIME/ws.log" 2>&1 || true
+sleep 1
+
 kill "$COMP_PID" 2>/dev/null || true
 wait "$COMP_PID" 2>/dev/null || true
 
@@ -97,6 +107,8 @@ echo "=== virtual-input test ==="
 check "virtual pointer connected"
 check "toplevel mapped title='SDE Native Test'"
 check "window menu opened for wm_id="
+# WS1: Ctrl+Alt+Right switched to the next workspace stack.
+check "switched to workspace 0,1"
 # The thumbnail-capture spike (docs/09 §3): the toplevel's pixels were read back
 # into a bitmap of the client's size.
 check "thumbnail for wm_id=1 is 320x200"

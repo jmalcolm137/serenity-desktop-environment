@@ -145,6 +145,9 @@ struct Toplevel {
     // surface is initialized (set_mode schedules a configure).
     wlr_xdg_toplevel_decoration_v1* decoration { nullptr };
     bool menubar_visible { true };
+    // The window stack (workspace grid cell) this window belongs to. WS1.
+    u32 workspace_row { 0 };
+    u32 workspace_column { 0 };
     i32 wm_id { 0 };
     wlr_foreign_toplevel_handle_v1* foreign_handle { nullptr };
     wl_listener map { };
