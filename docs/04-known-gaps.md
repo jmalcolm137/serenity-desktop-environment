@@ -26,6 +26,13 @@ Done: Taskbar (system menu, quick-launch, window list, clock), WindowManagerServ
 
 ## R3 — Serenity look & behaviours (chrome done, rest pending)
 
+- **Menus opened from layer surfaces don't grab input (G3 / W2).** The Taskbar's
+  (and Desktop's) menus are overlay layer surfaces; unlike the `xdg_popup` menus
+  opened from ordinary windows (which grab), they do not take an input grab, so a
+  click on *another* surface does not dismiss them — the menu appears "stuck
+  open". It closes only on selecting an item, Escape, or a click on the owner's
+  own surface. Needs a compositor-side grab (or an outside-press dismissal) for
+  client menus.
 - **Window switcher with live thumbnails** — not implemented.
 - **Snapping** — not implemented.
 - **Workspaces** — not implemented; workspace IDs are no-ops.
@@ -73,6 +80,14 @@ Done: Taskbar (system menu, quick-launch, window list, clock), WindowManagerServ
   "None" — an empty image — also sticks). `FileManager` additionally exposes
   "Set as wallpaper" on an image. Still inert: Fonts / Monitor / Workspaces /
   Effects (no display, input or font backends yet).
+- **ComboBox dropdowns (W6, host).** The Background tab's **Mode** combo (and the
+  Themes tab's combos) do not list their options: a ComboBox dropdown is a real
+  `Window` of type `Popup`, which the shim still cannot position correctly (it
+  uses app-side absolute coordinates, whereas the compositor may place the parent
+  window elsewhere — menus work because they use an xdg-popup positioner). The
+  mode itself is stored in `$XDG_CONFIG_HOME/sde/wallpaper.mode`
+  (`center`/`tile`/`stretch`/`fill`) and applied live, so it can be set there
+  meanwhile.
 - **Wallpaper thumbnails (W6/W7, host).** `FileSystemModel` thumbnails fail with
   `connect: No such file or directory` — there is no **ImageDecoder** service on
   the portal bus, so the Background tab's wallpaper previews render as plain
