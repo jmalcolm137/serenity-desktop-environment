@@ -146,6 +146,13 @@ keymap/IME, input-device config) are catalogued in
   other compositors); see [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md)
   §9. Remaining: dim/blank before lock, and re-configuring lock surfaces on output
   resize/scale.
+- **Session lifecycle & supervisor (R4.2)** — started: `scripts/sde-session.sh`
+  runs XDG Autostart entries, sets the session environment, and restarts the
+  compositor on a fault (bounded); `scripts/sde-power.sh` routes
+  logout/reboot/shutdown/suspend to logind; `start-sde-session.sh` delegates to
+  the supervisor. Verified by `scripts/run-session-test.sh`. Remaining: route the
+  Taskbar `ShutdownDialog` to `sde-power.sh`, an idle-to-lock daemon, and
+  `xdg-session-management-v1` restore.
 
 - **Session lifecycle (G6 / W5).** No greet/login, session start, autostart,
   save/restore, lock, logout, reboot, or shut-down; no SystemServer-style

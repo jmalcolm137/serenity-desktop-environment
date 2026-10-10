@@ -137,7 +137,7 @@ R4 is delivered as **R4.1–R4.9**. Order is dependency-driven (see §4).
 | # | Milestone | Outcome | Depends on |
 |---|---|---|---|
 | **R4.1** | **Session safety net** | Idle detection, idle inhibit, session lock and DPMS/dim *(compositor side landed)* | — |
-| **R4.2** | **Session lifecycle & supervisor** | Session start/autostart, logout/reboot/shutdown, compositor restart + shell relaunch, save/restore | R4.1 |
+| **R4.2** | **Session lifecycle & supervisor** | Session start/autostart, logout/reboot/shutdown, compositor restart + shell relaunch, save/restore *(supervisor/autostart/power landed)* | R4.1 |
 | **R4.3** | **logind / systemd / portal session** | `XDG_SESSION_TYPE`, `WAYLAND_DISPLAY`, D-Bus activation env, `graphical-session.target`, `xdg-desktop-portal`, VT switch | R4.2 |
 | **R4.4** | **Compositor config & live reload** | `WindowServer.ini` schema + validated live reload; Settings-portal exposure | — |
 | **R4.5** | **Display / output settings** | Mode/scale/rotation/arrangement backend (Monitor tab) + fractional scale | R4.4 |
@@ -200,6 +200,20 @@ surfaces on output resize/scale while locked; and the idle-to-lock policy (R4.2)
 - **Exit test:** `scripts/run-session-test.sh` — autostart entries launch; power
   actions are routed (mocked) and asserted; the supervisor restarts a killed
   compositor.
+
+**Landed (partial).** `scripts/sde-session.sh` is the session supervisor: it sets
+the session environment (`XDG_SESSION_TYPE`, `XDG_CURRENT_DESKTOP`,
+`WAYLAND_DISPLAY`), runs **XDG Autostart** entries (`$XDG_CONFIG_HOME/autostart`,
+honouring `Hidden=true` and field-code stripping), starts the compositor, and
+restarts it on a non-zero exit within a bounded budget. `scripts/sde-power.sh`
+routes `logout|reboot|shutdown|suspend` to **logind** (`loginctl`, else
+`busctl` on `org.freedesktop.login1`), with `SDE_POWER_CMD` as the seam.
+`scripts/start-sde-session.sh` now delegates to the supervisor.
+`scripts/run-session-test.sh` passes (stub compositor). **Remaining:** point the
+Taskbar `ShutdownDialog`'s `/bin/{shutdown,reboot,logout}` at `sde-power.sh`
+(cross-repo: a host `/bin` mapping); optionally advertise a **D-Bus
+`org.freedesktop.login1`-style** response to the shell; the **idle-to-lock**
+daemon; and `xdg-session-management-v1` restore.
 
 ### R4.3 — logind / systemd / portal session integration
 

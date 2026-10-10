@@ -72,7 +72,10 @@ if [[ -x "$IMAGE_DECODER" ]]; then
 fi
 
 echo "SDE: starting WindowServer (${SDE_BACKENDS:-drm,libinput}) on $XDG_RUNTIME_DIR"
-"$COMP" -n sde -s "$STARTUP"
+# The session supervisor (R4.2) starts/restarts the compositor, runs XDG
+# Autostart, and owns the session environment.
+export SDE_SESSION_COMPOSITOR="$COMP -n sde -s \"$STARTUP\""
+"$SDE_ROOT/scripts/sde-session.sh"
 status=$?
 
 if [[ -n "$LAUNCH_SERVER_PID" ]]; then
