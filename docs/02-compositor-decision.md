@@ -421,7 +421,11 @@ Specifically:
    switcher and snap/resize overlays are ported from the corresponding
    `WindowServer` components (`WindowFrame`, `WindowSwitcher`, `Overlays`),
    because SerenityOS implements them there and exact reuse means keeping them
-   with the compositor.
+   with the compositor. The chrome is fully interactive: titlebar buttons
+   hover/press and act on release, double-clicking the titlebar toggles
+   maximize, resize borders show resize cursors, and right-clicking the titlebar
+   (or clicking the window icon) opens the compositor-rendered window menu
+   (Minimize/Maximize/Move/Always on Top/Close).
 8. **Session plumbing** — lock, idle, output management, capture, XWayland,
    input config — from wlroots/standard protocols, with per-compositor
    backends only where no standard exists (mirroring LibWindowServer's existing
@@ -563,9 +567,9 @@ Option D/labwc or to KWin with a KDE backend and lose little of the shell work.
 
 1. **`WindowManagerServer` coverage:** which Serenity `WindowManagerServer`
    semantics the compositor must serve itself beyond window state/removal
-   (workspace IDs? applet-area geometry? window menu actions?). Workspaces and
-   the applet area are still no-ops: applets are layer surfaces positioned by
-   the compositor.
+   (workspace IDs? applet-area geometry?). Workspaces and the applet area are
+   still no-ops: applets are layer surfaces positioned by the compositor, and
+   the window menu is rendered compositor-side.
 2. **Frame rendering path:** LibGfx into an uploaded texture versus a dedicated
    wlroots renderer pass for the SSD frame; decide in Phase 1.
 3. **Session integration:** logind/DRM master, seat management, and the login
