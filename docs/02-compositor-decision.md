@@ -558,6 +558,16 @@ Option D/labwc or to KWin with a KDE backend and lose little of the shell work.
   applets run unmodified, so `WindowManagerServer`, window-type semantics and
   applet-area layout must match SerenityOS closely. This is real work, but it is
   bounded and testable directly against the real apps.
+- **Size-based font zoom needs a vector font.** The default UI family is
+  Katica, which upstream ships only as bitmap faces (sizes 10 and 12), as it
+  does for the fixed-width Csilla family. `Widget::set_font_size()` calls
+  `FontDatabase::get(..., AllowInexactSizeMatch::No)`, so requesting any other
+  size resolves to nothing and the widget falls back to its default size. The
+  TextEditor Zoom In/Out actions (`Ctrl+=` / `Ctrl+-`) therefore do nothing with
+  the stock font — matching upstream SerenityOS, which also defaults to Katica.
+  Arbitrary sizes (and thus working zoom) need a scalable face such as the
+  bundled `SerenitySans-Regular.ttf`; selecting system fonts is part of the
+  planned settings work (objective **G5**).
 - **The window switcher and overlays are compositor chrome**, matching where
   SerenityOS implements them (`WindowServer`), rather than shell clients.
 - **XWayland is a compositor feature**, not a shell one; supported where
