@@ -2607,7 +2607,12 @@ static void watch_theme_broker(Server& server)
             apply_theme_path(server, theme_path);
     };
     if (auto directory = LexicalPath(path).dirname(); !directory.is_empty())
-        (void)watcher->add_watch(directory, Core::FileWatcherEvent::Type::ChildCreated | Core::FileWatcherEvent::Type::MetadataModified);
+        (void)watcher->add_watch(directory, Core::FileWatcherEvent::Type::ChildCreated);
+    // Ensure the file exists so we can watch its content; a write is IN_MODIFY
+    // (ContentModified), which a directory watch does not report.
+    if (Core::File::open(path, Core::File::OpenMode::Read).is_error())
+        (void)Core::File::open(path, Core::File::OpenMode::Write);
+    (void)watcher->add_watch(path, Core::FileWatcherEvent::Type::ContentModified | Core::FileWatcherEvent::Type::MetadataModified);
 }
 
 }
