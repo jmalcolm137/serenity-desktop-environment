@@ -52,6 +52,10 @@ compositor-side window menu, fullscreen, Show Desktop, and theme-broker restyle
 **Missing entirely:** window switcher, snap overlays, workspace stacks,
 notifications (NotificationServer stub), tooltips, fonts beyond bitmap Katica.
 
+`popup_window_menu` and `set_window_taskbar_rect` are **not** R3; they are
+tracked as R2 follow-up in [`04-known-gaps.md`](04-known-gaps.md). `start_window_resize`
+is addressed here (WS2).
+
 ## 3. Foundation (do first)
 
 The compositor is currently one 2,790-line `WindowServer/src/main.cpp`. R3 adds

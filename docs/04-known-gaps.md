@@ -24,6 +24,35 @@ Done: Taskbar (system menu, quick-launch, window list, clock), WindowManagerServ
   alternate. There is no `.af` `AppFile` database, so an app-declared handler set
   (and any real "Open with" chooser beyond the editor) is not available.
 
+## R2 follow-up — shell v1 loose ends
+
+R2 is complete, but these `WindowManagerServer` requests that the **unmodified
+Taskbar** still calls are no-ops, and none of them is part of a later milestone:
+
+- **Window-list context menu (G1 / W2).** Right-clicking a Taskbar window-list
+  button calls `popup_window_menu(client_id, window_id, position)`
+  (`Userland/Services/Taskbar/TaskbarButton.cpp`); it is a no-op in
+  `WindowManagerServerConnection` (`WindowServer/src/main.cpp`). The compositor
+  already renders a window menu for the titlebar (`open_window_menu()`), so this
+  is mostly wiring: open the menu for the requested window at the requested
+  screen position. Without it, right-clicking a window-list button does nothing.
+- **Taskbar button geometry for minimize/restore (G1 / W2).**
+  `set_window_taskbar_rect` is a no-op; the Taskbar reports each button's
+  `screen_relative_rect()` (`TaskbarButton::update_taskbar_rect` /
+  `clear_taskbar_rect`). There is no consumer because the compositor has no
+  minimize/restore animation (`toplevel_toggle_minimized` only toggles scene
+  visibility). Either consume the rect in a later animation, or accept the no-op
+  and drop the plumbing.
+- **`start_window_resize` is a no-op (G3 / W1).** Folded into R3 rather than R2
+  (snapping/resize; see [`05-r3-plan.md`](05-r3-plan.md) §4 WS2).
+- **`set_keymap` is a no-op (G5 / W4).** Belongs with the R3/R4 keymap-switching
+  work, not R2.
+
+Dead code: `WindowServer/src/main.cpp` still carries a stale
+"right-clicking the titlebar opens the window menu (not implemented yet)" branch
+that is unreachable — right-click is already handled and returns earlier. Remove
+the dead branch and its comment.
+
 ## R3 — Serenity look & behaviours (chrome done, rest pending)
 
 - **Menus opened from layer surfaces don't grab input (G3 / W2).** The Taskbar's
@@ -80,19 +109,7 @@ Done: Taskbar (system menu, quick-launch, window list, clock), WindowManagerServ
   "None" — an empty image — also sticks). `FileManager` additionally exposes
   "Set as wallpaper" on an image. Still inert: Fonts / Monitor / Workspaces /
   Effects (no display, input or font backends yet).
-- **ComboBox dropdowns (W6, host).** The Background tab's **Mode** combo (and the
-  Themes tab's combos) show no options. Root cause found: popup windows are
-  positioned in the app's coordinate space, but an auto-positioned window keeps
-  the `-5000,-5000` sentinel as its `rect()` — the compositor's actual placement
-  is never reported back — so the combo's `screen_relative_rect()` is off-screen
-  (x≈-4704). `ComboBox::open()` then clamps the popup rect against
-  `Desktop::the().rect()`; the intersection is empty, so the popup collapses to
-  its frame height (**2px**) and nothing is listed. (The model is fine: it has all
-  four modes.) The fix is to make an app's window coordinate space match the
-  compositor's placement (have the shim assign/report the position of
-  auto-positioned windows), after which the popup clamps correctly and can be
-  placed parent-relative like menus. Meanwhile the mode is live from
-  `$XDG_CONFIG_HOME/sde/wallpaper.mode` (`center`/`tile`/`stretch`/`fill`).
+- **ComboBox dropdowns (W6, host).** Resolved — see "Recently resolved".
 - **Wallpaper thumbnails (W6/W7, host).** `FileSystemModel` thumbnails fail with
   `connect: No such file or directory` — there is no **ImageDecoder** service on
   the portal bus, so the Background tab's wallpaper previews render as plain
@@ -128,6 +145,13 @@ Done: Taskbar (system menu, quick-launch, window list, clock), WindowManagerServ
   grab); F11 fullscreen no-op; window menu dismissed on its opening click;
   menus could not open from layer-surface windows (Desktop/Taskbar/applets);
   menu anchors off-screen for layer windows.
+- Compositor: window placement is now reported to clients
+  (`serenity_toplevel.position`), so an app's screen-relative coordinates match
+  where the compositor actually put the window. This fixed **ComboBox dropdowns**
+  (and tooltips/popups): they used to collapse to a 2px-tall popup because the
+  app clamped an off-screen rect against the desktop. Client menus opened from
+  layer surfaces are now also dismissed by an outside press
+  (`serenity_window_manager.dismiss_menus`), instead of appearing stuck open.
 - Port (host): empty-size window `VERIFY` (Desktop); first layer configure not
   delivered, so the Desktop widget tree never laid out; `Process::spawn`
   working-directory `TODO()` crash; LaunchServer stub returned invalid

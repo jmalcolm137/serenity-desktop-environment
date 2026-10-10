@@ -98,6 +98,9 @@ enum class CursorMode {
 struct Server;
 struct Output;
 struct Toplevel;
+
+// Tell the client where its window actually is (the compositor places it).
+static void toplevel_report_position(Toplevel& toplevel);
 struct Popup;
 struct LayerSurface;
 struct Keyboard;
@@ -903,7 +906,11 @@ static void cursor_button(wl_listener* listener, void* data)
         maybe_dismiss_layer_menus(*server);
 
     auto serial = wlr_seat_pointer_notify_button(server->seat, event->time_msec, event->button, event->state);
-    if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {        if (server->pointer_buttons_down > 0)
+    if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {
+        // A drag has ended: tell the client where its window ended up.
+        if (server->grabbed_toplevel)
+            toplevel_report_position(*server->grabbed_toplevel);
+        if (server->pointer_buttons_down > 0)
             --server->pointer_buttons_down;
         if (server->pointer_buttons_down == 0)
             server->pointer_grab_surface = nullptr;
@@ -1228,6 +1235,12 @@ static void server_new_output(wl_listener* listener, void* data)
 
 // --- xdg toplevels / popups ----------------------------------------------
 
+static void toplevel_report_position(Toplevel& toplevel)
+{
+    if (toplevel.chrome)
+        serenity_toplevel_send_position(toplevel.chrome, toplevel.scene_tree->node.x, toplevel.scene_tree->node.y);
+}
+
 static void toplevel_update_foreign(Toplevel& toplevel)
 {
     if (!toplevel.foreign_handle)
@@ -1359,6 +1372,7 @@ static void toplevel_map(wl_listener* listener, void*)
     wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
     toplevel->frame_active = true;
     toplevel_update_frame(*toplevel);
+    toplevel_report_position(*toplevel);
     if (toplevel->foreign_handle && toplevel->server->primary_output)
         wlr_foreign_toplevel_handle_v1_output_enter(toplevel->foreign_handle, toplevel->server->primary_output);
     focus_toplevel(*toplevel->server, toplevel);
@@ -1476,6 +1490,7 @@ static void toplevel_toggle_maximized(Toplevel& toplevel)
         wlr_xdg_toplevel_set_maximized(toplevel.xdg_toplevel, true);
         if (server.primary_output)
             wlr_scene_node_set_position(&toplevel.scene_tree->node, box.x, box.y);
+        toplevel_report_position(toplevel);
         wlr_xdg_toplevel_set_size(toplevel.xdg_toplevel, box.width - toplevel.frame_left - toplevel.frame_right, box.height - toplevel.frame_top - toplevel.frame_bottom);
     } else {
         toplevel.maximized = false;
