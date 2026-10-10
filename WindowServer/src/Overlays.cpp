@@ -6,13 +6,16 @@
 
 #include "Overlays.h"
 
+#include <AK/ScopeGuard.h>
 #include <LibGfx/Painter.h>
 #include <drm_fourcc.h>
+#include <string.h>
 
 // wlroots is a C library and does not wrap its headers in extern "C", so we do.
 extern "C" {
 #include <wlr/interfaces/wlr_buffer.h>
 #include <wlr/types/wlr_buffer.h>
+#include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_scene.h>
 }
 
@@ -114,9 +117,42 @@ void ChromeNode::render(Function<void(Gfx::Painter&)> const& callback)
 
 // --- snapshots --------------------------------------------------------------
 
-RefPtr<Gfx::Bitmap> snapshot_toplevel(wlr_scene_node&)
+RefPtr<Gfx::Bitmap> snapshot_toplevel(wlr_scene_node& toplevel_node)
 {
-    // TODO(WS3 spike): composite the toplevel's scene subtree into a bitmap, or
-    // drive ext-image-copy-capture-v1. See docs/09-r3-implementation-plan.md §3.
-    return nullptr;
+    // The client's content is the first scene surface under the toplevel node.
+    wlr_buffer* client_buffer = nullptr;
+    wlr_scene_node_for_each_buffer(&toplevel_node, [](wlr_scene_buffer* scene_buffer, int, int, void* data) {
+        auto** out = static_cast<wlr_buffer**>(data);
+        if (*out)
+            return;
+        if (auto* scene_surface = wlr_scene_surface_try_from_buffer(scene_buffer))
+            *out = scene_surface->surface->current.buffer;
+    }, &client_buffer);
+
+    if (!client_buffer)
+        return nullptr;
+
+    // Take the buffer so the client cannot reuse it while we read.
+    auto* buffer = wlr_buffer_lock(client_buffer);
+    if (!buffer)
+        return nullptr;
+    ScopeGuard unlock = [buffer] { wlr_buffer_unlock(buffer); };
+
+    void* pixels = nullptr;
+    uint32_t drm_format = 0;
+    size_t stride = 0;
+    if (!wlr_buffer_begin_data_ptr_access(buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ, &pixels, &drm_format, &stride)) {
+        // A DMA-BUF (or other non-mappable) buffer. A general scene-subtree render
+        // or ext-image-copy-capture would cover this; callers fall back to the app
+        // icon. See docs/09-r3-implementation-plan.md §3.
+        return nullptr;
+    }
+    ScopeGuard end_access = [buffer] { wlr_buffer_end_data_ptr_access(buffer); };
+
+    // SHM buffers arrive as ARGB8888 (BGRA in little-endian memory), which matches
+    // Gfx::BitmapFormat::BGRA8888.
+    auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { buffer->width, buffer->height }).release_value_but_fixme_should_propagate_errors();
+    for (int y = 0; y < buffer->height; ++y)
+        memcpy(bitmap->scanline(y), static_cast<u8 const*>(pixels) + static_cast<size_t>(y) * stride, min(stride, static_cast<size_t>(buffer->width) * 4));
+    return bitmap;
 }

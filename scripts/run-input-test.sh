@@ -51,6 +51,7 @@ env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless \
     WLR_HEADLESS_OUTPUTS=1 \
     SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
+    WINDOWSERVER_DUMP_THUMBNAIL="$RUNTIME" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     "$COMP" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
@@ -96,6 +97,15 @@ echo "=== virtual-input test ==="
 check "virtual pointer connected"
 check "toplevel mapped title='SDE Native Test'"
 check "window menu opened for wm_id="
+# The thumbnail-capture spike (docs/09 §3): the toplevel's pixels were read back
+# into a bitmap of the client's size.
+check "thumbnail for wm_id=1 is 320x200"
+if [[ -f "$RUNTIME/thumb-1.png" ]]; then
+    echo "  ok: thumbnail PNG written"
+else
+    echo "  MISSING: thumbnail PNG"
+    fail=1
+fi
 
 if [[ "$fail" -ne 0 ]]; then
     echo "==> virtual-input test FAILED"

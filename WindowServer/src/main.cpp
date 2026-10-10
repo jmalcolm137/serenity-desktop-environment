@@ -1160,6 +1160,33 @@ static void toplevel_unmap(wl_listener* listener, void*)
         reset_cursor_mode(*toplevel->server);
 }
 
+// Spike (docs/09-r3-implementation-plan.md §3): capture a toplevel's pixels for
+// the switcher's thumbnails. Set WINDOWSERVER_DUMP_THUMBNAIL=<dir> to dump one
+// PNG per toplevel, so the capture path can be verified headlessly.
+static void maybe_dump_thumbnail(Toplevel& toplevel)
+{
+    auto const* dir = getenv("WINDOWSERVER_DUMP_THUMBNAIL");
+    if (!dir || !*dir)
+        return;
+    static HashTable<i32> dumped;
+    if (dumped.contains(toplevel.wm_id))
+        return;
+
+    auto bitmap = snapshot_toplevel(toplevel.content_tree->node);
+    if (!bitmap) {
+        // Not ready yet (the initial commits have no buffer); retry on the next
+        // commit rather than consuming the one-shot dump.
+        return;
+    }
+    dumped.set(toplevel.wm_id);
+    dbgln("WindowServer: thumbnail for wm_id={} is {}x{}", toplevel.wm_id, bitmap->width(), bitmap->height());
+    if (auto encoded = Gfx::PNGWriter::encode(*bitmap); !encoded.is_error()) {
+        auto path = ByteString::formatted("{}/thumb-{}.png", ByteString { dir }, toplevel.wm_id);
+        if (auto file = Core::File::open(path, Core::File::OpenMode::Write); !file.is_error())
+            (void)file.value()->write_until_depleted(encoded.value());
+    }
+}
+
 static void toplevel_commit(wl_listener* listener, void*)
 {
     Toplevel* toplevel = nullptr;
@@ -1173,6 +1200,7 @@ static void toplevel_commit(wl_listener* listener, void*)
     }
     toplevel_update_foreign(*toplevel);
     toplevel_update_frame(*toplevel);
+    maybe_dump_thumbnail(*toplevel);
     WindowManager::emit_window_state(*toplevel);
 }
 

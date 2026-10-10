@@ -66,6 +66,18 @@ that depend on them, each with a clear exit criterion and a fallback.
 Both are listed as risks in [`05-r3-plan.md`](05-r3-plan.md) §7; this document
 schedules them as prerequisites rather than late surprises.
 
+### Spike outcomes
+
+- **Thumbnail capture — resolved (prototype).** Read the client's submitted buffer
+  back directly with `wlr_buffer_begin_data_ptr_access()`; our clients submit
+  `wl_shm` buffers, so this is a straight copy into a `Gfx::Bitmap`
+  (`WindowServer/src/Overlays.cpp`, `snapshot_toplevel()`). A non-mappable
+  (DMA-BUF) buffer returns `nullptr` and callers fall back to the app icon —
+  `ext-image-copy-capture-v1` or a scene-subtree render would lift that later.
+  Verified headlessly: `scripts/run-input-test.sh` captures a 320×200 toplevel and
+  dumps a PNG. WS3 keeps the cached per-toplevel bitmap and refreshes it on damage.
+- **NotificationServer reuse — pending.**
+
 ## 4. Feature order (dependency-driven)
 
 ```
