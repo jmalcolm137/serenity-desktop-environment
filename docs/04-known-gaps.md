@@ -89,10 +89,19 @@ click was already handled and returned earlier).
   `Desktop::Launcher::open` through the launch portal, and hovering expands it;
   this snapshot of the server has no auto-dismiss timer (it closes on click or
   `close_notification`). Covered by `scripts/run-notification-test.sh`.
-- **Tooltips** — not implemented. `GUI::Application::show_tooltip()` is a no-op in
-  the port, so the Taskbar quick-launch icons, window-title buttons, clock,
-  Show-Desktop button and applets show no hover text (all of which SerenityOS
-  provides). Needs a tooltip window near the widget/cursor.
+- **Tooltips** — done (WS6). `GUI::Application::show_tooltip()` was inert because
+  the port's `fast_greet` advertised every system effect as disabled; tooltips are
+  now enabled, so the Taskbar quick-launch/clock, widgets and applets show hover
+  text. A tooltip is a `WindowType::Tooltip` window the client positions near the
+  cursor (`get_global_cursor_position()` now reconstructs the cursor from the
+  surface under the pointer and its origin) and the compositor creates as an
+  undecorated, non-focusable **overlay** layer surface (`serenity-tooltip`), so it
+  is above normal windows and out of the window list/switcher. Covered by
+  `scripts/run-tooltip-test.sh`.
+  - Remaining: tooltips on **applets** can be slightly offset, because the
+    compositor repositions the applet layer surfaces (WS4) without telling the
+    client; and **window-title button tooltips** are compositor chrome, so the
+    compositor still has to draw those itself (not yet done).
 - **Applet area / system tray parity** — done (WS4). The compositor lays applets
   out (AppletManager) right-to-left by `[Applet] Order`, emits
   `applet_area_size_changed` and consumes `set_applet_area_position`, with the

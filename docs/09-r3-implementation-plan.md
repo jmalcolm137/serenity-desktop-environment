@@ -16,8 +16,9 @@ this document owns sequencing and the critical path.
 - R0, R1 and R2 are done; R2's loose ends are closed or explicitly reassigned
   (see `04-known-gaps.md`, "R2 follow-up").
 - The R3 **foundation** (§2) has landed, both **spikes** (§3) are resolved, and
-  **WS1 workspaces**, **WS2 snapping**, **WS3 switcher**, **WS4 applet area** and
-  **WS5 notifications** are complete. WS6–WS7 remain. R3 remains the critical path.
+  **WS1 workspaces**, **WS2 snapping**, **WS3 switcher**, **WS4 applet area**,
+  **WS5 notifications** and **WS6 tooltips** are complete. R3's features are done;
+  only the WS7 font-parity decision remains. R3 remains the critical path.
 
 | Step | Status |
 |---|---|
@@ -28,7 +29,7 @@ this document owns sequencing and the critical path.
 | WS3 — switcher | **Done** |
 | WS4 — applet area | **Done** |
 | WS5 — notifications | **Done** |
-| WS6 — tooltips | Not started |
+| WS6 — tooltips | **Done** |
 | WS7 — font parity | Decision only |
 
 **Strategy (unchanged):** finish R3 before taking on R4+ breadth. The service
@@ -144,8 +145,14 @@ scheduled as prerequisites rather than late surprises.
    drives icon/iconless banners, a launch URL and an in-place update, and the
    compositor log asserts the `serenity-notification` overlay layer surface and the
    absence of a managed toplevel.
-6. **Tooltips (WS6) — not started.** Cross-repo (a host change in
-   `libgui-wayland`); independent, can run in parallel.
+6. **Tooltips (WS6) — done.** Tooltips were inert only because `fast_greet`
+   advertised every system effect as disabled; they are now enabled, and the
+   `WindowType::Tooltip` window is a `serenity-tooltip` overlay layer surface
+   (non-focusable) positioned near the cursor. The compositor's
+   `serenity_toplevel.position` reports the content origin so widget-relative
+   coordinates are exact. `scripts/run-tooltip-test.sh` drives a pointer over a
+   window, requests a tooltip and asserts the `serenity-tooltip` overlay layer
+   surface at the cursor offset. Cross-repo, but no protocol extension was needed.
 
 Work-item detail, SerenityOS references and per-item exit tests live in
 [`05-r3-plan.md`](05-r3-plan.md) §4.
@@ -191,4 +198,4 @@ headless test (§2.4); menus, popups and IME remain manual.
 | Config location/schema | §2.3 | **Resolved** — `WindowServer.ini` + live reload under `$XDG_CONFIG_HOME/sde` |
 | `main.cpp` split scope | §2.1 | **Done** — `Overlays`/`WindowManager`/`Model` extracted |
 | Applet placement channel | WS4 | Done — the compositor owns the layout (offsets the applet layer surfaces); the applet's identity (its name, for `[Applet] Order`) travels in the layer namespace, so no `serenity-window` extension was needed |
-| Tooltips need a host change | WS6 | Open — in `libgui-wayland`; cross-repo coordination |
+| Tooltips need a host change | WS6 | **Done** — enabled the Tooltips system effect in `libgui-wayland` and mapped `WindowType::Tooltip` to a non-focusable `serenity-tooltip` overlay layer surface; no protocol extension needed |

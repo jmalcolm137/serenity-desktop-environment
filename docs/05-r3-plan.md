@@ -210,9 +210,9 @@ is a parity gap recorded in `04-known-gaps.md`.
 
 ### WS6 — Tooltips
 
-`GUI::Application::show_tooltip()` is a no-op in the port
+`GUI::Application::show_tooltip()` was a no-op in the port
 (`04-known-gaps.md`), so the Taskbar quick-launch, clock, window-title buttons
-and applets show no hover text.
+and applets showed no hover text.
 
 - **Host (libgui-wayland):** wire `show_tooltip` to a `WindowType::Tooltip`
   surface, using the timing `Application` already implements
@@ -223,6 +223,21 @@ and applets show no hover text.
 - Note: **window-title button tooltips are compositor chrome**, so the
   compositor draws those itself; client tooltips arrive through the protocol.
   Placement may need a small `serenity-window.xml` extension, as with WS4.
+
+**Implemented (WS6), without a protocol extension.** The no-op was the effects
+vector: `fast_greet` advertised every system effect as disabled, so
+`show_tooltip()` returned early. Tooltips are enabled now; the
+`WindowType::Tooltip` window is created as a `serenity-tooltip` overlay layer
+surface (client-positioned, non-focusable), and `get_global_cursor_position()`
+reconstructs the cursor from the surface under the pointer and that surface's
+origin (the compositor's `serenity_toplevel.position` now reports the *content*
+origin, so widget/tooltip coordinates are exact). SerenityOS tooltips are placed
+once near the cursor and closed on leave; they do **not** follow the cursor, so
+that is not implemented (parity, not a gap). Verified by
+`scripts/run-tooltip-test.sh` (surface semantics + position near the injected
+cursor). Remaining: applet tooltips can be slightly offset (the compositor
+repositions applet surfaces without telling the client), and the compositor's own
+window-title-button tooltips are not drawn yet.
 
 **Reference:** `Userland/Libraries/LibGUI/Application.cpp`
 (`show_tooltip`/`TooltipWindow`).
