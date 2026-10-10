@@ -214,6 +214,9 @@ struct WindowMenuEntry {
 
 struct WindowMenu {
     bool open { false };
+    // Set while the button press that opened the menu is still waiting for its
+    // release; that release must not dismiss the freshly opened menu.
+    bool ignore_release { false };
     Toplevel* toplevel { nullptr };
     Vector<WindowMenuEntry> entries;
     Gfx::IntRect rect; // Screen coordinates.
@@ -786,7 +789,9 @@ static void cursor_button(wl_listener* listener, void* data)
 
     if (event->state == WL_POINTER_BUTTON_STATE_PRESSED) {
         if (handle_frame_press(*server, event->button, event->time_msec)) {
-            server->frame_grab = true;
+            // Opening the window menu is not an interactive frame grab.
+            if (!server->window_menu.open)
+                server->frame_grab = true;
             return;
         }
     } else if (server->frame_grab) {
@@ -1341,6 +1346,7 @@ static void close_window_menu(Server& server)
     if (!menu.open)
         return;
     menu.open = false;
+    menu.ignore_release = false;
     menu.toplevel = nullptr;
     menu.hovered_index = -1;
     menu.pressed_index = -1;
@@ -1355,6 +1361,10 @@ static void open_window_menu(Server& server, Toplevel& toplevel, Gfx::IntPoint p
 
     auto& menu = server.window_menu;
     menu.open = true;
+    menu.ignore_release = true;
+    // Opening the menu must not leave a stale frame grab behind: the press that
+    // opened it is consumed here, not by an interactive frame drag.
+    server.frame_grab = false;
     menu.toplevel = &toplevel;
     menu.hovered_index = -1;
     menu.pressed_index = -1;
@@ -1457,8 +1467,9 @@ static void activate_window_menu_item(Server& server, int index)
 
 static void window_menu_handle_press(Server& server, uint32_t button)
 {
+    auto& menu = server.window_menu;
     if (button == BTN_LEFT)
-        server.window_menu.pressed_index = window_menu_index_at(server.window_menu, server.cursor->x, server.cursor->y);
+        menu.pressed_index = window_menu_index_at(menu, server.cursor->x, server.cursor->y);
     else
         close_window_menu(server);
 }
@@ -1468,6 +1479,14 @@ static void window_menu_handle_release(Server& server, uint32_t button)
     auto& menu = server.window_menu;
     if (!menu.open)
         return;
+
+    // The release paired with the press that opened the menu must not dismiss
+    // it, or it would vanish before an item could be chosen.
+    if (menu.ignore_release) {
+        menu.ignore_release = false;
+        return;
+    }
+
     if (button != BTN_LEFT) {
         close_window_menu(server);
         return;
