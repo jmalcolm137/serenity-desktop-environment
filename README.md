@@ -38,9 +38,45 @@ Milestone progress (see [`docs/01-objectives.md`](docs/01-objectives.md) §11):
 | # | Milestone | Status |
 |---|---|---|
 | **R0** | Design | Done |
-| **R1** | Compositor bring-up | In progress — nested dev session; real-hardware and headless bring-up outstanding |
+| **R1** | Compositor bring-up | Done — nested, headless (CI-tested) and DRM/libinput session paths |
 | **R2** | Shell v1 | In progress — Taskbar runs; Desktop/Settings/wallpaper pending |
 | **R3** | Serenity look & behaviours | Started — window chrome done; switcher/snap/workspaces pending |
 | **R4** | Session & settings | Not started |
 | **R5** | Hardening & packaging | Not started |
+
+## Running
+
+Build the compositor (links the `libgui-wayland` userland libraries and the
+pinned `wlroots`):
+
+```sh
+scripts/build-window-server.sh
+```
+
+**Nested (development).** Run the compositor as a Wayland client of your host
+session; it hosts the shell and Serenity apps:
+
+```sh
+SERENITY=/path/to/libgui-wayland/serenity \
+BUILD=/path/to/libgui-wayland/build/lagom \
+WAYLAND_DISPLAY=wayland-0 SERENITY_RES_ROOT="$SERENITY/Base/res" \
+LD_LIBRARY_PATH="$BUILD/lib" \
+build/WindowServer/WindowServer -n sde -s "$BUILD/bin/Taskbar & $BUILD/bin/TextEditor"
+```
+
+**Headless (CI).** `scripts/run-headless-test.sh` runs the compositor with the
+headless backend and asserts that it hosts a LibWindowServer app, a layer-shell
+panel and a native Wayland app — the R1 exit criterion, with no display needed.
+
+**Real hardware (DRM/KMS + libinput).** From a TTY (`Ctrl+Alt+F3`) or a display
+manager session entry:
+
+```sh
+scripts/start-sde-session.sh
+```
+
+With `WAYLAND_DISPLAY`/`DISPLAY` unset, `wlr_backend_autocreate` selects the
+DRM+libinput backend and `libseat` grants DRM master. The launcher starts the
+compositor on socket `sde`, serves the WindowManagerServer on `/tmp/portal/wm`,
+and starts the Taskbar and a TextEditor.
 
