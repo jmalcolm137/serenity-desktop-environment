@@ -22,6 +22,7 @@ The stack is split across a small family of repositories:
 - [`docs/08-compositor-gaps.md`](docs/08-compositor-gaps.md) — what is missing from the plan for `WindowServer` as a general-purpose compositor: session/seat, robustness, ecosystem protocols, portals, input/IME, accessibility, output/render depth, testing.
 - [`docs/09-r3-implementation-plan.md`](docs/09-r3-implementation-plan.md) — execution companion to `05`: foundation-first sequencing, the de-risking spikes, feature order, and what to pull forward.
 - [`docs/10-font-parity-decision.md`](docs/10-font-parity-decision.md) — the R3 font-parity decision (bitmap Katica, no size-based zoom) and the R4/G5 path to scalable fonts.
+- [`docs/11-r4-implementation-plan.md`](docs/11-r4-implementation-plan.md) — the R4 (Session & settings) execution plan, delivered as milestones R4.1–R4.9.
 
 ## Status
 
@@ -48,7 +49,7 @@ Milestone progress (see [`docs/01-objectives.md`](docs/01-objectives.md) §11):
 | **R1** | Compositor bring-up | Done — nested, headless (CI-tested) and DRM/libinput session paths |
 | **R2** | Shell v1 | Done — Taskbar, WindowManagerServer, wallpaper, Desktop, file icons, Launch |
 | **R3** | Serenity look & behaviours | Done — window chrome, switcher, snapping, workspaces, applet area, notifications, tooltips; font-parity decision recorded (zoom deferred to R4/G5) |
-| **R4** | Session & settings | Not started |
+| **R4** | Session & settings | Started — R4.1 session safety net compositor side landed (idle/inhibit/lock/DPMS); lock UI/auth outstanding; see `docs/11-r4-implementation-plan.md` |
 | **R5** | Compatibility & ecosystem | Not started |
 | **R6** | Hardening & packaging | Not started |
 

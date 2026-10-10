@@ -228,12 +228,26 @@ The environment is considered successful when, on a stock Linux machine:
 | **R1** | **Compositor bring-up** | A minimal SDE compositor runs one LibWindowServer app, one layer-shell panel, one native app, on real hardware; frame-perfect and headless. |
 | **R2** | **Shell v1** | Taskbar, clock, window list, system menu, wallpapers; WindowManagerServer. |
 | **R3** | **Serenity look & behaviours** | SSD Serenity frames, switcher with thumbnails, snapping, workspaces, applets, notifications. |
-| **R4** | **Session & settings** | Login/autostart/lock/power; display/input/appearance settings; Terminal + SystemMonitor. |
+| **R4** | **Session & settings** | Login/autostart/lock/power; display/input/appearance settings; Terminal + SystemMonitor — delivered as milestones **R4.1–R4.9** ([`11-r4-implementation-plan.md`](11-r4-implementation-plan.md)). |
 | **R5** | **Compatibility & ecosystem** | XWayland; the native-app protocol matrix; portals; clipboard/DnD/data-control; text-input/IME; accessibility; global shortcuts; capture/recording. |
 | **R6** | **Hardening & packaging** | HiDPI, multi-output, multi-GPU, performance/latency budgets, crash recovery/safe mode, packaging, CI matrix, docs. |
 
 Each milestone is delivered with headless tests where the behaviour is
 scriptable, and manual verification where it is not (menus, popups, IME).
+
+R4's additional milestones:
+
+| # | Milestone |
+|---|---|
+| **R4.1** | Session safety net — idle, inhibit, lock, DPMS (+ a lock client) |
+| **R4.2** | Session lifecycle & supervisor — autostart, logout/reboot/shutdown, restart |
+| **R4.3** | logind / systemd session integration |
+| **R4.4** | Compositor configuration & live reload |
+| **R4.5** | Display / output settings (+ Monitor tab) |
+| **R4.6** | Input settings & keymaps (+ MouseSettings) |
+| **R4.7** | Appearance, effects & fonts (+ working zoom) |
+| **R4.8** | Workspaces settings tab |
+| **R4.9** | Applications enablement (Terminal, SystemMonitor, …) |
 
 ## 12. Key risks (summary)
 

@@ -126,11 +126,21 @@ click was already handled and returned earlier).
   set wallpaper stays and covers the colour. This is intentional parity, not a
   bug.
 
-## R4 — Session & settings (not started)
+## R4 — Session & settings (started)
 
+R4 is broken into milestones **R4.1–R4.9** with sequencing, de-risking spikes and
+exit tests in [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md).
 Compositor-facing session/input gaps (logind contract, idle/inhibit/lock/DPMS,
 keymap/IME, input-device config) are catalogued in
 [`08-compositor-gaps.md`](08-compositor-gaps.md) §1 and §4.
+
+- **Session safety net (R4.1)** — compositor side landed: `WindowServer` now
+  serves `ext-idle-notify-v1`, `zwp_idle_inhibit_v1`, `wlr-output-power-management`
+  (DPMS) and `ext-session-lock-v1` (per-output lock surfaces, `locked` once every
+  output is covered, input routed to the lock surface while locked). Verified by
+  `scripts/run-idle-test.sh` and `scripts/run-lock-test.sh`. **Remaining:** a real
+  lock client with authentication (SerenityOS has no lock screen) and dim/blank
+  before lock.
 
 - **Session lifecycle (G6 / W5).** No greet/login, session start, autostart,
   save/restore, lock, logout, reboot, or shut-down; no SystemServer-style
