@@ -78,6 +78,8 @@ extern "C" {
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_subcompositor.h>
+#include <wlr/types/wlr_virtual_keyboard_v1.h>
+#include <wlr/types/wlr_virtual_pointer_v1.h>
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_xdg_output_v1.h>
@@ -763,6 +765,27 @@ static void server_new_input(wl_listener* listener, void* data)
     wlr_seat_set_capabilities(server->seat, capabilities);
 }
 
+// Virtual input (wlr virtual-keyboard / virtual-pointer). Both embed a real
+// wlr_input_device, so route them through the same setup as physical input - this
+// is what lets the headless harness script keyboard and pointer events.
+static void server_new_virtual_keyboard(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, new_virtual_keyboard);
+    auto* keyboard = static_cast<wlr_virtual_keyboard_v1*>(data);
+    dbgln("WindowServer: virtual keyboard connected");
+    server_new_input(&server->new_input, &keyboard->keyboard.base);
+}
+
+static void server_new_virtual_pointer(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, new_virtual_pointer);
+    auto* event = static_cast<wlr_virtual_pointer_v1_new_pointer_event*>(data);
+    dbgln("WindowServer: virtual pointer connected");
+    server_new_input(&server->new_input, &event->new_pointer->pointer.base);
+}
+
 // --- outputs --------------------------------------------------------------
 
 // Compose the desktop background for an output: the theme's background colour,
@@ -1435,6 +1458,7 @@ void open_window_menu(Server& server, Toplevel& toplevel, Gfx::IntPoint position
 
     menu.node->raise_to_top();
     menu.node->set_visible(true);
+    dbgln("WindowServer: window menu opened for wm_id={}", toplevel.wm_id);
 }
 
 static void update_window_menu_hover(Server& server, double x, double y)
@@ -2232,6 +2256,14 @@ static ErrorOr<void> initialize(Server& server)
     wl_signal_add(&server.output_manager->events.apply, &server.output_manager_apply);
     server.output_manager_test.notify = output_manager_test;
     wl_signal_add(&server.output_manager->events.test, &server.output_manager_test);
+
+    // Virtual input for the headless harness (docs/09-r3-implementation-plan.md §2.4).
+    server.virtual_keyboard_manager = wlr_virtual_keyboard_manager_v1_create(server.display);
+    server.new_virtual_keyboard.notify = server_new_virtual_keyboard;
+    wl_signal_add(&server.virtual_keyboard_manager->events.new_virtual_keyboard, &server.new_virtual_keyboard);
+    server.virtual_pointer_manager = wlr_virtual_pointer_manager_v1_create(server.display);
+    server.new_virtual_pointer.notify = server_new_virtual_pointer;
+    wl_signal_add(&server.virtual_pointer_manager->events.new_virtual_pointer, &server.new_virtual_pointer);
 
     server.cursor = wlr_cursor_create();
     wlr_cursor_attach_output_layout(server.cursor, server.output_layout);

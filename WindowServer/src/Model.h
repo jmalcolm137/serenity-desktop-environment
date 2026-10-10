@@ -46,6 +46,8 @@ struct wlr_scene_output_layout;
 struct wlr_scene_tree;
 struct wlr_seat;
 struct wlr_surface;
+struct wlr_virtual_keyboard_manager_v1;
+struct wlr_virtual_pointer_manager_v1;
 struct wlr_xcursor_manager;
 struct wlr_xdg_popup;
 struct wlr_xdg_shell;
@@ -215,6 +217,10 @@ struct Server {
     wlr_layer_shell_v1* layer_shell { nullptr };
     wlr_foreign_toplevel_manager_v1* foreign_toplevel_manager { nullptr };
     wlr_output_manager_v1* output_manager { nullptr };
+    // Virtual input (wlr virtual-keyboard / virtual-pointer), so headless tests
+    // can script keyboard and pointer events. See docs/09 §2.4.
+    wlr_virtual_keyboard_manager_v1* virtual_keyboard_manager { nullptr };
+    wlr_virtual_pointer_manager_v1* virtual_pointer_manager { nullptr };
     wlr_cursor* cursor { nullptr };
     wlr_xcursor_manager* cursor_manager { nullptr };
     wlr_seat* seat { nullptr };
@@ -236,6 +242,8 @@ struct Server {
     wl_listener seat_request_cursor { };
     wl_listener seat_pointer_focus_change { };
     wl_listener seat_request_set_selection { };
+    wl_listener new_virtual_keyboard { };
+    wl_listener new_virtual_pointer { };
 
     Vector<NonnullOwnPtr<Output>> outputs;
     Vector<NonnullOwnPtr<Toplevel>> toplevels;
