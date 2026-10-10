@@ -1049,6 +1049,7 @@ static void toplevel_map(wl_listener* listener, void*)
     dbgln("WindowServer: toplevel mapped title='{}' app_id='{}'",
         toplevel->xdg_toplevel->title ? toplevel->xdg_toplevel->title : "",
         toplevel->xdg_toplevel->app_id ? toplevel->xdg_toplevel->app_id : "");
+    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
     toplevel->frame_active = true;
     toplevel_update_frame(*toplevel);
     if (toplevel->foreign_handle && toplevel->server->primary_output)
@@ -1061,6 +1062,9 @@ static void toplevel_unmap(wl_listener* listener, void*)
 {
     Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, unmap);
+    // Hide the compositor-drawn frame along with the client's surface. The frame
+    // buffer is a child of this tree and isn't tied to the wl_surface lifetime.
+    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
     if (toplevel == toplevel->server->grabbed_toplevel)
         reset_cursor_mode(*toplevel->server);
 }
@@ -1095,8 +1099,20 @@ static void toplevel_destroy(wl_listener* listener, void*)
     wl_list_remove(&toplevel->foreign_request_close.link);
     if (toplevel->foreign_handle)
         wlr_foreign_toplevel_handle_v1_destroy(toplevel->foreign_handle);
+    // The chrome resource may outlive the toplevel (the client owns it), so make
+    // sure its destroy handler can't touch freed memory.
+    if (toplevel->chrome)
+        wl_resource_set_user_data(toplevel->chrome, nullptr);
     if (server.window_menu.open && server.window_menu.toplevel == toplevel)
         close_window_menu(server);
+    // `scene_tree` is our own wrapper around the xdg surface's content tree (so
+    // the frame buffer can share a node with the content). wlroots only tears
+    // down the content tree it created, so without this the frame buffer keeps
+    // rendering after the client is gone and the window appears to freeze on
+    // screen. Destroying the wrapper also destroys the content child, which
+    // detaches wlroots' listener before the xdg_surface itself goes away.
+    wlr_scene_node_destroy(&toplevel->scene_tree->node);
+    dbgln("WindowServer: toplevel destroyed wm_id={}", toplevel->wm_id);
     wm_emit_removed(*toplevel);
     remove_owned(server.toplevels, toplevel);
 }
