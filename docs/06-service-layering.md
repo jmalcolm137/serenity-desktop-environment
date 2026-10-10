@@ -82,12 +82,19 @@ multi-client session model without more scaffolding. The launch service, by
 contrast, owns genuinely session-scoped state (the handler database, the launch
 allow-list), which is why it is the one we host in the session.
 
-The class needs one small upstreamable patch
-(`patches/0022-imagedecoder-in-process-host.patch`): an opt-out
-(`set_exit_when_client_disconnects(false)`) so that a client disconnecting does
-not quit the **host application's** event loop and background thread. The
-in-process host sets it; the standalone service keeps the default (exit with its
-sole client).
+The class needs a small upstreamable patch
+(`patches/0022-imagedecoder-in-process-host.patch`) with two in-process opt-outs:
+
+- `set_exit_when_client_disconnects(false)` — a client disconnecting must not
+  quit the **host application's** event loop and background thread (the standalone
+  service keeps the default: exit with its sole client).
+- `set_decode_on_connection_thread(true)` — the upstream decode job runs on
+  `Threading::BackgroundAction`, which is a **single process-global thread**. But
+  LibGUI's `FileSystemModel` renders thumbnails *on that same thread* and then
+  blocks in `send_sync` waiting for the decode — so a decode job could never be
+  scheduled and thumbnail rendering deadlocked. Upstream never hits this because
+  `ImageDecoder` is a separate process with its own background thread; an
+  in-process decoder must instead decode inline on its own (LibWM portal) thread.
 
 ## 5. Why do this now
 

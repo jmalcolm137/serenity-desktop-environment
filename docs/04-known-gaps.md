@@ -189,7 +189,10 @@ Compositor-facing detail lives in [`06-compositor-gaps.md`](06-compositor-gaps.m
   (`LibWM` hosts SerenityOS's `ImageDecoder::ConnectionFromClient` on the `image`
   socketpair). This fixes the `FileSystemModel`/wallpaper thumbnails
   (`connect: No such file or directory`) and lets **ImageViewer** decode images.
-  No SDE session service: see `06-service-layering.md` §4 for why (the upstream
-  service is a single-client system service; a session instance would be a
-  sharing optimisation only).
+  Note the in-process host decodes **inline on its own thread**: `ImageDecoder`'s
+  upstream job runs on `Threading::BackgroundAction`, the single process-global
+  thread that `FileSystemModel`'s thumbnail renderer already occupies, so sharing
+  it deadlocked thumbnails. No SDE session service: see
+  `06-service-layering.md` §4 for why (the upstream service is a single-client
+  system service; a session instance would be a sharing optimisation only).
 - Documented: bitmap-font zoom limitation (`02-compositor-decision.md` §11).
