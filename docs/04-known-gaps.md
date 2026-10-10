@@ -152,6 +152,14 @@ the dead branch and its comment.
   app clamped an off-screen rect against the desktop. Client menus opened from
   layer surfaces are now also dismissed by an outside press
   (`serenity_window_manager.dismiss_menus`), instead of appearing stuck open.
+- Display Settings: **Apply no longer freezes.** Wallpapers are now stored as raw
+  pixels (PNG-encoding cost ~800 ms on the UI thread); the compositor watches the
+  right file and coalesces the burst of state events into one repaint; the Monitor
+  tab's apply is skipped (output configuration is unsupported) instead of raising
+  the modal "keep this screen layout? reverting in N seconds" dialog; and several
+  synchronous WindowServer calls the tabs make (`set_system_fonts`,
+  `apply_workspace_settings`, `get_system_theme_override`, `get_screen_layout`)
+  now return valid responses instead of blocking the application forever.
 - Port (host): empty-size window `VERIFY` (Desktop); first layer configure not
   delivered, so the Desktop widget tree never laid out; `Process::spawn`
   working-directory `TODO()` crash; LaunchServer stub returned invalid

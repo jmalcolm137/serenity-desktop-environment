@@ -29,6 +29,7 @@
 #include <LibCore/ResourceImplementation.h>
 #include <LibCore/ResourceImplementationFile.h>
 #include <LibCore/Socket.h>
+#include <LibCore/Timer.h>
 #include <LibGfx/Bitmap.h>
 #include <LibGfx/Font/FontDatabase.h>
 #include <LibGfx/ImageFormats/PNGWriter.h>
@@ -171,6 +172,68 @@ static void write_sde_state(StringView name, ReadonlyBytes bytes)
 {
     if (auto file = Core::File::open(sde_state_file(name), Core::File::OpenMode::Write); !file.is_error())
         (void)file.value()->write_until_depleted(bytes);
+}
+
+static ByteBuffer read_sde_state_bytes(StringView name)
+{
+    auto file = Core::File::open(sde_state_file(name), Core::File::OpenMode::Read);
+    if (file.is_error())
+        return {};
+    auto contents = file.value()->read_until_eof();
+    if (contents.is_error())
+        return {};
+    return contents.release_value();
+}
+
+// Raw-pixel wallpaper state (no PNG encode: that costs ~800ms and would stall
+// the applying application). Must match WallpaperHeader in the client shim
+// (libgui-wayland/src/WindowServerConnection.cpp).
+struct WallpaperHeader {
+    u32 magic;
+    u32 format;
+    u32 width;
+    u32 height;
+    u32 pitch;
+};
+static constexpr u32 wallpaper_magic = 0x53445750; // "SDWP"
+
+static void write_sde_wallpaper(RefPtr<Gfx::Bitmap> const& bitmap)
+{
+    if (!bitmap) {
+        write_sde_state("wallpaper.raw"sv, {});
+        return;
+    }
+    auto const pixels = static_cast<size_t>(bitmap->pitch()) * bitmap->height();
+    WallpaperHeader header {
+        wallpaper_magic,
+        static_cast<u32>(bitmap->format()),
+        static_cast<u32>(bitmap->width()),
+        static_cast<u32>(bitmap->height()),
+        static_cast<u32>(bitmap->pitch()),
+    };
+    auto buffer = ByteBuffer::create_uninitialized(sizeof(header) + pixels).release_value_but_fixme_should_propagate_errors();
+    memcpy(buffer.data(), &header, sizeof(header));
+    memcpy(buffer.data() + sizeof(header), bitmap->scanline(0), pixels);
+    write_sde_state("wallpaper.raw"sv, buffer);
+}
+
+static RefPtr<Gfx::Bitmap> read_sde_wallpaper()
+{
+    auto raw = read_sde_state_bytes("wallpaper.raw"sv);
+    if (raw.size() <= sizeof(WallpaperHeader))
+        return nullptr;
+    WallpaperHeader header {};
+    memcpy(&header, raw.data(), sizeof(header));
+    if (header.magic != wallpaper_magic || header.width == 0 || header.height == 0 || header.pitch == 0)
+        return nullptr;
+    auto bitmap = Gfx::Bitmap::create(static_cast<Gfx::BitmapFormat>(header.format), { static_cast<int>(header.width), static_cast<int>(header.height) });
+    if (bitmap.is_error())
+        return nullptr;
+    auto& created = *bitmap.value();
+    auto const row_bytes = min(static_cast<size_t>(header.pitch), static_cast<size_t>(created.pitch()));
+    for (int y = 0; y < created.height(); ++y)
+        memcpy(created.scanline(y), raw.data() + sizeof(header) + static_cast<size_t>(y) * header.pitch, row_bytes);
+    return bitmap.release_value();
 }
 
 static RefPtr<Gfx::Bitmap> load_icon(ByteString const& resource_root, StringView name, StringView fallback)
@@ -1081,9 +1144,7 @@ static void update_desktop_background(Server& server, Output& output)
 // Re-read the persisted wallpaper state into the globals (no repaint yet).
 static void load_wallpaper_state()
 {
-    g_wallpaper = nullptr;
-    if (auto bitmap = Gfx::Bitmap::load_from_file(sde_state_file("wallpaper.png"sv)); !bitmap.is_error())
-        g_wallpaper = bitmap.release_value();
+    g_wallpaper = read_sde_wallpaper();
 
     g_wallpaper_mode = "center";
     if (auto mode = read_sde_state("wallpaper.mode"sv); !mode.is_empty())
@@ -1098,14 +1159,14 @@ static void load_wallpaper_state()
 static void apply_wallpaper_from_state(Server& server)
 {
     load_wallpaper_state();
-    dbgln("WindowServer: wallpaper updated (wallpaper={}, mode={}, color={})",
-        g_wallpaper ? "loaded"_string : "none"_string,
-        g_wallpaper_mode,
-        g_background_color.has_value() ? g_background_color->to_string() : "theme"_string);
     for (auto& output : server.outputs) {
         output->background_size = { };
         update_desktop_background(server, *output);
     }
+    dbgln("WindowServer: wallpaper updated (wallpaper={}, mode={}, color={})",
+        g_wallpaper ? ByteString::formatted("{}x{}", g_wallpaper->width(), g_wallpaper->height()) : ByteString { "none" },
+        g_wallpaper_mode,
+        g_background_color.has_value() ? g_background_color->to_string() : "theme"_string);
 }
 
 // On first run, seed the state directory from SDE_WALLPAPER / SDE_WALLPAPER_MODE,
@@ -1124,19 +1185,16 @@ static void initialize_wallpaper(ByteString const& resource_root)
         write_sde_state("wallpaper.color"sv, {});
         // Ensure the image file exists (empty == no wallpaper) so its content
         // watch attaches; overwrite it if the environment names a wallpaper.
-        write_sde_state("wallpaper.png"sv, {});
+        write_sde_state("wallpaper.raw"sv, {});
         if (auto const* env_wallpaper = getenv("SDE_WALLPAPER"); env_wallpaper && *env_wallpaper) {
             ByteString path { env_wallpaper };
             if (!path.starts_with('/'))
                 path = ByteString::formatted("{}/wallpapers/{}", resource_root, path);
-            auto bitmap = Gfx::Bitmap::load_from_file(path);
-            if (bitmap.is_error()) {
-                warnln("WindowServer: could not load the seed wallpaper '{}': {}", path, bitmap.error());
-            } else if (auto encoded = Gfx::PNGWriter::encode(*bitmap.value()); encoded.is_error()) {
-                warnln("WindowServer: could not encode the seed wallpaper '{}': {}", path, encoded.error());
+            if (auto bitmap = Gfx::Bitmap::load_from_file(path); !bitmap.is_error()) {
+                write_sde_wallpaper(bitmap.value());
+                dbgln("WindowServer: seeded wallpaper from '{}' ({}x{})", path, bitmap.value()->width(), bitmap.value()->height());
             } else {
-                write_sde_state("wallpaper.png"sv, encoded.value());
-                dbgln("WindowServer: seeded wallpaper from '{}' ({} bytes)", path, encoded.value().size());
+                warnln("WindowServer: could not load the seed wallpaper '{}': {}", path, bitmap.error());
             }
         }
     }
@@ -1147,15 +1205,19 @@ static void initialize_wallpaper(ByteString const& resource_root)
 static void watch_wallpaper_state(Server& server)
 {
     static RefPtr<Core::FileWatcher> watcher;
+    static RefPtr<Core::Timer> coalesce;
+    // A single change produces several inotify events (file truncate + write,
+    // plus the mode/colour files); coalesce them into one reload.
+    coalesce = Core::Timer::create_single_shot(30, [&server] { apply_wallpaper_from_state(server); });
     watcher = Core::FileWatcher::create().release_value_but_fixme_should_propagate_errors();
     auto directory = sde_state_dir();
     watcher->on_change = [&server, directory](Core::FileWatcherEvent const& event) {
         if (!event.event_path.starts_with(directory))
             return;
-        apply_wallpaper_from_state(server);
+        coalesce->restart();
     };
     (void)watcher->add_watch(directory, Core::FileWatcherEvent::Type::ChildCreated | Core::FileWatcherEvent::Type::ChildDeleted);
-    for (auto name : { "wallpaper.png"sv, "wallpaper.mode"sv, "wallpaper.color"sv })
+    for (auto name : { "wallpaper.raw"sv, "wallpaper.mode"sv, "wallpaper.color"sv })
         (void)watcher->add_watch(sde_state_file(name), Core::FileWatcherEvent::Type::ContentModified | Core::FileWatcherEvent::Type::MetadataModified | Core::FileWatcherEvent::Type::Deleted);
 }
 
