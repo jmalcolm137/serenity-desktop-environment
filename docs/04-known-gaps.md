@@ -36,7 +36,15 @@ Done: Taskbar (system menu, quick-launch, window list, clock), WindowManagerServ
   provides). Needs a tooltip window near the widget/cursor.
 - **Applet area / system tray parity** — applets run as layer surfaces, but
   applet-area position/semantics are no-ops.
-- **Theming/font parity** — only the `Default` theme is used; no theme switching.
+- **Font parity** — fixed to the bitmap Katica family; size-based zoom is a no-op.
+  Theme switching (Taskbar ▸ Themes) works: the list is read under the resource
+  root, the theme is loaded/recoloured in-process, and a shared broker file
+  (`$XDG_RUNTIME_DIR/sde-theme`) is watched by every client and the compositor so
+  a switch restyles all running apps and the window chrome. As in SerenityOS
+  (`keep_desktop_background=false` clears `Background/Color`), a theme switch
+  changes the desktop **colour** but does not replace a wallpaper **image** — a
+  set wallpaper stays and covers the colour. This is intentional parity, not a
+  bug.
 
 ## R4 — Session & settings (not started)
 
