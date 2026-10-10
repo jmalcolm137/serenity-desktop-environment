@@ -241,6 +241,13 @@ struct Server {
     wlr_scene* scene { nullptr };
     wlr_scene_output_layout* scene_layout { nullptr };
     wlr_output_layout* output_layout { nullptr };
+    // Per-layer scene trees, in bottom-to-top order, so layer surfaces stack
+    // correctly relative to ordinary windows (the flat scene root does not).
+    wlr_scene_tree* background_tree { nullptr };
+    wlr_scene_tree* bottom_tree { nullptr };
+    wlr_scene_tree* windows_tree { nullptr };
+    wlr_scene_tree* top_tree { nullptr };
+    wlr_scene_tree* overlay_tree { nullptr };
     wlr_xdg_shell* xdg_shell { nullptr };
     wlr_layer_shell_v1* layer_shell { nullptr };
     wlr_foreign_toplevel_manager_v1* foreign_toplevel_manager { nullptr };
@@ -1393,7 +1400,7 @@ static void paint_window_menu(Server& server, WindowMenu& menu)
     }
 
     if (!menu.buffer) {
-        menu.tree = wlr_scene_tree_create(&server.scene->tree);
+        menu.tree = wlr_scene_tree_create(server.overlay_tree);
         menu.buffer = wlr_scene_buffer_create(menu.tree, nullptr);
     }
     menu.bitmap = bitmap;
@@ -1828,7 +1835,7 @@ static void server_new_xdg_toplevel(wl_listener* listener, void* data)
     auto toplevel = make<Toplevel>();
     toplevel->server = server;
     toplevel->xdg_toplevel = xdg_toplevel;
-    toplevel->scene_tree = wlr_scene_tree_create(&server->scene->tree);
+    toplevel->scene_tree = wlr_scene_tree_create(server->windows_tree);
     toplevel->scene_tree->node.data = toplevel.ptr();
     toplevel->content_tree = wlr_scene_xdg_surface_create(toplevel->scene_tree, xdg_toplevel->base);
     xdg_toplevel->base->data = toplevel->content_tree;
@@ -2016,7 +2023,24 @@ static void server_new_layer_surface(wl_listener* listener, void* data)
     layer->layer_surface = layer_surface;
     layer->output = layer_surface->output;
     dbgln("WindowServer: layer surface namespace='{}'", layer_surface->layer_namespace ? layer_surface->layer_namespace : "");
-    layer->scene = wlr_scene_layer_surface_v1_create(&server->scene->tree, layer_surface);
+    wlr_scene_tree* layer_parent = server->background_tree;
+    switch (layer_surface->pending.layer) {
+    case ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND:
+        layer_parent = server->background_tree;
+        break;
+    case ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM:
+        layer_parent = server->bottom_tree;
+        break;
+    case ZWLR_LAYER_SHELL_V1_LAYER_TOP:
+        layer_parent = server->top_tree;
+        break;
+    case ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY:
+        layer_parent = server->overlay_tree;
+        break;
+    default:
+        break;
+    }
+    layer->scene = wlr_scene_layer_surface_v1_create(layer_parent, layer_surface);
     layer->scene->tree->node.data = layer.ptr();
     layer_surface->data = layer.ptr();
 
@@ -2345,6 +2369,15 @@ static ErrorOr<void> initialize(Server& server)
     server.output_layout = wlr_output_layout_create(server.display);
     server.scene = wlr_scene_create();
     server.scene_layout = wlr_scene_attach_output_layout(server.scene, server.output_layout);
+
+    // Layer trees, created bottom-to-top: background, bottom, windows, top,
+    // overlay. Layer surfaces go into the tree for their layer and ordinary
+    // windows into windows_tree, so stacking is correct.
+    server.background_tree = wlr_scene_tree_create(&server.scene->tree);
+    server.bottom_tree = wlr_scene_tree_create(&server.scene->tree);
+    server.windows_tree = wlr_scene_tree_create(&server.scene->tree);
+    server.top_tree = wlr_scene_tree_create(&server.scene->tree);
+    server.overlay_tree = wlr_scene_tree_create(&server.scene->tree);
     wlr_xdg_output_manager_v1_create(server.display, server.output_layout);
 
     server.new_output.notify = server_new_output;
