@@ -185,14 +185,12 @@ Compositor-facing detail lives in [`06-compositor-gaps.md`](06-compositor-gaps.m
   patterns (`/etc` absent from the sparse checkout); Serenity `/bin/X` helper
   paths not resolved to host binaries (launching failed with ENOENT); Launch
   service implemented (handler resolution + spawn).
-- **`ImageDecoder` portal** — served in-process by libgui-wayland
-  (`LibWM` hosts SerenityOS's `ImageDecoder::ConnectionFromClient` on the `image`
-  socketpair). This fixes the `FileSystemModel`/wallpaper thumbnails
-  (`connect: No such file or directory`) and lets **ImageViewer** decode images.
-  Note the in-process host decodes **inline on its own thread**: `ImageDecoder`'s
-  upstream job runs on `Threading::BackgroundAction`, the single process-global
-  thread that `FileSystemModel`'s thumbnail renderer already occupies, so sharing
-  it deadlocked thumbnails. No SDE session service: see
-  `06-service-layering.md` §4 for why (the upstream service is a single-client
-  system service; a session instance would be a sharing optimisation only).
+- **`ImageDecoder` portal** — served in-process by libgui-wayland (its in-process
+  fallback) and, when SDE runs, by the `ImageDecoder/` session service. This fixes
+  the `FileSystemModel`/wallpaper thumbnails (`connect: No such file or
+  directory`) and lets **ImageViewer** decode images. The in-process host decodes
+  **inline on its own thread**: `ImageDecoder`'s upstream job runs on
+  `Threading::BackgroundAction`, the single process-global thread that
+  `FileSystemModel`'s thumbnail renderer already occupies, so sharing it deadlocked
+  thumbnails — a separate process does not. See `06-service-layering.md` §4.
 - Documented: bitmap-font zoom limitation (`02-compositor-decision.md` §11).

@@ -53,11 +53,24 @@ if [[ -x "$LAUNCH_SERVER" ]]; then
     LAUNCH_SERVER_PID=$!
 fi
 
+# The session ImageDecoder owns the image portal when it is built and running;
+# without it, applications fall back to the in-process ImageDecoder inside
+# libgui-wayland. Either way image decoding works.
+IMAGE_DECODER="$SDE_ROOT/build/ImageDecoder/ImageDecoder"
+IMAGE_DECODER_PID=""
+if [[ -x "$IMAGE_DECODER" ]]; then
+    "$IMAGE_DECODER" &
+    IMAGE_DECODER_PID=$!
+fi
+
 echo "SDE: starting WindowServer (${SDE_BACKENDS:-drm,libinput}) on $XDG_RUNTIME_DIR"
 "$COMP" -n sde -s "$STARTUP"
 status=$?
 
 if [[ -n "$LAUNCH_SERVER_PID" ]]; then
     kill "$LAUNCH_SERVER_PID" 2>/dev/null || true
+fi
+if [[ -n "$IMAGE_DECODER_PID" ]]; then
+    kill "$IMAGE_DECODER_PID" 2>/dev/null || true
 fi
 exit "$status"
