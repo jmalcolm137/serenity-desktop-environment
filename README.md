@@ -39,7 +39,7 @@ Milestone progress (see [`docs/01-objectives.md`](docs/01-objectives.md) §11):
 |---|---|---|
 | **R0** | Design | Done |
 | **R1** | Compositor bring-up | Done — nested, headless (CI-tested) and DRM/libinput session paths |
-| **R2** | Shell v1 | In progress — Taskbar + WindowManagerServer + desktop wallpaper done; Desktop/Settings pending |
+| **R2** | Shell v1 | In progress — Taskbar + WindowManagerServer + wallpaper + Desktop done; Settings pending |
 | **R3** | Serenity look & behaviours | Started — window chrome done; switcher/snap/workspaces pending |
 | **R4** | Session & settings | Not started |
 | **R5** | Hardening & packaging | Not started |
@@ -61,8 +61,11 @@ SERENITY=/path/to/libgui-wayland/serenity \
 BUILD=/path/to/libgui-wayland/build/lagom \
 WAYLAND_DISPLAY=wayland-0 SERENITY_RES_ROOT="$SERENITY/Base/res" \
 LD_LIBRARY_PATH="$BUILD/lib" \
-build/WindowServer/WindowServer -n sde -s "$BUILD/bin/Taskbar & $BUILD/bin/TextEditor"
+build/WindowServer/WindowServer -n sde \
+  -s "$BUILD/bin/Taskbar & $BUILD/bin/FileManager -d & $BUILD/bin/TextEditor"
 ```
+
+(`FileManager -d` is the SerenityOS Desktop — icons over the wallpaper.)
 
 **Headless (CI).** `scripts/run-headless-test.sh` runs the compositor with the
 headless backend and asserts that it hosts a LibWindowServer app, a layer-shell
