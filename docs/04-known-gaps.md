@@ -86,6 +86,11 @@ click was already handled and returned earlier).
   `applet_area_size_changed` and consumes `set_applet_area_position`, with the
   Taskbar sizing and positioning the area. Applets are identified by the
   `serenity-applet:<name>` layer namespace.
+- **Layer-surface configure storm** — `arrange_layers` reconfigures every layer
+  surface on every commit, so a client that commits unconditionally on each
+  configure spins (the LibWindowServer clients and the Taskbar commit only when
+  their size changes, so they are unaffected). A future fix is to skip redundant
+  `wlr_layer_surface_v1_configure` calls.
 - **Font parity** — fixed to the bitmap Katica family; size-based zoom is a no-op.
   Theme switching (Taskbar ▸ Themes) works: the list is read under the resource
   root, the theme is loaded/recoloured in-process, and a shared broker file
