@@ -46,7 +46,7 @@ Milestone progress (see [`docs/01-objectives.md`](docs/01-objectives.md) §11):
 | **R0** | Design | Done |
 | **R1** | Compositor bring-up | Done — nested, headless (CI-tested) and DRM/libinput session paths |
 | **R2** | Shell v1 | Done — Taskbar, WindowManagerServer, wallpaper, Desktop, file icons, Launch |
-| **R3** | Serenity look & behaviours | Started — window chrome done; switcher/snap/workspaces pending |
+| **R3** | Serenity look & behaviours | In progress — window chrome, switcher, snapping, workspaces, applet area and notifications done; tooltips/font parity remain |
 | **R4** | Session & settings | Not started |
 | **R5** | Compatibility & ecosystem | Not started |
 | **R6** | Hardening & packaging | Not started |

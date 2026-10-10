@@ -16,8 +16,8 @@ this document owns sequencing and the critical path.
 - R0, R1 and R2 are done; R2's loose ends are closed or explicitly reassigned
   (see `04-known-gaps.md`, "R2 follow-up").
 - The R3 **foundation** (§2) has landed, both **spikes** (§3) are resolved, and
-  **WS1 workspaces**, **WS2 snapping**, **WS3 switcher** and **WS4 applet area**
-  are complete. WS5–WS6 are not started. R3 remains the critical path.
+  **WS1 workspaces**, **WS2 snapping**, **WS3 switcher**, **WS4 applet area** and
+  **WS5 notifications** are complete. WS6–WS7 remain. R3 remains the critical path.
 
 | Step | Status |
 |---|---|
@@ -27,7 +27,7 @@ this document owns sequencing and the critical path.
 | WS2 — snapping + overlays | **Done** |
 | WS3 — switcher | **Done** |
 | WS4 — applet area | **Done** |
-| WS5 — notifications | Not started (plumbing ready; §3) |
+| WS5 — notifications | **Done** |
 | WS6 — tooltips | Not started |
 | WS7 — font parity | Decision only |
 
@@ -92,10 +92,13 @@ scheduled as prerequisites rather than late surprises.
   layer surface at the client's position (`serenity-notification`), so a
   notification is a banner rather than a decorated window and stays out of the
   window list. Verified: the notify portal spawns the server and the compositor
-  creates the `serenity-notification` layer surface. **Remaining (WS5):**
-  `LibGUI::Notification`'s `show_notification` IPC encoding trips a `Vector` bound
-  in the port (crash in the *client*), so finish that before wiring notifications
-  into the shell.
+  creates the `serenity-notification` layer surface. **Completed (WS5):** the
+  remaining client failure was misdiagnosed as an IPC *encoding* fault — the real
+  cause is that `LibGUI::Notification::show()` makes a **synchronous** IPC call
+  whose incoming messages are dispatched through the current `Core::EventLoop`, so
+  an event loop (a `GUI::Application`) must already exist. The reused server was
+  then exercised end-to-end (icon/no-icon, launch URL, update) by
+  `scripts/run-notification-test.sh`; see §4 WS5.
 
 ## 4. Feature order (dependency-driven)
 
@@ -134,10 +137,13 @@ scheduled as prerequisites rather than late surprises.
    `set_applet_area_position`. The applet's name travels in its layer namespace
    (`serenity-applet:<name>`, set by libgui-wayland), so no protocol extension was
    needed. See the placement-channel decision below.
-5. **Notifications (WS5) — not started; plumbing ready.** See the §3 spike
-   outcome: the unmodified server hosts and `WindowType::Notification` maps to an
-   overlay banner; the remaining blocker is the `LibGUI::Notification` client IPC
-   bug.
+5. **Notifications (WS5) — done.** The unmodified `NotificationServer` is
+   spawned on the notify portal and `WindowType::Notification` maps to an overlay
+   banner (see the §3 spike). The client path (`LibGUI::Notification`) works once
+   a `GUI::Application` event loop exists; `scripts/run-notification-test.sh`
+   drives icon/iconless banners, a launch URL and an in-place update, and the
+   compositor log asserts the `serenity-notification` overlay layer surface and the
+   absence of a managed toplevel.
 6. **Tooltips (WS6) — not started.** Cross-repo (a host change in
    `libgui-wayland`); independent, can run in parallel.
 
@@ -181,7 +187,7 @@ headless test (§2.4); menus, popups and IME remain manual.
 | Risk / decision | Owner step | Note |
 |---|---|---|
 | Thumbnail capture path | §3 spike | **Resolved** — client-buffer readback; DMA-BUF falls back to the app icon |
-| NotificationServer reuse | §3 spike | **Resolved** — reuse; remaining `LibGUI::Notification` IPC bug is WS5 |
+| NotificationServer reuse | §3 spike, WS5 | **Resolved** — the unmodified server is reused and the client path is complete; the earlier "IPC encoding" blocker was an event-loop lifetime issue, not an encoding bug |
 | Config location/schema | §2.3 | **Resolved** — `WindowServer.ini` + live reload under `$XDG_CONFIG_HOME/sde` |
 | `main.cpp` split scope | §2.1 | **Done** — `Overlays`/`WindowManager`/`Model` extracted |
 | Applet placement channel | WS4 | Done — the compositor owns the layout (offsets the applet layer surfaces); the applet's identity (its name, for `[Applet] Order`) travels in the layer namespace, so no `serenity-window` extension was needed |

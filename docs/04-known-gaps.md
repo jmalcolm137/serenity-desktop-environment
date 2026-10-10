@@ -76,7 +76,19 @@ click was already handled and returned earlier).
   (Shift carries the focused window); the Super-key WMS events are emitted; and
   the grid size reaches clients in `fast_greet`, so the unmodified
   WorkspacePicker applet renders and switches.
-- **Notifications** — not implemented (NotificationServer is a stub).
+- **Notifications** — done (WS5). The notify portal spawns the **unmodified
+  SerenityOS `NotificationServer`** (an `IPC::MultiServer`, like `SQLServer`), and
+  the shim maps `WindowType::Notification` to an undecorated **overlay** layer
+  surface (`serenity-notification`) at the client's requested position. A
+  notification is therefore a banner, top-right and above normal windows, and
+  because it is a layer surface rather than a toplevel it is absent from the
+  window list and the switcher. The client path is `LibGUI::Notification`;
+  `show()` makes a **synchronous** IPC call, so it needs a running
+  `Core::EventLoop` (a `GUI::Application`) — every real client (the `notify`
+  utility, the Network applet) already provides one. Clicking the banner calls
+  `Desktop::Launcher::open` through the launch portal, and hovering expands it;
+  this snapshot of the server has no auto-dismiss timer (it closes on click or
+  `close_notification`). Covered by `scripts/run-notification-test.sh`.
 - **Tooltips** — not implemented. `GUI::Application::show_tooltip()` is a no-op in
   the port, so the Taskbar quick-launch icons, window-title buttons, clock,
   Show-Desktop button and applets show no hover text (all of which SerenityOS

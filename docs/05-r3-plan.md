@@ -175,7 +175,8 @@ with `set_applet_area_position` (`Taskbar/TaskbarWindow.cpp:208`,
 
 ### WS5 — Notifications
 
-`NotificationServer` is a stub today. The protocol is
+`NotificationServer` was a stub; it is now the **unmodified** SerenityOS service,
+reused (see below). The protocol is
 `Userland/Services/NotificationServer/NotificationServer.ipc`
 (`show_notification`, `update_notification_text/icon/launch_url`, `is_showing`,
 `close_notification`); clients use `LibGUI/Notification`.
@@ -191,6 +192,18 @@ with `set_applet_area_position` (`Taskbar/TaskbarWindow.cpp:208`,
   `Desktop::the().system_effects()` and window-type plumbing; **spike this
   first** (precedent: `WebContent` is deferred for the same class of reason,
   `04-known-gaps.md`).
+
+**Implemented (WS5), via the reuse path.** The unmodified server is spawned by
+the notify portal (`LibWM::spawn_multi_client_service`, like `SQLServer`) and does
+not touch `Desktop::system_effects()`; `WindowType::Notification` maps to an
+undecorated **overlay** layer surface (`serenity-notification`) at the client's
+position. The client path is `LibGUI::Notification`, which needs a running
+`Core::EventLoop` (a `GUI::Application`) because `show()` is synchronous.
+`scripts/run-notification-test.sh` verifies the portal, the banner layer surface
+and the absence of a managed toplevel headlessly. Click-to-launch
+(`Desktop::Launcher::open`) and hover-expand are server-side; this server snapshot
+has **no auto-dismiss timer** (it closes on click or `close_notification`), which
+is a parity gap recorded in `04-known-gaps.md`.
 
 **Reference:** `Userland/Services/NotificationServer/`,
 `Userland/Libraries/LibGUI/Notification.cpp`.

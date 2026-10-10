@@ -150,6 +150,7 @@ If SDE is packaged for a systemd host, the substitutes above map onto
   on demand, so its dependencies must already be buildable/servable, not started
   in a supervisor's order.
 - **No confinement.** `pledge`/`unveil` are no-ops on Linux.
-- **Services still absent:** `WebDriver`, a real `NotificationServer` (it is a
-  stub), and full `AudioServer`/`AudioManager` (audio is served by
-  `libserenity-audio`).
+- **Services still absent:** `WebDriver`, and full
+  `AudioServer`/`AudioManager` (audio is served by `libserenity-audio`). The
+  unmodified `NotificationServer` **is** hosted (spawned on the notify portal,
+  WS5).
