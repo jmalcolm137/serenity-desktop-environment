@@ -20,6 +20,7 @@
 #include <AK/Vector.h>
 
 #include <LibCore/ArgsParser.h>
+#include <LibCore/Directory.h>
 #include <LibCore/EventLoop.h>
 #include <LibCore/File.h>
 #include <LibCore/FileWatcher.h>
@@ -130,10 +131,44 @@ struct FrameIcons {
 static FrameIcons g_frame_icons;
 
 // Desktop background: a wallpaper image (optional) drawn over the theme's
-// background colour. Loaded from SDE_WALLPAPER / SDE_WALLPAPER_MODE until the
-// settings work (G5) can drive it through the WindowServer protocol.
+// background colour. The Display Settings app writes the choice (image, mode and
+// colour) to a shared state directory; we load it at startup and watch it.
 static RefPtr<Gfx::Bitmap> g_wallpaper;
 static ByteString g_wallpaper_mode { "center" };
+static Optional<Gfx::Color> g_background_color;
+
+static ByteString sde_state_dir()
+{
+    if (auto const* dir = getenv("SDE_STATE_DIR"); dir && *dir)
+        return ByteString(dir);
+    if (auto const* config = getenv("XDG_CONFIG_HOME"); config && *config)
+        return ByteString::formatted("{}/sde", config);
+    if (auto const* home = getenv("HOME"); home && *home)
+        return ByteString::formatted("{}/.config/sde", home);
+    return ByteString { "/tmp/sde" };
+}
+
+static ByteString sde_state_file(StringView name)
+{
+    return ByteString::formatted("{}/{}", sde_state_dir(), name);
+}
+
+static ByteString read_sde_state(StringView name)
+{
+    auto file = Core::File::open(sde_state_file(name), Core::File::OpenMode::Read);
+    if (file.is_error())
+        return {};
+    auto contents = file.value()->read_until_eof();
+    if (contents.is_error())
+        return {};
+    return StringView { contents.value() }.trim_whitespace().to_byte_string();
+}
+
+static void write_sde_state(StringView name, ReadonlyBytes bytes)
+{
+    if (auto file = Core::File::open(sde_state_file(name), Core::File::OpenMode::Write); !file.is_error())
+        (void)file.value()->write_until_depleted(bytes);
+}
 
 static RefPtr<Gfx::Bitmap> load_icon(ByteString const& resource_root, StringView name, StringView fallback)
 {
@@ -953,7 +988,7 @@ static void update_desktop_background(Server& server, Output& output)
 
     auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, size).release_value_but_fixme_should_propagate_errors();
     Gfx::Painter painter(*bitmap);
-    painter.fill_rect(bitmap->rect(), g_palette->desktop_background());
+    painter.fill_rect(bitmap->rect(), g_background_color.value_or(g_palette->desktop_background()));
 
     if (g_wallpaper) {
         auto const& wallpaper = *g_wallpaper;
@@ -994,6 +1029,87 @@ static void update_desktop_background(Server& server, Output& output)
     wlr_box box { };
     wlr_output_layout_get_box(server.output_layout, output.output, &box);
     wlr_scene_node_set_position(&output.background->node, box.x, box.y);
+}
+
+// Re-read the persisted wallpaper state into the globals (no repaint yet).
+static void load_wallpaper_state()
+{
+    g_wallpaper = nullptr;
+    if (auto bitmap = Gfx::Bitmap::load_from_file(sde_state_file("wallpaper.png"sv)); !bitmap.is_error())
+        g_wallpaper = bitmap.release_value();
+
+    g_wallpaper_mode = "center";
+    if (auto mode = read_sde_state("wallpaper.mode"sv); !mode.is_empty())
+        g_wallpaper_mode = mode.to_lowercase();
+
+    g_background_color = {};
+    if (auto color = read_sde_state("wallpaper.color"sv); !color.is_empty())
+        g_background_color = Gfx::Color::from_string(color);
+}
+
+// Re-read the state and repaint every output (used on a live change).
+static void apply_wallpaper_from_state(Server& server)
+{
+    load_wallpaper_state();
+    dbgln("WindowServer: wallpaper updated (wallpaper={}, mode={}, color={})",
+        g_wallpaper ? "loaded"_string : "none"_string,
+        g_wallpaper_mode,
+        g_background_color.has_value() ? g_background_color->to_string() : "theme"_string);
+    for (auto& output : server.outputs) {
+        output->background_size = { };
+        update_desktop_background(server, *output);
+    }
+}
+
+// On first run, seed the state directory from SDE_WALLPAPER / SDE_WALLPAPER_MODE,
+// then load it. Afterwards the app-managed state is authoritative, so a chosen
+// wallpaper (and "None") persist across restarts.
+static void initialize_wallpaper(ByteString const& resource_root)
+{
+    (void)Core::Directory::create(sde_state_dir(), Core::Directory::CreateDirectories::Yes);
+
+    if (Core::File::open(sde_state_file("wallpaper.mode"sv), Core::File::OpenMode::Read).is_error()) {
+        ByteString mode { "center" };
+        if (auto const* env_mode = getenv("SDE_WALLPAPER_MODE"); env_mode && *env_mode)
+            mode = env_mode;
+        ByteString normalized_mode = mode.to_lowercase();
+        write_sde_state("wallpaper.mode"sv, normalized_mode.bytes());
+        write_sde_state("wallpaper.color"sv, {});
+        // Ensure the image file exists (empty == no wallpaper) so its content
+        // watch attaches; overwrite it if the environment names a wallpaper.
+        write_sde_state("wallpaper.png"sv, {});
+        if (auto const* env_wallpaper = getenv("SDE_WALLPAPER"); env_wallpaper && *env_wallpaper) {
+            ByteString path { env_wallpaper };
+            if (!path.starts_with('/'))
+                path = ByteString::formatted("{}/wallpapers/{}", resource_root, path);
+            auto bitmap = Gfx::Bitmap::load_from_file(path);
+            if (bitmap.is_error()) {
+                warnln("WindowServer: could not load the seed wallpaper '{}': {}", path, bitmap.error());
+            } else if (auto encoded = Gfx::PNGWriter::encode(*bitmap.value()); encoded.is_error()) {
+                warnln("WindowServer: could not encode the seed wallpaper '{}': {}", path, encoded.error());
+            } else {
+                write_sde_state("wallpaper.png"sv, encoded.value());
+                dbgln("WindowServer: seeded wallpaper from '{}' ({} bytes)", path, encoded.value().size());
+            }
+        }
+    }
+
+    load_wallpaper_state();
+}
+
+static void watch_wallpaper_state(Server& server)
+{
+    static RefPtr<Core::FileWatcher> watcher;
+    watcher = Core::FileWatcher::create().release_value_but_fixme_should_propagate_errors();
+    auto directory = sde_state_dir();
+    watcher->on_change = [&server, directory](Core::FileWatcherEvent const& event) {
+        if (!event.event_path.starts_with(directory))
+            return;
+        apply_wallpaper_from_state(server);
+    };
+    (void)watcher->add_watch(directory, Core::FileWatcherEvent::Type::ChildCreated | Core::FileWatcherEvent::Type::ChildDeleted);
+    for (auto name : { "wallpaper.png"sv, "wallpaper.mode"sv, "wallpaper.color"sv })
+        (void)watcher->add_watch(sde_state_file(name), Core::FileWatcherEvent::Type::ContentModified | Core::FileWatcherEvent::Type::MetadataModified | Core::FileWatcherEvent::Type::Deleted);
 }
 
 static void output_frame(wl_listener* listener, void*)
@@ -2542,21 +2658,9 @@ static ErrorOr<void> initialize_gfx()
     g_frame_icons.move = load_icon(resource_root, "move"sv, ""sv);
     g_frame_icons.pin = load_icon(resource_root, "window-pin"sv, ""sv);
 
-    // Wallpaper: a path (absolute, or a name under /res/wallpapers) plus a mode.
-    // Defaults to the theme's background colour when unset, as in SerenityOS.
-    if (auto const* wallpaper = getenv("SDE_WALLPAPER"); wallpaper && *wallpaper) {
-        ByteString path { wallpaper };
-        if (!path.starts_with('/'))
-            path = ByteString::formatted("{}/wallpapers/{}", resource_root, path);
-        if (auto bitmap = Gfx::Bitmap::load_from_file(path); !bitmap.is_error()) {
-            g_wallpaper = bitmap.release_value();
-            dbgln("WindowServer: loaded the wallpaper '{}'", path);
-        } else {
-            warnln("WindowServer: could not load the wallpaper '{}': {}", path, bitmap.error());
-        }
-    }
-    if (auto const* mode = getenv("SDE_WALLPAPER_MODE"); mode && *mode)
-        g_wallpaper_mode = mode;
+    // Wallpaper/background: load the persisted state, seeding from
+    // SDE_WALLPAPER / SDE_WALLPAPER_MODE on the first run.
+    initialize_wallpaper(resource_root);
 
     dbgln("WindowServer: loaded the Serenity theme from {}", resource_root);
     return { };
@@ -2682,6 +2786,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     };
 
     watch_theme_broker(*server);
+    watch_wallpaper_state(*server);
 
     int result = loop.exec();
     wl_display_destroy_clients(server->display);

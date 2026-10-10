@@ -52,23 +52,27 @@ Done: Taskbar (system menu, quick-launch, window list, clock), WindowManagerServ
   save/restore, lock, logout, reboot, or shut-down; no SystemServer-style
   supervision.
 - **Settings & appearance (G5 / W6).** No display (mode/scale/rotation), input,
-  appearance, cursor or wallpaper settings backends. `SDE_WALLPAPER` /
-  `SDE_WALLPAPER_MODE` environment variables are a deliberate stand-in (see
-  `02-compositor-decision.md` §11). Fonts are fixed to the bitmap Katica family,
-  so size-based zoom is a no-op.
-- **Display Settings app (W6, host).** SerenityOS's `DisplaySettings` now builds
-  and runs with all tabs (Background, Themes, Fonts, Monitor, Workspaces,
-  Effects); launch it from the desktop right-click ▸ "Display Settings" (or
-  `scripts/run-sde-app.sh DisplaySettings`). The host seams needed were `/res`
-  resource-root resolution in `stat`/`opendir` (LibCore) and the wallpaper
-  directory, plus a single-output `get_screen_layout()`. Note: apps must be
+  appearance or cursor settings backends. Fonts are fixed to the bitmap Katica
+  family, so size-based zoom is a no-op. `SDE_WALLPAPER` / `SDE_WALLPAPER_MODE`
+  are now only a first-run seed for the wallpaper state (see below).
+- **Display Settings app (W6, host).** SerenityOS's `DisplaySettings` builds and
+  runs with all tabs (Background, Themes, Fonts, Monitor, Workspaces, Effects);
+  launch it from the desktop right-click ▸ "Display Settings" (or
+  `scripts/run-sde-app.sh DisplaySettings`). Host seams added: `/res`
+  resource-root resolution in `stat`/`opendir` (LibCore), the wallpaper
+  directory, and a single-output `get_screen_layout()`. Note: apps must be
   launched into the session with `WAYLAND_DISPLAY=sde`, not the host's display,
   or their windows map on the host compositor — `scripts/run-sde-app.sh` wraps
-  that. **Not yet wired:** choosing a wallpaper does not reach the compositor
-  (`set_wallpaper`/`set_wallpaper_mode` are still no-ops and the compositor only
-  reads `SDE_WALLPAPER` at startup); the Themes tab works (same path as the
-  Taskbar); Fonts / Monitor / Workspaces / Effects are present but inert (no
-  display, input or font backends yet).
+  that. The Themes tab works (same path as the Taskbar).
+- **Wallpaper & desktop background (W6, host).** The Background tab works: the
+  WindowServer shim encodes the chosen image and writes the mode and colour to a
+  shared state directory (`$XDG_CONFIG_HOME/sde`, override `SDE_STATE_DIR`), and
+  the compositor watches that directory and repaints. The choice **persists**
+  across restarts: the compositor seeds the state from `SDE_WALLPAPER` /
+  `SDE_WALLPAPER_MODE` on first run, after which the state is authoritative (so
+  "None" — an empty image — also sticks). `FileManager` additionally exposes
+  "Set as wallpaper" on an image. Still inert: Fonts / Monitor / Workspaces /
+  Effects (no display, input or font backends yet).
 - **Wallpaper thumbnails (W6/W7, host).** `FileSystemModel` thumbnails fail with
   `connect: No such file or directory` — there is no **ImageDecoder** service on
   the portal bus, so the Background tab's wallpaper previews render as plain
