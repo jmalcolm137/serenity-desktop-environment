@@ -1,7 +1,7 @@
 # Serenity Desktop Environment — R3 Implementation Plan
 
 **Status:** Draft v0.1 · **Date:** 2026-10-10
-**Related:** [`01-objectives.md`](01-objectives.md) · [`04-known-gaps.md`](04-known-gaps.md) · [`05-r3-plan.md`](05-r3-plan.md) · [`07-systemserver-roles.md`](07-systemserver-roles.md) · [`08-compositor-gaps.md`](08-compositor-gaps.md)
+**Related:** [`01-objectives.md`](01-objectives.md) · [`04-known-gaps.md`](04-known-gaps.md) · [`05-r3-plan.md`](05-r3-plan.md) · [`07-systemserver-roles.md`](07-systemserver-roles.md) · [`08-compositor-gaps.md`](08-compositor-gaps.md) · [`10-font-parity-decision.md`](10-font-parity-decision.md)
 
 [`05-r3-plan.md`](05-r3-plan.md) defines **what** R3 is: the work items, the
 SerenityOS reference code, and an exit test for each. This document is its
@@ -17,8 +17,10 @@ this document owns sequencing and the critical path.
   (see `04-known-gaps.md`, "R2 follow-up").
 - The R3 **foundation** (§2) has landed, both **spikes** (§3) are resolved, and
   **WS1 workspaces**, **WS2 snapping**, **WS3 switcher**, **WS4 applet area**,
-  **WS5 notifications** and **WS6 tooltips** are complete. R3's features are done;
-  only the WS7 font-parity decision remains. R3 remains the critical path.
+  **WS5 notifications** and **WS6 tooltips** are complete. **WS7 (font parity)** is
+  a recorded decision ([`10-font-parity-decision.md`](10-font-parity-decision.md)):
+  R3 keeps the bitmap Katica family and accepts no-op zoom, deferring scalable
+  fonts to R4/G5. **R3 is complete.**
 
 | Step | Status |
 |---|---|
@@ -30,7 +32,7 @@ this document owns sequencing and the critical path.
 | WS4 — applet area | **Done** |
 | WS5 — notifications | **Done** |
 | WS6 — tooltips | **Done** |
-| WS7 — font parity | Decision only |
+| WS7 — font parity | **Decided** (docs/10) |
 
 **Strategy (unchanged):** finish R3 before taking on R4+ breadth. The service
 scaffolding (`LaunchServer`, `ImageDecoder`, the layering/SystemServer-role work)

@@ -112,8 +112,12 @@ click was already handled and returned earlier).
   configure spins (the LibWindowServer clients and the Taskbar commit only when
   their size changes, so they are unaffected). A future fix is to skip redundant
   `wlr_layer_surface_v1_configure` calls.
-- **Font parity** — fixed to the bitmap Katica family; size-based zoom is a no-op.
-  Theme switching (Taskbar ▸ Themes) works: the list is read under the resource
+- **Font parity (WS7)** — decided: fixed to the bitmap Katica family, so
+  size-based zoom is a no-op. This matches upstream SerenityOS (also Katica) and
+  does not block R3; the evidence and the R4/G5 path are in
+  [`10-font-parity-decision.md`](10-font-parity-decision.md), with the guard test
+  `scripts/run-font-parity-test.sh`.
+- **Theme switching (Taskbar ▸ Themes)** — works: the list is read under the resource
   root, the theme is loaded/recoloured in-process, and a shared broker file
   (`$XDG_RUNTIME_DIR/sde-theme`) is watched by every client and the compositor so
   a switch restyles all running apps and the window chrome. As in SerenityOS

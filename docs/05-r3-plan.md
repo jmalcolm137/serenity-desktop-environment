@@ -250,6 +250,12 @@ scalable face (`SerenitySans-Regular.ttf`) and a font selector, which is
 **R4/G5**, not R3. For R3: **confirm and document the parity decision**; do not
 block the milestone on it.
 
+**Decided (WS7).** The decision, the evidence (bitmap Katica has no 14pt face;
+`set_system_fonts` is accepted and ignored; `SerenitySans-Regular.ttf` is
+scalable) and the R4/G5 path are recorded in
+[`10-font-parity-decision.md`](10-font-parity-decision.md). Confirmed by
+`libgui-wayland`'s `libwm-font-parity-test` (`scripts/run-font-parity-test.sh`).
+
 ## 5. Sequencing
 
 1. **Foundation** — module split + overlay/thumbnail/snapshot infrastructure.
