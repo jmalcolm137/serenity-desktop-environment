@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="serenity_window_server_v1">
+  <copyright>
+    Copyright (c) 2026, the Serenity Desktop Environment developers.
+    SPDX-License-Identifier: BSD-2-Clause
+  </copyright>
+
+  <description summary="Serenity WindowServer extensions">
+    Private protocol between the Serenity WindowServer (serenity-window-server)
+    and the Serenity Desktop Environment's shell services (the WindowManagerServer
+    shim). It carries the state the Serenity WindowServer protocol exposes to the
+    WindowManagerServer but that has no wlroots/standard equivalent.
+  </description>
+
+  <interface name="serenity_window_server_v1" version="1">
+    <description summary="per-WindowServer shell channel">
+      A single global, bound by the shell's WindowManagerServer shim.
+    </description>
+
+    <request name="set_applet_area_position">
+      <description summary="place the applet area at a global position">
+        Sent by the shell once it has sized its applet-area container; the
+        WindowServer positions the applet windows within that area.
+      </description>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+    </request>
+
+    <event name="applet_area_size_changed">
+      <description summary="the total size of the laid-out applet area">
+        Emitted when the set of applets (or their sizes) changes, before the
+        shell reports the area position.
+      </description>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+    </event>
+  </interface>
+</protocol>
