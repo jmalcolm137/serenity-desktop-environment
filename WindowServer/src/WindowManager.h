@@ -65,4 +65,8 @@ void update_toplevel_visibility(Toplevel&);
 // true when the key was consumed.
 bool handle_workspace_key(Server&, u32 keysym, u32 modifiers);
 
+// Super-key shortcuts the Taskbar expects (WindowManagerClient.ipc):
+// Super, Super+Space, Super+D and Super+digit.
+bool handle_super_key(Server&, u32 keysym, u32 modifiers, bool pressed);
+
 }

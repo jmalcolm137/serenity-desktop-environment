@@ -311,6 +311,8 @@ static void keyboard_key(wl_listener* listener, void* data)
         for (int i = 0; i < syms_count; ++i)
             handled |= WindowManager::handle_workspace_key(server, syms[i], modifiers);
     }
+    for (int i = 0; i < syms_count; ++i)
+        handled |= WindowManager::handle_super_key(server, syms[i], modifiers, event->state == WL_KEYBOARD_KEY_STATE_PRESSED);
     if ((modifiers & WLR_MODIFIER_ALT) && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
         for (int i = 0; i < syms_count; ++i)
             handled |= handle_keybinding(server, syms[i]);

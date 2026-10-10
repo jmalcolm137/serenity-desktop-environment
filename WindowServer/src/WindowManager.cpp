@@ -286,6 +286,45 @@ bool handle_workspace_key(Server& server, u32 keysym, u32 modifiers)
     return true;
 }
 
+bool handle_super_key(Server& server, u32 keysym, u32 modifiers, bool pressed)
+{
+    if ((modifiers & WLR_MODIFIER_LOGO) == 0)
+        return false;
+    if (!pressed)
+        return true;
+
+    auto emit = [&](auto&& call) {
+        for (auto& connection : g_connections) {
+            if (connection->manager_window_id() >= 0)
+                call(*connection, connection->manager_window_id());
+        }
+    };
+
+    switch (keysym) {
+    case XKB_KEY_Super_L:
+    case XKB_KEY_Super_R:
+        emit([](auto& connection, i32 wm_id) { connection.async_super_key_pressed(wm_id); });
+        return true;
+    case XKB_KEY_space:
+        emit([](auto& connection, i32 wm_id) { connection.async_super_space_key_pressed(wm_id); });
+        return true;
+    case XKB_KEY_d:
+    case XKB_KEY_D:
+        emit([](auto& connection, i32 wm_id) { connection.async_super_d_key_pressed(wm_id); });
+        return true;
+    default:
+        break;
+    }
+
+    if (keysym >= XKB_KEY_1 && keysym <= XKB_KEY_9) {
+        auto digit = static_cast<u8>(keysym - XKB_KEY_1 + 1);
+        emit([digit](auto& connection, i32 wm_id) { connection.async_super_digit_key_pressed(wm_id, digit); });
+        return true;
+    }
+
+    return false;
+}
+
 void emit_window_state(Toplevel& toplevel)
 {
     StringView title;
