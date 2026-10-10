@@ -17,8 +17,10 @@ The stack is split across a small family of repositories:
 - [`docs/03-engineering-conventions.md`](docs/03-engineering-conventions.md) — binding coding/build conventions (AK/LibCore/LibGfx, SerenityOS-style `serenity_main`, host compat in the SDE).
 - [`docs/04-known-gaps.md`](docs/04-known-gaps.md) — running list of known gaps and remaining work, so nothing found during bring-up is forgotten.
 - [`docs/05-r3-plan.md`](docs/05-r3-plan.md) — working plan for milestone R3 (Serenity look & behaviours): switcher, snapping, workspaces, applets, notifications, tooltips.
-- [`docs/06-compositor-gaps.md`](docs/06-compositor-gaps.md) — what is missing from the plan for `WindowServer` as a general-purpose compositor: session/seat, robustness, ecosystem protocols, portals, input/IME, accessibility, output/render depth, testing.
-- [`docs/08-r3-implementation-plan.md`](docs/08-r3-implementation-plan.md) — execution companion to `05`: foundation-first sequencing, the de-risking spikes, feature order, and what to pull forward.
+- [`docs/06-service-layering.md`](docs/06-service-layering.md) — which Serenity service belongs in `libgui-wayland` vs. the SDE session; the "prefer the session service, else in-process fallback" rule.
+- [`docs/07-systemserver-roles.md`](docs/07-systemserver-roles.md) — every place SDE stands in for a SerenityOS `SystemServer` role, and how each maps to systemd on a real Linux session.
+- [`docs/08-compositor-gaps.md`](docs/08-compositor-gaps.md) — what is missing from the plan for `WindowServer` as a general-purpose compositor: session/seat, robustness, ecosystem protocols, portals, input/IME, accessibility, output/render depth, testing.
+- [`docs/09-r3-implementation-plan.md`](docs/09-r3-implementation-plan.md) — execution companion to `05`: foundation-first sequencing, the de-risking spikes, feature order, and what to pull forward.
 
 ## Status
 

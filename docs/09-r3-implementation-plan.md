@@ -1,7 +1,7 @@
 # Serenity Desktop Environment — R3 Implementation Plan
 
 **Status:** Draft v0.1 · **Date:** 2026-10-10
-**Related:** [`01-objectives.md`](01-objectives.md) · [`04-known-gaps.md`](04-known-gaps.md) · [`05-r3-plan.md`](05-r3-plan.md) · [`06-compositor-gaps.md`](06-compositor-gaps.md) · [`07-systemserver-roles.md`](07-systemserver-roles.md)
+**Related:** [`01-objectives.md`](01-objectives.md) · [`04-known-gaps.md`](04-known-gaps.md) · [`05-r3-plan.md`](05-r3-plan.md) · [`07-systemserver-roles.md`](07-systemserver-roles.md) · [`08-compositor-gaps.md`](08-compositor-gaps.md)
 
 [`05-r3-plan.md`](05-r3-plan.md) defines **what** R3 is: the work items, the
 SerenityOS reference code, and an exit test for each. This document is its
@@ -117,7 +117,7 @@ protect the work being done now.
 
 - **R5/R6 breadth** — XWayland, HiDPI/fractional scaling, multi-GPU, portals,
   IME, accessibility, packaging, CI matrix (see
-  [`06-compositor-gaps.md`](06-compositor-gaps.md)). Real gaps, but breadth on top
+  [`08-compositor-gaps.md`](08-compositor-gaps.md)). Real gaps, but breadth on top
   of a half-finished R3 just spreads effort thin.
 - **No new session services or shell polish.** The R2/service-layering work is
   sufficient for now.

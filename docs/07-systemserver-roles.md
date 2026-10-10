@@ -1,7 +1,7 @@
 # SystemServer Roles, and What Stands In For Them
 
 **Status:** Living document · **Date:** 2026-10-10
-**Related:** [`01-objectives.md`](01-objectives.md) · [`04-known-gaps.md`](04-known-gaps.md) · [`06-service-layering.md`](06-service-layering.md) · [`06-compositor-gaps.md`](06-compositor-gaps.md)
+**Related:** [`01-objectives.md`](01-objectives.md) · [`04-known-gaps.md`](04-known-gaps.md) · [`06-service-layering.md`](06-service-layering.md) · [`08-compositor-gaps.md`](08-compositor-gaps.md)
 
 SerenityOS leans on **`SystemServer`** (the userland manager) to launch and
 supervise *system services* and to own the per-session runtime. We have no

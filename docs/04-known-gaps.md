@@ -1,7 +1,7 @@
 # Serenity Desktop Environment — Known Gaps & Remaining Work
 
 **Status:** Living document · **Date:** 2026-10-10
-**Related:** [`01-objectives.md`](01-objectives.md) · [`02-compositor-decision.md`](02-compositor-decision.md) · [`03-engineering-conventions.md`](03-engineering-conventions.md) · [`05-r3-plan.md`](05-r3-plan.md) · [`06-compositor-gaps.md`](06-compositor-gaps.md) · [`07-systemserver-roles.md`](07-systemserver-roles.md)
+**Related:** [`01-objectives.md`](01-objectives.md) · [`02-compositor-decision.md`](02-compositor-decision.md) · [`03-engineering-conventions.md`](03-engineering-conventions.md) · [`05-r3-plan.md`](05-r3-plan.md) · [`07-systemserver-roles.md`](07-systemserver-roles.md) · [`08-compositor-gaps.md`](08-compositor-gaps.md)
 
 This is a running, greppable list of what is known to be missing or incomplete,
 so nothing discovered during bring-up is forgotten. It is grouped by goal (G)
@@ -85,7 +85,7 @@ click was already handled and returned earlier).
 
 Compositor-facing session/input gaps (logind contract, idle/inhibit/lock/DPMS,
 keymap/IME, input-device config) are catalogued in
-[`06-compositor-gaps.md`](06-compositor-gaps.md) §1 and §4.
+[`08-compositor-gaps.md`](08-compositor-gaps.md) §1 and §4.
 
 - **Session lifecycle (G6 / W5).** No greet/login, session start, autostart,
   save/restore, lock, logout, reboot, or shut-down; no SystemServer-style
@@ -123,7 +123,7 @@ keymap/IME, input-device config) are catalogued in
 
 ## R5 — Compatibility & ecosystem (not started)
 
-Compositor-facing detail lives in [`06-compositor-gaps.md`](06-compositor-gaps.md) §3–4.
+Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.md) §3–4.
 
 - **XWayland (G7)** — not implemented; native Wayland apps work via `xdg-shell`.
 - **Native-app protocol matrix (G7).** `xdg-activation`, `xdg-foreign`,
@@ -138,7 +138,7 @@ Compositor-facing detail lives in [`06-compositor-gaps.md`](06-compositor-gaps.m
 
 ## R6 — Hardening & packaging (not started)
 
-Compositor-facing detail lives in [`06-compositor-gaps.md`](06-compositor-gaps.md) §5–7.
+Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.md) §5–7.
 
 - **HiDPI (integer/fractional) and multi-output** — not done (LibWindowServer M8
   soft-fractional-scaling issue still open — a host dependency, not compositor

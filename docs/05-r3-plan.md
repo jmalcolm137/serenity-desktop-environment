@@ -9,7 +9,7 @@ behaviours** (`01-objectives.md` §11). It turns the R3 entries in
 SerenityOS reference code they mirror, and an exit/test for each.
 
 For *sequencing* — the foundation-first order, the de-risking spikes, and what to
-pull forward — see the companion [`08-r3-implementation-plan.md`](08-r3-implementation-plan.md).
+pull forward — see the companion [`09-r3-implementation-plan.md`](09-r3-implementation-plan.md).
 This document owns **scope**; that one owns **the critical path**.
 
 ---
