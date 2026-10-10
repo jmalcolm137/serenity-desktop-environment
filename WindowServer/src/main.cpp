@@ -100,6 +100,11 @@ struct Decoration;
 static void toplevel_update_frame(Toplevel&);
 static bool handle_frame_press(Server&, uint32_t button, uint32_t time);
 static void handle_frame_release(Server&, uint32_t button);
+static void close_window_menu(Server&);
+static void update_window_menu_hover(Server&, double, double);
+static void window_menu_handle_press(Server&, uint32_t button);
+static void window_menu_handle_release(Server&, uint32_t button);
+static bool window_menu_handle_key(Server&, xkb_keysym_t);
 static void arrange_layers(Server&, wlr_output*);
 static Output* output_for(Server&, wlr_output*);
 static void output_manager_send_configuration(Server&);
@@ -114,6 +119,8 @@ struct FrameIcons {
     RefPtr<Gfx::Bitmap> minimize;
     RefPtr<Gfx::Bitmap> maximize;
     RefPtr<Gfx::Bitmap> restore;
+    RefPtr<Gfx::Bitmap> move;
+    RefPtr<Gfx::Bitmap> pin;
 };
 static FrameIcons g_frame_icons;
 
@@ -178,6 +185,40 @@ static wlr_buffer* bitmap_buffer_create(NonnullRefPtr<Gfx::Bitmap> bitmap)
     return &buffer->base;
 }
 
+// The window menu shown by right-clicking a titlebar (or clicking its icon),
+// mirroring SerenityOS's Window::ensure_window_menu().
+enum class WindowMenuAction {
+    MinimizeOrUnminimize,
+    MaximizeOrRestore,
+    Move,
+    ToggleAlwaysOnTop,
+    Close,
+};
+
+struct WindowMenuEntry {
+    bool is_separator { false };
+    ByteString text; // Ampersands mark the keyboard shortcut, as in SerenityOS.
+    WindowMenuAction action { WindowMenuAction::Close };
+    bool enabled { true };
+    bool checkable { false };
+    bool checked { false };
+    bool is_default { false };
+    RefPtr<Gfx::Bitmap> icon;
+    Gfx::IntRect rect; // Relative to the menu's top-left.
+};
+
+struct WindowMenu {
+    bool open { false };
+    Toplevel* toplevel { nullptr };
+    Vector<WindowMenuEntry> entries;
+    Gfx::IntRect rect; // Screen coordinates.
+    int hovered_index { -1 };
+    int pressed_index { -1 };
+    RefPtr<Gfx::Bitmap> bitmap;
+    wlr_scene_tree* tree { nullptr };
+    wlr_scene_buffer* buffer { nullptr };
+};
+
 struct Server {
     wl_display* display { nullptr };
     wlr_backend* backend { nullptr };
@@ -236,6 +277,9 @@ struct Server {
     double last_titlebar_press_x { 0 };
     double last_titlebar_press_y { 0 };
     bool double_click_pending { false };
+
+    // The (single) window menu, if any is open.
+    WindowMenu window_menu;
 };
 
 struct Output {
@@ -263,8 +307,10 @@ struct Toplevel {
     bool frame_active { true };
     bool maximized { false };
     bool minimized { false };
+    bool always_on_top { false };
     int hovered_button { -1 };
     int pressed_button { -1 };
+    Gfx::IntRect titlebar_icon_rect;
     i32 wm_id { 0 };
     wlr_foreign_toplevel_handle_v1* foreign_handle { nullptr };
     wl_listener map { };
@@ -356,6 +402,12 @@ static void focus_toplevel(Server& server, Toplevel* toplevel)
 
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
 
+    // Always-on-top windows stay above normal ones.
+    for (auto& candidate : server.toplevels) {
+        if (candidate->always_on_top && !candidate->minimized)
+            wlr_scene_node_raise_to_top(&candidate->scene_tree->node);
+    }
+
     wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, true);
     toplevel->frame_active = true;
     toplevel_update_frame(*toplevel);
@@ -401,6 +453,14 @@ static void keyboard_key(wl_listener* listener, void* data)
 
     bool handled = false;
     uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->keyboard);
+    if (server.window_menu.open) {
+        // The open window menu grabs the keyboard.
+        if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+            for (int i = 0; i < syms_count; ++i)
+                window_menu_handle_key(server, syms[i]);
+        }
+        return;
+    }
     if ((modifiers & WLR_MODIFIER_ALT) && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
         for (int i = 0; i < syms_count; ++i)
             handled |= handle_keybinding(server, syms[i]);
@@ -609,6 +669,13 @@ static void update_button_pressed(Server& server, FrameHit const& hit)
 
 static void process_cursor_motion(Server& server, uint32_t time)
 {
+    if (server.window_menu.open) {
+        update_window_menu_hover(server, server.cursor->x, server.cursor->y);
+        wlr_seat_pointer_clear_focus(server.seat);
+        wlr_cursor_set_xcursor(server.cursor, server.cursor_manager, "default");
+        return;
+    }
+
     if (server.cursor_mode == CursorMode::Move) {
         process_cursor_move(server);
         wlr_cursor_set_xcursor(server.cursor, server.cursor_manager, "grabbing");
@@ -667,6 +734,14 @@ static void cursor_button(wl_listener* listener, void* data)
     Server* server = nullptr;
     server = wl_container_of(listener, server, cursor_button);
     auto* event = static_cast<wlr_pointer_button_event*>(data);
+
+    if (server->window_menu.open) {
+        if (event->state == WL_POINTER_BUTTON_STATE_PRESSED)
+            window_menu_handle_press(*server, event->button);
+        else
+            window_menu_handle_release(*server, event->button);
+        return;
+    }
 
     if (event->state == WL_POINTER_BUTTON_STATE_PRESSED) {
         if (handle_frame_press(*server, event->button, event->time_msec)) {
@@ -890,6 +965,7 @@ static void toplevel_update_frame(Toplevel& toplevel)
 
     static auto const icon = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { 16, 16 }).release_value_but_fixme_should_propagate_errors();
     auto buttons = theme.layout_buttons(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette, 3, false);
+    toplevel.titlebar_icon_rect = theme.titlebar_icon_rect(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette);
     Gfx::IntRect leftmost_button = buttons.is_empty() ? Gfx::IntRect { } : buttons.last();
     auto state = toplevel.frame_active ? Gfx::WindowTheme::WindowState::Active : Gfx::WindowTheme::WindowState::Inactive;
     StringView title;
@@ -999,6 +1075,8 @@ static void toplevel_destroy(wl_listener* listener, void*)
     wl_list_remove(&toplevel->foreign_request_close.link);
     if (toplevel->foreign_handle)
         wlr_foreign_toplevel_handle_v1_destroy(toplevel->foreign_handle);
+    if (server.window_menu.open && server.window_menu.toplevel == toplevel)
+        close_window_menu(server);
     wm_emit_removed(*toplevel);
     remove_owned(server.toplevels, toplevel);
 }
@@ -1062,12 +1140,309 @@ static void toplevel_toggle_minimized(Toplevel& toplevel)
         wlr_foreign_toplevel_handle_v1_set_minimized(toplevel.foreign_handle, toplevel.minimized);
 }
 
+static int window_menu_item_height()
+{
+    auto& font = Gfx::FontDatabase::default_font();
+    return max(static_cast<int>(ceilf(font.preferred_line_height())), 18) + 4;
+}
+
+static int window_menu_index_at(WindowMenu const& menu, double x, double y)
+{
+    if (!menu.rect.contains({ static_cast<int>(x), static_cast<int>(y) }))
+        return -1;
+    Gfx::IntPoint local { static_cast<int>(x) - menu.rect.x(), static_cast<int>(y) - menu.rect.y() };
+    for (size_t i = 0; i < menu.entries.size(); ++i) {
+        if (menu.entries[i].rect.contains(local))
+            return static_cast<int>(i);
+    }
+    return -1;
+}
+
+static void paint_window_menu(Server& server, WindowMenu& menu)
+{
+    constexpr int frame = 2;
+    constexpr int stripe_width = 24;
+    auto& font = Gfx::FontDatabase::default_font();
+
+    auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, menu.rect.size()).release_value_but_fixme_should_propagate_errors();
+    Gfx::Painter painter(*bitmap);
+
+    Gfx::IntRect rect { { }, menu.rect.size() };
+    painter.draw_rect(rect, Gfx::Color::Black);
+    painter.fill_rect(rect.shrunken(2, 2), g_palette->menu_base());
+    painter.fill_rect(Gfx::IntRect { frame, frame, stripe_width, menu.rect.height() - frame * 2 }, g_palette->menu_stripe());
+
+    for (size_t i = 0; i < menu.entries.size(); ++i) {
+        auto& entry = menu.entries[i];
+        if (entry.is_separator) {
+            int y = entry.rect.center().y() - 1;
+            Gfx::IntPoint p1 { stripe_width + frame + 4, y };
+            Gfx::IntPoint p2 { menu.rect.width() - 7, y };
+            painter.draw_line(p1, p2, g_palette->threed_shadow1());
+            painter.draw_line(p1.translated(0, 1), p2.translated(0, 1), g_palette->threed_highlight());
+            continue;
+        }
+
+        bool hovered = static_cast<int>(i) == menu.hovered_index && entry.enabled;
+        Gfx::Color text_color = g_palette->menu_base_text();
+        if (hovered) {
+            painter.fill_rect(entry.rect, g_palette->menu_selection());
+            painter.draw_rect(entry.rect, g_palette->menu_selection().darkened());
+            text_color = g_palette->menu_selection_text();
+        } else if (!entry.enabled) {
+            text_color = Gfx::Color::MidGray;
+        }
+
+        auto text_rect = entry.rect.translated(stripe_width + 6, 0);
+
+        if (entry.icon) {
+            Gfx::IntRect icon_rect { entry.rect.x() + 3, 0, entry.icon->width(), entry.icon->height() };
+            icon_rect.center_vertically_within(text_rect);
+            if (entry.enabled)
+                painter.blit(icon_rect.location(), *entry.icon, entry.icon->rect());
+            else
+                painter.blit_disabled(icon_rect.location(), *entry.icon, entry.icon->rect(), *g_palette);
+        }
+
+        auto const& use_font = entry.is_default ? font.bold_variant() : font;
+        painter.draw_ui_text(text_rect, entry.text, use_font, Gfx::TextAlignment::CenterLeft, text_color);
+    }
+
+    if (!menu.buffer) {
+        menu.tree = wlr_scene_tree_create(&server.scene->tree);
+        menu.buffer = wlr_scene_buffer_create(menu.tree, nullptr);
+    }
+    menu.bitmap = bitmap;
+    wlr_scene_node_set_position(&menu.tree->node, menu.rect.x(), menu.rect.y());
+    auto* buffer = bitmap_buffer_create(*menu.bitmap);
+    wlr_scene_buffer_set_buffer(menu.buffer, buffer);
+    wlr_buffer_drop(buffer);
+}
+
+static void layout_window_menu(Server& server, WindowMenu& menu)
+{
+    auto& font = Gfx::FontDatabase::default_font();
+    constexpr int frame = 2;
+    constexpr int stripe_width = 24;
+    constexpr int horizontal_padding = 28;
+    int item_height = window_menu_item_height();
+
+    int widest = 0;
+    for (auto& entry : menu.entries) {
+        if (entry.is_separator)
+            continue;
+        Optional<size_t> underline_offset;
+        auto parsed = Gfx::parse_ampersand_string(entry.text, &underline_offset);
+        widest = max(widest, font.width(parsed));
+    }
+
+    int width = widest + stripe_width + horizontal_padding + frame * 2;
+    int next_y = frame;
+    for (auto& entry : menu.entries) {
+        int height = entry.is_separator ? 8 : item_height;
+        entry.rect = { frame, next_y, width - frame * 2, height };
+        next_y += height;
+    }
+    int height = next_y + frame;
+
+    Gfx::IntRect output_box { 0, 0, width, height };
+    if (server.primary_output) {
+        wlr_box box { };
+        wlr_output_layout_get_box(server.output_layout, server.primary_output, &box);
+        output_box = { box.x, box.y, box.width, box.height };
+    }
+    int x = clamp(menu.rect.x(), output_box.x(), max(output_box.x(), output_box.right() - width));
+    int y = clamp(menu.rect.y(), output_box.y(), max(output_box.y(), output_box.bottom() - height));
+    menu.rect = { x, y, width, height };
+}
+
+static void close_window_menu(Server& server)
+{
+    auto& menu = server.window_menu;
+    if (!menu.open)
+        return;
+    menu.open = false;
+    menu.toplevel = nullptr;
+    menu.hovered_index = -1;
+    menu.pressed_index = -1;
+    menu.entries.clear_with_capacity();
+    if (menu.tree)
+        wlr_scene_node_set_enabled(&menu.tree->node, false);
+}
+
+static void open_window_menu(Server& server, Toplevel& toplevel, Gfx::IntPoint position)
+{
+    close_window_menu(server);
+
+    auto& menu = server.window_menu;
+    menu.open = true;
+    menu.toplevel = &toplevel;
+    menu.hovered_index = -1;
+    menu.pressed_index = -1;
+    menu.entries.clear_with_capacity();
+
+    auto add_item = [&](ByteString text, WindowMenuAction action, bool enabled, RefPtr<Gfx::Bitmap> icon = nullptr, bool is_default = false, bool checkable = false, bool checked = false) {
+        WindowMenuEntry entry;
+        entry.text = move(text);
+        entry.action = action;
+        entry.enabled = enabled;
+        entry.icon = move(icon);
+        entry.is_default = is_default;
+        entry.checkable = checkable;
+        entry.checked = checked;
+        menu.entries.append(move(entry));
+    };
+    auto add_separator = [&] {
+        WindowMenuEntry entry;
+        entry.is_separator = true;
+        menu.entries.append(move(entry));
+    };
+
+    add_item(toplevel.minimized ? ByteString { "&Unminimize" } : ByteString { "Mi&nimize" }, WindowMenuAction::MinimizeOrUnminimize, true);
+    add_item(toplevel.maximized ? ByteString { "&Restore" } : ByteString { "Ma&ximize" }, WindowMenuAction::MaximizeOrRestore, true);
+    add_item(ByteString { "&Move" }, WindowMenuAction::Move, !toplevel.minimized && !toplevel.maximized, g_frame_icons.move);
+    add_separator();
+    add_item(ByteString { "Always on &Top" }, WindowMenuAction::ToggleAlwaysOnTop, true, g_frame_icons.pin, false, true, toplevel.always_on_top);
+    add_separator();
+    add_item(ByteString { "&Close" }, WindowMenuAction::Close, true, g_frame_icons.close, true);
+
+    menu.rect = { position.x(), position.y(), 0, 0 };
+    layout_window_menu(server, menu);
+    paint_window_menu(server, menu);
+
+    wlr_scene_node_raise_to_top(&menu.tree->node);
+    wlr_scene_node_set_enabled(&menu.tree->node, true);
+    wlr_scene_node_set_enabled(&menu.buffer->node, true);
+}
+
+static void update_window_menu_hover(Server& server, double x, double y)
+{
+    auto& menu = server.window_menu;
+    int index = window_menu_index_at(menu, x, y);
+    if (index == menu.hovered_index)
+        return;
+    menu.hovered_index = index;
+    paint_window_menu(server, menu);
+}
+
+static void activate_window_menu_item(Server& server, int index)
+{
+    auto& menu = server.window_menu;
+    if (index < 0 || index >= static_cast<int>(menu.entries.size()))
+        return;
+    auto entry = menu.entries[index];
+    if (entry.is_separator || !entry.enabled)
+        return;
+
+    auto* toplevel = menu.toplevel;
+    close_window_menu(server);
+    if (!toplevel)
+        return;
+
+    switch (entry.action) {
+    case WindowMenuAction::MinimizeOrUnminimize:
+        toplevel_toggle_minimized(*toplevel);
+        break;
+    case WindowMenuAction::MaximizeOrRestore:
+        focus_toplevel(server, toplevel);
+        toplevel_toggle_maximized(*toplevel);
+        break;
+    case WindowMenuAction::Move:
+        focus_toplevel(server, toplevel);
+        toplevel_begin_interactive(*toplevel, CursorMode::Move, 0);
+        break;
+    case WindowMenuAction::ToggleAlwaysOnTop:
+        toplevel->always_on_top = !toplevel->always_on_top;
+        for (auto& candidate : server.toplevels) {
+            if (candidate->always_on_top && !candidate->minimized)
+                wlr_scene_node_raise_to_top(&candidate->scene_tree->node);
+        }
+        break;
+    case WindowMenuAction::Close:
+        toplevel_close(*toplevel);
+        break;
+    }
+}
+
+static void window_menu_handle_press(Server& server, uint32_t button)
+{
+    if (button == BTN_LEFT)
+        server.window_menu.pressed_index = window_menu_index_at(server.window_menu, server.cursor->x, server.cursor->y);
+    else
+        close_window_menu(server);
+}
+
+static void window_menu_handle_release(Server& server, uint32_t button)
+{
+    auto& menu = server.window_menu;
+    if (!menu.open)
+        return;
+    if (button != BTN_LEFT) {
+        close_window_menu(server);
+        return;
+    }
+    int released = window_menu_index_at(menu, server.cursor->x, server.cursor->y);
+    int pressed = menu.pressed_index;
+    menu.pressed_index = -1;
+    if (released >= 0 && released == pressed)
+        activate_window_menu_item(server, released);
+    else if (released < 0)
+        close_window_menu(server);
+}
+
+static bool window_menu_handle_key(Server& server, xkb_keysym_t sym)
+{
+    auto& menu = server.window_menu;
+    if (!menu.open)
+        return false;
+
+    if (sym == XKB_KEY_Escape) {
+        close_window_menu(server);
+        return true;
+    }
+    if (sym == XKB_KEY_Up || sym == XKB_KEY_Down) {
+        if (menu.entries.is_empty())
+            return true;
+        int count = static_cast<int>(menu.entries.size());
+        int index = menu.hovered_index;
+        for (int i = 0; i < count; ++i) {
+            if (sym == XKB_KEY_Up)
+                index = index <= 0 ? count - 1 : index - 1;
+            else
+                index = index >= count - 1 ? 0 : index + 1;
+            auto const& entry = menu.entries[index];
+            if (!entry.is_separator && entry.enabled)
+                break;
+        }
+        menu.hovered_index = index;
+        paint_window_menu(server, menu);
+        return true;
+    }
+    if (sym == XKB_KEY_Return || sym == XKB_KEY_KP_Enter) {
+        activate_window_menu_item(server, menu.hovered_index);
+        return true;
+    }
+    return true;
+}
+
 static bool handle_frame_press(Server& server, uint32_t button, uint32_t time)
 {
     auto hit = hit_test_frame(server, server.cursor->x, server.cursor->y);
     auto* toplevel = hit.toplevel;
     if (!toplevel)
         return false;
+
+    // The window menu: right-clicking the titlebar, or left-clicking the window
+    // icon at its left edge, opens it (as in SerenityOS).
+    if (hit.region == FrameRegion::Titlebar) {
+        bool icon_click = button == BTN_LEFT && !toplevel->titlebar_icon_rect.is_empty() && toplevel->titlebar_icon_rect.contains(hit.local);
+        if (button == BTN_RIGHT || icon_click) {
+            focus_toplevel(server, toplevel);
+            server.double_click_pending = false;
+            open_window_menu(server, *toplevel, Gfx::IntPoint { static_cast<int>(server.cursor->x), static_cast<int>(server.cursor->y) });
+            return true;
+        }
+    }
 
     if (button == BTN_LEFT) {
         if (hit.region == FrameRegion::Button) {
@@ -1773,6 +2148,8 @@ static ErrorOr<void> initialize_gfx()
     g_frame_icons.minimize = load_icon(resource_root, "window-minimize"sv, "downward-triangle"sv);
     g_frame_icons.maximize = load_icon(resource_root, "window-maximize"sv, "upward-triangle"sv);
     g_frame_icons.restore = load_icon(resource_root, "window-restore"sv, "upward-triangle"sv);
+    g_frame_icons.move = load_icon(resource_root, "move"sv, ""sv);
+    g_frame_icons.pin = load_icon(resource_root, "window-pin"sv, ""sv);
 
     dbgln("WindowServer: loaded the Serenity theme from {}", resource_root);
     return { };
