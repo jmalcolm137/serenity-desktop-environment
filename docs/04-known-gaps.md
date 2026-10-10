@@ -30,6 +30,10 @@ Done: Taskbar (system menu, quick-launch, window list, clock), WindowManagerServ
 - **Snapping** — not implemented.
 - **Workspaces** — not implemented; workspace IDs are no-ops.
 - **Notifications** — not implemented (NotificationServer is a stub).
+- **Tooltips** — not implemented. `GUI::Application::show_tooltip()` is a no-op in
+  the port, so the Taskbar quick-launch icons, window-title buttons, clock,
+  Show-Desktop button and applets show no hover text (all of which SerenityOS
+  provides). Needs a tooltip window near the widget/cursor.
 - **Applet area / system tray parity** — applets run as layer surfaces, but
   applet-area position/semantics are no-ops.
 - **Theming/font parity** — only the `Default` theme is used; no theme switching.
