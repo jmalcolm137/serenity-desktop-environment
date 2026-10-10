@@ -348,6 +348,9 @@ struct Toplevel {
     int pressed_button { -1 };
     Gfx::IntRect titlebar_icon_rect;
     wl_resource* chrome { nullptr };
+    // The decoration object, if any; the server-side mode is applied once the
+    // surface is initialized (set_mode schedules a configure).
+    wlr_xdg_toplevel_decoration_v1* decoration { nullptr };
     bool menubar_visible { true };
     i32 wm_id { 0 };
     wlr_foreign_toplevel_handle_v1* foreign_handle { nullptr };
@@ -393,6 +396,7 @@ struct Keyboard {
 
 struct Decoration {
     Server* server { nullptr };
+    Toplevel* toplevel { nullptr };
     wlr_xdg_toplevel_decoration_v1* decoration { nullptr };
     wl_listener request_mode { };
     wl_listener destroy { };
@@ -1217,6 +1221,11 @@ static void toplevel_commit(wl_listener* listener, void*)
     toplevel = wl_container_of(listener, toplevel, commit);
     if (toplevel->xdg_toplevel->base->initial_commit)
         wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
+    // A decoration created before the surface was initialized is configured now.
+    if (toplevel->decoration && toplevel->xdg_toplevel->base->initialized) {
+        wlr_xdg_toplevel_decoration_v1_set_mode(toplevel->decoration, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+        toplevel->decoration = nullptr;
+    }
     toplevel_update_foreign(*toplevel);
     toplevel_update_frame(*toplevel);
     wm_emit_state(*toplevel);
@@ -2062,6 +2071,10 @@ static void decoration_request_mode(wl_listener* listener, void*)
 {
     Decoration* decoration = nullptr;
     decoration = wl_container_of(listener, decoration, request_mode);
+    // Configure only once the surface is initialized; the initial commit applies
+    // the default mode otherwise.
+    if (!decoration->decoration->toplevel->base->initialized)
+        return;
     auto requested = decoration->decoration->requested_mode;
     // Strongly prefer server-side decorations, but honour an explicit CSD request.
     if (requested == WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE)
@@ -2076,6 +2089,8 @@ static void decoration_destroy(wl_listener* listener, void*)
     decoration = wl_container_of(listener, decoration, destroy);
     wl_list_remove(&decoration->request_mode.link);
     wl_list_remove(&decoration->destroy.link);
+    if (decoration->toplevel && decoration->toplevel->decoration == decoration->decoration)
+        decoration->toplevel->decoration = nullptr;
     remove_owned(decoration->server->decorations, decoration);
 }
 
@@ -2093,7 +2108,21 @@ static void server_new_toplevel_decoration(wl_listener* listener, void* data)
     decoration->destroy.notify = decoration_destroy;
     wl_signal_add(&wlr_decoration->events.destroy, &decoration->destroy);
 
-    wlr_xdg_toplevel_decoration_v1_set_mode(wlr_decoration, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+    auto* xdg_toplevel = wlr_decoration->toplevel;
+    for (auto& candidate : server->toplevels) {
+        if (candidate->xdg_toplevel == xdg_toplevel) {
+            decoration->toplevel = candidate.ptr();
+            break;
+        }
+    }
+
+    // Prefer server-side decorations. `set_mode` schedules a configure and
+    // asserts the surface is initialized, so defer to the first commit if it is
+    // created before the toplevel is initialized.
+    if (xdg_toplevel->base->initialized)
+        wlr_xdg_toplevel_decoration_v1_set_mode(wlr_decoration, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+    else if (decoration->toplevel)
+        decoration->toplevel->decoration = wlr_decoration;
     server->decorations.append(move(decoration));
 }
 
