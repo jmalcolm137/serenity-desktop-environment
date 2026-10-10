@@ -102,10 +102,8 @@ static bool handle_frame_press(Server&, uint32_t button);
 static void arrange_layers(Server&, wlr_output*);
 static Output* output_for(Server&, wlr_output*);
 static void output_manager_send_configuration(Server&);
-static void arrange_applets(Server&);
 static void wm_emit_state(Toplevel&);
 static void wm_emit_removed(Toplevel&);
-static void wm_emit_applet_area(Server&);
 static Toplevel* find_toplevel_by_wm_id(i32);
 static i32 g_next_wm_id { 1 };
 static Gfx::Palette* g_palette { nullptr };
@@ -195,7 +193,6 @@ struct Server {
     wlr_xcursor_manager* cursor_manager { nullptr };
     wlr_seat* seat { nullptr };
     wlr_output* primary_output { nullptr };
-    Gfx::IntPoint applet_area_position;
 
     wl_listener new_output { };
     wl_listener new_xdg_toplevel { };
@@ -234,7 +231,6 @@ struct Output {
     Server* server { nullptr };
     wlr_output* output { nullptr };
     wlr_box usable_area { };
-    int panel_reserve_bottom { 0 };
     wl_listener frame { };
     wl_listener request_state { };
     wl_listener destroy { };
@@ -256,9 +252,6 @@ struct Toplevel {
     bool frame_active { true };
     bool maximized { false };
     bool minimized { false };
-    bool is_panel { false };
-    bool is_applet { false };
-    int applet_width { 0 };
     i32 wm_id { 0 };
     wlr_foreign_toplevel_handle_v1* foreign_handle { nullptr };
     wl_listener map { };
@@ -349,11 +342,6 @@ static void focus_toplevel(Server& server, Toplevel* toplevel)
     }
 
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
-    // Keep panels above normal windows.
-    for (auto& candidate : server.toplevels) {
-        if (candidate->is_panel && !candidate->minimized)
-            wlr_scene_node_raise_to_top(&candidate->scene_tree->node);
-    }
 
     wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, true);
     toplevel->frame_active = true;
@@ -745,47 +733,6 @@ static void toplevel_update_frame(Toplevel& toplevel)
     if (content_width <= 0 || content_height <= 0)
         return;
 
-    bool const is_panel = xdg_toplevel->app_id && strcmp(xdg_toplevel->app_id, "serenity-taskbar") == 0;
-    toplevel.is_panel = is_panel;
-    if (is_panel) {
-        // The Taskbar is a bottom panel: no frame, full output width, and it
-        // reserves a strip at the bottom of the usable area.
-        if (auto* output = output_for(*toplevel.server, toplevel.server->primary_output)) {
-            wlr_box box { };
-            wlr_output_layout_get_box(toplevel.server->output_layout, output->output, &box);
-            if (content_width != box.width) {
-                wlr_xdg_toplevel_set_size(xdg_toplevel, box.width, content_height);
-                return;
-            }
-            if (toplevel.frame_buffer) {
-                wlr_scene_node_destroy(&toplevel.frame_buffer->node);
-                toplevel.frame_buffer = nullptr;
-            }
-            wlr_scene_node_set_position(&toplevel.content_tree->node, 0, 0);
-            wlr_scene_node_set_position(&toplevel.scene_tree->node, box.x, box.y + box.height - content_height);
-            if (output->panel_reserve_bottom != content_height) {
-                output->panel_reserve_bottom = content_height;
-                arrange_layers(*toplevel.server, output->output);
-            }
-        }
-        return;
-    }
-
-    bool const is_applet = xdg_toplevel->app_id && strcmp(xdg_toplevel->app_id, "serenity-applet") == 0;
-    toplevel.is_applet = is_applet;
-    if (is_applet) {
-        // Applets are composited into the shell's applet area; the WindowServer
-        // lays them out and reports the total size to the shell.
-        toplevel.applet_width = content_width;
-        if (toplevel.frame_buffer) {
-            wlr_scene_node_destroy(&toplevel.frame_buffer->node);
-            toplevel.frame_buffer = nullptr;
-        }
-        wlr_scene_node_set_position(&toplevel.content_tree->node, 0, 0);
-        arrange_applets(*toplevel.server);
-        return;
-    }
-
     auto& theme = g_palette->window_theme();
     Gfx::IntRect content_rect { 0, 0, content_width, content_height };
     auto frame_rect = theme.frame_rect_for_window(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette, 0);
@@ -873,15 +820,6 @@ static void toplevel_unmap(wl_listener* listener, void*)
     toplevel = wl_container_of(listener, toplevel, unmap);
     if (toplevel == toplevel->server->grabbed_toplevel)
         reset_cursor_mode(*toplevel->server);
-
-    if (toplevel->is_panel) {
-        if (auto* output = output_for(*toplevel->server, toplevel->server->primary_output)) {
-            output->panel_reserve_bottom = 0;
-            arrange_layers(*toplevel->server, output->output);
-        }
-    }
-    if (toplevel->is_applet)
-        arrange_applets(*toplevel->server);
 }
 
 static void toplevel_commit(wl_listener* listener, void*)
@@ -914,14 +852,6 @@ static void toplevel_destroy(wl_listener* listener, void*)
     wl_list_remove(&toplevel->foreign_request_close.link);
     if (toplevel->foreign_handle)
         wlr_foreign_toplevel_handle_v1_destroy(toplevel->foreign_handle);
-    if (toplevel->is_panel) {
-        if (auto* output = output_for(*toplevel->server, toplevel->server->primary_output)) {
-            output->panel_reserve_bottom = 0;
-            arrange_layers(*toplevel->server, output->output);
-        }
-    }
-    if (toplevel->is_applet)
-        arrange_applets(*toplevel->server);
     wm_emit_removed(*toplevel);
     remove_owned(server.toplevels, toplevel);
 }
@@ -1205,8 +1135,6 @@ static void arrange_layers(Server& server, wlr_output* output)
     wlr_box usable_area = full_area;
 
     auto* output_state = output_for(server, output);
-    if (output_state && output_state->panel_reserve_bottom > 0)
-        usable_area.height = max(0, usable_area.height - output_state->panel_reserve_bottom);
 
     // Configure layer surfaces from the bottom-most layer up, so exclusive
     // zones from lower layers shrink the area available to higher ones.
@@ -1422,35 +1350,6 @@ static void output_manager_test(wl_listener* listener, void* data)
 
 static Server* g_server { nullptr };
 
-static void arrange_applets(Server& server)
-{
-    constexpr int applet_spacing = 4;
-    constexpr int applet_area_height = 19;
-
-    int total_width = 0;
-    int count = 0;
-    for (auto& toplevel : server.toplevels) {
-        if (!toplevel->is_applet || toplevel->minimized)
-            continue;
-        total_width += toplevel->applet_width + applet_spacing;
-        ++count;
-    }
-    if (count > 0)
-        total_width -= applet_spacing;
-    if (total_width < 0)
-        total_width = 0;
-
-    int x = server.applet_area_position.x();
-    for (auto& toplevel : server.toplevels) {
-        if (!toplevel->is_applet || toplevel->minimized)
-            continue;
-        wlr_scene_node_set_position(&toplevel->scene_tree->node, x, server.applet_area_position.y());
-        x += toplevel->applet_width + applet_spacing;
-    }
-
-    wm_emit_applet_area(server);
-}
-
 // The compositor's end of the Serenity WindowManagerServer protocol.
 class WindowManagerServerConnection final
     : public IPC::Connection<WindowManagerServerEndpoint, WindowManagerClientEndpoint>
@@ -1473,7 +1372,6 @@ public:
             return;
         for (auto& toplevel : g_server->toplevels)
             wm_emit_state(*toplevel);
-        wm_emit_applet_area(*g_server);
     }
 
     virtual void set_active_window(i32, i32 window_id) override
@@ -1506,13 +1404,10 @@ public:
     virtual void popup_window_menu(i32, i32, Gfx::IntPoint) override { }
     virtual void set_window_taskbar_rect(i32, i32, Gfx::IntRect const&) override { }
 
-    virtual void set_applet_area_position(Gfx::IntPoint position) override
-    {
-        if (!g_server)
-            return;
-        g_server->applet_area_position = position;
-        arrange_applets(*g_server);
-    }
+    // Applets are now layer surfaces positioned by the compositor, so the
+    // shell's applet-area position no longer needs the WindowServer to lay
+    // them out.
+    virtual void set_applet_area_position(Gfx::IntPoint) override { }
 
     virtual void set_workspace(u32, u32) override { }
     virtual void set_keymap(ByteString const&) override { }
@@ -1543,15 +1438,16 @@ static Toplevel* find_toplevel_by_wm_id(i32 wm_id)
 
 static void wm_emit_state(Toplevel& toplevel)
 {
-    bool is_chrome = toplevel.is_panel || toplevel.is_applet;
     StringView title;
     if (toplevel.xdg_toplevel->title)
         title = StringView { toplevel.xdg_toplevel->title, strlen(toplevel.xdg_toplevel->title) };
     for (auto& connection : g_wm_connections) {
         if (connection->manager_window_id() < 0)
             continue;
+        // Chrome windows (the panel, applets, the desktop) are layer surfaces,
+        // not toplevels, so nothing reported here is chrome.
         connection->async_window_state_changed(connection->manager_window_id(), 0, toplevel.wm_id, 0, 0,
-            toplevel.frame_active && !toplevel.minimized, false, toplevel.minimized, is_chrome,
+            toplevel.frame_active && !toplevel.minimized, false, toplevel.minimized, false,
             static_cast<i32>(WindowServer::WindowType::Normal), ByteString { title },
             Gfx::IntRect { 0, 0, 0, 0 }, Optional<i32> { });
     }
@@ -1562,28 +1458,6 @@ static void wm_emit_removed(Toplevel& toplevel)
     for (auto& connection : g_wm_connections) {
         if (connection->manager_window_id() >= 0)
             connection->async_window_removed(connection->manager_window_id(), 0, toplevel.wm_id);
-    }
-}
-
-static void wm_emit_applet_area(Server& server)
-{
-    constexpr int applet_spacing = 4;
-    constexpr int applet_area_height = 19;
-    int total_width = 0;
-    int count = 0;
-    for (auto& toplevel : server.toplevels) {
-        if (!toplevel->is_applet || toplevel->minimized)
-            continue;
-        total_width += toplevel->applet_width + applet_spacing;
-        ++count;
-    }
-    if (count > 0)
-        total_width -= applet_spacing;
-    if (total_width < 0)
-        total_width = 0;
-    for (auto& connection : g_wm_connections) {
-        if (connection->manager_window_id() >= 0)
-            connection->async_applet_area_size_changed(connection->manager_window_id(), Gfx::IntSize { total_width, applet_area_height });
     }
 }
 

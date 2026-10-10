@@ -400,10 +400,12 @@ Specifically:
 5. **Shell = unmodified SerenityOS shell apps.** Run `Userland/Services/Taskbar`
    (system-menu/start button, quick-launch, window list, applet area, clock,
    show-desktop) and its applets, the Desktop and Settings as Wayland clients.
-   The compositor implements Serenity **window-type semantics** — `Taskbar`
-   (reserved strut, always-on-top), `Applet`/`AppletArea` layout, `Desktop`,
-   `Notification`, `Tooltip`, `Menu`, `Popup`, `Autocomplete` — so the existing
-   widgets land correctly without modification.
+   `LibWindowServer` maps Serenity **window types** directly onto roles: the
+   `Taskbar`, `Applet` and `Desktop` become `wlr-layer-shell` surfaces (a bottom
+   panel with an exclusive zone, a top-layer applet, a background desktop), while
+   the remaining types are ordinary `xdg-shell` toplevels with compositor-drawn
+   frames. No `app_id` role hint is involved, so the widgets land correctly
+   without modification.
 6. **`WindowManagerServer` is served by the WindowServer.** Just as in
    SerenityOS, the WindowServer hosts the shell's `WindowManagerServer` protocol:
    the compositor listens on `/tmp/portal/wm`, answers the Serenity
@@ -456,9 +458,9 @@ before we invest in the compositor core.
    │                                                                  │
    │  protocols: xdg-shell · layer-shell · xdg-decoration ·           │
    │             foreign-toplevel · output-management · capture ·     │
-   │             idle · session-lock · XWayland · serenity-window-server protocols      │
+   │             idle · session-lock · XWayland      │
    └───────▲───────────────────────────────────────────────▲──────────┘
-           │ layer-shell + foreign-toplevel/serenity-window-server protocols  │
+           │ layer-shell + foreign-toplevel / WindowManagerServer  │
    ┌───────┴───────────────────────────────────────────────┴──────────┐
    │ SerenityOS shell apps (unmodified, LibGUI/LibGfx clients)        │
    │   Taskbar(system menu·quick-launch·window list·clock) · Applets  │
@@ -559,16 +561,18 @@ Option D/labwc or to KWin with a KDE backend and lose little of the shell work.
 
 ## 12. Open questions
 
-1. **Custom protocol scope:** exactly which Serenity `WindowManagerServer`
-   semantics have no standard equivalent and must go into `serenity-window-server protocols`
-   (workspace IDs? applet-area geometry? window menu actions?).
+1. **`WindowManagerServer` coverage:** which Serenity `WindowManagerServer`
+   semantics the compositor must serve itself beyond window state/removal
+   (workspace IDs? applet-area geometry? window menu actions?). Workspaces and
+   the applet area are still no-ops: applets are layer surfaces positioned by
+   the compositor.
 2. **Frame rendering path:** LibGfx into an uploaded texture versus a dedicated
    wlroots renderer pass for the SSD frame; decide in Phase 1.
 3. **Session integration:** logind/DRM master, seat management, and the login
    manager to target first.
 4. **Capture permission model** for the switcher's thumbnails: a compositor
    policy/portal so a trusted shell client can capture toplevels.
-5. **Switcher/overlay protocol details** — whether `serenity-window-server protocols` carries a
+5. **Switcher/overlay protocol details** — whether the compositor carries a
    ready-made thumbnail or the client uses `ext-image-copy-capture` directly.
 6. **Packaging** of `WindowServer` and the session (binary/session names,
    install layout).
@@ -582,9 +586,9 @@ Option D/labwc or to KWin with a KDE backend and lose little of the shell work.
 |---|---|
 | Surface roles | `xdg-shell`, `wlr-layer-shell-unstable-v1` |
 | Decorations | `xdg-decoration-unstable-v1` (SSD) |
-| Window types | Serenity `WindowType` semantics: `Taskbar`, `Applet`, `AppletArea`, `Desktop`, `Menu`, `Tooltip`, `Notification`, `Popup`, `Autocomplete`, `WindowSwitcher` |
+| Window types | Serenity `WindowType` semantics. `LibWindowServer` maps the shell types (`Taskbar`, `Applet`, `Desktop`) directly onto `wlr-layer-shell` roles; the rest are `xdg-shell` toplevels with compositor-drawn frames (no `app_id` hint) |
 | Shell session (WMServer) | `WindowManagerServer` requests + `WindowManagerClient` events (windows, workspaces, applet area, super-key, quick-launch) |
-| Window management (shell) | `wlr-foreign-toplevel-management-unstable-v1` + `serenity-window-server protocols` |
+| Window management (shell) | `wlr-foreign-toplevel-management-unstable-v1` |
 | Outputs / config | `wl_output`, `zxdg_output_v1`, `wlr-output-management-unstable-v1` |
 | Capture (switcher/screenshots) | `ext-image-copy-capture-v1` / `wlr-screencopy-unstable-v1` (+ portal) |
 | Input | `wl_seat`, `wl_pointer`, `wl_keyboard`, `wl_touch`, `wlr-virtual-pointer`, `wlr-virtual-keyboard` |
