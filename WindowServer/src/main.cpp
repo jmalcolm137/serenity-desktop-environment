@@ -761,7 +761,9 @@ static void toplevel_update_frame(Toplevel& toplevel)
 
     toplevel.button_rects.clear_with_capacity();
     for (size_t index = 0; index < buttons.size(); ++index) {
-        auto button_rect = buttons[index].translated(toplevel.frame_left, toplevel.frame_top);
+        // layout_buttons() returns rects in frame coordinates, which is also what
+        // the frame bitmap and cursor hit-testing use.
+        auto button_rect = buttons[index];
         toplevel.button_rects.append(button_rect);
         if (!g_palette->title_buttons_icon_only())
             Gfx::StylePainter::paint_button(painter, button_rect, *g_palette, Gfx::ButtonStyle::Normal, false, false);
