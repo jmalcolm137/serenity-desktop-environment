@@ -179,8 +179,9 @@ all outputs are covered, input routed to the lock surface on the output under th
 cursor). `Super+L` spawns the lock client (`SDE_LOCK_CMD`, default `swaylock`).
 Both scripts pass, including a two-output lock.
 
-**Remaining for R4.1:** dim/screen-blank before lock; re-configuring lock
-surfaces on output resize/scale while locked; and the idle-to-lock policy (R4.2).
+**Remaining for R4.1:** dim/screen-blank before lock, and re-configuring lock
+surfaces on output resize/scale while locked. (Idle-to-lock is delivered by
+R4.2's `sde-idle`.)
 
 ### R4.2 — Session lifecycle & supervisor
 
@@ -205,15 +206,24 @@ surfaces on output resize/scale while locked; and the idle-to-lock policy (R4.2)
 the session environment (`XDG_SESSION_TYPE`, `XDG_CURRENT_DESKTOP`,
 `WAYLAND_DISPLAY`), runs **XDG Autostart** entries (`$XDG_CONFIG_HOME/autostart`,
 honouring `Hidden=true` and field-code stripping), starts the compositor, and
-restarts it on a non-zero exit within a bounded budget. `scripts/sde-power.sh`
-routes `logout|reboot|shutdown|suspend` to **logind** (`loginctl`, else
-`busctl` on `org.freedesktop.login1`), with `SDE_POWER_CMD` as the seam.
+restarts it on a non-zero exit within a bounded budget. It arms **idle-to-lock**
+by running the portable **`sde-idle`** daemon (`tools/sde-idle.c`, built by
+`scripts/build-tools.sh`) — a plain `ext-idle-notify-v1` client that runs the lock
+command after `SDE_SESSION_IDLE_SECONDS`. `scripts/sde-power.sh` routes
+`logout|reboot|shutdown|suspend` to **logind** (`loginctl`, else `busctl` on
+`org.freedesktop.login1`), with `SDE_POWER_CMD` as the seam.
 `scripts/start-sde-session.sh` now delegates to the supervisor.
-`scripts/run-session-test.sh` passes (stub compositor). **Remaining:** point the
-Taskbar `ShutdownDialog`'s `/bin/{shutdown,reboot,logout}` at `sde-power.sh`
-(cross-repo: a host `/bin` mapping); optionally advertise a **D-Bus
-`org.freedesktop.login1`-style** response to the shell; the **idle-to-lock**
-daemon; and `xdg-session-management-v1` restore.
+`scripts/run-session-test.sh` and the extended `scripts/run-idle-test.sh` pass.
+
+**Bug fixed along the way (R4.1):** releasing an idle inhibitor left the seat
+*permanently inhibited* — wlroots unlinks an inhibitor only *after* its destroy
+signal, so the compositor's `wl_list_empty` check still saw it. The compositor now
+excludes the dying inhibitor when recomputing the inhibited state
+(`WindowServer/src/main.cpp`).
+
+**Remaining:** point the Taskbar `ShutdownDialog`'s
+`/bin/{shutdown,reboot,logout}` at `sde-power.sh` (cross-repo: a host `/bin`
+mapping); and `xdg-session-management-v1` restore.
 
 ### R4.3 — logind / systemd / portal session integration
 

@@ -41,6 +41,10 @@ export SDE_APP_BIN_DIR="${SDE_APP_BIN_DIR:-$BUILD/bin}"
 # standard ext-session-lock-v1 client. See docs/11-r4-implementation-plan.md §9.
 export SDE_LOCK_CMD="${SDE_LOCK_CMD:-swaylock}"
 
+# Idle-to-lock after this many seconds (0 disables). Uses the portable sde-idle
+# daemon (a plain ext-idle-notify-v1 client). Build it with scripts/build-tools.sh.
+export SDE_SESSION_IDLE_SECONDS="${SDE_SESSION_IDLE_SECONDS:-300}"
+
 # Seed the SerenityOS skeleton user config, so apps that read default
 # configuration at startup (e.g. Browser) find it.
 SERENITY="$SERENITY" "$SDE_ROOT/scripts/seed-serenity-home.sh"
@@ -72,8 +76,12 @@ if [[ -x "$IMAGE_DECODER" ]]; then
 fi
 
 echo "SDE: starting WindowServer (${SDE_BACKENDS:-drm,libinput}) on $XDG_RUNTIME_DIR"
+# Build the portable session tools (sde-idle) if needed.
+if [ ! -x "$SDE_ROOT/build/tools/sde-idle" ]; then
+    "$SDE_ROOT/scripts/build-tools.sh" >/dev/null
+fi
 # The session supervisor (R4.2) starts/restarts the compositor, runs XDG
-# Autostart, and owns the session environment.
+# Autostart, owns the session environment, and arms idle-to-lock.
 export SDE_SESSION_COMPOSITOR="$COMP -n sde -s \"$STARTUP\""
 "$SDE_ROOT/scripts/sde-session.sh"
 status=$?

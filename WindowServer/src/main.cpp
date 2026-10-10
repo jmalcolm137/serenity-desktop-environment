@@ -2389,11 +2389,22 @@ static void notify_activity(Server& server)
         wlr_idle_notifier_v1_notify_activity(server.idle_notifier, server.seat);
 }
 
-static void update_idle_inhibit(Server& server)
+static void update_idle_inhibit(Server& server, wlr_idle_inhibitor_v1* being_destroyed = nullptr)
 {
     if (!server.idle_notifier || !server.idle_inhibit_manager)
         return;
-    bool const inhibited = !wl_list_empty(&server.idle_inhibit_manager->inhibitors);
+    // wlroots removes an inhibitor from the manager's list *after* emitting its
+    // destroy signal, so when we are called from that signal the dying inhibitor
+    // is still linked; exclude it or we would never clear the inhibited state.
+    bool inhibited = false;
+    wlr_idle_inhibitor_v1* inhibitor = nullptr;
+    wl_list_for_each(inhibitor, &server.idle_inhibit_manager->inhibitors, link)
+    {
+        if (inhibitor == being_destroyed)
+            continue;
+        inhibited = true;
+        break;
+    }
     wlr_idle_notifier_v1_set_inhibited(server.idle_notifier, inhibited);
 }
 
@@ -2401,11 +2412,13 @@ static void idle_inhibitor_destroy(wl_listener* listener, void*)
 {
     IdleInhibitor* inhibitor = wl_container_of(listener, inhibitor, destroy);
     auto& server = *inhibitor->server;
+    dbgln("WindowServer: idle inhibitor destroyed");
     // Unlink before freeing the entry: wlroots asserts the inhibitor's destroy
     // listener list is empty before it frees the object.
     wl_list_remove(&inhibitor->destroy.link);
+    auto* dying = inhibitor->inhibitor;
     server.idle_inhibitors.remove_first_matching([&](auto const& candidate) { return candidate.ptr() == inhibitor; });
-    update_idle_inhibit(server);
+    update_idle_inhibit(server, dying);
 }
 
 static void server_new_idle_inhibitor(wl_listener* listener, void* data)

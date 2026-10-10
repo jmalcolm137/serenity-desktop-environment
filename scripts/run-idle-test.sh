@@ -36,6 +36,9 @@ cc -O2 -I "$TOOLS_BUILD" \
     "$TOOLS_BUILD/wlr-output-power-management-unstable-v1-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/idle-test"
+# The portable idle daemon (sde-idle), built by the shared tools script.
+"$SDE_ROOT/scripts/build-tools.sh" >/dev/null
+SDE_IDLE="$SDE_ROOT/build/tools/sde-idle"
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-idle.XXXXXX")"
 chmod 700 "$RUNTIME"
@@ -73,6 +76,15 @@ run_client --dpms off --hold 400 > "$RUNTIME/dpms-off.log" 2>&1 || true
 run_client --dpms on --hold 400 > "$RUNTIME/dpms-on.log" 2>&1 || true
 cat "$RUNTIME/dpms-off.log" "$RUNTIME/dpms-on.log"
 
+echo "== (D) sde-idle runs its command on idle =="
+env WAYLAND_DISPLAY="$SOCK" "$SDE_IDLE" timeout 1 "touch $RUNTIME/idle-fired" \
+    > "$RUNTIME/sde-idle.log" 2>&1 &
+SDE_IDLE_PID=$!
+sleep 2.5
+kill "$SDE_IDLE_PID" 2>/dev/null || true
+wait "$SDE_IDLE_PID" 2>/dev/null || true
+cat "$RUNTIME/sde-idle.log"
+
 sleep 0.5
 kill "$COMP_PID" 2>/dev/null || true
 wait "$COMP_PID" 2>/dev/null || true
@@ -109,6 +121,15 @@ check "IDLE-TEST: dpms off" "$RUNTIME/dpms-off.log"
 check "IDLE-TEST: dpms on" "$RUNTIME/dpms-on.log"
 check "output 'HEADLESS-1' off" "$RUNTIME/comp.log"
 check "output 'HEADLESS-1' on" "$RUNTIME/comp.log"
+
+# sde-idle (the portable idle-to-action daemon) ran its command.
+check "sde-idle: armed timeout 1s" "$RUNTIME/sde-idle.log"
+if [[ -e "$RUNTIME/idle-fired" ]]; then
+    echo "  ok: sde-idle ran its command on idle"
+else
+    echo "  MISSING: sde-idle did not run its command"
+    fail=1
+fi
 
 if [[ "$fail" -ne 0 ]]; then
     echo "==> session safety net test FAILED"

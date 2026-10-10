@@ -29,6 +29,14 @@ MAX_RESTARTS="${SDE_SESSION_MAX_RESTARTS:-3}"
 RESTART_DELAY="${SDE_SESSION_RESTART_DELAY:-1}"
 RUN_AUTOSTART="${SDE_SESSION_AUTOSTART:-1}"
 
+# Idle-to-lock policy (R4.1/R4.2): if SDE_SESSION_IDLE_SECONDS > 0, run the
+# portable sde-idle daemon to lock after that many idle seconds. sde-idle is a
+# plain ext-idle-notify-v1 client, so this works under any compositor.
+IDLE_SECONDS="${SDE_SESSION_IDLE_SECONDS:-0}"
+IDLE_BIN="${SDE_SESSION_IDLE_BIN:-$SDE_ROOT/build/tools/sde-idle}"
+LOCK_CMD="${SDE_LOCK_CMD:-swaylock}"
+IDLE_PID=""
+
 # Session environment (expanded in R4.3). Keep it explicit so portals/apps can
 # find the session.
 export XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-wayland}"
@@ -76,11 +84,25 @@ while :; do
     echo "SDE session: starting compositor: $COMPOSITOR"
     sh -c "$COMPOSITOR" &
     comp_pid=$!
+
+    # Idle-to-lock (optional): wait briefly for the compositor socket, then arm
+    # the portable idle daemon against it.
+    if [ "$IDLE_SECONDS" -gt 0 ] && [ -x "$IDLE_BIN" ]; then
+        sleep 0.3
+        "$IDLE_BIN" timeout "$IDLE_SECONDS" "$LOCK_CMD" >/dev/null 2>&1 &
+        IDLE_PID=$!
+        echo "SDE session: idle-to-lock after ${IDLE_SECONDS}s via '$LOCK_CMD'"
+    fi
+
     # shellcheck disable=SC2064
-    trap "kill -TERM $comp_pid 2>/dev/null" TERM INT
+    trap "kill -TERM $comp_pid ${IDLE_PID:+$IDLE_PID} 2>/dev/null" TERM INT
     wait "$comp_pid"
     status=$?
     trap - TERM INT
+    if [ -n "$IDLE_PID" ]; then
+        kill "$IDLE_PID" 2>/dev/null || true
+        IDLE_PID=""
+    fi
 
     if [ "$status" -eq 0 ]; then
         echo "SDE session: compositor exited; stopping"

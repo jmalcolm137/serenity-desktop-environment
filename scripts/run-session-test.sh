@@ -99,6 +99,18 @@ else
     echo "  ok: bogus action rejected"
 fi
 
+echo "== (D) idle-to-lock is armed when configured =="
+"$SDE_ROOT/scripts/build-tools.sh" >/dev/null
+env SDE_SESSION_COMPOSITOR="sleep 1" \
+    SDE_SESSION_AUTOSTART=0 \
+    SDE_SESSION_IDLE_SECONDS=300 \
+    SDE_SESSION_IDLE_BIN="$SDE_ROOT/build/tools/sde-idle" \
+    SDE_LOCK_CMD="sde-lock-test" \
+    SDE_SESSION_RESTART_DELAY=0 \
+    "$SDE" > "$RUNTIME/session-d.log" 2>&1 || true
+cat "$RUNTIME/session-d.log"
+check "idle-to-lock after 300s via 'sde-lock-test'" "$RUNTIME/session-d.log"
+
 if [ "$fail" -ne 0 ]; then
     echo "==> session test FAILED"
     exit 1
