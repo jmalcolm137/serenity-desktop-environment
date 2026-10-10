@@ -322,9 +322,11 @@ struct Toplevel {
     Gfx::IntSize frame_size;
     Vector<Gfx::IntRect> button_rects;
     Gfx::IntSize restore_size;
+    Gfx::IntPoint restore_position;
     bool frame_active { true };
     bool maximized { false };
     bool minimized { false };
+    bool fullscreen { false };
     bool always_on_top { false };
     bool rolled_up { false };
     int hovered_button { -1 };
@@ -1004,6 +1006,24 @@ static void toplevel_update_frame(Toplevel& toplevel)
     if (content_width <= 0 || content_height <= 0)
         return;
 
+    // A fullscreen window is frameless: the client content fills the output.
+    if (toplevel.fullscreen) {
+        toplevel.frame_left = 0;
+        toplevel.frame_top = 0;
+        toplevel.frame_right = 0;
+        toplevel.frame_bottom = 0;
+        toplevel.frame_size = { content_width, content_height };
+        toplevel.button_rects.clear_with_capacity();
+        if (toplevel.frame_buffer)
+            wlr_scene_node_set_enabled(&toplevel.frame_buffer->node, false);
+        wlr_scene_node_set_position(&toplevel.content_tree->node, 0, 0);
+        wlr_scene_node_set_enabled(&toplevel.content_tree->node, true);
+        return;
+    }
+    // The frame is visible again after leaving fullscreen.
+    if (toplevel.frame_buffer)
+        wlr_scene_node_set_enabled(&toplevel.frame_buffer->node, true);
+
     auto& theme = g_palette->window_theme();
     // A rolled-up window keeps only its frame: the content is hidden and the
     // frame is laid out as if the content had zero height.
@@ -1659,8 +1679,35 @@ static void toplevel_request_fullscreen(wl_listener* listener, void*)
 {
     Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, request_fullscreen);
-    if (toplevel->xdg_toplevel->base->initialized)
-        wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
+    auto& server = *toplevel->server;
+    if (!toplevel->xdg_toplevel->base->initialized)
+        return;
+
+    bool fullscreen = toplevel->xdg_toplevel->requested.fullscreen;
+    dbgln("WindowServer: request_fullscreen={} title='{}'", fullscreen,
+        toplevel->xdg_toplevel->title ? toplevel->xdg_toplevel->title : "");
+    // Acknowledge the request. The client only learns it is fullscreen from the
+    // configure we send back, so both the state and the size have to be set.
+    wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, fullscreen);
+
+    wlr_box box { };
+    if (server.primary_output)
+        wlr_output_layout_get_box(server.output_layout, server.primary_output, &box);
+
+    if (fullscreen) {
+        toplevel->restore_size = { toplevel->xdg_toplevel->base->geometry.width, toplevel->xdg_toplevel->base->geometry.height };
+        toplevel->restore_position = { toplevel->scene_tree->node.x, toplevel->scene_tree->node.y };
+        toplevel->fullscreen = true;
+        if (!wlr_box_empty(&box)) {
+            wlr_scene_node_set_position(&toplevel->scene_tree->node, box.x, box.y);
+            wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, box.width, box.height);
+        }
+    } else {
+        toplevel->fullscreen = false;
+        wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->restore_position.x(), toplevel->restore_position.y());
+        wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, toplevel->restore_size.width(), toplevel->restore_size.height());
+    }
+    toplevel_update_frame(*toplevel);
 }
 
 static void toplevel_set_title(wl_listener* listener, void*)
