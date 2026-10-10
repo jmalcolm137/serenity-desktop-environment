@@ -32,19 +32,27 @@ struct wlr_backend;
 struct wlr_cursor;
 struct wlr_foreign_toplevel_handle_v1;
 struct wlr_foreign_toplevel_manager_v1;
+struct wlr_idle_inhibit_manager_v1;
+struct wlr_idle_inhibitor_v1;
+struct wlr_idle_notifier_v1;
 struct wlr_keyboard;
 struct wlr_layer_shell_v1;
 struct wlr_layer_surface_v1;
 struct wlr_output;
 struct wlr_output_layout;
 struct wlr_output_manager_v1;
+struct wlr_output_power_manager_v1;
 struct wlr_renderer;
 struct wlr_scene;
 struct wlr_scene_buffer;
 struct wlr_scene_layer_surface_v1;
 struct wlr_scene_output_layout;
+struct wlr_scene_surface;
 struct wlr_scene_tree;
 struct wlr_seat;
+struct wlr_session_lock_manager_v1;
+struct wlr_session_lock_surface_v1;
+struct wlr_session_lock_v1;
 struct wlr_surface;
 struct wlr_virtual_keyboard_manager_v1;
 struct wlr_virtual_pointer_manager_v1;
@@ -226,6 +234,24 @@ struct Decoration {
     wl_listener destroy { };
 };
 
+// A client's idle inhibitor (zwp_idle_inhibit_v1): while any is present the seat
+// is never considered idle. R4.1.
+struct IdleInhibitor {
+    Server* server { nullptr };
+    wlr_idle_inhibitor_v1* inhibitor { nullptr };
+    wl_listener destroy { };
+};
+
+// One output's surface in an ext-session-lock-v1 lock. R4.1.
+struct LockSurface {
+    Server* server { nullptr };
+    wlr_session_lock_surface_v1* lock_surface { nullptr };
+    wlr_scene_surface* scene { nullptr };
+    bool configured { false };
+    wl_listener commit { };
+    wl_listener destroy { };
+};
+
 struct Server {
     wl_display* display { nullptr };
     wlr_backend* backend { nullptr };
@@ -314,4 +340,23 @@ struct Server {
 
     // The (single) window menu, if any is open.
     WindowMenu window_menu;
+
+    // --- Session safety net (R4.1), see docs/11-r4-implementation-plan.md ---
+    // Idle notification (ext-idle-notify-v1), idle inhibition
+    // (zwp_idle_inhibit_v1), DPMS (wlr-output-power-management) and session lock
+    // (ext-session-lock-v1).
+    wlr_idle_notifier_v1* idle_notifier { nullptr };
+    wlr_idle_inhibit_manager_v1* idle_inhibit_manager { nullptr };
+    wlr_output_power_manager_v1* output_power_manager { nullptr };
+    wlr_session_lock_manager_v1* session_lock_manager { nullptr };
+    wlr_session_lock_v1* session_lock { nullptr };
+    bool locked { false };
+    Vector<NonnullOwnPtr<IdleInhibitor>> idle_inhibitors;
+    Vector<NonnullOwnPtr<LockSurface>> lock_surfaces;
+    wl_listener new_idle_inhibitor { };
+    wl_listener output_power_set_mode { };
+    wl_listener session_lock_new_lock { };
+    wl_listener session_lock_new_surface { };
+    wl_listener session_lock_unlock { };
+    wl_listener session_lock_destroy { };
 };

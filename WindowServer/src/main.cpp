@@ -70,15 +70,19 @@ extern "C" {
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_foreign_toplevel_management_v1.h>
+#include <wlr/types/wlr_idle_inhibit_v1.h>
+#include <wlr/types/wlr_idle_notify_v1.h>
 #include <wlr/types/wlr_input_device.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_output_management_v1.h>
+#include <wlr/types/wlr_output_power_management_v1.h>
 #include <wlr/types/wlr_pointer.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
+#include <wlr/types/wlr_session_lock_v1.h>
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_virtual_keyboard_v1.h>
 #include <wlr/types/wlr_virtual_pointer_v1.h>
@@ -97,6 +101,11 @@ namespace {
 
 // Tell the client where its window actually is (the compositor places it).
 static void toplevel_report_position(Toplevel& toplevel);
+
+// Idle notification (R4.1): reset the seat's idle timer on input.
+static void notify_activity(Server& server);
+// While the session is locked, input goes to the lock surface.
+static wlr_surface* locked_surface(Server& server);
 
 static void toplevel_update_frame(Toplevel&);
 static bool handle_frame_press(Server&, uint32_t button, uint32_t time);
@@ -285,6 +294,7 @@ static void keyboard_key(wl_listener* listener, void* data)
     auto& server = *keyboard->server;
     auto* event = static_cast<wlr_keyboard_key_event*>(data);
 
+    notify_activity(server);
     uint32_t keycode = event->keycode + 8;
 
     // Update the keyboard's xkb state ourselves (we handle keys before the seat
@@ -298,6 +308,16 @@ static void keyboard_key(wl_listener* listener, void* data)
     keyboard->keyboard->modifiers.locked = xkb_state_serialize_mods(xkb_state, XKB_STATE_MODS_LOCKED);
     keyboard->keyboard->modifiers.group = xkb_state_serialize_layout(xkb_state, XKB_STATE_LAYOUT_EFFECTIVE);
     wlr_seat_keyboard_notify_modifiers(server.seat, &keyboard->keyboard->modifiers);
+
+    // While the session is locked, keys go to the lock surface, not the shell.
+    if (server.locked) {
+        if (auto* surface = locked_surface(server)) {
+            wlr_seat_set_keyboard(server.seat, keyboard->keyboard);
+            wlr_seat_keyboard_notify_enter(server.seat, surface, keyboard->keyboard->keycodes, keyboard->keyboard->num_keycodes, &keyboard->keyboard->modifiers);
+            wlr_seat_keyboard_notify_key(server.seat, event->time_msec, event->keycode, event->state);
+        }
+        return;
+    }
 
     xkb_keysym_t const* syms = nullptr;
     int syms_count = xkb_state_key_get_syms(xkb_state, keycode, &syms);
@@ -546,6 +566,15 @@ static void update_button_pressed(Server& server, FrameHit const& hit)
 
 static void process_cursor_motion(Server& server, uint32_t time)
 {
+    // While the session is locked, only the lock surface receives input.
+    if (server.locked) {
+        if (auto* surface = locked_surface(server)) {
+            wlr_seat_pointer_notify_enter(server.seat, surface, server.cursor->x, server.cursor->y);
+            wlr_seat_pointer_notify_motion(server.seat, time, server.cursor->x, server.cursor->y);
+        }
+        return;
+    }
+
     if (server.window_menu.open) {
         update_window_menu_hover(server, server.cursor->x, server.cursor->y);
         wlr_seat_pointer_clear_focus(server.seat);
@@ -610,6 +639,7 @@ static void cursor_motion(wl_listener* listener, void* data)
     auto* event = static_cast<wlr_pointer_motion_event*>(data);
     wlr_cursor_move(server->cursor, &event->pointer->base, event->delta_x, event->delta_y);
     process_cursor_motion(*server, event->time_msec);
+    notify_activity(*server);
 }
 
 static void cursor_motion_absolute(wl_listener* listener, void* data)
@@ -619,6 +649,7 @@ static void cursor_motion_absolute(wl_listener* listener, void* data)
     auto* event = static_cast<wlr_pointer_motion_absolute_event*>(data);
     wlr_cursor_warp_absolute(server->cursor, &event->pointer->base, event->x, event->y);
     process_cursor_motion(*server, event->time_msec);
+    notify_activity(*server);
 }
 
 // Client menus opened from layer surfaces (the Taskbar/Desktop) are overlay layer
@@ -657,6 +688,15 @@ static void cursor_button(wl_listener* listener, void* data)
     Server* server = nullptr;
     server = wl_container_of(listener, server, cursor_button);
     auto* event = static_cast<wlr_pointer_button_event*>(data);
+
+    notify_activity(*server);
+
+    if (server->locked) {
+        if (auto* surface = locked_surface(*server))
+            wlr_seat_pointer_notify_enter(server->seat, surface, server->cursor->x, server->cursor->y);
+        wlr_seat_pointer_notify_button(server->seat, event->time_msec, event->button, event->state);
+        return;
+    }
 
     if (server->window_menu.open) {
         if (event->state == WL_POINTER_BUTTON_STATE_PRESSED) {
@@ -729,6 +769,7 @@ static void cursor_axis(wl_listener* listener, void* data)
     server = wl_container_of(listener, server, cursor_axis);
     auto* event = static_cast<wlr_pointer_axis_event*>(data);
     wlr_seat_pointer_notify_axis(server->seat, event->time_msec, event->orientation, event->delta, event->delta_discrete, event->source, event->relative_direction);
+    notify_activity(*server);
 }
 
 static void cursor_frame(wl_listener* listener, void*)
@@ -2311,6 +2352,193 @@ static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t
     server.serenity_window_managers.append(resource);
 }
 
+// --- session safety net (R4.1) --------------------------------------------
+// Idle notification (ext-idle-notify-v1), idle inhibition (zwp_idle_inhibit_v1)
+// and DPMS (wlr-output-power-management). See docs/11-r4-implementation-plan.md.
+
+static void notify_activity(Server& server)
+{
+    if (server.idle_notifier)
+        wlr_idle_notifier_v1_notify_activity(server.idle_notifier, server.seat);
+}
+
+static void update_idle_inhibit(Server& server)
+{
+    if (!server.idle_notifier || !server.idle_inhibit_manager)
+        return;
+    bool const inhibited = !wl_list_empty(&server.idle_inhibit_manager->inhibitors);
+    wlr_idle_notifier_v1_set_inhibited(server.idle_notifier, inhibited);
+}
+
+static void idle_inhibitor_destroy(wl_listener* listener, void*)
+{
+    IdleInhibitor* inhibitor = wl_container_of(listener, inhibitor, destroy);
+    auto& server = *inhibitor->server;
+    // Unlink before freeing the entry: wlroots asserts the inhibitor's destroy
+    // listener list is empty before it frees the object.
+    wl_list_remove(&inhibitor->destroy.link);
+    server.idle_inhibitors.remove_first_matching([&](auto const& candidate) { return candidate.ptr() == inhibitor; });
+    update_idle_inhibit(server);
+}
+
+static void server_new_idle_inhibitor(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, new_idle_inhibitor);
+    auto* inhibitor = static_cast<wlr_idle_inhibitor_v1*>(data);
+    dbgln("WindowServer: idle inhibitor created");
+
+    auto entry = make<IdleInhibitor>();
+    entry->server = server;
+    entry->inhibitor = inhibitor;
+    entry->destroy.notify = idle_inhibitor_destroy;
+    wl_signal_add(&inhibitor->events.destroy, &entry->destroy);
+    server->idle_inhibitors.append(move(entry));
+    update_idle_inhibit(*server);
+}
+
+static void set_output_power(wlr_output* output, bool on)
+{
+    wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_state_set_enabled(&state, on);
+    if (!wlr_output_commit_state(output, &state)) {
+        dbgln("WindowServer: failed to turn output '{}' {}", output->name ? output->name : "?", on ? "on" : "off");
+    } else {
+        dbgln("WindowServer: output '{}' {}", output->name ? output->name : "?", on ? "on" : "off");
+    }
+    wlr_output_state_finish(&state);
+}
+
+static void output_power_set_mode(wl_listener* listener, void* data)
+{
+    (void)listener;
+    auto* event = static_cast<wlr_output_power_v1_set_mode_event*>(data);
+    set_output_power(event->output, event->mode == ZWLR_OUTPUT_POWER_V1_MODE_ON);
+}
+
+// --- ext-session-lock-v1 ---------------------------------------------------
+// The compositor must cover every output with a configured lock surface before
+// telling the client the session is locked, and must not deliver input to normal
+// clients while locked.
+
+static wlr_surface* locked_surface(Server& server)
+{
+    for (auto& lock : server.lock_surfaces) {
+        if (lock->lock_surface && lock->lock_surface->surface)
+            return lock->lock_surface->surface;
+    }
+    return nullptr;
+}
+
+static void lock_surface_commit(wl_listener* listener, void*)
+{
+    LockSurface* lock = wl_container_of(listener, lock, commit);
+    Server& server = *lock->server;
+    if (lock->configured)
+        return;
+    if (!lock->lock_surface || !lock->lock_surface->surface || !lock->lock_surface->surface->buffer)
+        return;
+
+    lock->configured = true;
+    dbgln("WindowServer: session lock surface covered an output");
+
+    int covered = 0;
+    for (auto& candidate : server.lock_surfaces)
+        covered += candidate->configured ? 1 : 0;
+    if (server.session_lock && !server.locked && covered >= static_cast<int>(server.outputs.size())) {
+        wlr_session_lock_v1_send_locked(server.session_lock);
+        server.locked = true;
+        if (auto* surface = locked_surface(server)) {
+            if (auto* keyboard = wlr_seat_get_keyboard(server.seat))
+                wlr_seat_keyboard_notify_enter(server.seat, surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+        }
+        dbgln("WindowServer: session locked");
+    }
+}
+
+static void lock_surface_destroy(wl_listener* listener, void*)
+{
+    LockSurface* lock = wl_container_of(listener, lock, destroy);
+    Server& server = *lock->server;
+    wl_list_remove(&lock->commit.link);
+    wl_list_remove(&lock->destroy.link);
+    if (lock->scene)
+        wlr_scene_node_destroy(&lock->scene->buffer->node);
+    server.lock_surfaces.remove_first_matching([&](auto const& candidate) { return candidate.ptr() == lock; });
+}
+
+static void session_lock_new_surface(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, session_lock_new_surface);
+    auto* lock_surface = static_cast<wlr_session_lock_surface_v1*>(data);
+    auto* output = lock_surface->output;
+    dbgln("WindowServer: session lock surface for output '{}'", output && output->name ? output->name : "?");
+
+    auto entry = make<LockSurface>();
+    entry->server = server;
+    entry->lock_surface = lock_surface;
+    entry->scene = wlr_scene_surface_create(server->overlay_tree, lock_surface->surface);
+    wlr_box box { };
+    if (output)
+        wlr_output_layout_get_box(server->output_layout, output, &box);
+    wlr_scene_node_set_position(&entry->scene->buffer->node, box.x, box.y);
+    wlr_scene_node_set_enabled(&entry->scene->buffer->node, true);
+
+    entry->commit.notify = lock_surface_commit;
+    wl_signal_add(&lock_surface->surface->events.commit, &entry->commit);
+    entry->destroy.notify = lock_surface_destroy;
+    wl_signal_add(&lock_surface->events.destroy, &entry->destroy);
+
+    if (output)
+        wlr_session_lock_surface_v1_configure(lock_surface, static_cast<uint32_t>(output->width), static_cast<uint32_t>(output->height));
+
+    server->lock_surfaces.append(move(entry));
+}
+
+static void session_lock_unlock(wl_listener* listener, void*)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, session_lock_unlock);
+    dbgln("WindowServer: session unlocked");
+    // wlroots destroys the lock surfaces (and our per-surface handlers clean them
+    // up) as the client destroys the lock right after this signal.
+    server->locked = false;
+}
+
+static void session_lock_destroy(wl_listener* listener, void*)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, session_lock_destroy);
+    // By now wlroots has destroyed every lock surface (their handlers removed
+    // them). Unlink our lock listeners so wlroots' final assertions pass.
+    wl_list_remove(&server->session_lock_new_surface.link);
+    wl_list_remove(&server->session_lock_unlock.link);
+    wl_list_remove(&server->session_lock_destroy.link);
+    server->session_lock = nullptr;
+    server->locked = false;
+}
+
+static void session_lock_new_lock(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, session_lock_new_lock);
+    auto* lock = static_cast<wlr_session_lock_v1*>(data);
+    if (server->session_lock) {
+        wlr_session_lock_v1_destroy(lock);
+        return;
+    }
+    dbgln("WindowServer: session lock requested");
+    server->session_lock = lock;
+    server->session_lock_new_surface.notify = session_lock_new_surface;
+    wl_signal_add(&lock->events.new_surface, &server->session_lock_new_surface);
+    server->session_lock_unlock.notify = session_lock_unlock;
+    wl_signal_add(&lock->events.unlock, &server->session_lock_unlock);
+    server->session_lock_destroy.notify = session_lock_destroy;
+    wl_signal_add(&lock->events.destroy, &server->session_lock_destroy);
+}
+
 // --- setup ----------------------------------------------------------------
 
 static ErrorOr<void> initialize(Server& server)
@@ -2376,6 +2604,18 @@ static ErrorOr<void> initialize(Server& server)
     wl_signal_add(&server.output_manager->events.apply, &server.output_manager_apply);
     server.output_manager_test.notify = output_manager_test;
     wl_signal_add(&server.output_manager->events.test, &server.output_manager_test);
+
+    // Session safety net (R4.1): idle notification, idle inhibition and DPMS.
+    server.idle_notifier = wlr_idle_notifier_v1_create(server.display);
+    server.idle_inhibit_manager = wlr_idle_inhibit_v1_create(server.display);
+    server.new_idle_inhibitor.notify = server_new_idle_inhibitor;
+    wl_signal_add(&server.idle_inhibit_manager->events.new_inhibitor, &server.new_idle_inhibitor);
+    server.output_power_manager = wlr_output_power_manager_v1_create(server.display);
+    server.output_power_set_mode.notify = output_power_set_mode;
+    wl_signal_add(&server.output_power_manager->events.set_mode, &server.output_power_set_mode);
+    server.session_lock_manager = wlr_session_lock_manager_v1_create(server.display);
+    server.session_lock_new_lock.notify = session_lock_new_lock;
+    wl_signal_add(&server.session_lock_manager->events.new_lock, &server.session_lock_new_lock);
 
     // Virtual input for the headless harness (docs/09-r3-implementation-plan.md §2.4).
     server.virtual_keyboard_manager = wlr_virtual_keyboard_manager_v1_create(server.display);
