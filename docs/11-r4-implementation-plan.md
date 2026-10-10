@@ -113,6 +113,23 @@ legend: **stable** ⊂ wayland-protocols `stable/`; **staging** = ready for adop
 | Decorations | `zxdg_decoration_manager_v1` | unstable | chrome | server-side decorations |
 | Serenity shell parity | `serenity-window` (private) | SDE | R3/R4 | menubar, placement, menu-dismiss — keep minimal (P8.4) |
 
+### 2.3 Serenity fidelity first (P9)
+
+The parity target (§11) is a **floor, not a ceiling**. Where SerenityOS does
+something better than other desktops — a richer service model (the `LaunchServer`
+handler database, `NotificationServer`, `WindowManagerServer` semantics), a
+distinct behaviour, or a component others lack — we **reproduce Serenity's
+behaviour** rather than adopting another ecosystem's weaker equivalent. This is
+**P9** ([`01-objectives.md`](01-objectives.md) §6).
+
+When fidelity requires an app or service of our own, it is built as a
+**standards-based Wayland/D-Bus citizen** (P8) that runs under **other
+compositors too**, and we use **standard protocols, never another ecosystem's
+private ones**. Fidelity is the goal; interoperable building blocks are how we
+reach it. R4.9 carries the explicit addendum; the rule applies to every app and
+service SDE ships (lock client, idle daemon, portal backend, launch/notify
+services).
+
 ## 3. Additional milestones
 
 R4 is delivered as **R4.1–R4.9**. Order is dependency-driven (see §4).
@@ -284,7 +301,28 @@ reasonable; record what is not.
 **Interop (P8).** Prefer `xdg-desktop-portal` interfaces over SDE-private
 services where an app expects a portal (e.g. OpenURI/FileChooser via `-gtk`).
 
-- **Exit test:** the app launches in the session and shows real data.
+**Addendum (P9 — Serenity fidelity first).** We optimise for **fidelity to how
+SerenityOS works**, especially where SerenityOS does *more* than other solutions
+— e.g. a real `LaunchServer` with a shared handler database, `NotificationServer`,
+`WindowManagerServer` semantics, the applet model, `SystemMonitor`. If matching
+SerenityOS means writing an app or service ourselves, we do, and we build it as a
+**standards-based Wayland/D-Bus component that other compositors can use too** —
+**standard protocols, not another ecosystem's private protocols** (no
+`org_kde_kwin_*`, no GNOME-private interfaces). Concretely:
+
+- Serenity services we stand in for on Linux (launch, notify, applets, WM
+  semantics) are implemented as portable services/daemons, not as SDE-only
+  sockets; where a standard exists (portal, `ext-workspace-v1`, D-Bus), use it.
+- Apps that SerenityOS ships but Linux lacks equivalents for are **ported**
+  (unmodified where possible) rather than replaced by a Linux app with different
+  behaviour — matching P2.
+- Where another ecosystem's *private* protocol would be the easy path (e.g. a
+  KDE/GNOME-specific service interface), prefer the standard protocol or our own
+  interoperable one, even at some cost.
+
+- **Exit test:** the app launches in the session and shows real data; any service
+  it needed that we wrote is exercised by a standard client (not an SDE-private
+  one) and, where feasible, briefly verified under a second compositor.
 
 ## 4. Sequencing & critical path
 

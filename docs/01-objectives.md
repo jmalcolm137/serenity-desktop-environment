@@ -150,6 +150,14 @@ These extend and are consistent with LibWindowServer's existing principles.
   the private surface (`serenity-window`) minimal and scoped to Serenity shell
   parity. See [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §2
   for the protocol posture.
+- **P9 — Serenity fidelity, through interoperable building blocks.** Where
+  SerenityOS does something better than other desktops (a richer service, a
+  distinct behaviour, a component others lack), we **reproduce Serenity's
+  behaviour** rather than adopting another ecosystem's weaker equivalent. When
+  that requires building an app or service ourselves, it must be a **standards-
+  based Wayland/D-Bus citizen** (P8) that runs under other compositors too — and
+  we use standard protocols, not another ecosystem's private ones (GNOME's/KDE's).
+  Fidelity is the goal; interoperability is how we build it.
 
 ## 7. Architecture overview
 

@@ -12,6 +12,12 @@ stand in for a SystemServer role — so the substitutes stay deliberate, and so 
 on a real Linux session each one can be handed to **systemd** (`systemd --user`)
 instead.
 
+**Principle (P9).** Every substitute we write stays **faithful to SerenityOS's
+behaviour** and is built as a **standards-based Wayland/D-Bus service** that runs
+under other compositors too — standard protocols, never another ecosystem's
+private ones. See [`01-objectives.md`](01-objectives.md) §6 (P8/P9) and
+[`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §2.3.
+
 ---
 
 ## 1. What SystemServer does (SerenityOS)
