@@ -11,20 +11,18 @@ ones as they are found.
 Legend: **R?** = milestone; **(host)** = a gap in the `libgui-wayland` port
 rather than in this repository.
 
-## R2 — Shell v1 (nearly complete)
+## R2 — Shell v1 (complete)
 
 Done: Taskbar (system menu, quick-launch, window list, clock), WindowManagerServer
 (served by the compositor), wallpaper/desktop background, Desktop
-(`FileManager -d`: icons + context menus), file-type icons for known types.
+(`FileManager -d`: icons + context menus), file-type icons for known types,
+**and the Launch service** (double-click opens the file in the resolved app;
+"Open in …" / "Open with …" work).
 
-- **Launch service (G4 / W4, host).** `Desktop::Launcher` resolves to *empty*
-  handler lists and `open_url` returns `false`; nothing is ever spawned.
-  Consequences: double-clicking a desktop icon opens nothing; "Open in File
-  Manager" / "Open in Terminal" / "Display Settings" do nothing; file context
-  menus have **no "Open With" items**. The port's LaunchServer returns valid
-  empty responses (so the calls no longer fail), but launching is unimplemented.
-  Needs: a handler/mime → command mapping (LibDesktop `LaunchServer.ini`, which
-  the sparse checkout does not materialise) and process spawning.
+- **Launch handler coverage is limited (G4 / W4, host).** Handlers come from
+  `LaunchServer.ini` `[FileType]`/`[Protocol]` plus the editor as a generic
+  alternate. There is no `.af` `AppFile` database, so an app-declared handler set
+  (and any real "Open with" chooser beyond the editor) is not available.
 
 ## R3 — Serenity look & behaviours (chrome done, rest pending)
 
@@ -74,5 +72,7 @@ Done: Taskbar (system menu, quick-launch, window list, clock), WindowManagerServ
   delivered, so the Desktop widget tree never laid out; `Process::spawn`
   working-directory `TODO()` crash; LaunchServer stub returned invalid
   responses (broke the file context menu); `FileIconProvider` couldn't find its
-  patterns (`/etc` absent from the sparse checkout).
+  patterns (`/etc` absent from the sparse checkout); Serenity `/bin/X` helper
+  paths not resolved to host binaries (launching failed with ENOENT); Launch
+  service implemented (handler resolution + spawn).
 - Documented: bitmap-font zoom limitation (`02-compositor-decision.md` §11).

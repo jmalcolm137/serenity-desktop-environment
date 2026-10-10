@@ -40,7 +40,7 @@ Milestone progress (see [`docs/01-objectives.md`](docs/01-objectives.md) §11):
 |---|---|---|
 | **R0** | Design | Done |
 | **R1** | Compositor bring-up | Done — nested, headless (CI-tested) and DRM/libinput session paths |
-| **R2** | Shell v1 | Done (Launch service pending — see `docs/04-known-gaps.md`) |
+| **R2** | Shell v1 | Done — Taskbar, WindowManagerServer, wallpaper, Desktop, file icons, Launch |
 | **R3** | Serenity look & behaviours | Started — window chrome done; switcher/snap/workspaces pending |
 | **R4** | Session & settings | Not started |
 | **R5** | Hardening & packaging | Not started |
