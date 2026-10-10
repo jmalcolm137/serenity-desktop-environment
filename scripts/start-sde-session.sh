@@ -32,11 +32,32 @@ unset WAYLAND_DISPLAY DISPLAY
 export SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}"
 export LD_LIBRARY_PATH="$BUILD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
+# The applications run from this build's bin directory; the session LaunchServer
+# (below) is not built next to them, so point it there. See
+# docs/06-service-layering.md.
+export SDE_APP_BIN_DIR="${SDE_APP_BIN_DIR:-$BUILD/bin}"
+
 STARTUP="${1:-$BUILD/bin/Taskbar & $BUILD/bin/TextEditor}"
 
 if [[ -n "${SDE_BACKENDS:-}" ]]; then
     export WLR_BACKENDS="$SDE_BACKENDS"
 fi
 
+# The session LaunchServer owns the launch portal when it is built and running;
+# without it, applications fall back to the in-process LaunchServer inside
+# libgui-wayland. Either way launching works.
+LAUNCH_SERVER="$SDE_ROOT/build/LaunchServer/LaunchServer"
+LAUNCH_SERVER_PID=""
+if [[ -x "$LAUNCH_SERVER" ]]; then
+    "$LAUNCH_SERVER" &
+    LAUNCH_SERVER_PID=$!
+fi
+
 echo "SDE: starting WindowServer (${SDE_BACKENDS:-drm,libinput}) on $XDG_RUNTIME_DIR"
-exec "$COMP" -n sde -s "$STARTUP"
+"$COMP" -n sde -s "$STARTUP"
+status=$?
+
+if [[ -n "$LAUNCH_SERVER_PID" ]]; then
+    kill "$LAUNCH_SERVER_PID" 2>/dev/null || true
+fi
+exit "$status"

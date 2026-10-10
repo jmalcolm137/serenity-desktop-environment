@@ -74,3 +74,21 @@ in-process fallback. That is the single hook the rule needs.
   `LaunchServer` present.
 - Prefer a **lean SDE `LaunchServer`** that reuses the shared resolver over
   pulling in the whole SerenityOS service (deps, allow-list, user preferences).
+
+## 6. Status
+
+- **`LibLaunch`** (the shared resolver, `Launch::HandlerDatabase`) lives in the
+  Serenity tree (LibCore + LibURL only) and is used by libgui-wayland's
+  in-process fallback.
+- The **SDE `LaunchServer`** service (`LaunchServer/`, built by
+  `scripts/build-launch-server.sh`) owns the launch portal when it runs; it is
+  started by `scripts/start-sde-session.sh` and reuses the same protocol
+  implementation (libgui-wayland's `LaunchServerConnection`, compiled in — it
+  pulls no LibGUI).
+- `LibWM::make_portal()` **defers to a session service** when a socket exists on
+  the portal path, otherwise serves in-process. Verified: an application under
+  SDE connects to the session `LaunchServer` instead of the fallback.
+- **Stand-alone (no SDE) is unchanged** — the in-process fallback answers.
+
+Still to do: a headless test that exercises launching both with and without the
+external `LaunchServer`.
