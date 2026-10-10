@@ -425,7 +425,7 @@ Specifically:
    hover/press and act on release, double-clicking the titlebar toggles
    maximize, resize borders show resize cursors, and right-clicking the titlebar
    (or clicking the window icon) opens the compositor-rendered window menu
-   (Minimize/Maximize/Move/Always on Top/Close).
+   (Minimize/Maximize/Move/Roll Up/Always on Top/Close).
 8. **Session plumbing** — lock, idle, output management, capture, XWayland,
    input config — from wlroots/standard protocols, with per-compositor
    backends only where no standard exists (mirroring LibWindowServer's existing

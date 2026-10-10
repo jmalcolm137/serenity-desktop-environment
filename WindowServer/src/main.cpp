@@ -191,6 +191,7 @@ enum class WindowMenuAction {
     MinimizeOrUnminimize,
     MaximizeOrRestore,
     Move,
+    ToggleWindowRollUp,
     ToggleAlwaysOnTop,
     Close,
 };
@@ -308,6 +309,7 @@ struct Toplevel {
     bool maximized { false };
     bool minimized { false };
     bool always_on_top { false };
+    bool rolled_up { false };
     int hovered_button { -1 };
     int pressed_button { -1 };
     Gfx::IntRect titlebar_icon_rect;
@@ -947,7 +949,10 @@ static void toplevel_update_frame(Toplevel& toplevel)
         return;
 
     auto& theme = g_palette->window_theme();
-    Gfx::IntRect content_rect { 0, 0, content_width, content_height };
+    // A rolled-up window keeps only its frame: the content is hidden and the
+    // frame is laid out as if the content had zero height.
+    int frame_content_height = toplevel.rolled_up ? 0 : content_height;
+    Gfx::IntRect content_rect { 0, 0, content_width, frame_content_height };
     auto frame_rect = theme.frame_rect_for_window(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette, 0);
     auto frame_size = frame_rect.size();
     if (frame_size.is_empty())
@@ -956,7 +961,7 @@ static void toplevel_update_frame(Toplevel& toplevel)
     toplevel.frame_left = -frame_rect.x();
     toplevel.frame_top = -frame_rect.y();
     toplevel.frame_right = frame_size.width() - content_width - toplevel.frame_left;
-    toplevel.frame_bottom = frame_size.height() - content_height - toplevel.frame_top;
+    toplevel.frame_bottom = frame_size.height() - frame_content_height - toplevel.frame_top;
     toplevel.frame_size = frame_size;
 
     auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, frame_size).release_value_but_fixme_should_propagate_errors();
@@ -1000,6 +1005,7 @@ static void toplevel_update_frame(Toplevel& toplevel)
     }
 
     wlr_scene_node_set_position(&toplevel.content_tree->node, toplevel.frame_left, toplevel.frame_top);
+    wlr_scene_node_set_enabled(&toplevel.content_tree->node, !toplevel.rolled_up);
 
     if (auto const* dump_path = getenv("WINDOWSERVER_DUMP_FRAME"); dump_path && *dump_path) {
         if (auto encoded = Gfx::PNGWriter::encode(*bitmap); !encoded.is_error()) {
@@ -1112,6 +1118,12 @@ static void toplevel_close(Toplevel& toplevel)
 static void toplevel_toggle_maximized(Toplevel& toplevel)
 {
     auto& server = *toplevel.server;
+    // A rolled-up window can't be meaningfully maximized; unroll it first so the
+    // frame metrics used below are those of the full window.
+    if (toplevel.rolled_up) {
+        toplevel.rolled_up = false;
+        toplevel_update_frame(toplevel);
+    }
     if (!toplevel.maximized) {
         toplevel.restore_size = { toplevel.xdg_toplevel->base->geometry.width, toplevel.xdg_toplevel->base->geometry.height };
         wlr_box box { };
@@ -1302,6 +1314,8 @@ static void open_window_menu(Server& server, Toplevel& toplevel, Gfx::IntPoint p
     add_item(toplevel.maximized ? ByteString { "&Restore" } : ByteString { "Ma&ximize" }, WindowMenuAction::MaximizeOrRestore, true);
     add_item(ByteString { "&Move" }, WindowMenuAction::Move, !toplevel.minimized && !toplevel.maximized, g_frame_icons.move);
     add_separator();
+    add_item(ByteString { "&Roll Up" }, WindowMenuAction::ToggleWindowRollUp, true, nullptr, false, true, toplevel.rolled_up);
+    add_separator();
     add_item(ByteString { "Always on &Top" }, WindowMenuAction::ToggleAlwaysOnTop, true, g_frame_icons.pin, false, true, toplevel.always_on_top);
     add_separator();
     add_item(ByteString { "&Close" }, WindowMenuAction::Close, true, g_frame_icons.close, true);
@@ -1350,6 +1364,10 @@ static void activate_window_menu_item(Server& server, int index)
     case WindowMenuAction::Move:
         focus_toplevel(server, toplevel);
         toplevel_begin_interactive(*toplevel, CursorMode::Move, 0);
+        break;
+    case WindowMenuAction::ToggleWindowRollUp:
+        toplevel->rolled_up = !toplevel->rolled_up;
+        toplevel_update_frame(*toplevel);
         break;
     case WindowMenuAction::ToggleAlwaysOnTop:
         toplevel->always_on_top = !toplevel->always_on_top;
