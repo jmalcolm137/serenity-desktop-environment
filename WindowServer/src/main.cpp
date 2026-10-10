@@ -13,6 +13,7 @@
 #include <AK/ByteString.h>
 #include <AK/Error.h>
 #include <AK/Format.h>
+#include <AK/LexicalPath.h>
 #include <AK/NonnullOwnPtr.h>
 #include <AK/NonnullRefPtr.h>
 #include <AK/StdLibExtras.h>
@@ -21,6 +22,7 @@
 #include <LibCore/ArgsParser.h>
 #include <LibCore/EventLoop.h>
 #include <LibCore/File.h>
+#include <LibCore/FileWatcher.h>
 #include <LibCore/LocalServer.h>
 #include <LibCore/Notifier.h>
 #include <LibCore/ResourceImplementation.h>
@@ -2560,6 +2562,54 @@ static ErrorOr<void> initialize_gfx()
     return { };
 }
 
+static ByteString theme_broker_path()
+{
+    if (auto const* runtime = getenv("XDG_RUNTIME_DIR"); runtime && *runtime)
+        return ByteString::formatted("{}/sde-theme", runtime);
+    return ByteString { "/tmp/sde-theme" };
+}
+
+static void apply_theme_path(Server& server, ByteString const& theme_path)
+{
+    auto theme = Gfx::load_system_theme(theme_path, {});
+    if (theme.is_error()) {
+        warnln("WindowServer: could not load theme '{}': {}", theme_path, theme.error());
+        return;
+    }
+    Gfx::set_system_theme(theme.value());
+    delete g_palette;
+    g_palette = new Gfx::Palette(Gfx::PaletteImpl::create_with_anonymous_buffer(theme.value()));
+    for (auto& toplevel : server.toplevels)
+        toplevel_update_frame(*toplevel);
+    for (auto& output : server.outputs) {
+        output->background_size = { };
+        update_desktop_background(server, *output);
+    }
+    dbgln("WindowServer: applied system theme '{}'", theme_path);
+}
+
+static void watch_theme_broker(Server& server)
+{
+    static RefPtr<Core::FileWatcher> watcher;
+    watcher = Core::FileWatcher::create().release_value_but_fixme_should_propagate_errors();
+    auto path = theme_broker_path();
+    watcher->on_change = [&server, path](Core::FileWatcherEvent const& event) {
+        if (event.event_path != path)
+            return;
+        auto file = Core::File::open(path, Core::File::OpenMode::Read);
+        if (file.is_error())
+            return;
+        auto contents = file.value()->read_until_eof();
+        if (contents.is_error())
+            return;
+        auto theme_path = StringView { contents.value() }.trim_whitespace().to_byte_string();
+        if (!theme_path.is_empty())
+            apply_theme_path(server, theme_path);
+    };
+    if (auto directory = LexicalPath(path).dirname(); !directory.is_empty())
+        (void)watcher->add_watch(directory, Core::FileWatcherEvent::Type::ChildCreated | Core::FileWatcherEvent::Type::MetadataModified);
+}
+
 }
 
 ErrorOr<int> serenity_main(Main::Arguments arguments)
@@ -2625,6 +2675,8 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
         wl_event_loop_dispatch(wayland_loop, 0);
         wl_display_flush_clients(server->display);
     };
+
+    watch_theme_broker(*server);
 
     int result = loop.exec();
     wl_display_destroy_clients(server->display);

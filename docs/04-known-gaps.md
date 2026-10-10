@@ -50,6 +50,12 @@ Done: Taskbar (system menu, quick-launch, window list, clock), WindowManagerServ
   so size-based zoom is a no-op.
 - **Application enablement (W7).** `SystemMonitor` (needs `/proc`), `MouseSettings`,
   `Debugger`, `CrashReporter` feasibility not yet addressed. `Terminal` runs.
+- **Web engine / `WebContent` service (W7, host).** `Help` and `Browser` are
+  WebView apps; they abort because `OutOfProcessWebView` cannot create its
+  `WebContentClient` — the out-of-process **`WebContent`** service (LibWeb host +
+  IPC) is not built or wired. Running it (and serving it in-process alongside the
+  other portals) is a milestone of its own. **Help** in the Taskbar's system menu
+  depends on this.
 
 ## R5 — Hardening & packaging (not started)
 
