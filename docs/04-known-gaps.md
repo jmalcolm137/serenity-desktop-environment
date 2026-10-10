@@ -117,11 +117,9 @@ keymap/IME, input-device config) are catalogued in
   (`ImageDecoder` is served in-process).
 - **Application enablement (W7).** `SystemMonitor` (needs `/proc`), `MouseSettings`,
   `Debugger`, `CrashReporter` feasibility not yet addressed. `Terminal` runs.
-- **Web engine / `WebContent` + `RequestServer` (W7, host).** Done — see
-  "Recently resolved". `Browser` additionally needs **`SQLServer`** (a
-  multi-client `IPC::MultiServer` service, not a per-connection spawn) for
-  history/bookmarks/cookies, so it still aborts on its `/portal/sql` connect.
-  **Help** (Taskbar system menu ▸ Help) now renders the man pages.
+- **Web engine / `WebContent` + `RequestServer` + `SQLServer` (W7, host).** Done —
+  see "Recently resolved". **Help** (Taskbar system menu ▸ Help) renders the man
+  pages; **Browser** loads pages (local `file://` and the WebContent pipeline).
 
 ## R5 — Compatibility & ecosystem (not started)
 
@@ -200,7 +198,9 @@ Compositor-facing detail lives in [`06-compositor-gaps.md`](06-compositor-gaps.m
   thumbnails — a separate process does not. See `06-service-layering.md` §4.
 - **Out-of-process web engine** — `WebContent` + `RequestServer` are built by
   `libgui-wayland` and spawned on demand by `LibWM` (a socketpair handed over via
-  `SOCKET_TAKEOVER`; see `07-systemserver-roles.md` §2.3). **Help** renders the
-  SerenityOS man pages (relocated from `Base/usr/share/man`). `Browser` still
-  needs `SQLServer`.
+  `SOCKET_TAKEOVER`); `SQLServer` is hosted with a listening socket handed over
+  (see `07-systemserver-roles.md` §2.3). **Help** renders the SerenityOS man pages
+  (relocated from `Base/usr/share/man`); **Browser** loads pages. The session seeds
+  the skeleton user config (`scripts/seed-serenity-home.sh`) that `Browser` reads
+  at startup.
 - Documented: bitmap-font zoom limitation (`02-compositor-decision.md` §11).

@@ -46,6 +46,7 @@ compositor-agnostic fallback, so an application works with no session at all:
 | `/tmp/session/%sid/portal/image` | ImageDecoder |
 | `/tmp/session/%sid/portal/webcontent` | WebContent (spawned on demand; §2.3) |
 | `/tmp/session/%sid/portal/request` | RequestServer (spawned on demand; §2.3) |
+| `/tmp/session/%sid/portal/sql` | SQLServer (listening socket handed over; §2.3) |
 
 ### 2.2 Session services — SDE
 
@@ -82,10 +83,23 @@ The SerenityOS man pages that `Help` renders live under `Base/usr/share/man`, wh
 `Core::System::resolve_resource_path()` relocates (patch `0017`), alongside the
 `/res` root; the tree is part of the sparse checkout.
 
-> **Status:** done. `WebContent` and `RequestServer` are built by
-> `libgui-wayland` (`src/CMakeLists.txt`) and spawned on demand. Verified: `Help`
-> renders the man pages (`Audio-subsystem(7) - Help`, …) with both services
-> running.
+A **multi-client** service (`IPC::MultiServer`, e.g. `SQLServer`) is different: it
+accepts many clients on **one listening socket**. `LibWM::spawn_multi_client_service()`
+binds and listens on the portal path itself, hands that listening fd to the service
+via `SOCKET_TAKEOVER`, and then defers — so the client's real `connect()` reaches
+the listener we just set up (no startup race). This is the one place the shim, not
+the service, owns the listening socket, mirroring SystemServer.
+
+> **Status:** done. `WebContent`, `RequestServer` and `SQLServer` are built by
+> `libgui-wayland` (`src/CMakeLists.txt`) and hosted as above. Verified: `Help`
+> renders the man pages (`Audio-subsystem(7) - Help`, …), and `Browser` loads a
+> local page (its window title becomes the page's `<title>`).
+
+The session also seeds the SerenityOS skeleton user config
+(`Base/home/anon/.config`) into the session's config directory
+(`scripts/seed-serenity-home.sh`), the way SerenityOS populates a new user's home —
+apps that read default configuration at startup (e.g. `Browser`'s content filters)
+need it.
 
 ### 2.4 The WindowManagerServer
 
@@ -132,8 +146,6 @@ If SDE is packaged for a systemd host, the substitutes above map onto
   on demand, so its dependencies must already be buildable/servable, not started
   in a supervisor's order.
 - **No confinement.** `pledge`/`unveil` are no-ops on Linux.
-- **Services still absent:** `SQLServer` (`IPC::MultiServer`, so a *listening*
-  service rather than a per-connection spawn — `Browser` requires it for
-  history/bookmarks/cookies), `WebDriver`, a real `NotificationServer` (it is a
+- **Services still absent:** `WebDriver`, a real `NotificationServer` (it is a
   stub), and full `AudioServer`/`AudioManager` (audio is served by
   `libserenity-audio`).

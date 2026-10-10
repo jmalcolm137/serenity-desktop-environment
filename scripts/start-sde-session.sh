@@ -37,6 +37,10 @@ export LD_LIBRARY_PATH="$BUILD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # docs/06-service-layering.md.
 export SDE_APP_BIN_DIR="${SDE_APP_BIN_DIR:-$BUILD/bin}"
 
+# Seed the SerenityOS skeleton user config, so apps that read default
+# configuration at startup (e.g. Browser) find it.
+SERENITY="$SERENITY" "$SDE_ROOT/scripts/seed-serenity-home.sh"
+
 STARTUP="${1:-$BUILD/bin/Taskbar & $BUILD/bin/TextEditor}"
 
 if [[ -n "${SDE_BACKENDS:-}" ]]; then

@@ -38,6 +38,10 @@ if [[ ! -e "$XDG_RUNTIME_DIR/$SDE_DISPLAY" ]]; then
     exit 1
 fi
 
+# Make sure the app finds the SerenityOS default config (e.g. Browser's content
+# filters and autoplay allowlist), which SerenityOS seeds into a new user's home.
+SERENITY="$SERENITY" "$SDE_ROOT/scripts/seed-serenity-home.sh"
+
 exec env \
     WAYLAND_DISPLAY="$SDE_DISPLAY" \
     XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
