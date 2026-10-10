@@ -1947,13 +1947,6 @@ static bool handle_frame_press(Server& server, uint32_t button, uint32_t time)
         }
     }
 
-    // Right-clicking the titlebar opens the window menu (not implemented yet).
-    if (button == BTN_RIGHT && hit.region == FrameRegion::Titlebar) {
-        focus_toplevel(server, toplevel);
-        server.double_click_pending = false;
-        return true;
-    }
-
     return false;
 }
 
@@ -2511,7 +2504,18 @@ public:
         }
     }
     virtual void start_window_resize(i32, i32, i32) override { }
-    virtual void popup_window_menu(i32, i32, Gfx::IntPoint) override { }
+    virtual void popup_window_menu(i32, i32 window_id, Gfx::IntPoint screen_position) override
+    {
+        // Right-clicking a Taskbar window-list button opens the window menu. The
+        // compositor already renders that menu for the titlebar, so reuse it (the
+        // layout clamps it on-screen, which places it above the Taskbar).
+        if (!g_server)
+            return;
+        if (auto* toplevel = find_toplevel_by_wm_id(window_id))
+            open_window_menu(*g_server, *toplevel, screen_position);
+    }
+    // The Taskbar reports each button's rect for a minimise/restore animation the
+    // compositor does not implement; deliberately not consumed (see known-gaps).
     virtual void set_window_taskbar_rect(i32, i32, Gfx::IntRect const&) override { }
 
     // Applets are now layer surfaces positioned by the compositor, so the

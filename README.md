@@ -16,6 +16,8 @@ The stack is split across a small family of repositories:
 - [`docs/02-compositor-decision.md`](docs/02-compositor-decision.md) — options analysis for the compositor and the design decision.
 - [`docs/03-engineering-conventions.md`](docs/03-engineering-conventions.md) — binding coding/build conventions (AK/LibCore/LibGfx, SerenityOS-style `serenity_main`, host compat in the SDE).
 - [`docs/04-known-gaps.md`](docs/04-known-gaps.md) — running list of known gaps and remaining work, so nothing found during bring-up is forgotten.
+- [`docs/05-r3-plan.md`](docs/05-r3-plan.md) — working plan for milestone R3 (Serenity look & behaviours): switcher, snapping, workspaces, applets, notifications, tooltips.
+- [`docs/06-compositor-gaps.md`](docs/06-compositor-gaps.md) — what is missing from the plan for `WindowServer` as a general-purpose compositor: session/seat, robustness, ecosystem protocols, portals, input/IME, accessibility, output/render depth, testing.
 
 ## Status
 
@@ -43,7 +45,8 @@ Milestone progress (see [`docs/01-objectives.md`](docs/01-objectives.md) §11):
 | **R2** | Shell v1 | Done — Taskbar, WindowManagerServer, wallpaper, Desktop, file icons, Launch |
 | **R3** | Serenity look & behaviours | Started — window chrome done; switcher/snap/workspaces pending |
 | **R4** | Session & settings | Not started |
-| **R5** | Hardening & packaging | Not started |
+| **R5** | Compatibility & ecosystem | Not started |
+| **R6** | Hardening & packaging | Not started |
 
 ## Running
 

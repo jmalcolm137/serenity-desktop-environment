@@ -229,7 +229,8 @@ The environment is considered successful when, on a stock Linux machine:
 | **R2** | **Shell v1** | Taskbar, clock, window list, system menu, wallpapers; WindowManagerServer. |
 | **R3** | **Serenity look & behaviours** | SSD Serenity frames, switcher with thumbnails, snapping, workspaces, applets, notifications. |
 | **R4** | **Session & settings** | Login/autostart/lock/power; display/input/appearance settings; Terminal + SystemMonitor. |
-| **R5** | **Hardening & packaging** | HiDPI, multi-output, GPU breadth, XWayland, packaging, CI matrix, docs. |
+| **R5** | **Compatibility & ecosystem** | XWayland; the native-app protocol matrix; portals; clipboard/DnD/data-control; text-input/IME; accessibility; global shortcuts; capture/recording. |
+| **R6** | **Hardening & packaging** | HiDPI, multi-output, multi-GPU, performance/latency budgets, crash recovery/safe mode, packaging, CI matrix, docs. |
 
 Each milestone is delivered with headless tests where the behaviour is
 scriptable, and manual verification where it is not (menus, popups, IME).

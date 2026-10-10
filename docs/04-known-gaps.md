@@ -1,7 +1,7 @@
 # Serenity Desktop Environment — Known Gaps & Remaining Work
 
 **Status:** Living document · **Date:** 2026-10-10
-**Related:** [`01-objectives.md`](01-objectives.md) · [`02-compositor-decision.md`](02-compositor-decision.md) · [`03-engineering-conventions.md`](03-engineering-conventions.md)
+**Related:** [`01-objectives.md`](01-objectives.md) · [`02-compositor-decision.md`](02-compositor-decision.md) · [`03-engineering-conventions.md`](03-engineering-conventions.md) · [`05-r3-plan.md`](05-r3-plan.md) · [`06-compositor-gaps.md`](06-compositor-gaps.md)
 
 This is a running, greppable list of what is known to be missing or incomplete,
 so nothing discovered during bring-up is forgotten. It is grouped by goal (G)
@@ -26,32 +26,25 @@ Done: Taskbar (system menu, quick-launch, window list, clock), WindowManagerServ
 
 ## R2 follow-up — shell v1 loose ends
 
-R2 is complete, but these `WindowManagerServer` requests that the **unmodified
-Taskbar** still calls are no-ops, and none of them is part of a later milestone:
+R2 is complete. The `WindowManagerServer` requests the unmodified Taskbar still
+calls are now either handled or explicitly reassigned:
 
-- **Window-list context menu (G1 / W2).** Right-clicking a Taskbar window-list
-  button calls `popup_window_menu(client_id, window_id, position)`
-  (`Userland/Services/Taskbar/TaskbarButton.cpp`); it is a no-op in
-  `WindowManagerServerConnection` (`WindowServer/src/main.cpp`). The compositor
-  already renders a window menu for the titlebar (`open_window_menu()`), so this
-  is mostly wiring: open the menu for the requested window at the requested
-  screen position. Without it, right-clicking a window-list button does nothing.
-- **Taskbar button geometry for minimize/restore (G1 / W2).**
-  `set_window_taskbar_rect` is a no-op; the Taskbar reports each button's
-  `screen_relative_rect()` (`TaskbarButton::update_taskbar_rect` /
-  `clear_taskbar_rect`). There is no consumer because the compositor has no
+- **Window-list context menu (G1 / W2) — done.** Right-clicking a Taskbar
+  window-list button calls `popup_window_menu(client_id, window_id, position)`
+  (`Userland/Services/Taskbar/TaskbarButton.cpp`). It now opens the compositor's
+  window menu for the requested window at the requested position; the menu layout
+  clamps it on-screen, so it appears above the Taskbar.
+- **Taskbar button geometry for minimize/restore (G1 / W2) — accepted no-op.**
+  `set_window_taskbar_rect` is deliberately not consumed: the compositor has no
   minimize/restore animation (`toplevel_toggle_minimized` only toggles scene
-  visibility). Either consume the rect in a later animation, or accept the no-op
-  and drop the plumbing.
-- **`start_window_resize` is a no-op (G3 / W1).** Folded into R3 rather than R2
-  (snapping/resize; see [`05-r3-plan.md`](05-r3-plan.md) §4 WS2).
-- **`set_keymap` is a no-op (G5 / W4).** Belongs with the R3/R4 keymap-switching
-  work, not R2.
+  visibility). Revisit if such an animation is added (R3-ish).
+- **`start_window_resize` (G3 / W1)** — folded into R3 (snapping/resize; see
+  [`05-r3-plan.md`](05-r3-plan.md) §4 WS2).
+- **`set_keymap` (G5 / W4)** — belongs with the R3/R4 keymap-switching work, not R2.
 
-Dead code: `WindowServer/src/main.cpp` still carries a stale
-"right-clicking the titlebar opens the window menu (not implemented yet)" branch
-that is unreachable — right-click is already handled and returns earlier. Remove
-the dead branch and its comment.
+The stale, unreachable "right-clicking the titlebar opens the window menu (not
+implemented yet)" branch in `WindowServer/src/main.cpp` has been removed (right
+click was already handled and returned earlier).
 
 ## R3 — Serenity look & behaviours (chrome done, rest pending)
 
@@ -83,6 +76,10 @@ the dead branch and its comment.
   bug.
 
 ## R4 — Session & settings (not started)
+
+Compositor-facing session/input gaps (logind contract, idle/inhibit/lock/DPMS,
+keymap/IME, input-device config) are catalogued in
+[`06-compositor-gaps.md`](06-compositor-gaps.md) §1 and §4.
 
 - **Session lifecycle (G6 / W5).** No greet/login, session start, autostart,
   save/restore, lock, logout, reboot, or shut-down; no SystemServer-style
@@ -124,12 +121,36 @@ the dead branch and its comment.
   other portals) is a milestone of its own. **Help** in the Taskbar's system menu
   depends on this.
 
-## R5 — Hardening & packaging (not started)
+## R5 — Compatibility & ecosystem (not started)
+
+Compositor-facing detail lives in [`06-compositor-gaps.md`](06-compositor-gaps.md) §3–4.
 
 - **XWayland (G7)** — not implemented; native Wayland apps work via `xdg-shell`.
+- **Native-app protocol matrix (G7).** `xdg-activation`, `xdg-foreign`,
+  `xdg-toplevel-drag`, `data-control`/primary selection, drag-and-drop,
+  `keyboard-shortcuts-inhibit`, `relative-pointer`/`pointer-constraints`/
+  `pointer-gestures`, `presentation-time`, `fractional-scale`/`wp-viewporter`,
+  `content-type`, `tearing-control` are all absent.
+- **Portals (G7).** No screenshot/screencast/settings/global-shortcuts/
+  remote-desktop/input-capture portal strategy.
+- **Text input / IME (G5) and accessibility (G1).** `text-input-v3` /
+  `input-method-v2`, AT-SPI, sticky keys, magnifier and high contrast are absent.
+
+## R6 — Hardening & packaging (not started)
+
+Compositor-facing detail lives in [`06-compositor-gaps.md`](06-compositor-gaps.md) §5–7.
+
 - **HiDPI (integer/fractional) and multi-output** — not done (LibWindowServer M8
-  soft-fractional-scaling issue still open).
-- **Packaging** of `WindowServer` and the session; **headless CI matrix**.
+  soft-fractional-scaling issue still open — a host dependency, not compositor
+  code).
+- **Multi-GPU / render-device selection; color management; direct scanout.**
+- **Performance budget & latency instrumentation (N3).** No budget, frame-pacing
+  plan or perf-regression test, despite N3 targeting "low predictable input
+  latency, 60 Hz".
+- **Crash recovery / watchdog / safe mode (N4)** — no supervisor, restart or
+  session restore; a compositor crash loses the session.
+- **Packaging** of `WindowServer` and the session; **headless CI matrix**;
+  **sanitizers/fuzzing**; **compositor design doc** and observability.
 
 ## R1 — Compositor bring-up (done, one leg unexercised)
 
