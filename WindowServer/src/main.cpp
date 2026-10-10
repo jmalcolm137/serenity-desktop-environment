@@ -2071,24 +2071,29 @@ static void server_new_layer_surface(wl_listener* listener, void* data)
     layer->output = layer_surface->output;
     layer->is_menu = layer_surface->layer_namespace && !strcmp(layer_surface->layer_namespace, "serenity-menu");
     layer->is_applet = AppletManager::parse_namespace(layer_surface->layer_namespace, layer->applet_name);
-    dbgln("WindowServer: layer surface namespace='{}'", layer_surface->layer_namespace ? layer_surface->layer_namespace : "");
+    char const* layer_name = "unknown";
     wlr_scene_tree* layer_parent = server->background_tree;
     switch (layer_surface->pending.layer) {
     case ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND:
         layer_parent = server->background_tree;
+        layer_name = "background";
         break;
     case ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM:
         layer_parent = server->bottom_tree;
+        layer_name = "bottom";
         break;
     case ZWLR_LAYER_SHELL_V1_LAYER_TOP:
         layer_parent = server->top_tree;
+        layer_name = "top";
         break;
     case ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY:
         layer_parent = server->overlay_tree;
+        layer_name = "overlay";
         break;
     default:
         break;
     }
+    dbgln("WindowServer: layer surface namespace='{}' layer={}", layer_surface->layer_namespace ? layer_surface->layer_namespace : "", layer_name);
     layer->scene = wlr_scene_layer_surface_v1_create(layer_parent, layer_surface);
     layer->scene->tree->node.data = layer.ptr();
     layer_surface->data = layer.ptr();
