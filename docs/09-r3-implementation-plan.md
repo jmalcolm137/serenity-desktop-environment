@@ -25,7 +25,7 @@ this document owns sequencing and the critical path.
 | Foundation — module split, overlays, config, input harness (§2) | **Done** |
 | Spikes — thumbnail capture, NotificationServer reuse (§3) | **Done** |
 | WS1 — workspaces | **Done** |
-| WS2 — snapping + overlays | **In progress** |
+| WS2 — snapping + overlays | **Done** |
 | WS3 — switcher | Not started |
 | WS4 — applet area | Not started |
 | WS5 — notifications | Not started (plumbing ready; §3) |
@@ -119,12 +119,11 @@ scheduled as prerequisites rather than late surprises.
    `workspace_changed`, the real `(row, column)` in `window_state_changed`,
    Ctrl+Alt+arrow switching, the Super-key WMS events, and the verified
    WorkspacePicker applet.
-2. **Snapping + overlays (WS2) — in progress.** Keyboard snapping has landed in
-   the working tree (`WindowTileType`, Super+arrow maximize/minimize/tile and
-   Super+Alt horizontal/vertical maximize, propagating `xdg_toplevel`
-   tiled/maximized state). Remaining: drag-to-edge snapping, the
-   `TileWindowOverlay`/`WindowGeometryOverlay` previews, and wiring
-   `start_window_resize`.
+2. **Snapping + overlays (WS2) — done.** `WindowTileType`, Super+arrow
+   maximize/minimize/tile (plus Super+Alt horizontal/vertical maximize)
+   propagating `xdg_toplevel` tiled/maximized state; drag-to-edge snapping with a
+   LibGfx `TileWindowOverlay` preview; and `start_window_resize` routed through
+   the interactive resize.
 3. **Switcher with live thumbnails (WS3) — not started.** The
    `snapshot_toplevel()` helper is ready.
 4. **Applet area (WS4) — not started.** `Config::applet_order()` is exposed.

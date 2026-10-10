@@ -62,7 +62,10 @@ click was already handled and returned earlier).
   own surface. Needs a compositor-side grab (or an outside-press dismissal) for
   client menus.
 - **Window switcher with live thumbnails** — not implemented.
-- **Snapping** — not implemented.
+- **Snapping** — done (WS2). `WindowTileType` + Super+arrows
+  (maximize/minimize/tile, Super+Alt horizontal/vertical maximize), drag-to-edge
+  snapping with a LibGfx tile preview, `xdg_toplevel` tiled/maximized state, and
+  `start_window_resize` routed through the interactive resize.
 - **Workspaces** — done (WS1). The stack grid comes from `[Workspaces]` in
   `WindowServer.ini`; `set_workspace`/`workspace_changed` and the real `(row,
   column)` in `window_state_changed` drive the Taskbar; Ctrl+Alt+arrows switch
