@@ -117,12 +117,11 @@ keymap/IME, input-device config) are catalogued in
   (`ImageDecoder` is served in-process).
 - **Application enablement (W7).** `SystemMonitor` (needs `/proc`), `MouseSettings`,
   `Debugger`, `CrashReporter` feasibility not yet addressed. `Terminal` runs.
-- **Web engine / `WebContent` service (W7, host).** `Help` and `Browser` are
-  WebView apps; they abort because `OutOfProcessWebView` cannot create its
-  `WebContentClient` — the out-of-process **`WebContent`** service (LibWeb host +
-  IPC) is not built or wired. Running it (and serving it in-process alongside the
-  other portals) is a milestone of its own. **Help** in the Taskbar's system menu
-  depends on this.
+- **Web engine / `WebContent` + `RequestServer` (W7, host).** Done — see
+  "Recently resolved". `Browser` additionally needs **`SQLServer`** (a
+  multi-client `IPC::MultiServer` service, not a per-connection spawn) for
+  history/bookmarks/cookies, so it still aborts on its `/portal/sql` connect.
+  **Help** (Taskbar system menu ▸ Help) now renders the man pages.
 
 ## R5 — Compatibility & ecosystem (not started)
 
@@ -199,4 +198,9 @@ Compositor-facing detail lives in [`06-compositor-gaps.md`](06-compositor-gaps.m
   `Threading::BackgroundAction`, the single process-global thread that
   `FileSystemModel`'s thumbnail renderer already occupies, so sharing it deadlocked
   thumbnails — a separate process does not. See `06-service-layering.md` §4.
+- **Out-of-process web engine** — `WebContent` + `RequestServer` are built by
+  `libgui-wayland` and spawned on demand by `LibWM` (a socketpair handed over via
+  `SOCKET_TAKEOVER`; see `07-systemserver-roles.md` §2.3). **Help** renders the
+  SerenityOS man pages (relocated from `Base/usr/share/man`). `Browser` still
+  needs `SQLServer`.
 - Documented: bitmap-font zoom limitation (`02-compositor-decision.md` §11).

@@ -45,6 +45,7 @@ compositor-agnostic fallback, so an application works with no session at all:
 | `/tmp/session/%sid/portal/filesystemaccess` | FileSystemAccessServer |
 | `/tmp/session/%sid/portal/image` | ImageDecoder |
 | `/tmp/session/%sid/portal/webcontent` | WebContent (spawned on demand; §2.3) |
+| `/tmp/session/%sid/portal/request` | RequestServer (spawned on demand; §2.3) |
 
 ### 2.2 Session services — SDE
 
@@ -58,23 +59,33 @@ A session service "takes over" a portal simply by **listening on its path**:
 `LibWM::make_portal()` then defers the client to it instead of the in-process
 fallback (the rule in [`06-service-layering.md`](06-service-layering.md)).
 
-### 2.3 On-demand single-client services — WebContent
+### 2.3 On-demand single-client services — WebContent, RequestServer
 
-SerenityOS's `WebContent` is a **single-client** service (one process per page /
-view): SystemServer spawns a fresh process per connection and passes it the
-accepted socket. We reproduce this without a supervisor: `LibWM` spawns
-`<app-bin>/WebContent` on demand and passes it one end of a socketpair through the
+SerenityOS runs a number of services as **one process per client**:
+`WebContent` (one per page/view) and `RequestServer`. SystemServer spawns a fresh
+process per connection and passes it the accepted socket. We reproduce this
+without a supervisor: `LibWM::spawn_single_client_service()` spawns
+`<app-bin>/<Service>` on demand and passes it one end of a socketpair through the
 *same* env contract SystemServer uses — `SOCKET_TAKEOVER="<name>:<fd>"`, consumed
 by `Core::take_over_socket_from_system_server()`
-(`serenity/Userland/Libraries/LibCore/SystemServerTakeover.cpp`).
+(`serenity/Userland/Libraries/LibCore/SystemServerTakeover.cpp`). A nested spawn
+(WebContent spawning RequestServer) saves and restores the parent's takeover so
+neither is clobbered.
 
-The client still connects to `/tmp/session/%sid/portal/webcontent`; `LibWM`
-recognises that path and **spawns** rather than serving in-process — LibWeb is far
-too heavy to host inside every application. The `WebContent` binary is built from
-the upstream sources (no Service-Server shim like the other portals).
+The clients connect to `/tmp/session/%sid/portal/{webcontent,request}`; `LibWM`
+recognises those paths and **spawns** rather than serving in-process — LibWeb and
+the HTTP/TLS stack are far too heavy to link into every application. WebContent
+itself links the LibWM shim so *its* outgoing portal connects (RequestServer,
+ImageDecoder) are served the same way.
 
-> **Status:** `WebContent` now builds (`libgui-wayland` `src/CMakeLists.txt`); the
-> on-demand spawn wiring in `LibWM` is being added.
+The SerenityOS man pages that `Help` renders live under `Base/usr/share/man`, which
+`Core::System::resolve_resource_path()` relocates (patch `0017`), alongside the
+`/res` root; the tree is part of the sparse checkout.
+
+> **Status:** done. `WebContent` and `RequestServer` are built by
+> `libgui-wayland` (`src/CMakeLists.txt`) and spawned on demand. Verified: `Help`
+> renders the man pages (`Audio-subsystem(7) - Help`, …) with both services
+> running.
 
 ### 2.4 The WindowManagerServer
 
@@ -116,10 +127,13 @@ If SDE is packaged for a systemd host, the substitutes above map onto
   restarted, and `serenity_component(... REQUIRED)` ordering is not enforced — we
   start services in script order. (See [`04-known-gaps.md`](04-known-gaps.md) R6,
   "crash recovery / watchdog".)
-- **No dependency graph.** `WebContent DEPENDS ImageDecoder RequestServer` is
-  advisory only. We provide ImageDecoder; there is no `RequestServer`, so network
-  fetches have no backend (local `about:`/`file:` pages only).
+- **No dependency graph.** `serenity_component(... DEPENDS ...)` (e.g. `WebContent
+  DEPENDS ImageDecoder RequestServer`) is advisory only: `LibWM` spawns a service
+  on demand, so its dependencies must already be buildable/servable, not started
+  in a supervisor's order.
 - **No confinement.** `pledge`/`unveil` are no-ops on Linux.
-- **Services still absent:** `RequestServer`, a real `NotificationServer`
-  (`NotificationServer` is a stub), `WebDriver`, and full
-  `AudioServer`/`AudioManager` (audio is served by `libserenity-audio`).
+- **Services still absent:** `SQLServer` (`IPC::MultiServer`, so a *listening*
+  service rather than a per-connection spawn — `Browser` requires it for
+  history/bookmarks/cookies), `WebDriver`, a real `NotificationServer` (it is a
+  stub), and full `AudioServer`/`AudioManager` (audio is served by
+  `libserenity-audio`).
