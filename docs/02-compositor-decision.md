@@ -613,9 +613,20 @@ Option D/labwc or to KWin with a KDE backend and lose little of the shell work.
 | X11 apps | XWayland (wlroots) |
 | Settings / appearance | `org.freedesktop.portal.Settings` + per-compositor backend |
 
+For the live support status of each protocol above — and to compare our target
+inventory against what wlroots-based compositors (sway, Hyprland, labwc, …) and
+others actually expose — see the community **Wayland protocols support table**
+in §14.
+
 ## 14. References
 
 - Wayland protocol index — <https://wayland.app/protocols/>
+- **Wayland protocols support table** — a community cross-compositor matrix (which
+  compositors implement which protocol/interface, with descriptions and per-compositor
+  support percentages), generated from `wayland-explorer`/`wayland.app` data. Use it to
+  sanity-check our protocol inventory and see how wlroots-based compositors compare:
+  <https://absurdlysuspicious.github.io/wayland-protocols-table/>
+  (source: <https://github.com/AbsurdlySuspicious/wayland-protocols-table>).
 - `wlroots` — <https://gitlab.freedesktop.org/wlroots/wlroots> (MIT)
 - KWin — <https://github.com/KDE/kwin>; `kde-plasma-shell`, `org_kde_plasma_window_management`; `wlr-layer-shell` support noted by third-party shell projects.
 - River 0.4 / `river-window-management-v1` — "Separating the Wayland Compositor and Window Manager", Isaac Freund, 2026-03-15 — <https://isaacfreund.com/blog/river-window-management/>; FOSDEM 2026 talk. River is GPL-3.0-only; its Wayland protocols are MIT.
