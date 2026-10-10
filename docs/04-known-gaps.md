@@ -63,7 +63,10 @@ click was already handled and returned earlier).
   client menus.
 - **Window switcher with live thumbnails** — not implemented.
 - **Snapping** — not implemented.
-- **Workspaces** — not implemented; workspace IDs are no-ops.
+- **Workspaces** — the stack grid lands (WS1): `[Workspaces]` Rows/Columns from
+  `WindowServer.ini`, per-window `(row, column)`, `set_workspace`/`workspace_changed`
+  and Ctrl+Alt+arrows. Still to do: the Super-key WMS events and verifying the
+  unmodified WorkspacePicker applet.
 - **Notifications** — not implemented (NotificationServer is a stub).
 - **Tooltips** — not implemented. `GUI::Application::show_tooltip()` is a no-op in
   the port, so the Taskbar quick-launch icons, window-title buttons, clock,
