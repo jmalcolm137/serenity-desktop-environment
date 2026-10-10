@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Start an SDE session on real hardware (DRM/KMS + libinput).
+#
+# Run this from a TTY (e.g. Ctrl+Alt+F3) as the logged-in user, or from a
+# display manager's session entry. With WAYLAND_DISPLAY/DISPLAY unset,
+# wlr_backend_autocreate selects the DRM+libinput backend and libseat grants the
+# compositor DRM master. The compositor serves the WindowManagerServer on the
+# standard /tmp/portal/wm socket and starts the shell.
+#
+# Usage: start-sde-session.sh ["<startup command>"]
+#   The startup command defaults to running the Taskbar and a TextEditor.
+#
+# Set SDE_BACKENDS to force a backend list (passed to wlr as WLR_BACKENDS), e.g.
+# SDE_BACKENDS=headless ./start-sde-session.sh
+set -euo pipefail
+
+SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
+SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
+BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
+COMP="$SDE_ROOT/build/WindowServer/WindowServer"
+
+: "${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR must be set (log in to a proper session)}"
+
+if [[ ! -x "$COMP" ]]; then
+    echo "error: $COMP not found; run scripts/build-window-server.sh first" >&2
+    exit 1
+fi
+
+# Hardware session: no host compositor underneath us.
+unset WAYLAND_DISPLAY DISPLAY
+export SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}"
+export LD_LIBRARY_PATH="$BUILD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+STARTUP="${1:-$BUILD/bin/Taskbar & $BUILD/bin/TextEditor}"
+
+if [[ -n "${SDE_BACKENDS:-}" ]]; then
+    export WLR_BACKENDS="$SDE_BACKENDS"
+fi
+
+echo "SDE: starting WindowServer (${SDE_BACKENDS:-drm,libinput}) on $XDG_RUNTIME_DIR"
+exec "$COMP" -n sde -s "$STARTUP"
