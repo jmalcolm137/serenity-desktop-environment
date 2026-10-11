@@ -164,4 +164,53 @@ ByteString const& binding_text(Action);
 // Action names in declaration order, for tooling (sde-config list).
 Vector<ByteString> const& action_names();
 
+// --- input devices (R4.6) ---------------------------------------------------
+
+// Mouse/pointer settings, persisted in input.ini in the state directory. The
+// protocol-backed ones (acceleration, scroll step, double-click speed, buttons
+// switched, natural scroll) are also written by MouseSettings via the port.
+struct MouseInput {
+    double acceleration { 1.0 };
+    u32 scroll_step_size { 1 };
+    int double_click_speed { 250 };
+    bool buttons_switched { false };
+    bool natural_scroll { false };
+    ByteString accel_profile { "adaptive"sv }; // "adaptive" or "flat"
+    bool tap_to_click { false };
+    bool left_handed { false };
+    bool disable_while_typing { true };
+};
+
+// Keyboard settings (xkb): layouts/variant/model/options plus repeat.
+struct KeyboardInput {
+    ByteString layouts { "us"sv };
+    ByteString variant;
+    ByteString model { "pc105"sv };
+    ByteString options;
+    int repeat_delay { 600 };
+    int repeat_rate { 25 };
+};
+
+struct Input {
+    MouseInput mouse;
+    KeyboardInput keyboard;
+};
+
+// Bounds for the input settings, so the settings UI (Mouse Settings) reads its
+// slider/spinbox ranges from the schema instead of hardcoding them. Persisted in
+// WindowServer.ini [Input], and served to clients by the port.
+struct InputRanges {
+    double accel_min { 0.5 };
+    double accel_max { 3.5 };
+    u32 scroll_step_min { 1 };
+    int double_click_min { 100 };
+    int double_click_max { 900 };
+};
+
+InputRanges const& input_ranges();
+
+Input const& input();
+void load_input();
+void watch_input(Function<void()> on_change);
+
 }

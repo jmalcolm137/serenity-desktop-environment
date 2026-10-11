@@ -91,6 +91,7 @@ extern "C" {
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_virtual_keyboard_v1.h>
 #include <wlr/types/wlr_virtual_pointer_v1.h>
+#include <wlr/backend/libinput.h>
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_xdg_output_v1.h>
@@ -748,6 +749,14 @@ static void cursor_button(wl_listener* listener, void* data)
     server = wl_container_of(listener, server, cursor_button);
     auto* event = static_cast<wlr_pointer_button_event*>(data);
 
+    // R4.6: left-handed mode swaps the primary and secondary buttons.
+    if (Config::input().mouse.buttons_switched) {
+        if (event->button == BTN_LEFT)
+            event->button = BTN_RIGHT;
+        else if (event->button == BTN_RIGHT)
+            event->button = BTN_LEFT;
+    }
+
     notify_activity(*server);
 
     if (server->locked) {
@@ -832,7 +841,19 @@ static void cursor_axis(wl_listener* listener, void* data)
     Server* server = nullptr;
     server = wl_container_of(listener, server, cursor_axis);
     auto* event = static_cast<wlr_pointer_axis_event*>(data);
-    wlr_seat_pointer_notify_axis(server->seat, event->time_msec, event->orientation, event->delta, event->delta_discrete, event->source, event->relative_direction);
+    // R4.6: natural-scroll inverts the axis; the scroll step scales it.
+    auto const& mouse = Config::input().mouse;
+    double delta = event->delta;
+    int32_t delta_discrete = event->delta_discrete;
+    if (mouse.natural_scroll) {
+        delta = -delta;
+        delta_discrete = -delta_discrete;
+    }
+    if (mouse.scroll_step_size > 1) {
+        delta *= mouse.scroll_step_size;
+        delta_discrete *= static_cast<int32_t>(mouse.scroll_step_size);
+    }
+    wlr_seat_pointer_notify_axis(server->seat, event->time_msec, event->orientation, delta, delta_discrete, event->source, event->relative_direction);
     notify_activity(*server);
 }
 
@@ -869,6 +890,80 @@ static void seat_request_set_selection(wl_listener* listener, void* data)
     wlr_seat_set_selection(server->seat, event->source, event->serial);
 }
 
+// --- input device configuration (R4.6) ------------------------------------
+
+// Build the xkb keymap from the configured layouts/variant/model/options and
+// apply it (with repeat info) to every keyboard, falling back to the default
+// keymap when the configuration does not compile.
+static void apply_keyboard_input(Server& server)
+{
+    auto const& settings = Config::input().keyboard;
+    auto model = settings.model;
+    auto layout = settings.layouts;
+    auto variant = settings.variant;
+    auto options = settings.options;
+    xkb_rule_names names {
+        .rules = nullptr,
+        .model = model.is_empty() ? nullptr : model.characters(),
+        .layout = layout.is_empty() ? nullptr : layout.characters(),
+        .variant = variant.is_empty() ? nullptr : variant.characters(),
+        .options = options.is_empty() ? nullptr : options.characters(),
+    };
+    auto* context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+    auto* keymap = xkb_keymap_new_from_names(context, &names, XKB_KEYMAP_COMPILE_NO_FLAGS);
+    if (!keymap) {
+        warnln("WindowServer: could not compile keymap for layouts '{}', using the default", settings.layouts);
+        keymap = xkb_keymap_new_from_names(context, nullptr, XKB_KEYMAP_COMPILE_NO_FLAGS);
+    }
+    if (keymap) {
+        for (auto& keyboard : server.keyboards)
+            wlr_keyboard_set_keymap(keyboard->keyboard, keymap);
+        xkb_keymap_unref(keymap);
+    }
+    xkb_context_unref(context);
+    for (auto& keyboard : server.keyboards)
+        wlr_keyboard_set_repeat_info(keyboard->keyboard, settings.repeat_rate, settings.repeat_delay);
+}
+
+// Apply the mouse settings to every libinput pointer: acceleration profile and
+// speed, tap-to-click, natural scroll, left-handed and disable-while-typing.
+// Virtual/headless pointers have no libinput handle and are skipped.
+static void apply_mouse_input(Server& server)
+{
+    auto const& mouse = Config::input().mouse;
+    for (auto* device : server.pointer_devices) {
+        if (!wlr_input_device_is_libinput(device))
+            continue;
+        auto* libinput_device = wlr_libinput_get_device_handle(device);
+        if (!libinput_device)
+            continue;
+        if (libinput_device_config_accel_is_available(libinput_device)) {
+            libinput_device_config_accel_set_speed(libinput_device, mouse.acceleration);
+            auto profile = mouse.accel_profile == "flat"sv ? LIBINPUT_CONFIG_ACCEL_PROFILE_FLAT : LIBINPUT_CONFIG_ACCEL_PROFILE_ADAPTIVE;
+            libinput_device_config_accel_set_profile(libinput_device, profile);
+        }
+        if (libinput_device_config_tap_get_finger_count(libinput_device) > 0)
+            libinput_device_config_tap_set_enabled(libinput_device, mouse.tap_to_click ? LIBINPUT_CONFIG_TAP_ENABLED : LIBINPUT_CONFIG_TAP_DISABLED);
+        if (libinput_device_config_scroll_has_natural_scroll(libinput_device))
+            libinput_device_config_scroll_set_natural_scroll_enabled(libinput_device, mouse.natural_scroll);
+        if (libinput_device_config_left_handed_is_available(libinput_device))
+            libinput_device_config_left_handed_set(libinput_device, mouse.left_handed);
+        if (libinput_device_config_dwt_is_available(libinput_device))
+            libinput_device_config_dwt_set_enabled(libinput_device, mouse.disable_while_typing ? LIBINPUT_CONFIG_DWT_ENABLED : LIBINPUT_CONFIG_DWT_DISABLED);
+    }
+}
+
+// Re-apply all input settings: at startup, on device hotplug and on input.ini
+// change.
+static void apply_input_settings(Server& server)
+{
+    apply_keyboard_input(server);
+    apply_mouse_input(server);
+    dbgln("WindowServer: applied input settings (accel {}, natural-scroll {}, buttons-switched {}, left-handed {}, layouts '{}')",
+        Config::input().mouse.acceleration, Config::input().mouse.natural_scroll ? "on" : "off",
+        Config::input().mouse.buttons_switched ? "on" : "off", Config::input().mouse.left_handed ? "on" : "off", Config::input().keyboard.layouts);
+}
+
 static void server_new_input(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
@@ -881,13 +976,6 @@ static void server_new_input(wl_listener* listener, void* data)
         keyboard->server = server;
         keyboard->keyboard = wlr_keyboard_from_input_device(device);
 
-        auto* context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-        auto* keymap = xkb_keymap_new_from_names(context, nullptr, XKB_KEYMAP_COMPILE_NO_FLAGS);
-        wlr_keyboard_set_keymap(keyboard->keyboard, keymap);
-        xkb_keymap_unref(keymap);
-        xkb_context_unref(context);
-        wlr_keyboard_set_repeat_info(keyboard->keyboard, 25, 600);
-
         keyboard->modifiers.notify = keyboard_modifiers;
         wl_signal_add(&keyboard->keyboard->events.modifiers, &keyboard->modifiers);
         keyboard->key.notify = keyboard_key;
@@ -897,6 +985,8 @@ static void server_new_input(wl_listener* listener, void* data)
 
         wlr_seat_set_keyboard(server->seat, keyboard->keyboard);
         server->keyboards.append(move(keyboard));
+        // Keymap and repeat come from the input config (R4.6).
+        apply_keyboard_input(*server);
 
         // If a window is already mapped but has no keyboard focus (e.g. the first
         // keyboard just appeared), focus the topmost one so keybindings act on it.
@@ -912,6 +1002,8 @@ static void server_new_input(wl_listener* listener, void* data)
     }
     case WLR_INPUT_DEVICE_POINTER:
         wlr_cursor_attach_input_device(server->cursor, device);
+        server->pointer_devices.append(device);
+        apply_mouse_input(*server);
         break;
     default:
         break;
@@ -1971,7 +2063,7 @@ static bool handle_frame_press(Server& server, uint32_t button, uint32_t time)
             double dx = server.cursor->x - server.last_titlebar_press_x;
             double dy = server.cursor->y - server.last_titlebar_press_y;
             server.double_click_pending = same_window
-                && (time - server.last_titlebar_press_time) < 300
+                && (time - server.last_titlebar_press_time) < static_cast<uint32_t>(Config::input().mouse.double_click_speed)
                 && (dx * dx + dy * dy) <= (6 * 6);
             server.last_titlebar_press_toplevel = toplevel;
             server.last_titlebar_press_time = time;
@@ -3143,6 +3235,9 @@ static ErrorOr<void> initialize_gfx()
     // R4.5: the persisted output layout (screenlayout.ini) is applied as outputs
     // are created (server_new_output).
     Config::load_outputs();
+    // R4.6: input device settings (input.ini) are applied as devices are created
+    // (server_new_input).
+    Config::load_input();
 
     dbgln("WindowServer: loaded the Serenity theme from {}", resource_root);
     return { };
@@ -3233,6 +3328,12 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
             outln("WindowGeometry={}", Config::effects().window_geometry);
             outln("[Output]");
             outln("DefaultScale={}", Config::output().default_scale);
+            outln("[Input]");
+            outln("AccelMin={}", Config::input_ranges().accel_min);
+            outln("AccelMax={}", Config::input_ranges().accel_max);
+            outln("ScrollStepMin={}", Config::input_ranges().scroll_step_min);
+            outln("DoubleClickMin={}", Config::input_ranges().double_click_min);
+            outln("DoubleClickMax={}", Config::input_ranges().double_click_max);
             outln("[Applet]");
             StringBuilder order;
             for (size_t i = 0; i < Config::applet_order().size(); ++i) {
@@ -3300,6 +3401,9 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     Config::watch([&] { WindowManager::load_workspaces(*server); });
     // R4.5: apply monitor-layout edits (screenlayout.ini) to the live outputs.
     Config::watch_outputs([&] { apply_loaded_screen_layout(*server); });
+    // R4.6: apply input-setting edits (input.ini) to the live devices.
+    Config::watch_input([&] { apply_input_settings(*server); });
+    apply_input_settings(*server);
     wm_server->on_accept = [&](NonnullOwnPtr<Core::LocalSocket> socket) {
         WindowManager::accept_connection(*server, move(socket));
     };

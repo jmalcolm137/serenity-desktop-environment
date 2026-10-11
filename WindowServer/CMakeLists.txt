@@ -20,6 +20,8 @@ pkg_check_modules(WLROOTS REQUIRED wlroots-0.20)
 pkg_check_modules(WAYLAND_SERVER REQUIRED wayland-server)
 pkg_check_modules(XKBCOMMON REQUIRED xkbcommon)
 pkg_check_modules(DRM REQUIRED libdrm)
+# R4.6: input device configuration (accel, tap-to-click, natural scroll, ...).
+pkg_check_modules(LIBINPUT REQUIRED libinput)
 
 # Serenity userland libraries from the libgui-wayland build.
 foreach(_lib ak coreminimal corebasic core gfx unicode ipc compress crypto riff textcodec filesystem url threading main)
@@ -82,6 +84,7 @@ target_include_directories(WindowServer PRIVATE
     ${WAYLAND_SERVER_INCLUDE_DIRS}
     ${XKBCOMMON_INCLUDE_DIRS}
     ${DRM_INCLUDE_DIRS}
+    ${LIBINPUT_INCLUDE_DIRS}
     "${SERENITY_SRC}"
     "${SERENITY_SRC}/Userland/Libraries"
     "${SERENITY_SRC}/Userland/Services"
@@ -101,6 +104,7 @@ target_link_directories(WindowServer PRIVATE
     ${WAYLAND_SERVER_LIBRARY_DIRS}
     ${XKBCOMMON_LIBRARY_DIRS}
     ${DRM_LIBRARY_DIRS}
+    ${LIBINPUT_LIBRARY_DIRS}
     "${SERENITY_BUILD_DIR}/lib")
 
 target_link_libraries(WindowServer PRIVATE
@@ -108,6 +112,7 @@ target_link_libraries(WindowServer PRIVATE
     ${WAYLAND_SERVER_LIBRARIES}
     ${XKBCOMMON_LIBRARIES}
     ${DRM_LIBRARIES}
+    ${LIBINPUT_LIBRARIES}
     ${LAGOM_ak}
     ${LAGOM_coreminimal}
     ${LAGOM_corebasic}

@@ -8,6 +8,7 @@
 
 #include <AK/Array.h>
 #include <AK/Format.h>
+#include <AK/Math.h>
 #include <AK/Optional.h>
 #include <AK/StringView.h>
 #include <LibCore/ConfigFile.h>
@@ -27,6 +28,8 @@ static Effects g_effects;
 static Output g_output;
 static Vector<OutputSettings> g_outputs;
 static unsigned g_main_screen { 0 };
+static Input g_input;
+static InputRanges g_input_ranges;
 static Vector<ByteString> g_applet_order;
 static Vector<ByteString> g_diagnostics;
 
@@ -270,6 +273,14 @@ void load()
         g_binding_text[static_cast<size_t>(spec.action)] = text;
     }
 
+    // Input-setting ranges ([Input]): the source of truth for the settings UI
+    // bounds (R4.6).
+    g_input_ranges.accel_min = read_entry(user, defaults, "Input"sv, "AccelMin"sv).to_number<double>().value_or(0.5);
+    g_input_ranges.accel_max = read_entry(user, defaults, "Input"sv, "AccelMax"sv).to_number<double>().value_or(3.5);
+    g_input_ranges.scroll_step_min = read_entry(user, defaults, "Input"sv, "ScrollStepMin"sv).to_number<u32>().value_or(1);
+    g_input_ranges.double_click_min = read_entry(user, defaults, "Input"sv, "DoubleClickMin"sv).to_number<int>().value_or(100);
+    g_input_ranges.double_click_max = read_entry(user, defaults, "Input"sv, "DoubleClickMax"sv).to_number<int>().value_or(900);
+
     for (auto const& diagnostic : g_diagnostics)
         warnln("WindowServer: config: {}", diagnostic);
 
@@ -397,6 +408,85 @@ Vector<OutputSettings> const& outputs()
 unsigned main_screen_index()
 {
     return g_main_screen;
+}
+
+// --- input devices (R4.6) ---------------------------------------------------
+
+static ByteString input_file()
+{
+    return state_file("input.ini"sv);
+}
+
+static bool read_bool_entry(Core::ConfigFile& config, StringView group, StringView key, bool default_value)
+{
+    auto value = config.read_entry(group, key);
+    if (value.is_empty())
+        return default_value;
+    return value == "true"sv || value == "1"sv || value == "yes"sv || value == "on"sv;
+}
+
+void load_input()
+{
+    Input input;
+    auto config = open_config(input_file());
+    if (config) {
+        auto& file = *config;
+        input.mouse.acceleration = file.read_entry("Mouse"sv, "Acceleration"sv, "1.0"sv).to_number<double>().value_or(1.0);
+        input.mouse.scroll_step_size = file.read_num_entry<u32>("Mouse"sv, "ScrollStepSize"sv, 1);
+        input.mouse.double_click_speed = file.read_num_entry<int>("Mouse"sv, "DoubleClickSpeed"sv, 250);
+        input.mouse.buttons_switched = read_bool_entry(file, "Mouse"sv, "ButtonsSwitched"sv, false);
+        input.mouse.natural_scroll = read_bool_entry(file, "Mouse"sv, "NaturalScroll"sv, false);
+        input.mouse.accel_profile = file.read_entry("Mouse"sv, "AccelProfile"sv, "adaptive"sv);
+        input.mouse.tap_to_click = read_bool_entry(file, "Mouse"sv, "TapToClick"sv, false);
+        input.mouse.left_handed = read_bool_entry(file, "Mouse"sv, "LeftHanded"sv, false);
+        input.mouse.disable_while_typing = read_bool_entry(file, "Mouse"sv, "DisableWhileTyping"sv, true);
+        input.keyboard.layouts = file.read_entry("Keyboard"sv, "Layouts"sv, "us"sv);
+        input.keyboard.variant = file.read_entry("Keyboard"sv, "Variant"sv);
+        input.keyboard.model = file.read_entry("Keyboard"sv, "Model"sv, "pc105"sv);
+        input.keyboard.options = file.read_entry("Keyboard"sv, "Options"sv);
+        input.keyboard.repeat_delay = file.read_num_entry<int>("Keyboard"sv, "RepeatDelay"sv, 600);
+        input.keyboard.repeat_rate = file.read_num_entry<int>("Keyboard"sv, "RepeatRate"sv, 25);
+    }
+    // Keep the values within the schema's ranges ([Input] in WindowServer.ini).
+    if (g_input_ranges.accel_min <= g_input_ranges.accel_max)
+        input.mouse.acceleration = clamp(input.mouse.acceleration, g_input_ranges.accel_min, g_input_ranges.accel_max);
+    input.mouse.scroll_step_size = max(input.mouse.scroll_step_size, g_input_ranges.scroll_step_min);
+    if (g_input_ranges.double_click_min <= g_input_ranges.double_click_max)
+        input.mouse.double_click_speed = clamp(input.mouse.double_click_speed, g_input_ranges.double_click_min, g_input_ranges.double_click_max);
+    g_input = move(input);
+    dbgln("WindowServer: config: input accel {}, scroll step {}, double-click {}ms, buttons-switched {}, natural-scroll {}, tap {}, left-handed {}, layouts '{}'",
+        g_input.mouse.acceleration, g_input.mouse.scroll_step_size, g_input.mouse.double_click_speed,
+        g_input.mouse.buttons_switched ? "on" : "off", g_input.mouse.natural_scroll ? "on" : "off",
+        g_input.mouse.tap_to_click ? "on" : "off", g_input.mouse.left_handed ? "on" : "off", g_input.keyboard.layouts);
+}
+
+Input const& input()
+{
+    return g_input;
+}
+
+InputRanges const& input_ranges()
+{
+    return g_input_ranges;
+}
+
+void watch_input(Function<void()> on_change)
+{
+    static RefPtr<Core::FileWatcher> watcher;
+    static RefPtr<Core::Timer> coalesce;
+    coalesce = Core::Timer::create_single_shot(30, [on_change = move(on_change)] {
+        load_input();
+        on_change();
+    });
+    watcher = Core::FileWatcher::create().release_value_but_fixme_should_propagate_errors();
+    auto directory = state_directory();
+    watcher->on_change = [directory](Core::FileWatcherEvent const& event) {
+        if (!event.event_path.starts_with(directory))
+            return;
+        coalesce->restart();
+    };
+    (void)watcher->add_watch(directory, Core::FileWatcherEvent::Type::ChildCreated);
+    (void)watcher->add_watch(input_file(), Core::FileWatcherEvent::Type::ContentModified | Core::FileWatcherEvent::Type::MetadataModified | Core::FileWatcherEvent::Type::Deleted);
 }
 
 Tiling const& tiling()

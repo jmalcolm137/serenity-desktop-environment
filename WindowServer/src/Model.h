@@ -22,6 +22,7 @@
 extern "C" {
 #include <wayland-server-core.h> // wl_listener, wl_resource, wl_display
 #include <wlr/util/box.h>        // wlr_box (held by value below)
+#include <wlr/types/wlr_input_device.h> // wlr_input_device* (pointer_devices, R4.6)
 }
 
 // wlroots pointer types the compositor model refers to. Defining them here, in
@@ -341,6 +342,9 @@ struct Server {
     Vector<NonnullOwnPtr<Popup>> popups;
     Vector<NonnullOwnPtr<LayerSurface>> layer_surfaces;
     Vector<NonnullOwnPtr<Keyboard>> keyboards;
+    // Pointer devices, so input.ini's libinput settings can be (re)applied when
+    // the config changes. See R4.6.
+    Vector<wlr_input_device*> pointer_devices;
     Vector<NonnullOwnPtr<Decoration>> decorations;
     // serenity_window_manager resources, so the compositor can ask a client to
     // dismiss its menus (see maybe_dismiss_layer_menus).

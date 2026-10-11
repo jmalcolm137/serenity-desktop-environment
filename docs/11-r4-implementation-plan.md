@@ -141,7 +141,7 @@ R4 is delivered as **R4.1–R4.9**. Order is dependency-driven (see §4).
 | **R4.3** | **Portable session integration** | logind/systemd **optional** (detected, never required): standard env, seat/VT via `libseat` (`seatd`/`builtin`), power provider chain, optional D-Bus/portals — [`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md) | R4.2 |
 | **R4.4** | **Compositor config & live reload** | `WindowServer.ini` schema + validated live reload; Settings-portal exposure | — |
 | **R4.5** | **Display / output settings** (landed; fractional scale deferred) | Mode/scale/rotation/arrangement backend (Monitor tab) + fractional scale | R4.4 |
-| **R4.6** | **Input settings & keymaps** | libinput device config + keyboard layouts/keymap + MouseSettings | R4.4 |
+| **R4.6** | **Input settings & keymaps** (landed) | libinput device config + keyboard layouts/keymap + MouseSettings | R4.4 |
 | **R4.7** | **Appearance, effects & fonts** | Scrollable fonts/zoom, Effects, cursor; exposed via Settings portal | R4.4 |
 | **R4.8** | **Workspaces & toplevels** | Workspaces tab drives the grid; expose `ext-workspace-v1` + `ext-foreign-toplevel-list-v1` | R4.4 |
 | **R4.9** | **Applications enablement** | Terminal, SystemMonitor, CrashReporter/Debugger feasibility | R4.1–R4.3 |
@@ -351,6 +351,30 @@ shortcut inhibition (`zwp_keyboard_shortcuts_inhibit_manager_v1`) and IME
 
 - **Exit test:** `scripts/run-input-settings-test.sh` asserts config is applied to
   a (virtual) device; manual for real hardware.
+
+> **Landed (R4.6).** Input settings live in `input.ini` in the state directory
+> (`[Mouse]` acceleration, scroll step, double-click speed, buttons-switched,
+> natural-scroll, tap-to-click, left-handed, disable-while-typing; `[Keyboard]`
+> layouts, variant, model, options, repeat delay/rate). The compositor applies
+> them to libinput devices (`wlr_libinput_get_device_handle`, gated by
+> `wlr_input_device_is_libinput`) and to the seat/event path (natural scroll,
+> scroll step, buttons-switched, double-click speed); it builds the xkb keymap
+> from the layouts and re-applies everything on change.
+>
+> MouseSettings is built as part of SDE (alongside DisplaySettings) and wired
+> through the WindowServer protocol: `get/set_mouse_acceleration`,
+> scroll step, double-click speed, mouse-buttons-switched and natural-scroll read
+> and write `input.ini`, and new `get_*_min/max` methods carry the ranges from the
+> config schema (`[Input]` in `WindowServer.ini`), so the UI does not hardcode
+> them. The Cursor Theme/Highlight tabs are backed by `cursor.ini` (applied to the
+> real cursor in R4.7). Verified by `scripts/run-input-settings-test.sh` and a
+> MouseSettings screenshot.
+>
+> KeyboardSettings is adapted from the SerenityOS kernel keymap path to xkb: it
+> reads the current layouts and the available xkb layout names from the port
+> (`get_keyboard_layout`/`get_keyboard_layout_names`) and applies changes by
+> writing `input.ini [Keyboard]` (`set_keyboard_layout`), instead of the
+> modeless `/sys/kernel/keymap`, `/etc/Keyboard.ini` and `/bin/keymap`.
 
 ### R4.7 — Appearance, effects & fonts
 
