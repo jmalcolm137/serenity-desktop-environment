@@ -109,6 +109,8 @@ struct session {
     gboolean started;
     int chosen_toplevel_index; // -1 = entire screen
     struct capture* capture;
+    uint32_t persist_mode;
+    char* restore_token;
 };
 
 struct capture {
@@ -772,6 +774,84 @@ static void return_response(GDBusMethodInvocation* invocation, guint32 response,
     g_dbus_method_invocation_return_value(invocation, g_variant_new("(ua{sv})", response, results));
 }
 
+// --- restore tokens ---------------------------------------------------------
+//
+// The XDG ScreenCast restore token lets an application remember a source so the
+// user is not asked to pick again. Tokens are persisted as one pipe-separated
+// record per line ("token|types|cursor_mode|source_id") in the SDE state
+// directory.
+
+static gchar* screencast_state_path(char const* name)
+{
+    char const* state = getenv("SDE_STATE_DIR");
+    gchar* base;
+    if (state && *state) {
+        base = g_strdup(state);
+    } else {
+        char const* config = getenv("XDG_CONFIG_HOME");
+        if (config && *config)
+            base = g_build_filename(config, "sde", NULL);
+        else
+            base = g_build_filename(g_get_home_dir(), ".config", "sde", NULL);
+    }
+    g_mkdir_with_parents(base, 0700);
+    gchar* path = g_build_filename(base, name, NULL);
+    g_free(base);
+    return path;
+}
+
+static void store_restore_token(char const* token, uint32_t types, uint32_t cursor_mode, char const* source_id)
+{
+    gchar* path = screencast_state_path("screencast-tokens");
+    FILE* file = fopen(path, "a");
+    g_free(path);
+    if (!file)
+        return;
+    fprintf(file, "%s|%u|%u|%s\n", token, types, cursor_mode, source_id ? source_id : "");
+    fclose(file);
+}
+
+static gboolean load_restore_token(char const* token, uint32_t* types, uint32_t* cursor_mode, char** source_id)
+{
+    gchar* path = screencast_state_path("screencast-tokens");
+    gchar* contents = NULL;
+    gboolean found = FALSE;
+    if (g_file_get_contents(path, &contents, NULL, NULL)) {
+        gchar** lines = g_strsplit(contents, "\n", -1);
+        for (size_t i = 0; lines[i]; ++i) {
+            char* line = lines[i];
+            if (!*line)
+                continue;
+            char* bar = strchr(line, '|');
+            if (!bar)
+                continue;
+            *bar = '\0';
+            if (strcmp(line, token) != 0)
+                continue;
+            char* rest = bar + 1;
+            char* bar2 = strchr(rest, '|');
+            if (!bar2)
+                continue;
+            *bar2 = '\0';
+            *types = (uint32_t)strtoul(rest, NULL, 10);
+            char* rest2 = bar2 + 1;
+            char* bar3 = strchr(rest2, '|');
+            if (!bar3)
+                continue;
+            *bar3 = '\0';
+            *cursor_mode = (uint32_t)strtoul(rest2, NULL, 10);
+            if (source_id)
+                *source_id = strdup(bar3 + 1);
+            found = TRUE;
+            break;
+        }
+        g_strfreev(lines);
+        g_free(contents);
+    }
+    g_free(path);
+    return found;
+}
+
 void portal_screencast_method_call(GDBusConnection* connection, gchar const* sender, gchar const* object_path,
     gchar const* interface_name, gchar const* method_name, GVariant* parameters,
     GDBusMethodInvocation* invocation, gpointer user_data)
@@ -808,6 +888,40 @@ void portal_screencast_method_call(GDBusConnection* connection, gchar const* sen
         if (session && options) {
             g_variant_lookup(options, "types", "u", &session->types);
             g_variant_lookup(options, "cursor_mode", "u", &session->cursor_mode);
+            g_variant_lookup(options, "persist_mode", "u", &session->persist_mode);
+
+            // Restore a previously persisted source if the app supplies a token.
+            char const* restore = NULL;
+            g_variant_lookup(options, "restore_token", "&s", &restore);
+            if (restore && *restore) {
+                uint32_t types = session->types;
+                uint32_t cursor_mode = session->cursor_mode;
+                char* source_id = NULL;
+                if (load_restore_token(restore, &types, &cursor_mode, &source_id)) {
+                    session->types = types;
+                    session->cursor_mode = cursor_mode;
+                    free(session->restore_token);
+                    session->restore_token = strdup(restore);
+                    if (source_id && *source_id) {
+                        ensure_wayland(&g_state);
+                        for (size_t i = 0; i < g_state.toplevel_count; ++i) {
+                            if (g_state.toplevels[i].identifier && strcmp(g_state.toplevels[i].identifier, source_id) == 0) {
+                                session->chosen_toplevel_index = (int)i;
+                                break;
+                            }
+                        }
+                    }
+                }
+                free(source_id);
+                if (session->restore_token) {
+                    if (options)
+                        g_variant_unref(options);
+                    g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
+                    g_variant_builder_add(&results, "{sv}", "restore_token", g_variant_new_string(session->restore_token));
+                    return_response(invocation, 0, &results);
+                    return;
+                }
+            }
         }
         // When window sources are offered and a chooser is configured, let the
         // user pick via the LibGUI ScreenCastChooser (index 0 = entire screen).
@@ -830,9 +944,25 @@ void portal_screencast_method_call(GDBusConnection* connection, gchar const* sen
             free(labels);
             session->chosen_toplevel_index = chosen - 1; // -1 => entire screen
         }
+
+        // Mint and persist a restore token when the app asked to remember the
+        // choice (persist_mode 1 = permanent, 2 = until revoked).
+        if (session && session->persist_mode != 0 && !session->restore_token) {
+            char token[33];
+            for (int i = 0; i < 32; ++i)
+                token[i] = "0123456789abcdef"[g_random_int_range(0, 16)];
+            token[32] = '\0';
+            char const* source_id = NULL;
+            if (session->chosen_toplevel_index >= 0 && (size_t)session->chosen_toplevel_index < g_state.toplevel_count)
+                source_id = g_state.toplevels[session->chosen_toplevel_index].identifier;
+            store_restore_token(token, session->types, session->cursor_mode, source_id);
+            session->restore_token = strdup(token);
+        }
         if (options)
             g_variant_unref(options);
         g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
+        if (session && session->restore_token)
+            g_variant_builder_add(&results, "{sv}", "restore_token", g_variant_new_string(session->restore_token));
         return_response(invocation, 0, &results);
         return;
     }
@@ -872,6 +1002,8 @@ void portal_screencast_method_call(GDBusConnection* connection, gchar const* sen
                 g_variant_builder_add(&props, "{sv}", "pipewire-serial", g_variant_new_uint64(g_state.stream_serial));
             g_variant_builder_add(&streams, "(ua{sv})", (guint32)g_state.stream_node_id, &props);
             g_variant_builder_add(&results, "{sv}", "streams", g_variant_builder_end(&streams));
+            if (session->restore_token)
+                g_variant_builder_add(&results, "{sv}", "restore_token", g_variant_new_string(session->restore_token));
             fprintf(stderr, "xdg-desktop-portal-serenity: screencast stream node %d (%dx%d, source_type %u, cursor %u)\n",
                 g_state.stream_node_id, g_state.stream_width, g_state.stream_height,
                 session->capture->source_type, session->capture->cursor_mode);

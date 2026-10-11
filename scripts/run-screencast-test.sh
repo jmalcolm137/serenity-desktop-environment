@@ -121,6 +121,24 @@ else
     echo "  note: native-app-test not built; skipping the window-source check"
 fi
 
+echo "=== restore tokens ==="
+call "$IFACE.CreateSession" /h /org/freedesktop/portal/desktop/session/r app "{}" >/dev/null
+sel="$(call "$IFACE.SelectSources" /h /org/freedesktop/portal/desktop/session/r app "{'types': <uint32 1>, 'persist_mode': <uint32 2>}")"
+check "uint32 0" "$sel"
+check "restore_token" "$sel"
+token="$(grep -oE "[0-9a-f]{32}" <<<"$sel" | head -1)"
+if [ -n "$token" ]; then
+    echo "  ok: minted restore token $token"
+else
+    echo "  FAIL: no restore token ($sel)"
+    fail=1
+fi
+rstart="$(call "$IFACE.Start" /h /org/freedesktop/portal/desktop/session/r app "" "{}")"
+check "restore_token" "$rstart"
+call "$IFACE.CreateSession" /h /org/freedesktop/portal/desktop/session/r2 app "{}" >/dev/null
+restored="$(call "$IFACE.SelectSources" /h /org/freedesktop/portal/desktop/session/r2 app "{'restore_token': <'$token'>}")"
+check "$token" "$restored"
+
 echo "=== RemoteDesktop portal ==="
 RD="org.freedesktop.impl.portal.RemoteDesktop"
 check "uint32 0" "$(call "$RD.CreateSession" /h /org/freedesktop/portal/desktop/session/rd app "{}")"
