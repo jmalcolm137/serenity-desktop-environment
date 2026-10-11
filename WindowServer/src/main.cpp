@@ -79,6 +79,9 @@ extern "C" {
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_output_management_v1.h>
+#include <wlr/types/wlr_ext_image_capture_source_v1.h>
+#include <wlr/types/wlr_ext_image_copy_capture_v1.h>
+#include <wlr/types/wlr_screencopy_v1.h>
 #include <wlr/types/wlr_output_power_management_v1.h>
 #include <wlr/types/wlr_pointer.h>
 #include <wlr/types/wlr_scene.h>
@@ -2870,6 +2873,13 @@ static ErrorOr<void> initialize(Server& server)
     server.foreign_toplevel_manager = wlr_foreign_toplevel_manager_v1_create(server.display);
     wl_global_create(server.display, &serenity_window_manager_interface, 1, &server, serenity_window_manager_bind);
     SessionManager::initialize(server);
+
+    // Screen capture. Expose the standard ext-image-copy-capture-v1 (the primary,
+    // portable capture surface) and the wlr-screencopy-unstable-v1 compat so
+    // standard tools like `grim` work unmodified. See docs/03 D7.
+    (void)wlr_ext_output_image_capture_source_manager_v1_create(server.display, 1);
+    (void)wlr_ext_image_copy_capture_manager_v1_create(server.display, 1);
+    (void)wlr_screencopy_manager_v1_create(server.display);
 
     server.output_manager = wlr_output_manager_v1_create(server.display);
     server.output_manager_apply.notify = output_manager_apply;

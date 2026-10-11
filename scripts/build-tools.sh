@@ -33,4 +33,17 @@ cc -O2 -I "$TOOLS_BUILD" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/sde-dpms"
 
-echo "==> SDE tools: $TOOLS_BUILD/sde-idle $TOOLS_BUILD/sde-dpms"
+# sde-screenshot (screen capture via wlr-screencopy). The compositor exposes the
+# standard ext-image-copy-capture-v1 (and wlr-screencopy compat), so `grim` works
+# too; this is the dependency-free helper for scripted/headless screenshots
+# (docs/03-engineering-conventions.md D7).
+SHOT_XML="$WLROOTS_SRC/protocol/wlr-screencopy-unstable-v1.xml"
+wayland-scanner client-header "$SHOT_XML" "$TOOLS_BUILD/wlr-screencopy-unstable-v1-client-protocol.h"
+wayland-scanner private-code  "$SHOT_XML" "$TOOLS_BUILD/wlr-screencopy-unstable-v1-protocol.c"
+cc -O2 -I "$TOOLS_BUILD" \
+    "$SDE_ROOT/tools/sde-screenshot.c" \
+    "$TOOLS_BUILD/wlr-screencopy-unstable-v1-protocol.c" \
+    $(pkg-config --cflags --libs wayland-client) \
+    -o "$TOOLS_BUILD/sde-screenshot"
+
+echo "==> SDE tools: $TOOLS_BUILD/sde-idle $TOOLS_BUILD/sde-dpms $TOOLS_BUILD/sde-screenshot"
