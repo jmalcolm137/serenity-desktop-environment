@@ -75,6 +75,7 @@ extern "C" {
 #include <wlr/types/wlr_ext_workspace_v1.h>
 #include <wlr/types/wlr_ext_foreign_toplevel_list_v1.h>
 #include <wlr/types/wlr_xdg_activation_v1.h>
+#include <wlr/types/wlr_cursor_shape_v1.h>
 #include <wlr/types/wlr_idle_inhibit_v1.h>
 #include <wlr/types/wlr_idle_notify_v1.h>
 #include <wlr/types/wlr_input_device.h>
@@ -614,6 +615,45 @@ static void update_button_pressed(Server& server, FrameHit const& hit)
     }
 }
 
+// --- R4.7: cursor highlight -------------------------------------------------
+//
+// A translucent ellipse behind the cursor, from cursor.ini [Highlight] (a radius
+// of at least 20 enables it, matching Mouse Settings). Drawn as an overlay scene
+// buffer so it composites over windows but under the cursor itself.
+static int g_cursor_highlight_radius { 0 };
+static Gfx::Color g_cursor_highlight_color { Gfx::Color::Transparent };
+static OwnPtr<ChromeNode> s_cursor_highlight;
+
+static void render_cursor_highlight(Server& server)
+{
+    bool const enabled = g_cursor_highlight_radius >= 20 && g_cursor_highlight_color.alpha() != 0;
+    if (!enabled) {
+        if (s_cursor_highlight)
+            s_cursor_highlight->set_visible(false);
+        return;
+    }
+    if (!server.overlay_tree || !server.cursor)
+        return;
+    if (!s_cursor_highlight)
+        s_cursor_highlight = make<ChromeNode>(*server.overlay_tree);
+    int const radius = g_cursor_highlight_radius;
+    s_cursor_highlight->set_rect({ static_cast<int>(server.cursor->x) - radius, static_cast<int>(server.cursor->y) - radius, radius * 2, radius * 2 });
+    auto color = g_cursor_highlight_color;
+    s_cursor_highlight->render([radius, color](Gfx::Painter& painter) {
+        painter.fill_ellipse({ 0, 0, radius * 2, radius * 2 }, color);
+    });
+    s_cursor_highlight->set_visible(true);
+    s_cursor_highlight->raise_to_top();
+}
+
+static void move_cursor_highlight(Server& server)
+{
+    if (!s_cursor_highlight || !s_cursor_highlight->is_visible() || !server.cursor)
+        return;
+    int const radius = g_cursor_highlight_radius;
+    s_cursor_highlight->set_rect({ static_cast<int>(server.cursor->x) - radius, static_cast<int>(server.cursor->y) - radius, radius * 2, radius * 2 });
+}
+
 static void process_cursor_motion(Server& server, uint32_t time)
 {
     // While the session is locked, only the lock surface receives input.
@@ -701,6 +741,7 @@ static void cursor_motion(wl_listener* listener, void* data)
     server = wl_container_of(listener, server, cursor_motion);
     auto* event = static_cast<wlr_pointer_motion_event*>(data);
     wlr_cursor_move(server->cursor, &event->pointer->base, event->delta_x, event->delta_y);
+    move_cursor_highlight(*server);
     process_cursor_motion(*server, event->time_msec);
     notify_activity(*server);
 }
@@ -711,6 +752,7 @@ static void cursor_motion_absolute(wl_listener* listener, void* data)
     server = wl_container_of(listener, server, cursor_motion_absolute);
     auto* event = static_cast<wlr_pointer_motion_absolute_event*>(data);
     wlr_cursor_warp_absolute(server->cursor, &event->pointer->base, event->x, event->y);
+    move_cursor_highlight(*server);
     process_cursor_motion(*server, event->time_msec);
     notify_activity(*server);
 }
@@ -3173,6 +3215,18 @@ static void xdg_activation_activate(wl_listener* listener, void* data)
     }
 }
 
+// wp-cursor-shape-v1: a client asked for a named cursor shape (e.g. "text").
+static void cursor_shape_request(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, cursor_shape_request);
+    auto* event = static_cast<wlr_cursor_shape_manager_v1_request_set_shape_event*>(data);
+    if (event->device_type != WLR_CURSOR_SHAPE_MANAGER_V1_DEVICE_TYPE_POINTER)
+        return;
+    if (auto const* name = wlr_cursor_shape_v1_name(event->shape); name && server->cursor)
+        wlr_cursor_set_xcursor(server->cursor, server->cursor_manager, name);
+}
+
 static ErrorOr<void> initialize(Server& server)
 {
     server.display = wl_display_create();
@@ -3242,6 +3296,11 @@ static ErrorOr<void> initialize(Server& server)
     server.xdg_activation = wlr_xdg_activation_v1_create(server.display);
     server.xdg_activation_activate.notify = xdg_activation_activate;
     wl_signal_add(&server.xdg_activation->events.request_activate, &server.xdg_activation_activate);
+
+    // wp-cursor-shape-v1: clients can set named cursor shapes (R4.7/R4.8).
+    server.cursor_shape_manager = wlr_cursor_shape_manager_v1_create(server.display, 1);
+    server.cursor_shape_request.notify = cursor_shape_request;
+    wl_signal_add(&server.cursor_shape_manager->events.request_set_shape, &server.cursor_shape_request);
 
     // Screen capture. Expose the standard ext-image-copy-capture-v1 (the primary,
     // portable capture surface) and the wlr-screencopy-unstable-v1 compat so
@@ -3515,21 +3574,28 @@ static void apply_cursor_state(Server& server)
     auto size_string = ByteString::number(size);
     setenv("XCURSOR_THEME", theme.characters(), true);
     setenv("XCURSOR_SIZE", size_string.characters(), true);
-    if (theme.is_empty() || theme == "Default"sv)
-        return;
-    // wlroots 0.20 has no set_theme: recreate the manager with the new theme.
-    auto* manager = wlr_xcursor_manager_create(theme.characters(), size);
-    if (!manager)
-        return;
-    for (auto& output : server.outputs)
-        wlr_xcursor_manager_load(manager, output->output->scale);
-    auto* old_manager = server.cursor_manager;
-    server.cursor_manager = manager;
-    if (server.cursor)
-        wlr_cursor_set_xcursor(server.cursor, manager, "default");
-    if (old_manager)
-        wlr_xcursor_manager_destroy(old_manager);
-    dbgln("WindowServer: applied cursor theme '{}' (size {})", theme, size);
+
+    if (!theme.is_empty() && theme != "Default"sv) {
+        // wlroots 0.20 has no set_theme: recreate the manager with the new theme.
+        if (auto* manager = wlr_xcursor_manager_create(theme.characters(), size)) {
+            for (auto& output : server.outputs)
+                wlr_xcursor_manager_load(manager, output->output->scale);
+            auto* old_manager = server.cursor_manager;
+            server.cursor_manager = manager;
+            if (server.cursor)
+                wlr_cursor_set_xcursor(server.cursor, manager, "default");
+            if (old_manager)
+                wlr_xcursor_manager_destroy(old_manager);
+            dbgln("WindowServer: applied cursor theme '{}' (size {})", theme, size);
+        }
+    }
+
+    // Cursor highlight: a translucent ellipse behind the cursor (>= 20px enables it).
+    g_cursor_highlight_radius = config.value()->read_num_entry<int>("Highlight"sv, "Radius"sv, 0);
+    g_cursor_highlight_color = Gfx::Color::from_string(config.value()->read_entry("Highlight"sv, "Color"sv)).value_or(Gfx::Color::Transparent);
+    render_cursor_highlight(server);
+    if (g_cursor_highlight_radius >= 20)
+        dbgln("WindowServer: cursor highlight radius {} color {}", g_cursor_highlight_radius, g_cursor_highlight_color.to_byte_string());
 }
 
 static void watch_cursor_state(Server& server)
