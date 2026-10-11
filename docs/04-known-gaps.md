@@ -236,6 +236,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 
 ## Recently resolved (kept so we don't re-chase them)
 
+- **Desktop ▸ "Display Settings" now opens DisplaySettings.** `Desktop::Launcher::open("/bin/DisplaySettings")` (the desktop right-click entry) resolved the URL by file extension — landing on the wildcard handler (`/bin/TextEditor`) — and `stat`ed the host path `/bin/DisplaySettings`, which does not exist, so nothing opened. The port's `LaunchServerConnection::open_url` now runs an **executable regular file** directly (mirroring the upstream `LaunchServer`), mapping Serenity's `/bin/X` to the session app dir like the rest of the port. The desktop entry now launches the same DisplaySettings dialog the Settings app spawns. Verified by `scripts/run-launch-exec-test.sh`.
 - Compositor: window destroyed before decoration (protocol error); frozen
   "ghost" window (scene tree not torn down); lost mouse-up (implicit pointer
   grab); F11 fullscreen no-op; window menu dismissed on its opening click;
