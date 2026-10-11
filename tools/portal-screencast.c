@@ -63,10 +63,18 @@ struct screencast_state {
 
     // PipeWire
     struct pw_thread_loop* pw_loop;
+    struct pw_context* pw_context;
+    struct pw_core* pw_core;
+    struct pw_registry* pw_registry;
     struct pw_stream* stream;
     int stream_width;
     int stream_height;
     int stream_node_id;
+    guint64 stream_serial;
+    int core_sync_done;
+    struct spa_hook stream_listener;
+    struct spa_hook core_listener;
+    struct spa_hook registry_listener;
 
     // Latest captured frame, shared between the Wayland thread and the PipeWire
     // process callback.
@@ -193,6 +201,47 @@ static const struct pw_stream_events stream_events = {
     .process = on_stream_process,
 };
 
+// The core registry lets us read our node's object.serial (the v6 stream
+// property clients should use for targeting).
+static void on_registry_global(void* data, uint32_t id, uint32_t permissions, char const* type, uint32_t version, struct spa_dict const* props)
+{
+    (void)data;
+    (void)id;
+    (void)permissions;
+    (void)type;
+    (void)version;
+    if (!props)
+        return;
+    char const* serial = spa_dict_lookup(props, PW_KEY_OBJECT_SERIAL);
+    char const* name = spa_dict_lookup(props, PW_KEY_NODE_NAME);
+    if (serial && name && g_strcmp0(name, "sde-screencast") == 0) {
+        guint64 value = g_ascii_strtoull(serial, NULL, 10);
+        if (value)
+            g_state.stream_serial = value;
+    }
+}
+static void on_registry_global_remove(void* data, uint32_t id)
+{
+    (void)data;
+    (void)id;
+}
+static const struct pw_registry_events registry_events = {
+    PW_VERSION_REGISTRY_EVENTS,
+    .global = on_registry_global,
+    .global_remove = on_registry_global_remove,
+};
+
+static void on_core_done(void* data, uint32_t id, int seq)
+{
+    (void)id;
+    (void)seq;
+    ((struct screencast_state*)data)->core_sync_done = 1;
+}
+static const struct pw_core_events core_events = {
+    PW_VERSION_CORE_EVENTS,
+    .done = on_core_done,
+};
+
 // Create and connect the PipeWire stream for `width`x`height` BGRA video. Returns
 // the node id, or -1.
 static int start_pipewire_stream(int width, int height)
@@ -204,19 +253,30 @@ static int start_pipewire_stream(int width, int height)
             fprintf(stderr, "xdg-desktop-portal-serenity: pw_thread_loop_new failed\n");
             return -1;
         }
+        g_state.pw_context = pw_context_new(pw_thread_loop_get_loop(g_state.pw_loop), NULL, 0);
         // Start the loop before connecting so the server can assign the node id.
         pw_thread_loop_start(g_state.pw_loop);
     }
 
     pw_thread_loop_lock(g_state.pw_loop);
 
+    if (!g_state.pw_core && g_state.pw_context) {
+        g_state.pw_core = pw_context_connect(g_state.pw_context, NULL, 0);
+        if (g_state.pw_core) {
+            pw_core_add_listener(g_state.pw_core, &g_state.core_listener, &core_events, &g_state);
+            g_state.pw_registry = pw_core_get_registry(g_state.pw_core, PW_VERSION_REGISTRY, 0);
+            if (g_state.pw_registry)
+                pw_registry_add_listener(g_state.pw_registry, &g_state.registry_listener, &registry_events, &g_state);
+        }
+    }
+
     if (g_state.stream) {
         pw_stream_destroy(g_state.stream);
         g_state.stream = NULL;
     }
 
-    g_state.stream = pw_stream_new_simple(
-        pw_thread_loop_get_loop(g_state.pw_loop),
+    g_state.stream = pw_stream_new(
+        g_state.pw_core,
         "SDE ScreenCast",
         pw_properties_new(
             PW_KEY_MEDIA_CLASS, "Video/Source",
@@ -224,13 +284,13 @@ static int start_pipewire_stream(int width, int height)
             PW_KEY_NODE_NAME, "sde-screencast",
             PW_KEY_NODE_DESCRIPTION, "SDE ScreenCast",
             PW_KEY_NODE_VIRTUAL, "false",
-            NULL),
-        &stream_events, &g_state);
+            NULL));
     if (!g_state.stream) {
-        fprintf(stderr, "xdg-desktop-portal-serenity: pw_stream_new_simple failed\n");
+        fprintf(stderr, "xdg-desktop-portal-serenity: pw_stream_new failed\n");
         pw_thread_loop_unlock(g_state.pw_loop);
         return -1;
     }
+    pw_stream_add_listener(g_state.stream, &g_state.stream_listener, &stream_events, &g_state);
 
     uint8_t buffer[1032];
     struct spa_pod_builder builder = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
@@ -274,10 +334,14 @@ static int start_pipewire_stream(int width, int height)
     g_state.stream_width = width;
     g_state.stream_height = height;
     pw_stream_set_active(g_state.stream, true);
+    // Force a roundtrip so the registry global (with object.serial) arrives.
+    g_state.core_sync_done = 0;
+    if (g_state.pw_core)
+        pw_core_sync(g_state.pw_core, PW_ID_CORE, 0);
     pw_thread_loop_unlock(g_state.pw_loop);
 
-    // The node id is assigned asynchronously; wait for the stream to connect.
-    for (int i = 0; i < 200 && g_state.stream_node_id <= 0; ++i)
+    // The node id and serial are assigned asynchronously; wait for them.
+    for (int i = 0; i < 300 && (g_state.stream_node_id <= 0 || g_state.stream_serial == 0); ++i)
         usleep(5000);
     if (g_state.stream_node_id <= 0) {
         pw_thread_loop_lock(g_state.pw_loop);
@@ -285,8 +349,8 @@ static int start_pipewire_stream(int width, int height)
         pw_thread_loop_unlock(g_state.pw_loop);
     }
 
-    fprintf(stderr, "xdg-desktop-portal-serenity: screencast pipewire node id %d (%dx%d)\n",
-        g_state.stream_node_id, width, height);
+    fprintf(stderr, "xdg-desktop-portal-serenity: screencast pipewire node id %d (serial %llu, %dx%d)\n",
+        g_state.stream_node_id, (unsigned long long)g_state.stream_serial, width, height);
     return g_state.stream_node_id;
 }
 
@@ -804,6 +868,8 @@ void portal_screencast_method_call(GDBusConnection* connection, gchar const* sen
             g_variant_builder_add(&props, "{sv}", "source_type", g_variant_new_uint32(session->capture->source_type));
             if (session->capture->source_id)
                 g_variant_builder_add(&props, "{sv}", "id", g_variant_new_string(session->capture->source_id));
+            if (g_state.stream_serial)
+                g_variant_builder_add(&props, "{sv}", "pipewire-serial", g_variant_new_uint64(g_state.stream_serial));
             g_variant_builder_add(&streams, "(ua{sv})", (guint32)g_state.stream_node_id, &props);
             g_variant_builder_add(&results, "{sv}", "streams", g_variant_builder_end(&streams));
             fprintf(stderr, "xdg-desktop-portal-serenity: screencast stream node %d (%dx%d, source_type %u, cursor %u)\n",
@@ -843,7 +909,7 @@ GVariant* portal_screencast_get_property(GDBusConnection* connection, gchar cons
     (void)interface_name;
     (void)user_data;
     if (g_strcmp0(property_name, "version") == 0)
-        return g_variant_new_uint32(4);
+        return g_variant_new_uint32(6);
     g_set_error(error, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_PROPERTY, "unknown property %s", property_name);
     return NULL;
 }

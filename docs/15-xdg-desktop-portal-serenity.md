@@ -39,7 +39,7 @@ This supersedes the earlier single-interface `tools/sde-settings-portal.c` (R4.4
 | `ProxyResolver` (v1) | `Lookup` returns an empty list (direct connection). |
 | `OpenURI` (v3) | `OpenURI`/`OpenDirectory`/`OpenFile` launch via `SDE_PORTAL_OPENER` (the session launcher) or GIO's default-app launch. |
 | `Notification` (v1) | `AddNotification`/`RemoveNotification` via `SDE_PORTAL_NOTIFIER` (the Serenity notify tool) or `notify-send`. |
-| `ScreenCast` (v4) | `CreateSession`/`SelectSources`/`Start`/`AvailableSourceTypes`/`AvailableCursorModes`. Captures an output **or a window** with the standard **`ext-image-copy-capture-v1`** and publishes a **PipeWire** video stream (`sde-screencast`); `Start` returns the stream node id + position/size/source_type/id. Cursor modes: hidden, embedded. |
+| `ScreenCast` (v6) | `CreateSession`/`SelectSources`/`Start`/`AvailableSourceTypes`/`AvailableCursorModes`. Captures an output **or a window** with the standard **`ext-image-copy-capture-v1`** and publishes a **PipeWire** video stream (`sde-screencast`); `Start` returns the stream node id + `pipewire-serial` (v6) + position/size/source_type/id. Cursor modes: hidden, embedded. |
 | `Realtime` (v1) | Grants high-priority/realtime threads (accepted). |
 | `PowerProfileMonitor` (v1) | `power-saver-enabled` (from `SDE_POWER_SAVER`). |
 | `GameMode` (v1) | `RegisterGame`/`UnregisterGame`/`QueryStatus` (reports not active). |
@@ -64,10 +64,11 @@ The implementation follows **niri**'s producer design (`src/screencasting/`):
 - A mutex-protected "latest frame" is memcpy'd into the negotiated buffer in the
   stream `process` callback, so captured frames reach consumers (~30 fps).
 
-Still to add (niri parity, Phase 2b): **DMA-BUF** capture/negotiation (zero-copy),
-the **metadata** cursor mode (`ext_image_copy_capture_cursor_session_v1` +
-`SPA_META_Cursor`), the `pipewire-serial` (v6) property, restore tokens, and
-niri-style extras (dynamic cast target, "block out from screencast").
+Still to add (niri parity, Phase 2b): **DMA-BUF** capture/negotiation (zero-copy)
+and the **metadata** cursor mode (`ext_image_copy_capture_cursor_session_v1` +
+`SPA_META_Cursor`). The interface advertises **v6** and returns the stream's
+`pipewire-serial`; restore tokens and niri extras (dynamic cast target,
+"block out from screencast") remain.
 
 **Source selection is a LibGUI app.** As with all SDE UI, the picker is a
 SerenityOS **LibGUI** app — `ScreenCastChooser/` (built by

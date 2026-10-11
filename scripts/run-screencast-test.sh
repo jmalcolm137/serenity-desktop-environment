@@ -80,6 +80,7 @@ check "uint32 0" "$start"
 check "streams" "$start"
 check "(1280, 720)" "$start"
 check "'source_type': <uint32 1>" "$start"
+check "pipewire-serial" "$start"
 node="$(grep -oE "uint32 [0-9]+" <<<"$start" | sed -n 2p | awk '{print $2}')"
 if [ -n "$node" ] && [ "$node" -gt 0 ] 2>/dev/null; then
     echo "  ok: stream node id $node"
