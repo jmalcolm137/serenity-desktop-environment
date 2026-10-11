@@ -41,8 +41,16 @@
 
 #include "ext-image-capture-source-v1-client-protocol.h"
 #include "ext-image-copy-capture-v1-client-protocol.h"
+#include "ext-foreign-toplevel-list-v1-client-protocol.h"
 
 #define MAX_OUTPUTS 8
+#define MAX_TOPLEVELS 64
+
+struct toplevel_info {
+    struct ext_foreign_toplevel_handle_v1* handle;
+    char* identifier;
+    char* title;
+};
 
 // --- extension interface names (matched in the registry) --------------------
 
@@ -73,8 +81,12 @@ struct screencast_state {
     struct wl_shm* shm;
     struct ext_output_image_capture_source_manager_v1* source_manager;
     struct ext_image_copy_capture_manager_v1* capture_manager;
+    struct ext_foreign_toplevel_list_v1* foreign_toplevel_list;
+    struct ext_foreign_toplevel_image_capture_source_manager_v1* foreign_source_manager;
     struct wl_output* outputs[MAX_OUTPUTS];
     size_t output_count;
+    struct toplevel_info toplevels[MAX_TOPLEVELS];
+    size_t toplevel_count;
 
     pthread_t capture_thread;
     gboolean capture_thread_started;
@@ -85,6 +97,7 @@ struct session {
     uint32_t types;
     uint32_t cursor_mode;
     gboolean started;
+    int chosen_toplevel_index; // -1 = entire screen
     struct capture* capture;
 };
 
@@ -100,6 +113,9 @@ struct capture {
     int stride;
     struct wl_buffer* buffer;
     gboolean first_frame_logged;
+    uint32_t source_type;
+    char* source_id;
+    uint32_t cursor_mode;
 };
 
 static struct screencast_state g_state = { 0 };
@@ -441,7 +457,68 @@ static const struct ext_image_copy_capture_session_v1_listener capture_session_l
     .stopped = capture_session_stopped,
 };
 
-static void registry_global(void* data, struct wl_registry* registry, uint32_t name, const char* interface, uint32_t version)
+static void ftl_handle_closed(void* data, struct ext_foreign_toplevel_handle_v1* handle)
+{
+    (void)handle;
+    struct toplevel_info* toplevel = data;
+    toplevel->handle = NULL;
+}
+static void ftl_handle_done(void* data, struct ext_foreign_toplevel_handle_v1* handle)
+{
+    (void)data;
+    (void)handle;
+}
+static void ftl_handle_title(void* data, struct ext_foreign_toplevel_handle_v1* handle, char const* title)
+{
+    (void)handle;
+    struct toplevel_info* toplevel = data;
+    free(toplevel->title);
+    toplevel->title = strdup(title);
+}
+static void ftl_handle_app_id(void* data, struct ext_foreign_toplevel_handle_v1* handle, char const* app_id)
+{
+    (void)data;
+    (void)handle;
+    (void)app_id;
+}
+static void ftl_handle_identifier(void* data, struct ext_foreign_toplevel_handle_v1* handle, char const* identifier)
+{
+    (void)handle;
+    struct toplevel_info* toplevel = data;
+    free(toplevel->identifier);
+    toplevel->identifier = strdup(identifier);
+}
+static const struct ext_foreign_toplevel_handle_v1_listener ftl_handle_listener = {
+    .closed = ftl_handle_closed,
+    .done = ftl_handle_done,
+    .title = ftl_handle_title,
+    .app_id = ftl_handle_app_id,
+    .identifier = ftl_handle_identifier,
+};
+
+static void ftl_toplevel(void* data, struct ext_foreign_toplevel_list_v1* list, struct ext_foreign_toplevel_handle_v1* handle)
+{
+    (void)list;
+    struct screencast_state* state = data;
+    if (state->toplevel_count >= MAX_TOPLEVELS) {
+        ext_foreign_toplevel_handle_v1_destroy(handle);
+        return;
+    }
+    struct toplevel_info* toplevel = &state->toplevels[state->toplevel_count++];
+    toplevel->handle = handle;
+    ext_foreign_toplevel_handle_v1_add_listener(handle, &ftl_handle_listener, toplevel);
+}
+static void ftl_finished(void* data, struct ext_foreign_toplevel_list_v1* list)
+{
+    (void)data;
+    (void)list;
+}
+static const struct ext_foreign_toplevel_list_v1_listener ftl_listener = {
+    .toplevel = ftl_toplevel,
+    .finished = ftl_finished,
+};
+
+static void registry_global(void* data, struct wl_registry* registry, uint32_t name, char const* interface, uint32_t version)
 {
     (void)data;
     if (strcmp(interface, wl_shm_interface.name) == 0)
@@ -450,8 +527,14 @@ static void registry_global(void* data, struct wl_registry* registry, uint32_t n
         g_state.source_manager = wl_registry_bind(registry, name, &ext_output_image_capture_source_manager_v1_interface, 1);
     else if (strcmp(interface, ext_image_copy_capture_manager_v1_interface.name) == 0)
         g_state.capture_manager = wl_registry_bind(registry, name, &ext_image_copy_capture_manager_v1_interface, 1);
-    else if (strcmp(interface, wl_output_interface.name) == 0 && g_state.output_count < MAX_OUTPUTS)
+    else if (strcmp(interface, ext_foreign_toplevel_image_capture_source_manager_v1_interface.name) == 0)
+        g_state.foreign_source_manager = wl_registry_bind(registry, name, &ext_foreign_toplevel_image_capture_source_manager_v1_interface, 1);
+    else if (strcmp(interface, ext_foreign_toplevel_list_v1_interface.name) == 0) {
+        g_state.foreign_toplevel_list = wl_registry_bind(registry, name, &ext_foreign_toplevel_list_v1_interface, 1);
+        ext_foreign_toplevel_list_v1_add_listener(g_state.foreign_toplevel_list, &ftl_listener, &g_state);
+    } else if (strcmp(interface, wl_output_interface.name) == 0 && g_state.output_count < MAX_OUTPUTS) {
         g_state.outputs[g_state.output_count++] = wl_registry_bind(registry, name, &wl_output_interface, version);
+    }
 }
 static void registry_global_remove(void* data, struct wl_registry* registry, uint32_t name)
 {
@@ -472,20 +555,62 @@ static void* capture_thread(void* data)
     return NULL;
 }
 
-// Set up the capture for the first output; returns the capture, or NULL.
-static struct capture* begin_capture(struct screencast_state* state)
+// Set up the Wayland connection (idempotent).
+static gboolean ensure_wayland(struct screencast_state* state)
 {
+    if (state->display)
+        return TRUE;
+    state->display = wl_display_connect(NULL);
     if (!state->display) {
-        state->display = wl_display_connect(NULL);
-        if (!state->display) {
-            fprintf(stderr, "xdg-desktop-portal-serenity: screencast cannot connect to Wayland\n");
-            return NULL;
-        }
-        state->registry = wl_display_get_registry(state->display);
-        wl_registry_add_listener(state->registry, &registry_listener, state);
-        wl_display_roundtrip(state->display); // globals
-        wl_display_roundtrip(state->display); // output info
+        fprintf(stderr, "xdg-desktop-portal-serenity: screencast cannot connect to Wayland\n");
+        return FALSE;
     }
+    state->registry = wl_display_get_registry(state->display);
+    wl_registry_add_listener(state->registry, &registry_listener, state);
+    wl_display_roundtrip(state->display); // globals
+    wl_display_roundtrip(state->display); // output/toplevel info
+    return TRUE;
+}
+
+// Run the LibGUI source chooser (SDE_PORTAL_CHOOSER) with the candidate labels;
+// returns the chosen index, or 0 when there is no chooser.
+static int run_source_chooser(char** labels, int count)
+{
+    char const* chooser = getenv("SDE_PORTAL_CHOOSER");
+    if (!chooser || !*chooser || count <= 0)
+        return 0;
+
+    char** argv = calloc((size_t)count + 5, sizeof(char*));
+    argv[0] = (char*)chooser;
+    argv[1] = (char*)"-t";
+    argv[2] = (char*)"Share your screen";
+    for (int i = 0; i < count; ++i)
+        argv[3 + i] = labels[i];
+    argv[3 + count] = NULL;
+
+    char* out = NULL;
+    gint wait_status = 0;
+    GError* error = NULL;
+    gboolean ok = g_spawn_sync(NULL, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, &out, NULL, &wait_status, &error);
+    int chosen = 0;
+    if (ok && out && g_spawn_check_wait_status(wait_status, NULL))
+        chosen = atoi(out);
+    if (out)
+        g_free(out);
+    if (error)
+        g_error_free(error);
+    free(argv);
+    if (chosen < 0 || chosen >= count)
+        chosen = 0;
+    return chosen;
+}
+
+// Set up the capture for the requested source (the chosen window, else the
+// primary output); returns the capture, or NULL.
+static struct capture* begin_capture(struct screencast_state* state, struct session* session)
+{
+    if (!ensure_wayland(state))
+        return NULL;
     if (!state->shm || !state->source_manager || !state->capture_manager || state->output_count == 0) {
         fprintf(stderr, "xdg-desktop-portal-serenity: screencast missing capture globals (shm=%p sm=%p cm=%p outputs=%zu)\n",
             (void*)state->shm, (void*)state->source_manager, (void*)state->capture_manager, state->output_count);
@@ -495,9 +620,27 @@ static struct capture* begin_capture(struct screencast_state* state)
     struct capture* capture = calloc(1, sizeof(struct capture));
     capture->state = state;
     capture->shm_format = WL_SHM_FORMAT_XRGB8888;
+    capture->cursor_mode = session ? session->cursor_mode : 1;
 
-    struct ext_image_capture_source_v1* source = ext_output_image_capture_source_manager_v1_create_source(state->source_manager, state->outputs[0]);
-    capture->session = ext_image_copy_capture_manager_v1_create_session(state->capture_manager, source, 0);
+    // A chosen window when the compositor offers it; otherwise the primary output.
+    struct ext_image_capture_source_v1* source = NULL;
+    if (session && session->chosen_toplevel_index >= 0 && state->foreign_source_manager) {
+        struct toplevel_info* toplevel = &state->toplevels[session->chosen_toplevel_index];
+        if (toplevel->handle) {
+            source = ext_foreign_toplevel_image_capture_source_manager_v1_create_source(state->foreign_source_manager, toplevel->handle);
+            capture->source_type = 2;
+            capture->source_id = toplevel->identifier ? strdup(toplevel->identifier) : NULL;
+        }
+    }
+    if (!source) {
+        source = ext_output_image_capture_source_manager_v1_create_source(state->source_manager, state->outputs[0]);
+        capture->source_type = 1;
+    }
+
+    // cursor_mode 2 = embedded: ask the compositor to paint the cursor into the
+    // capture (niri's "embedded" mode).
+    uint32_t options = (capture->cursor_mode == 2) ? EXT_IMAGE_COPY_CAPTURE_MANAGER_V1_OPTIONS_PAINT_CURSORS : 0;
+    capture->session = ext_image_copy_capture_manager_v1_create_session(state->capture_manager, source, options);
     ext_image_capture_source_v1_destroy(source);
     ext_image_copy_capture_session_v1_add_listener(capture->session, &capture_session_listener, capture);
 
@@ -583,6 +726,7 @@ void portal_screencast_method_call(GDBusConnection* connection, gchar const* sen
         session->handle = g_strdup(session_handle);
         session->types = 1; // monitor
         session->cursor_mode = 1;
+        session->chosen_toplevel_index = -1;
         find_session(session_handle); // ensure the table exists
         g_hash_table_replace(g_state.sessions, g_strdup(session_handle), session);
         g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
@@ -598,6 +742,27 @@ void portal_screencast_method_call(GDBusConnection* connection, gchar const* sen
         if (session && options) {
             g_variant_lookup(options, "types", "u", &session->types);
             g_variant_lookup(options, "cursor_mode", "u", &session->cursor_mode);
+        }
+        // When window sources are offered and a chooser is configured, let the
+        // user pick via the LibGUI ScreenCastChooser (index 0 = entire screen).
+        char const* chooser = getenv("SDE_PORTAL_CHOOSER");
+        if (session && (session->types & 2) && chooser && *chooser) {
+            ensure_wayland(&g_state);
+            int count = 1 + (int)g_state.toplevel_count;
+            char** labels = calloc((size_t)count, sizeof(char*));
+            labels[0] = strdup("Entire screen");
+            for (size_t i = 0; i < g_state.toplevel_count; ++i) {
+                char buffer[256];
+                snprintf(buffer, sizeof(buffer), "Window: %s",
+                    g_state.toplevels[i].title ? g_state.toplevels[i].title
+                                               : (g_state.toplevels[i].identifier ? g_state.toplevels[i].identifier : "Window"));
+                labels[1 + i] = strdup(buffer);
+            }
+            int chosen = run_source_chooser(labels, count);
+            for (int i = 0; i < count; ++i)
+                free(labels[i]);
+            free(labels);
+            session->chosen_toplevel_index = chosen - 1; // -1 => entire screen
         }
         if (options)
             g_variant_unref(options);
@@ -615,7 +780,7 @@ void portal_screencast_method_call(GDBusConnection* connection, gchar const* sen
             return_response(invocation, 2, &results);
             return;
         }
-        session->capture = begin_capture(&g_state);
+        session->capture = begin_capture(&g_state, session);
         if (!session->capture) {
             g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
             return_response(invocation, 2, &results);
@@ -634,11 +799,14 @@ void portal_screencast_method_call(GDBusConnection* connection, gchar const* sen
             g_variant_builder_init(&props, G_VARIANT_TYPE("a{sv}"));
             g_variant_builder_add(&props, "{sv}", "position", g_variant_new("(ii)", 0, 0));
             g_variant_builder_add(&props, "{sv}", "size", g_variant_new("(ii)", g_state.stream_width, g_state.stream_height));
-            g_variant_builder_add(&props, "{sv}", "source_type", g_variant_new_uint32(1));
+            g_variant_builder_add(&props, "{sv}", "source_type", g_variant_new_uint32(session->capture->source_type));
+            if (session->capture->source_id)
+                g_variant_builder_add(&props, "{sv}", "id", g_variant_new_string(session->capture->source_id));
             g_variant_builder_add(&streams, "(ua{sv})", (guint32)g_state.stream_node_id, &props);
             g_variant_builder_add(&results, "{sv}", "streams", g_variant_builder_end(&streams));
-            fprintf(stderr, "xdg-desktop-portal-serenity: screencast stream node %d (%dx%d)\n",
-                g_state.stream_node_id, g_state.stream_width, g_state.stream_height);
+            fprintf(stderr, "xdg-desktop-portal-serenity: screencast stream node %d (%dx%d, source_type %u, cursor %u)\n",
+                g_state.stream_node_id, g_state.stream_width, g_state.stream_height,
+                session->capture->source_type, session->capture->cursor_mode);
             return_response(invocation, 0, &results);
         } else {
             fprintf(stderr, "xdg-desktop-portal-serenity: screencast stream not ready\n");
@@ -649,14 +817,14 @@ void portal_screencast_method_call(GDBusConnection* connection, gchar const* sen
 
     if (g_strcmp0(method_name, "AvailableSourceTypes") == 0) {
         g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
-        g_variant_builder_add(&results, "{sv}", "types", g_variant_new_uint32(1)); // monitor
+        g_variant_builder_add(&results, "{sv}", "types", g_variant_new_uint32(3)); // monitor | window
         return_response(invocation, 0, &results);
         return;
     }
 
     if (g_strcmp0(method_name, "AvailableCursorModes") == 0) {
         g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
-        g_variant_builder_add(&results, "{sv}", "cursor_modes", g_variant_new_uint32(1)); // hidden
+        g_variant_builder_add(&results, "{sv}", "cursor_modes", g_variant_new_uint32(3)); // hidden | embedded
         return_response(invocation, 0, &results);
         return;
     }

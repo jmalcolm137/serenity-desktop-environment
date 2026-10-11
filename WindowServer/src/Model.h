@@ -40,6 +40,7 @@ struct wlr_ext_workspace_group_handle_v1;
 struct wlr_ext_workspace_handle_v1;
 struct wlr_ext_foreign_toplevel_list_v1;
 struct wlr_ext_foreign_toplevel_handle_v1;
+struct wlr_ext_foreign_toplevel_image_capture_source_manager_v1;
 struct wlr_xdg_activation_v1;
 struct wlr_cursor_shape_manager_v1;
 struct wlr_idle_inhibit_manager_v1;
@@ -326,6 +327,7 @@ struct Server {
     wlr_ext_workspace_group_handle_v1* ext_workspace_group { nullptr };
     Vector<wlr_ext_workspace_handle_v1*> ext_workspaces;
     wlr_ext_foreign_toplevel_list_v1* ext_foreign_toplevel_list { nullptr };
+    wlr_ext_foreign_toplevel_image_capture_source_manager_v1* ext_toplevel_capture_source_manager { nullptr };
     wlr_xdg_activation_v1* xdg_activation { nullptr };
     wlr_cursor_shape_manager_v1* cursor_shape_manager { nullptr };
     wlr_output_manager_v1* output_manager { nullptr };

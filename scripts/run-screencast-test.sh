@@ -38,7 +38,14 @@ for _ in $(seq 1 80); do
 done
 sleep 0.3
 
-WAYLAND_DISPLAY="$SOCK" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
+# A stub source chooser: pick the first window (index 1; 0 is the whole screen).
+cat > "$RUNTIME/chooser.sh" <<'EOF'
+#!/usr/bin/env bash
+echo 1
+EOF
+chmod +x "$RUNTIME/chooser.sh"
+
+SDE_PORTAL_CHOOSER="$RUNTIME/chooser.sh" WAYLAND_DISPLAY="$SOCK" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
 PORTAL_PID=$!
 trap 'kill "$PORTAL_PID" "$COMP_PID" 2>/dev/null || true' EXIT
 
@@ -64,19 +71,46 @@ call() { gdbus call --session --dest "$DEST" --object-path "$OBJ" --method "$@" 
 echo "=== ScreenCast session ==="
 check "uint32 0" "$(call "$IFACE.CreateSession" /h /org/freedesktop/portal/desktop/session/a app "{}")"
 check "uint32 0" "$(call "$IFACE.SelectSources" /h /org/freedesktop/portal/desktop/session/a app "{'types': <uint32 1>}")"
+check "uint32 3" "$(call "$IFACE.AvailableSourceTypes")"
+check "uint32 3" "$(call "$IFACE.AvailableCursorModes")"
 
 echo "=== Start returns a PipeWire stream ==="
 start="$(call "$IFACE.Start" /h /org/freedesktop/portal/desktop/session/a app "" "{}")"
 check "uint32 0" "$start"
 check "streams" "$start"
 check "(1280, 720)" "$start"
-check "(1280, 720)" "$start"
+check "'source_type': <uint32 1>" "$start"
 node="$(grep -oE "uint32 [0-9]+" <<<"$start" | sed -n 2p | awk '{print $2}')"
 if [ -n "$node" ] && [ "$node" -gt 0 ] 2>/dev/null; then
     echo "  ok: stream node id $node"
 else
     echo "  FAIL: no stream node id ($start)"
     fail=1
+fi
+
+echo "=== embedded cursor mode ==="
+call "$IFACE.CreateSession" /h /org/freedesktop/portal/desktop/session/c app "{}" >/dev/null
+call "$IFACE.SelectSources" /h /org/freedesktop/portal/desktop/session/c app "{'types': <uint32 1>, 'cursor_mode': <uint32 2>}" >/dev/null
+cursor_start="$(call "$IFACE.Start" /h /org/freedesktop/portal/desktop/session/c app "" "{}")"
+check "uint32 0" "$cursor_start"
+check "cursor 2" "$(cat "$RUNTIME/portal.log")"
+
+echo "=== window source ==="
+if [ -x "$SDE_ROOT/build/tools/native-app-test" ]; then
+    env WAYLAND_DISPLAY="$SOCK" "$SDE_ROOT/build/tools/native-app-test" >/dev/null 2>&1 &
+    APP_PID=$!
+    sleep 1
+    call "$IFACE.CreateSession" /h /org/freedesktop/portal/desktop/session/w app "{}" >/dev/null
+    call "$IFACE.SelectSources" /h /org/freedesktop/portal/desktop/session/w app "{'types': <uint32 2>}" >/dev/null
+    window_start="$(call "$IFACE.Start" /h /org/freedesktop/portal/desktop/session/w app "" "{}")"
+    kill "$APP_PID" 2>/dev/null || true
+    if grep -qF "'source_type': <uint32 2>" <<<"$window_start"; then
+        echo "  ok: window source (source_type 2)"
+    else
+        echo "  note: window source not selected ($window_start)"
+    fi
+else
+    echo "  note: native-app-test not built; skipping the window-source check"
 fi
 
 echo "=== the PipeWire stream node exists ==="

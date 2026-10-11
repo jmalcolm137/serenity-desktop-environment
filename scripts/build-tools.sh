@@ -46,6 +46,17 @@ cc -O2 -I "$TOOLS_BUILD" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/sde-screenshot"
 
+# native-app-test (R1/R4): a minimal xdg-shell client, for scripted toplevels
+# (used by the headless and screencast tests).
+XDG_XML="$(pkg-config --variable=pkgdatadir wayland-protocols)/stable/xdg-shell/xdg-shell.xml"
+wayland-scanner client-header "$XDG_XML" "$TOOLS_BUILD/xdg-shell-client-protocol.h"
+wayland-scanner private-code  "$XDG_XML" "$TOOLS_BUILD/xdg-shell-protocol.c"
+cc -O2 -I "$TOOLS_BUILD" \
+    "$SDE_ROOT/tools/native-app-test.c" \
+    "$TOOLS_BUILD/xdg-shell-protocol.c" \
+    $(pkg-config --cflags --libs wayland-client) \
+    -o "$TOOLS_BUILD/native-app-test"
+
 # ext-workspace-test (R4.8): a scripted ext-workspace-v1 client, so the standard
 # workspace protocol can be exercised without waybar.
 WS_XML="$WP/staging/ext-workspace/ext-workspace-v1.xml"
@@ -89,4 +100,4 @@ cc -O2 -Wall -I "$TOOLS_BUILD" -I "$SDE_ROOT/tools" \
     -lpthread \
     -o "$TOOLS_BUILD/xdg-desktop-portal-serenity"
 
-echo "==> SDE tools: $TOOLS_BUILD/sde-idle $TOOLS_BUILD/sde-dpms $TOOLS_BUILD/sde-screenshot $TOOLS_BUILD/sde-settings-portal $TOOLS_BUILD/ext-workspace-test $TOOLS_BUILD/xdg-desktop-portal-serenity"
+echo "==> SDE tools: $TOOLS_BUILD/sde-idle $TOOLS_BUILD/sde-dpms $TOOLS_BUILD/sde-screenshot $TOOLS_BUILD/sde-settings-portal $TOOLS_BUILD/ext-workspace-test $TOOLS_BUILD/native-app-test $TOOLS_BUILD/xdg-desktop-portal-serenity"

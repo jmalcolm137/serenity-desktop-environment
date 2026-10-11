@@ -74,6 +74,7 @@ extern "C" {
 #include <wlr/types/wlr_foreign_toplevel_management_v1.h>
 #include <wlr/types/wlr_ext_workspace_v1.h>
 #include <wlr/types/wlr_ext_foreign_toplevel_list_v1.h>
+#include <wlr/types/wlr_ext_image_capture_source_v1.h>
 #include <wlr/types/wlr_xdg_activation_v1.h>
 #include <wlr/types/wlr_cursor_shape_v1.h>
 #include <wlr/types/wlr_idle_inhibit_v1.h>
@@ -3293,6 +3294,8 @@ static ErrorOr<void> initialize(Server& server)
     server.ext_workspace_commit.notify = ext_workspace_commit;
     wl_signal_add(&server.ext_workspace_manager->events.commit, &server.ext_workspace_commit);
     server.ext_foreign_toplevel_list = wlr_ext_foreign_toplevel_list_v1_create(server.display, 1);
+    // Window capture sources (ext-image-capture-source-v1) for the ScreenCast portal.
+    server.ext_toplevel_capture_source_manager = wlr_ext_foreign_toplevel_image_capture_source_manager_v1_create(server.display, 1);
     server.xdg_activation = wlr_xdg_activation_v1_create(server.display);
     server.xdg_activation_activate.notify = xdg_activation_activate;
     wl_signal_add(&server.xdg_activation->events.request_activate, &server.xdg_activation_activate);
