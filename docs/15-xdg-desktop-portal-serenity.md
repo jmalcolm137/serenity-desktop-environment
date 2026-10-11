@@ -45,7 +45,7 @@ This supersedes the earlier single-interface `tools/sde-settings-portal.c` (R4.4
 | `GameMode` (v1) | `RegisterGame`/`UnregisterGame`/`QueryStatus` (reports not active). |
 | `MemoryMonitor` (v1) | `LowMemoryWarning` signal; `version` only. |
 | `FileChooser` (v2) | `OpenFile`/`SaveFile` (directory mode via the `directory` option) through the LibGUI **FileChooserDialog** app (`SDE_PORTAL_FILE_CHOOSER`); returns the chosen `uris`. |
-| `Screenshot` (v1) | `Screenshot` captures the primary output (via the ScreenCast capture pipeline, on its own Wayland connection) into a PNG and returns its `uri`. |
+| `Screenshot` (v2) | `Screenshot` captures the primary output (via the ScreenCast capture pipeline, on its own Wayland connection) into a PNG and returns its `uri`. `PickColor` freezes the frame and opens the LibGUI **ColorPicker** app (`SDE_PORTAL_COLOR_PICKER`); the clicked pixel is sampled and returned as a `(ddd)` color. |
 | `Print` (v1) | `PreparePrint` via the LibGUI **PrintDialog** app (`SDE_PORTAL_PRINT_DIALOG`; printers from `lpstat`); `Print` feeds the document fd to `SDE_PORTAL_PRINT_CMD` (e.g. `lp`). |
 | `RemoteDesktop` (v2) | `CreateSession`/`SelectDevices`/`Start` (devices + the paired ScreenCast stream) and the `Notify*` input methods — pointer motion/absolute/button/axis and keyboard keycodes — injected via `wlr-virtual-pointer` / `virtual-keyboard`. `ConnectToEIS` (libei) is not supported, so apps use the `Notify*` methods. |
 | `GlobalShortcuts` (v1) | `CreateSession`/`BindShortcuts`/`ListShortcuts`. Shortcuts are stored in the SDE **config system** (`global-shortcuts.ini`, `[ShortcutN] Session/Id/Trigger`) for the compositor to bind like any other keybinding; activations are reported over a session FIFO (`sde-global-shortcuts.fifo`) and emitted as the `Activated` signal. |
@@ -87,7 +87,8 @@ The **FileChooser** portal is likewise a LibGUI app — `FileChooserDialog/`
 (`scripts/build-file-chooser-dialog.sh`), wrapping `GUI::FilePicker` — launched
 via `SDE_PORTAL_FILE_CHOOSER`. The **Print** dialog is `PrintDialog/`
 (`scripts/build-print-dialog.sh`), and the permission prompt is `AccessDialog/`
-(`scripts/build-access-dialog.sh`).
+(`scripts/build-access-dialog.sh`). The color picker is `ColorPicker/`
+(`scripts/build-color-picker.sh`).
 
 ## 3. SDE integration seams
 
@@ -126,13 +127,12 @@ To reach and surpass `xdg-desktop-portal-kde`:
   hidden/embedded cursor) and **RemoteDesktop** (input injection via the virtual
   pointer/keyboard) landed. Remaining: **InputCapture** (needs compositor input
   routing or libei), DMA-BUF + the metadata cursor mode, `pipewire-serial` (v6).
-- **GlobalShortcuts** — compositor global-shortcut registration.
-- **GlobalShortcuts** — landed (shortcuts in `global-shortcuts.ini`, activations
-  over the session FIFO).
-- **DynamicLauncher** (basics landed), **USB**/**Device**/**Camera** (v2)
-  (device/USB brokers and the camera PipeWire path).
-- A **permission store** integration and the `Request`/`Response` choreography for
-  the interfaces that return a `handle`.
+- **InputCapture** — needs compositor input routing or libei; still the `gtk`
+  fallback.
+- **Device**/**Camera** (v2) — device brokers and the camera PipeWire path
+  (USB/Microphone listing is in place; Camera needs a PipeWire camera producer).
+- A **permission store** integration, RestoreToken persistence for
+  ScreenCast/RemoteDesktop, and the `Request`/`Response` choreography.
 
 ## 6. Test
 
@@ -144,4 +144,6 @@ ProxyResolver, OpenURI, Notification), then — best effort — proves the real
 `scripts/run-screencast-test.sh` starts a headless SDE compositor and the backend,
 runs a ScreenCast session (CreateSession → SelectSources → Start), asserts the
 returned stream node id, that the PipeWire node `sde-screencast` is published, and
-that frames are captured (a consumer pull is best-effort).
+that frames are captured (a consumer pull is best-effort). It also checks the
+Screenshot portal writes a PNG and that PickColor returns a color (with a stub
+picker).

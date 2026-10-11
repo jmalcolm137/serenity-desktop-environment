@@ -45,7 +45,14 @@ echo 1
 EOF
 chmod +x "$RUNTIME/chooser.sh"
 
-SDE_PORTAL_CHOOSER="$RUNTIME/chooser.sh" SDE_STATE_DIR="$RUNTIME" WAYLAND_DISPLAY="$SOCK" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
+# A stub color picker for the Screenshot portal's PickColor: click at (7, 9).
+cat > "$RUNTIME/colorpicker.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "7 9"
+EOF
+chmod +x "$RUNTIME/colorpicker.sh"
+
+SDE_PORTAL_CHOOSER="$RUNTIME/chooser.sh" SDE_PORTAL_COLOR_PICKER="$RUNTIME/colorpicker.sh" SDE_STATE_DIR="$RUNTIME" WAYLAND_DISPLAY="$SOCK" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
 PORTAL_PID=$!
 trap 'kill "$PORTAL_PID" "$COMP_PID" 2>/dev/null || true' EXIT
 
@@ -150,6 +157,11 @@ else
     echo "  FAIL: screenshot file missing ($shot)"
     fail=1
 fi
+
+echo "=== PickColor portal ==="
+pick="$(call org.freedesktop.impl.portal.Screenshot.PickColor /h app "" "{}")"
+check "uint32 0" "$pick"
+check "color" "$pick"
 
 echo "=== the PipeWire stream node exists ==="
 if command -v pw-cli >/dev/null 2>&1; then

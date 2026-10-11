@@ -1111,11 +1111,50 @@ static const char screenshot_introspection[] =
     "      <arg type='u' name='response' direction='out'/>"
     "      <arg type='a{sv}' name='results' direction='out'/>"
     "    </method>"
+    "    <method name='PickColor'>"
+    "      <arg type='o' name='handle' direction='in'/>"
+    "      <arg type='s' name='app_id' direction='in'/>"
+    "      <arg type='s' name='parent_window' direction='in'/>"
+    "      <arg type='a{sv}' name='options' direction='in'/>"
+    "      <arg type='u' name='response' direction='out'/>"
+    "      <arg type='a{sv}' name='results' direction='out'/>"
+    "    </method>"
     "  </interface>"
     "</node>";
 
+// Sample the pixel at (x, y) of the PNG at `path`, returning RGB in 0..1.
+// Negative coordinates fall back to the centre of the frame.
+static gboolean sample_png_color(char const* path, int x, int y, double* out_r, double* out_g, double* out_b)
+{
+    GError* error = NULL;
+    GdkPixbuf* pixbuf = gdk_pixbuf_new_from_file(path, &error);
+    if (!pixbuf) {
+        if (error)
+            g_error_free(error);
+        return FALSE;
+    }
+    int width = gdk_pixbuf_get_width(pixbuf);
+    int height = gdk_pixbuf_get_height(pixbuf);
+    int channels = gdk_pixbuf_get_n_channels(pixbuf);
+    int rowstride = gdk_pixbuf_get_rowstride(pixbuf);
+    guchar* pixels = gdk_pixbuf_get_pixels(pixbuf);
+
+    if (x < 0 || x >= width)
+        x = width / 2;
+    if (y < 0 || y >= height)
+        y = height / 2;
+
+    guchar const* pixel = pixels + (gsize)y * rowstride + (gsize)x * channels;
+    *out_r = pixel[0] / 255.0;
+    *out_g = pixel[1] / 255.0;
+    *out_b = pixel[2] / 255.0;
+    g_object_unref(pixbuf);
+    return TRUE;
+}
+
 // Capture the screen (reusing the ScreenCast capture) into a PNG and return its
-// file:// URI.
+// file:// URI. For PickColor, launch the LibGUI ColorPicker on the frozen frame
+// (SDE_PORTAL_COLOR_PICKER), sample the clicked pixel and return it as (ddd).
 static void handle_screenshot(GDBusConnection* connection, const gchar* sender, const gchar* object_path,
     const gchar* interface_name, const gchar* method_name, GVariant* parameters,
     GDBusMethodInvocation* invocation, gpointer user_data)
@@ -1130,15 +1169,23 @@ static void handle_screenshot(GDBusConnection* connection, const gchar* sender, 
     GVariantBuilder results;
     g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
 
-    if (g_strcmp0(method_name, "Screenshot") != 0) {
+    gboolean const is_pick_color = g_strcmp0(method_name, "PickColor") == 0;
+    if (!is_pick_color && g_strcmp0(method_name, "Screenshot") != 0) {
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "unknown method %s", method_name);
         return;
     }
 
     char const* runtime = g_get_user_runtime_dir();
-    gchar* path = g_strdup_printf("%s/sde-screenshot-%d.png", runtime ? runtime : "/tmp", (int)getpid());
+    gchar* path = g_strdup_printf("%s/sde-%s-%d.png", runtime ? runtime : "/tmp",
+        is_pick_color ? "pickcolor" : "screenshot", (int)getpid());
     int captured = portal_screencast_capture_png(path);
-    if (captured == 0) {
+    if (captured != 0) {
+        g_free(path);
+        return_response(invocation, RESPONSE_OTHER_ERROR, &results);
+        return;
+    }
+
+    if (!is_pick_color) {
         if (gchar* uri = g_filename_to_uri(path, NULL, NULL)) {
             g_variant_builder_add(&results, "{sv}", "uri", g_variant_new_string(uri));
             g_free(uri);
@@ -1146,8 +1193,38 @@ static void handle_screenshot(GDBusConnection* connection, const gchar* sender, 
             return_response(invocation, RESPONSE_SUCCESS, &results);
             return;
         }
+        g_free(path);
+        return_response(invocation, RESPONSE_OTHER_ERROR, &results);
+        return;
     }
+
+    int px = -1;
+    int py = -1;
+    char const* picker = getenv("SDE_PORTAL_COLOR_PICKER");
+    if (picker && *picker) {
+        char const* argv[] = { picker, "-i", path, NULL };
+        char* out = NULL;
+        gint wait_status = 0;
+        GError* error = NULL;
+        if (g_spawn_sync(NULL, (char**)argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, &out, NULL, &wait_status, &error)
+            && out && g_spawn_check_wait_status(wait_status, NULL))
+            sscanf(g_strstrip(out), "%d %d", &px, &py);
+        if (out)
+            g_free(out);
+        if (error)
+            g_error_free(error);
+    }
+
+    double r = 0;
+    double g = 0;
+    double b = 0;
+    gboolean ok = sample_png_color(path, px, py, &r, &g, &b);
     g_free(path);
+    if (ok) {
+        g_variant_builder_add(&results, "{sv}", "color", g_variant_new("(ddd)", r, g, b));
+        return_response(invocation, RESPONSE_SUCCESS, &results);
+        return;
+    }
     return_response(invocation, RESPONSE_OTHER_ERROR, &results);
 }
 
@@ -1825,8 +1902,19 @@ static GVariant* filechooser_get_property(GDBusConnection* connection, const gch
     return generic_version_property(property_name, error, 2); // OpenFile, SaveFile
 }
 
+static GVariant* screenshot_get_property(GDBusConnection* connection, const gchar* sender, const gchar* object_path,
+    const gchar* interface_name, const gchar* property_name, GError** error, gpointer user_data)
+{
+    (void)connection;
+    (void)sender;
+    (void)object_path;
+    (void)interface_name;
+    (void)user_data;
+    return generic_version_property(property_name, error, 2); // Screenshot, PickColor
+}
+
 static const GDBusInterfaceVTable filechooser_vtable = { handle_filechooser, filechooser_get_property, NULL, { 0 } };
-static const GDBusInterfaceVTable screenshot_vtable = { handle_screenshot, simple_version_get_property, NULL, { 0 } };
+static const GDBusInterfaceVTable screenshot_vtable = { handle_screenshot, screenshot_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable print_vtable = { handle_print, simple_version_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable wallpaper_vtable = { handle_wallpaper, simple_version_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable secret_vtable = { handle_secret, simple_version_get_property, NULL, { 0 } };
