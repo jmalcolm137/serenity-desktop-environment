@@ -179,9 +179,14 @@ all outputs are covered, input routed to the lock surface on the output under th
 cursor). `Super+L` spawns the lock client (`SDE_LOCK_CMD`, default `swaylock`).
 Both scripts pass, including a two-output lock.
 
-**Remaining for R4.1:** dim/screen-blank before lock, and re-configuring lock
-surfaces on output resize/scale while locked. (Idle-to-lock is delivered by
-R4.2's `sde-idle`.)
+**R4.1 complete.** Blank-before-lock and lock-surface reconfiguration landed:
+`tools/sde-dpms.c` sets output power (blank/restore) and `sde-idle` gained a
+`resume` command, so the session arms *blank at N s, lock at M s, restore on
+activity* (`SDE_SESSION_IDLE_DPMS_SECONDS`); the compositor re-configures a lock
+surface when its output's size changes while locked (guarded against the
+per-frame `output.commit`). Verified by `scripts/run-idle-test.sh` (blank +
+resume) and `scripts/run-lock-test.sh` phase (C) (resize while locked →
+`surface configured 1024x768`).
 
 ### R4.2 — Session lifecycle & supervisor
 
