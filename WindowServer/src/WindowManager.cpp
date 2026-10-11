@@ -315,65 +315,44 @@ static void set_tiled(Server& server, Toplevel& toplevel, WindowTileType type)
     dbgln("WindowServer: tiled wm_id={} as {}", toplevel.wm_id, to_underlying(type));
 }
 
-bool handle_tile_key(Server& server, u32 keysym, u32 modifiers)
+static void toggle_tile(Server& server, Toplevel& toplevel, WindowTileType type)
 {
-    // Plain Super (or Super+Alt); Ctrl/Shift combos belong to other bindings.
-    if ((modifiers & WLR_MODIFIER_LOGO) == 0)
-        return false;
-    if ((modifiers & (WLR_MODIFIER_CTRL | WLR_MODIFIER_SHIFT)) != 0)
-        return false;
-    bool const with_alt = (modifiers & WLR_MODIFIER_ALT) != 0;
+    if (toplevel.tile_type == type)
+        set_untiled(toplevel);
+    else
+        set_tiled(server, toplevel, type);
+}
 
+static bool tile_focused(Server& server, WindowTileType type)
+{
     auto* toplevel = focused_toplevel(server);
     if (!toplevel)
         return false;
+    toggle_tile(server, *toplevel, type);
+    return true;
+}
 
-    if (!with_alt && keysym == XKB_KEY_Up) {
-        if (toplevel->maximized)
-            set_untiled(*toplevel);
-        else
-            set_tiled(server, *toplevel, WindowTileType::Maximized);
-        return true;
-    }
-    if (!with_alt && keysym == XKB_KEY_Down) {
-        if (toplevel->maximized) {
-            set_untiled(*toplevel);
-        } else {
-            toplevel->minimized = true;
-            update_toplevel_visibility(*toplevel);
-            emit_window_state(*toplevel);
-        }
-        return true;
-    }
-    if (!with_alt && keysym == XKB_KEY_Left) {
-        if (toplevel->tile_type == WindowTileType::Left)
-            set_untiled(*toplevel);
-        else
-            set_tiled(server, *toplevel, WindowTileType::Left);
-        return true;
-    }
-    if (!with_alt && keysym == XKB_KEY_Right) {
-        if (toplevel->tile_type == WindowTileType::Right)
-            set_untiled(*toplevel);
-        else
-            set_tiled(server, *toplevel, WindowTileType::Right);
-        return true;
-    }
-    if (with_alt && (keysym == XKB_KEY_Left || keysym == XKB_KEY_Right)) {
-        if (toplevel->tile_type == WindowTileType::HorizontallyMaximized)
-            set_untiled(*toplevel);
-        else
-            set_tiled(server, *toplevel, WindowTileType::HorizontallyMaximized);
-        return true;
-    }
-    if (with_alt && (keysym == XKB_KEY_Up || keysym == XKB_KEY_Down)) {
-        if (toplevel->tile_type == WindowTileType::VerticallyMaximized)
-            set_untiled(*toplevel);
-        else
-            set_tiled(server, *toplevel, WindowTileType::VerticallyMaximized);
-        return true;
-    }
-    return false;
+static bool maximize_focused(Server& server)
+{
+    auto* toplevel = focused_toplevel(server);
+    if (!toplevel)
+        return false;
+    if (toplevel->maximized)
+        set_untiled(*toplevel);
+    else
+        set_tiled(server, *toplevel, WindowTileType::Maximized);
+    return true;
+}
+
+static bool minimize_focused(Server& server)
+{
+    auto* toplevel = focused_toplevel(server);
+    if (!toplevel)
+        return false;
+    toplevel->minimized = true;
+    update_toplevel_visibility(*toplevel);
+    emit_window_state(*toplevel);
+    return true;
 }
 
 // --- drag-to-edge snapping --------------------------------------------------
@@ -613,41 +592,28 @@ void switch_workspace(Server& server, u32 row, u32 column, bool carry_focused)
     dbgln("WindowServer: switched to workspace {},{}", row, column);
 }
 
-bool handle_workspace_key(Server& server, u32 keysym, u32 modifiers)
+static bool switch_direction(Server& server, int dx, int dy, bool carry)
 {
-    bool const ctrl = (modifiers & WLR_MODIFIER_CTRL) != 0;
-    bool const alt = (modifiers & WLR_MODIFIER_ALT) != 0;
-    if (!ctrl || !alt)
-        return false;
-    bool const carry = (modifiers & WLR_MODIFIER_SHIFT) != 0;
-
     u32 row = s_current_row;
     u32 column = s_current_column;
-    switch (keysym) {
-    case XKB_KEY_Left:
+    if (dx < 0) {
         if (column == 0)
             return true;
         column--;
-        break;
-    case XKB_KEY_Right:
+    } else if (dx > 0) {
         if (column + 1 >= s_columns)
             return true;
         column++;
-        break;
-    case XKB_KEY_Up:
+    }
+    if (dy < 0) {
         if (row == 0)
             return true;
         row--;
-        break;
-    case XKB_KEY_Down:
+    } else if (dy > 0) {
         if (row + 1 >= s_rows)
             return true;
         row++;
-        break;
-    default:
-        return false;
     }
-
     switch_workspace(server, row, column, carry);
     return true;
 }
@@ -721,6 +687,42 @@ void tell_wms_applet_area_size_changed(Server&, Gfx::IntSize size)
     for (auto& connection : g_connections) {
         if (connection->manager_window_id() >= 0)
             connection->async_applet_area_size_changed(connection->manager_window_id(), size);
+    }
+}
+
+bool perform_action(Server& server, Config::Action action)
+{
+    switch (action) {
+    case Config::Action::SwitchWorkspaceLeft:
+        return switch_direction(server, -1, 0, false);
+    case Config::Action::SwitchWorkspaceRight:
+        return switch_direction(server, 1, 0, false);
+    case Config::Action::SwitchWorkspaceUp:
+        return switch_direction(server, 0, -1, false);
+    case Config::Action::SwitchWorkspaceDown:
+        return switch_direction(server, 0, 1, false);
+    case Config::Action::CarryWorkspaceLeft:
+        return switch_direction(server, -1, 0, true);
+    case Config::Action::CarryWorkspaceRight:
+        return switch_direction(server, 1, 0, true);
+    case Config::Action::CarryWorkspaceUp:
+        return switch_direction(server, 0, -1, true);
+    case Config::Action::CarryWorkspaceDown:
+        return switch_direction(server, 0, 1, true);
+    case Config::Action::TileLeft:
+        return tile_focused(server, WindowTileType::Left);
+    case Config::Action::TileRight:
+        return tile_focused(server, WindowTileType::Right);
+    case Config::Action::Maximize:
+        return maximize_focused(server);
+    case Config::Action::Minimize:
+        return minimize_focused(server);
+    case Config::Action::MaximizeHorizontal:
+        return tile_focused(server, WindowTileType::HorizontallyMaximized);
+    case Config::Action::MaximizeVertical:
+        return tile_focused(server, WindowTileType::VerticallyMaximized);
+    default:
+        return false; // Lock is handled by the compositor (main.cpp).
     }
 }
 

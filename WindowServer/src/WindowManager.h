@@ -8,6 +8,8 @@
 
 #include "Model.h"
 
+#include "Config.h"
+
 #include <AK/NonnullOwnPtr.h>
 #include <AK/NonnullRefPtr.h>
 #include <LibGfx/Forward.h>
@@ -72,16 +74,13 @@ void switch_workspace(Server&, u32 row, u32 column, bool carry_focused);
 // Set a window's scene visibility from its stack and minimized state.
 void update_toplevel_visibility(Toplevel&);
 
-// Ctrl+Alt+arrow switches stacks; add Shift to carry the focused window. Returns
-// true when the key was consumed.
-bool handle_workspace_key(Server&, u32 keysym, u32 modifiers);
-
 // Super-key shortcuts the Taskbar expects (WindowManagerClient.ipc):
 // Super, Super+Space, Super+D and Super+digit.
 bool handle_super_key(Server&, u32 keysym, u32 modifiers, bool pressed);
 
-// Snapping (WS2): Super+arrows maximize/minimize/tile the focused window.
-bool handle_tile_key(Server&, u32 keysym, u32 modifiers);
+// R4.4: run a configured keybinding action (workspaces, tiling, maximize,
+// minimize) against the focused window/stack. Lock is handled by the compositor.
+bool perform_action(Server&, Config::Action);
 
 // WS2 drag-to-edge snapping: call while moving a window (updates the tile
 // preview) and on release (tiles to the previewed target, if any).

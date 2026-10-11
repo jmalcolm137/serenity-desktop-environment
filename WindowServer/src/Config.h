@@ -9,6 +9,7 @@
 #include <AK/ByteBuffer.h>
 #include <AK/ByteString.h>
 #include <AK/Function.h>
+#include <AK/Optional.h>
 #include <AK/Span.h>
 #include <AK/Vector.h>
 
@@ -28,6 +29,7 @@
 //   [Focus]      FollowsMouse           bool    (focus on hover, not just click)
 //   [Effects]    WindowGeometry        bool     (geometry HUD while moving/resizing)
 //   [Output]     DefaultScale          0..4      (0 = auto integer HiDPI scale)
+//   [Keybindings] <Action>              combo(s)  (e.g. Ctrl+Alt+Left; see Action)
 //
 // Invalid values are rejected (the previous value is kept) and reported through
 // diagnostics(); see `scripts/sde-config validate`.
@@ -96,5 +98,44 @@ Vector<ByteString> const& diagnostics();
 
 // The user's config file path, for tooling and error messages.
 ByteString file_path();
+
+// --- keybindings (R4.4) ------------------------------------------------------
+
+// Modifier bits, independent of wlroots (main.cpp maps WLR_MODIFIER_* to these).
+enum Modifier : u32 {
+    ModCtrl = 1 << 0,
+    ModAlt = 1 << 1,
+    ModShift = 1 << 2,
+    ModSuper = 1 << 3,
+};
+
+// The compositor actions a keybinding can be assigned to.
+enum class Action {
+    SwitchWorkspaceLeft,
+    SwitchWorkspaceRight,
+    SwitchWorkspaceUp,
+    SwitchWorkspaceDown,
+    CarryWorkspaceLeft,
+    CarryWorkspaceRight,
+    CarryWorkspaceUp,
+    CarryWorkspaceDown,
+    TileLeft,
+    TileRight,
+    Maximize,
+    Minimize,
+    MaximizeHorizontal,
+    MaximizeVertical,
+    Lock,
+    _Count,
+};
+
+// The action bound to (keysym, our Modifier mask), if any.
+Optional<Action> action_for(u32 keysym, u32 modifiers);
+
+// The effective combo string for an action (e.g. "Ctrl+Alt+Left"), for tooling.
+ByteString const& binding_text(Action);
+
+// Action names in declaration order, for tooling (sde-config list).
+Vector<ByteString> const& action_names();
 
 }

@@ -6,6 +6,7 @@
 
 #include "Config.h"
 
+#include <AK/Array.h>
 #include <AK/Format.h>
 #include <AK/Optional.h>
 #include <AK/StringView.h>
@@ -15,6 +16,7 @@
 #include <LibCore/FileWatcher.h>
 #include <LibCore/Timer.h>
 #include <stdlib.h>
+#include <xkbcommon/xkbcommon.h>
 
 namespace Config {
 
@@ -25,6 +27,87 @@ static Effects g_effects;
 static Output g_output;
 static Vector<ByteString> g_applet_order;
 static Vector<ByteString> g_diagnostics;
+
+// --- keybindings (R4.4) ------------------------------------------------------
+
+struct Binding {
+    Action action;
+    u32 keysym;
+    u32 modifiers;
+};
+
+static Vector<Binding> g_bindings;
+static constexpr size_t action_count = static_cast<size_t>(Action::_Count);
+static Array<ByteString, action_count> g_binding_text;
+static Vector<ByteString> g_action_names;
+
+struct BindingSpec {
+    StringView name;
+    Action action;
+    StringView default_combos;
+};
+
+// Defaults mirror the compositor's historical hardcoded bindings.
+static constexpr BindingSpec s_binding_specs[] = {
+    { "SwitchWorkspaceLeft"sv, Action::SwitchWorkspaceLeft, "Ctrl+Alt+Left"sv },
+    { "SwitchWorkspaceRight"sv, Action::SwitchWorkspaceRight, "Ctrl+Alt+Right"sv },
+    { "SwitchWorkspaceUp"sv, Action::SwitchWorkspaceUp, "Ctrl+Alt+Up"sv },
+    { "SwitchWorkspaceDown"sv, Action::SwitchWorkspaceDown, "Ctrl+Alt+Down"sv },
+    { "CarryWorkspaceLeft"sv, Action::CarryWorkspaceLeft, "Ctrl+Shift+Alt+Left"sv },
+    { "CarryWorkspaceRight"sv, Action::CarryWorkspaceRight, "Ctrl+Shift+Alt+Right"sv },
+    { "CarryWorkspaceUp"sv, Action::CarryWorkspaceUp, "Ctrl+Shift+Alt+Up"sv },
+    { "CarryWorkspaceDown"sv, Action::CarryWorkspaceDown, "Ctrl+Shift+Alt+Down"sv },
+    { "TileLeft"sv, Action::TileLeft, "Super+Left"sv },
+    { "TileRight"sv, Action::TileRight, "Super+Right"sv },
+    { "Maximize"sv, Action::Maximize, "Super+Up"sv },
+    { "Minimize"sv, Action::Minimize, "Super+Down"sv },
+    { "MaximizeHorizontal"sv, Action::MaximizeHorizontal, "Super+Alt+Left,Super+Alt+Right"sv },
+    { "MaximizeVertical"sv, Action::MaximizeVertical, "Super+Alt+Up,Super+Alt+Down"sv },
+    { "Lock"sv, Action::Lock, "Super+L"sv },
+};
+
+// "Ctrl+Alt+Left" -> (XKB_KEY_Left, ModCtrl|ModAlt). Returns false if it does not
+// name a non-empty modifier set and exactly one keysym.
+static bool parse_combo(StringView combo, u32& keysym, u32& modifiers)
+{
+    keysym = 0;
+    modifiers = 0;
+    bool saw_key = false;
+    for (auto part : combo.split_view('+')) {
+        auto token = part.trim_whitespace();
+        if (token.is_empty())
+            continue;
+        if (token == "Ctrl"sv)
+            modifiers |= ModCtrl;
+        else if (token == "Alt"sv)
+            modifiers |= ModAlt;
+        else if (token == "Shift"sv)
+            modifiers |= ModShift;
+        else if (token == "Super"sv || token == "Logo"sv || token == "Meta"sv)
+            modifiers |= ModSuper;
+        else {
+            if (saw_key)
+                return false;
+            auto key_name = token.to_byte_string();
+            keysym = xkb_keysym_from_name(key_name.characters(), XKB_KEYSYM_CASE_INSENSITIVE);
+            if (keysym == XKB_KEY_NoSymbol)
+                return false;
+            saw_key = true;
+        }
+    }
+    return saw_key && modifiers != 0;
+}
+
+static void add_bindings(Vector<Binding>& out, Action action, StringView combos)
+{
+    for (auto combo : combos.split_view(',')) {
+        u32 keysym = 0;
+        u32 modifiers = 0;
+        if (parse_combo(combo.trim_whitespace(), keysym, modifiers))
+            out.append({ action, keysym, modifiers });
+    }
+}
+
 
 ByteString state_directory()
 {
@@ -166,6 +249,25 @@ void load()
             g_applet_order.append(trimmed);
     }
 
+    g_bindings.clear();
+    g_action_names.clear();
+    for (auto const& spec : s_binding_specs) {
+        g_action_names.append(spec.name);
+        auto text = read_entry(user, defaults, "Keybindings"sv, spec.name);
+        if (text.is_empty())
+            text = spec.default_combos;
+        Vector<Binding> parsed;
+        add_bindings(parsed, spec.action, text);
+        if (parsed.is_empty()) {
+            g_diagnostics.append(ByteString::formatted("[Keybindings] {}='{}' invalid (expected e.g. {})", spec.name, text, spec.default_combos));
+            add_bindings(parsed, spec.action, spec.default_combos);
+            text = spec.default_combos;
+        }
+        for (auto& binding : parsed)
+            g_bindings.append(binding);
+        g_binding_text[static_cast<size_t>(spec.action)] = text;
+    }
+
     for (auto const& diagnostic : g_diagnostics)
         warnln("WindowServer: config: {}", diagnostic);
 
@@ -230,6 +332,25 @@ Vector<ByteString> const& applet_order()
 Vector<ByteString> const& diagnostics()
 {
     return g_diagnostics;
+}
+
+Optional<Action> action_for(u32 keysym, u32 modifiers)
+{
+    for (auto const& binding : g_bindings) {
+        if (binding.keysym == keysym && binding.modifiers == modifiers)
+            return binding.action;
+    }
+    return {};
+}
+
+ByteString const& binding_text(Action action)
+{
+    return g_binding_text[static_cast<size_t>(action)];
+}
+
+Vector<ByteString> const& action_names()
+{
+    return g_action_names;
 }
 
 }

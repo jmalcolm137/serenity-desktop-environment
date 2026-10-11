@@ -36,6 +36,8 @@ check "EdgeThreshold=48" "$defaults"
 check "FollowsMouse=false" "$defaults"
 check "WindowGeometry=true" "$defaults"
 check "DefaultScale=0" "$defaults"
+check "SwitchWorkspaceRight=Ctrl+Alt+Right" "$defaults"
+check "Lock=Super+L" "$defaults"
 
 echo "=== (B) set / get ==="
 sde_config set Focus FollowsMouse true >/dev/null
@@ -47,6 +49,14 @@ else
     fail=1
 fi
 check "EdgeThreshold=120" "$(sde_config list)"
+sde_config set Keybindings SwitchWorkspaceRight Ctrl+Alt+Page_Down >/dev/null
+if [ "$(sde_config get Keybindings SwitchWorkspaceRight)" = "Ctrl+Alt+Page_Down" ]; then
+    echo "  ok: rebind SwitchWorkspaceRight=Ctrl+Alt+Page_Down"
+else
+    echo "  FAIL: rebind (got '$(sde_config get Keybindings SwitchWorkspaceRight)')"
+    fail=1
+fi
+sde_config set Keybindings SwitchWorkspaceRight Ctrl+Alt+Right >/dev/null
 
 echo "=== (C) validation ==="
 if sde_config validate >/dev/null 2>&1; then
@@ -64,6 +74,15 @@ else
     check "Rows='99' invalid (expected 1-16)" "$(cat "$RUNTIME/invalid.log")"
 fi
 sde_config set Workspaces Rows 2 >/dev/null  # back to a valid grid
+sde_config set Keybindings SwitchWorkspaceRight Ctrl+Alt+Bogus >/dev/null
+if sde_config validate >"$RUNTIME/invalid-kb.log" 2>&1; then
+    echo "  FAIL: invalid keybinding accepted"
+    fail=1
+else
+    echo "  ok: invalid keybinding rejected"
+    check "SwitchWorkspaceRight='Ctrl+Alt+Bogus' invalid" "$(cat "$RUNTIME/invalid-kb.log")"
+fi
+sde_config set Keybindings SwitchWorkspaceRight Ctrl+Alt+Right >/dev/null
 
 echo "=== (D) live reload ==="
 sock="sde-config-$$"

@@ -286,20 +286,34 @@ static void keyboard_modifiers(wl_listener* listener, void*)
     wlr_seat_keyboard_notify_modifiers(keyboard->server->seat, &keyboard->keyboard->modifiers);
 }
 
+// Map wlroots modifier bits to Config's neutral modifier mask.
+static u32 config_modifiers(uint32_t wlr_modifiers)
+{
+    u32 modifiers = 0;
+    if (wlr_modifiers & WLR_MODIFIER_CTRL)
+        modifiers |= Config::ModCtrl;
+    if (wlr_modifiers & WLR_MODIFIER_ALT)
+        modifiers |= Config::ModAlt;
+    if (wlr_modifiers & WLR_MODIFIER_SHIFT)
+        modifiers |= Config::ModShift;
+    if (wlr_modifiers & WLR_MODIFIER_LOGO)
+        modifiers |= Config::ModSuper;
+    return modifiers;
+}
+
+// Run a configured keybinding action (R4.4).
+static bool perform_key_action(Server& server, Config::Action action)
+{
+    if (action == Config::Action::Lock) {
+        spawn_lock_client();
+        return true;
+    }
+    return WindowManager::perform_action(server, action);
+}
+
 static bool handle_keybinding(Server& server, xkb_keysym_t sym, uint32_t modifiers)
 {
-    // Super+L locks the session (spawns a standard ext-session-lock-v1 client,
-    // swaylock by default).
-    if (modifiers & WLR_MODIFIER_LOGO) {
-        switch (sym) {
-        case XKB_KEY_l:
-        case XKB_KEY_L:
-            spawn_lock_client();
-            return true;
-        default:
-            break;
-        }
-    }
+    // Alt+Escape quits the compositor (development convenience).
     if (modifiers & WLR_MODIFIER_ALT) {
         switch (sym) {
         case XKB_KEY_Escape:
@@ -358,10 +372,12 @@ static void keyboard_key(wl_listener* listener, void* data)
         return;
     }
     if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
-        for (int i = 0; i < syms_count; ++i)
-            handled |= WindowManager::handle_workspace_key(server, syms[i], modifiers);
-        for (int i = 0; i < syms_count; ++i)
-            handled |= WindowManager::handle_tile_key(server, syms[i], modifiers);
+        // R4.4: configured keybindings (defaults match the historical bindings).
+        u32 const config_mods = config_modifiers(modifiers);
+        for (int i = 0; i < syms_count; ++i) {
+            if (auto action = Config::action_for(syms[i], config_mods); action.has_value())
+                handled |= perform_key_action(server, action.value());
+        }
     }
     {
         // The window switcher (Alt+Tab / Super+Tab) grabs the keyboard while open.
@@ -3103,6 +3119,9 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
                 order.append(Config::applet_order()[i]);
             }
             outln("Order={}", order.to_byte_string());
+            outln("[Keybindings]");
+            for (size_t i = 0; i < Config::action_names().size(); ++i)
+                outln("{}={}", Config::action_names()[i], Config::binding_text(static_cast<Config::Action>(i)));
         }
         for (auto const& diagnostic : Config::diagnostics())
             warnln("sde-config: {}", diagnostic);
