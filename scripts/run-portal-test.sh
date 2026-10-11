@@ -221,6 +221,12 @@ check "uint32 0" "$(call org.freedesktop.impl.portal.OpenURI.Activate /h app "" 
 sleep 0.3
 check "app" "$(cat "$RUNTIME/opened.txt" 2>/dev/null || echo '(no opener call)')"
 
+echo "=== Email / Location ==="
+check "uint32 0" "$(call org.freedesktop.impl.portal.Email.ComposeEmail /x app "" "user@example.com" "{}" "{}")"
+sleep 0.3
+check "mailto:user@example.com" "$(cat "$RUNTIME/opened.txt" 2>/dev/null || echo '(no opener call)')"
+check "uint32 2" "$(call org.freedesktop.impl.portal.Location.CreateSession /h /org/freedesktop/portal/desktop/session/loc app "{}")"
+
 echo "=== backend declaration ==="
 portals_conf="$SDE_ROOT/contrib/xdg-desktop-portal/portals.conf"
 portal_file="$SDE_ROOT/contrib/xdg-desktop-portal/serenity.portal"
