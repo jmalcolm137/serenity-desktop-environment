@@ -88,8 +88,7 @@ struct screencast_state {
     uint32_t negotiated_spa_format;
     uint32_t negotiated_fourcc;
     uint64_t negotiated_modifier;
-    gboolean fixate_offered;
-    uint64_t fixate_modifier;
+    uint64_t preferred_modifier;
     struct spa_hook stream_listener;
     struct spa_hook core_listener;
     struct spa_hook registry_listener;
@@ -306,7 +305,7 @@ static void portal_buffer_destroy(struct portal_buffer* pcb)
 static void announce_stream_params(struct screencast_state* state);
 static void write_cursor_meta(struct screencast_state* state, struct spa_buffer* spa_buffer);
 static int build_enum_formats(struct screencast_state* state, struct spa_pod_builder* b,
-    const struct spa_pod** params, gboolean fixate, uint64_t fixate_modifier, int width, int height);
+    const struct spa_pod** params, int width, int height);
 
 // Allocate the backing memory for a PipeWire buffer: a DMA-BUF (zero-copy) when
 // the negotiated format carries a modifier, else a memfd. Mirrors KWin's
@@ -528,36 +527,12 @@ static void on_stream_param_changed(void* data, uint32_t id, const struct spa_po
         state->negotiated_fourcc = DRM_FORMAT_ARGB8888;
 
     if (info.flags & SPA_VIDEO_FLAG_MODIFIER) {
-        // Dual modifier negotiation: pick one we can allocate and re-offer it
-        // fixated (mirrors KWin's onStreamParamChanged). Only offer once; if
-        // PipeWire still reports fixation-required, accept our choice.
-        if (info.flags & SPA_VIDEO_FLAG_MODIFIER_FIXATION_REQUIRED && !state->fixate_offered) {
-            const struct spa_pod_prop* prop = spa_pod_find_prop(param, NULL, SPA_FORMAT_VIDEO_modifier);
-            uint64_t chosen = state->capture_dmabuf_modifiers[0];
-            if (prop) {
-                uint32_t count = SPA_POD_CHOICE_N_VALUES(&prop->value);
-                uint64_t const* values = SPA_POD_CHOICE_VALUES(&prop->value);
-                for (uint32_t i = 0; i < count; ++i) {
-                    if (test_dmabuf_modifier(state, values[i])) {
-                        chosen = values[i];
-                        break;
-                    }
-                }
-            }
-            state->fixate_offered = TRUE;
-            state->fixate_modifier = chosen;
-            fprintf(stderr, "xdg-desktop-portal-serenity: screencast fixating DMA-BUF modifier=0x%llx\n", (unsigned long long)chosen);
-            uint8_t buffer[4096];
-            struct spa_pod_builder builder = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
-            const struct spa_pod* params[4];
-            int n = build_enum_formats(state, &builder, params, TRUE, chosen, state->stream_width, state->stream_height);
-            pw_stream_update_params(state->stream, params, n);
-            return;
-        }
+        // The stream offers a pre-fixated modifier; if the daemon has not
+        // fixated it yet, adopt our preferred one.
         state->negotiated_dmabuf = state->gbm && state->capture_has_dmabuf;
-        state->negotiated_modifier = state->negotiated_dmabuf
-            ? ((info.flags & SPA_VIDEO_FLAG_MODIFIER_FIXATION_REQUIRED) ? state->fixate_modifier : info.modifier)
-            : 0;
+        state->negotiated_modifier = (info.flags & SPA_VIDEO_FLAG_MODIFIER_FIXATION_REQUIRED)
+            ? state->preferred_modifier
+            : info.modifier;
     } else {
         state->negotiated_dmabuf = FALSE;
         state->negotiated_modifier = 0;
@@ -621,13 +596,25 @@ static const struct pw_core_events core_events = {
     .done = on_core_done,
 };
 
-// Create and connect the PipeWire stream for `width`x`height` BGRA video. Returns
-// the node id, or -1.
-// Build the EnumFormat list: a DMA-BUF format (with the compositor's
-// modifiers, either as a DONT_FIXATE choice or fixated to one) plus a memfd
-// fallback. Mirrors KWin's buildFormats().
+// Choose a DMA-BUF modifier the compositor offers and GBM can allocate.
+static uint64_t choose_dmabuf_modifier(struct screencast_state* state)
+{
+    for (size_t i = 0; i < state->capture_dmabuf_modifier_count; ++i) {
+        if (state->capture_dmabuf_modifiers[i] == 0)
+            return 0; // linear is the most portable
+    }
+    for (size_t i = 0; i < state->capture_dmabuf_modifier_count; ++i) {
+        if (test_dmabuf_modifier(state, state->capture_dmabuf_modifiers[i]))
+            return state->capture_dmabuf_modifiers[i];
+    }
+    return DRM_FORMAT_MOD_INVALID;
+}
+
+// Build the EnumFormat list: a pre-fixated DMA-BUF format (single modifier) plus
+// a memfd fallback, offered up front so the link does not have to be
+// renegotiated to fixate a modifier.
 static int build_enum_formats(struct screencast_state* state, struct spa_pod_builder* b,
-    const struct spa_pod** params, gboolean fixate, uint64_t fixate_modifier, int width, int height)
+    const struct spa_pod** params, int width, int height)
 {
     int n = 0;
     struct spa_rectangle size = SPA_RECTANGLE((uint32_t)width, (uint32_t)height);
@@ -636,12 +623,12 @@ static int build_enum_formats(struct screencast_state* state, struct spa_pod_bui
     struct spa_fraction rate = SPA_FRACTION(30, 1);
 
     if (state->capture_has_dmabuf && state->dmabuf && state->gbm && state->dmabuf_enabled && state->capture_dmabuf_modifier_count > 0) {
+        uint64_t modifier = choose_dmabuf_modifier(state);
         uint32_t spa_format = fourcc_to_spa_video_format(state->capture_dmabuf_fourcc);
         if (spa_format == SPA_VIDEO_FORMAT_UNKNOWN)
             spa_format = SPA_VIDEO_FORMAT_BGRA;
-        // When fixating, offer the chosen modifier as a single fixated format
-        // first, then the full DONT_FIXATE choice (as KWin does).
-        if (fixate) {
+        if (modifier != DRM_FORMAT_MOD_INVALID) {
+            state->preferred_modifier = modifier;
             struct spa_pod_frame frame;
             spa_pod_builder_push_object(b, &frame, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat);
             spa_pod_builder_add(b, SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video), 0);
@@ -651,27 +638,7 @@ static int build_enum_formats(struct screencast_state* state, struct spa_pod_bui
                 SPA_POD_CHOICE_RANGE_Rectangle(SPA_POD_Rectangle(&size), SPA_POD_Rectangle(&size_min), SPA_POD_Rectangle(&size_max)), 0);
             spa_pod_builder_add(b, SPA_FORMAT_VIDEO_framerate, SPA_POD_Fraction(&rate), 0);
             spa_pod_builder_prop(b, SPA_FORMAT_VIDEO_modifier, SPA_POD_PROP_FLAG_MANDATORY);
-            spa_pod_builder_long(b, fixate_modifier);
-            params[n++] = spa_pod_builder_pop(b, &frame);
-        }
-        struct spa_pod_frame frame;
-        struct spa_pod_frame choice;
-        {
-            spa_pod_builder_push_object(b, &frame, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat);
-            spa_pod_builder_add(b, SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video), 0);
-            spa_pod_builder_add(b, SPA_FORMAT_mediaSubtype, SPA_POD_Id(SPA_MEDIA_SUBTYPE_raw), 0);
-            spa_pod_builder_add(b, SPA_FORMAT_VIDEO_format, SPA_POD_Id(spa_format), 0);
-            spa_pod_builder_add(b, SPA_FORMAT_VIDEO_size,
-                SPA_POD_CHOICE_RANGE_Rectangle(SPA_POD_Rectangle(&size), SPA_POD_Rectangle(&size_min), SPA_POD_Rectangle(&size_max)), 0);
-            spa_pod_builder_add(b, SPA_FORMAT_VIDEO_framerate, SPA_POD_Fraction(&rate), 0);
-            spa_pod_builder_prop(b, SPA_FORMAT_VIDEO_modifier, SPA_POD_PROP_FLAG_MANDATORY | SPA_POD_PROP_FLAG_DONT_FIXATE);
-            spa_pod_builder_push_choice(b, &choice, SPA_CHOICE_Enum, 0);
-            for (size_t i = 0; i < state->capture_dmabuf_modifier_count; ++i) {
-                spa_pod_builder_long(b, state->capture_dmabuf_modifiers[i]);
-                if (i == 0)
-                    spa_pod_builder_long(b, state->capture_dmabuf_modifiers[i]);
-            }
-            spa_pod_builder_pop(b, &choice);
+            spa_pod_builder_long(b, modifier);
             params[n++] = spa_pod_builder_pop(b, &frame);
         }
     }
@@ -693,6 +660,8 @@ static int build_enum_formats(struct screencast_state* state, struct spa_pod_bui
 
 static int start_pipewire_stream(int width, int height)
 {
+    g_state.stream_width = width;
+    g_state.stream_height = height;
     if (!g_state.pw_loop) {
         pw_init(NULL, NULL);
         g_state.pw_loop = pw_thread_loop_new("sde-screencast", NULL);
@@ -738,13 +707,12 @@ static int start_pipewire_stream(int width, int height)
         return -1;
     }
     pw_stream_add_listener(g_state.stream, &g_state.stream_listener, &stream_events, &g_state);
-    g_state.fixate_offered = FALSE;
     g_state.negotiated = FALSE;
 
     uint8_t buffer[4096];
     struct spa_pod_builder builder = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
     const struct spa_pod* params[8];
-    int param_count = build_enum_formats(&g_state, &builder, params, FALSE, 0, width, height);
+    int param_count = build_enum_formats(&g_state, &builder, params, width, height);
     // Also offer the buffer layout and metadata up front, so the server can
     // negotiate them together with the format.
     {
@@ -1444,9 +1412,10 @@ static gboolean ensure_wayland(struct screencast_state* state)
     }
     if (!state->gbm)
         fprintf(stderr, "xdg-desktop-portal-serenity: screencast could not open GBM (%s); using memfd\n", node);
-    // DMA-BUF capture is opt-in: this PipeWire build fails client-node buffer
-    // allocation for the DMA-BUF path (docs/15 §6.2), so memfd is the default.
-    state->dmabuf_enabled = getenv("SDE_SCREENCAST_DMABUF") != NULL;
+    // DMA-BUF capture is preferred where the compositor/PipeWire support it;
+    // the stream always offers a memfd fallback, so it degrades safely. Set
+    // SDE_SCREENCAST_NO_DMABUF to force memfd.
+    state->dmabuf_enabled = getenv("SDE_SCREENCAST_NO_DMABUF") == NULL;
 
     state->display = wl_display_connect(NULL);
     if (!state->display) {

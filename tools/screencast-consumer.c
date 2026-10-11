@@ -163,8 +163,26 @@ int main(int argc, char** argv)
     struct spa_rectangle max_size = SPA_RECTANGLE(16384, 16384);
     struct spa_fraction min_rate = SPA_FRACTION(0, 1);
     struct spa_fraction max_rate = SPA_FRACTION(1000, 1);
-    struct spa_pod* params[4];
+    struct spa_pod* params[5];
     int n_params = 0;
+    // With CONSUMER_DMABUF set, first advertise a DMA-BUF format (modifier,
+    // DONT_FIXATE) so a DMA-BUF producer can be negotiated; else SHM only.
+    if (getenv("CONSUMER_DMABUF")) {
+        struct spa_pod_frame frame;
+        spa_pod_builder_push_object(&builder, &frame, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat);
+        spa_pod_builder_add(&builder, SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video), 0);
+        spa_pod_builder_add(&builder, SPA_FORMAT_mediaSubtype, SPA_POD_Id(SPA_MEDIA_SUBTYPE_raw), 0);
+        spa_pod_builder_add(&builder, SPA_FORMAT_VIDEO_format,
+            SPA_POD_CHOICE_ENUM_Id(7, SPA_VIDEO_FORMAT_BGRA, SPA_VIDEO_FORMAT_BGRA, SPA_VIDEO_FORMAT_BGRx,
+                SPA_VIDEO_FORMAT_RGBA, SPA_VIDEO_FORMAT_RGBx, SPA_VIDEO_FORMAT_ARGB, SPA_VIDEO_FORMAT_xRGB), 0);
+        spa_pod_builder_add(&builder, SPA_FORMAT_VIDEO_size,
+            SPA_POD_CHOICE_RANGE_Rectangle(SPA_POD_Rectangle(&max_size), SPA_POD_Rectangle(&min_size), SPA_POD_Rectangle(&max_size)), 0);
+        spa_pod_builder_add(&builder, SPA_FORMAT_VIDEO_framerate,
+            SPA_POD_CHOICE_RANGE_Fraction(SPA_POD_Fraction(&max_rate), SPA_POD_Fraction(&min_rate), SPA_POD_Fraction(&max_rate)), 0);
+        spa_pod_builder_prop(&builder, SPA_FORMAT_VIDEO_modifier, SPA_POD_PROP_FLAG_MANDATORY);
+        spa_pod_builder_long(&builder, DRM_FORMAT_MOD_LINEAR);
+        params[n_params++] = spa_pod_builder_pop(&builder, &frame);
+    }
     {
         struct spa_pod_frame frame;
         spa_pod_builder_push_object(&builder, &frame, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat);
