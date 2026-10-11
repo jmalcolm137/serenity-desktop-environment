@@ -44,6 +44,7 @@ This supersedes the earlier single-interface `tools/sde-settings-portal.c` (R4.4
 | `PowerProfileMonitor` (v1) | `power-saver-enabled` (from `SDE_POWER_SAVER`). |
 | `GameMode` (v1) | `RegisterGame`/`UnregisterGame`/`QueryStatus` (reports not active). |
 | `MemoryMonitor` (v1) | `LowMemoryWarning` signal; `version` only. |
+| `FileChooser` (v2) | `OpenFile`/`SaveFile` (directory mode via the `directory` option) through the LibGUI **FileChooserDialog** app (`SDE_PORTAL_FILE_CHOOSER`); returns the chosen `uris`. |
 
 ### ScreenCast pipeline (niri-inspired)
 
@@ -71,6 +72,10 @@ SerenityOS **LibGUI** app — `ScreenCastChooser/` (built by
 prints the chosen index. Window sources use
 `ext_foreign_toplevel_image_capture_source_manager_v1`, and the embedded cursor
 mode uses the capture session's `PAINT_CURSORS` option.
+
+The **FileChooser** portal is likewise a LibGUI app — `FileChooserDialog/`
+(`scripts/build-file-chooser-dialog.sh`), wrapping `GUI::FilePicker` — launched
+via `SDE_PORTAL_FILE_CHOOSER`.
 
 ## 3. SDE integration seams
 
@@ -110,8 +115,7 @@ To reach and surpass `xdg-desktop-portal-kde`:
   InputCapture (`ext-image-copy-capture-v1` + PipeWire + compositor input
   injection).
 - **GlobalShortcuts** — compositor global-shortcut registration.
-- **DynamicLauncher**, **FileChooser** (native, via a **LibGUI** file dialog),
-  **Print** (LibGUI), **USB**, **Device**, **Camera** (v2).
+- **DynamicLauncher**, **Print** (LibGUI), **USB**, **Device**, **Camera** (v2).
 - A **permission store** integration and the `Request`/`Response` choreography for
   the interfaces that return a `handle`.
 

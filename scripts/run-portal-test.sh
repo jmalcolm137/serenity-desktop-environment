@@ -38,10 +38,18 @@ echo "\$@" >> "$RUNTIME/notified.txt"
 EOF
 chmod +x "$NOTIFIER"
 
+# The file chooser app returns a path; stand in for it in the test.
+FILECHOOSER="$RUNTIME/filechooser.sh"
+cat > "$FILECHOOSER" <<EOF
+#!/usr/bin/env bash
+echo "$RUNTIME/picked.txt"
+EOF
+chmod +x "$FILECHOOSER"
+
 # Settings reads the theme broker for color-scheme / accent.
 printf '%s\n' "$SERENITY/Base/res/themes/Redmond 2000.ini" > "$RUNTIME/sde-theme"
 
-SDE_PORTAL_OPENER="$OPENER" SDE_PORTAL_NOTIFIER="$NOTIFIER" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
+SDE_PORTAL_OPENER="$OPENER" SDE_PORTAL_NOTIFIER="$NOTIFIER" SDE_PORTAL_FILE_CHOOSER="$FILECHOOSER" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
 PORTAL_PID=$!
 trap 'kill "$PORTAL_PID" 2>/dev/null || true' EXIT
 
@@ -89,6 +97,12 @@ check "false" "$(prop org.freedesktop.impl.portal.PowerProfileMonitor power-save
 check "uint32 0" "$(call org.freedesktop.impl.portal.GameMode.QueryStatus /x app)"
 check "'active': <false>" "$(call org.freedesktop.impl.portal.GameMode.QueryStatus /x app)"
 check "uint32 1" "$(prop org.freedesktop.impl.portal.MemoryMonitor version)"
+
+echo "=== FileChooser ==="
+filechooser="$(call org.freedesktop.impl.portal.FileChooser.OpenFile /h app "" "Open" "{}")"
+check "uint32 0" "$filechooser"
+check "uris" "$filechooser"
+check "picked.txt" "$filechooser"
 
 echo "=== OpenURI ==="
 check "uint32 0" "$(call org.freedesktop.impl.portal.OpenURI.OpenURI /x "" https://example.com "{}")"

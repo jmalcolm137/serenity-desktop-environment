@@ -46,6 +46,11 @@ typedef struct {
     guint registration_count;
 } Portal;
 
+static void return_response(GDBusMethodInvocation* invocation, guint32 response, GVariantBuilder* results)
+{
+    g_dbus_method_invocation_return_value(invocation, g_variant_new("(ua{sv})", response, results));
+}
+
 // --- Settings ---------------------------------------------------------------
 
 static gboolean parse_color(char const* value, double* r, double* g, double* b)
@@ -958,6 +963,136 @@ static const char memorymonitor_introspection[] =
     "  </interface>"
     "</node>";
 
+// --- FileChooser ------------------------------------------------------------
+
+static const char filechooser_introspection[] =
+    "<node>"
+    "  <interface name='org.freedesktop.impl.portal.FileChooser'>"
+    "    <property name='version' type='u' access='read'/>"
+    "    <method name='OpenFile'>"
+    "      <arg type='o' name='handle' direction='in'/>"
+    "      <arg type='s' name='app_id' direction='in'/>"
+    "      <arg type='s' name='parent_window' direction='in'/>"
+    "      <arg type='s' name='title' direction='in'/>"
+    "      <arg type='a{sv}' name='options' direction='in'/>"
+    "      <arg type='u' name='response' direction='out'/>"
+    "      <arg type='a{sv}' name='results' direction='out'/>"
+    "    </method>"
+    "    <method name='SaveFile'>"
+    "      <arg type='o' name='handle' direction='in'/>"
+    "      <arg type='s' name='app_id' direction='in'/>"
+    "      <arg type='s' name='parent_window' direction='in'/>"
+    "      <arg type='s' name='title' direction='in'/>"
+    "      <arg type='a{sv}' name='options' direction='in'/>"
+    "      <arg type='u' name='response' direction='out'/>"
+    "      <arg type='a{sv}' name='results' direction='out'/>"
+    "    </method>"
+    "  </interface>"
+    "</node>";
+
+// The chooser is a LibGUI app (FileChooserDialog); it prints the chosen path.
+static void handle_filechooser(GDBusConnection* connection, const gchar* sender, const gchar* object_path,
+    const gchar* interface_name, const gchar* method_name, GVariant* parameters,
+    GDBusMethodInvocation* invocation, gpointer user_data)
+{
+    (void)connection;
+    (void)sender;
+    (void)object_path;
+    (void)interface_name;
+    (void)user_data;
+
+    GVariantBuilder results;
+    g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
+
+    if (g_strcmp0(method_name, "OpenFile") != 0 && g_strcmp0(method_name, "SaveFile") != 0) {
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "unknown method %s", method_name);
+        return;
+    }
+
+    char const* handle = NULL;
+    char const* app_id = NULL;
+    char const* parent_window = NULL;
+    char const* title = NULL;
+    GVariant* options = NULL;
+    g_variant_get(parameters, "(o&s&s&s@a{sv})", &handle, &app_id, &parent_window, &title, &options);
+
+    gboolean multiple = FALSE;
+    gboolean directory = FALSE;
+    char const* current_name = NULL;
+    GVariant* current_folder = NULL;
+    if (options) {
+        g_variant_lookup(options, "multiple", "b", &multiple);
+        g_variant_lookup(options, "directory", "b", &directory);
+        g_variant_lookup(options, "current_name", "&s", &current_name);
+        current_folder = g_variant_lookup_value(options, "current_folder", G_VARIANT_TYPE_BYTESTRING);
+    }
+
+    char const* chooser = getenv("SDE_PORTAL_FILE_CHOOSER");
+    if (!chooser || !*chooser) {
+        if (current_folder)
+            g_variant_unref(current_folder);
+        if (options)
+            g_variant_unref(options);
+        return_response(invocation, RESPONSE_OTHER_ERROR, &results);
+        return;
+    }
+
+    char const* mode = (g_strcmp0(method_name, "SaveFile") == 0) ? "save" : (directory ? "folder" : "open");
+    gchar* folder_arg = current_folder ? g_strdup(g_variant_get_bytestring(current_folder)) : g_strdup(g_get_home_dir());
+    gchar* name_arg = g_strdup(current_name && *current_name ? current_name : "Untitled");
+    gchar* title_arg = g_strdup(title && *title ? title : "Select File");
+
+    char const* argv[12];
+    int argc = 0;
+    argv[argc++] = chooser;
+    argv[argc++] = "-m";
+    argv[argc++] = mode;
+    argv[argc++] = "-t";
+    argv[argc++] = title_arg;
+    argv[argc++] = "-n";
+    argv[argc++] = name_arg;
+    argv[argc++] = "-f";
+    argv[argc++] = folder_arg;
+    if (multiple)
+        argv[argc++] = "--multiple";
+    argv[argc] = NULL;
+
+    char* out = NULL;
+    gint wait_status = 0;
+    GError* error = NULL;
+    gboolean ok = g_spawn_sync(NULL, (char**)argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, &out, NULL, &wait_status, &error);
+
+    guint32 response = RESPONSE_CANCELLED;
+    if (ok && out && g_spawn_check_wait_status(wait_status, NULL)) {
+        gchar* path = g_strstrip(out);
+        if (*path) {
+            if (gchar* uri = g_filename_to_uri(path, NULL, NULL)) {
+                GVariantBuilder uris;
+                g_variant_builder_init(&uris, G_VARIANT_TYPE("as"));
+                g_variant_builder_add(&uris, "s", uri);
+                g_variant_builder_add(&results, "{sv}", "uris", g_variant_builder_end(&uris));
+                g_free(uri);
+                response = RESPONSE_SUCCESS;
+            }
+        }
+    } else if (error) {
+        response = RESPONSE_OTHER_ERROR;
+    }
+
+    g_free(out);
+    g_free(folder_arg);
+    g_free(name_arg);
+    g_free(title_arg);
+    if (error)
+        g_error_free(error);
+    if (current_folder)
+        g_variant_unref(current_folder);
+    if (options)
+        g_variant_unref(options);
+
+    return_response(invocation, response, &results);
+}
+
 // --- Settings introspection -------------------------------------------------
 
 static const char settings_introspection[] =
@@ -1011,6 +1146,19 @@ static GVariant* simple_version_get_property(GDBusConnection* connection, const 
     return generic_version_property(property_name, error, 1);
 }
 
+static GVariant* filechooser_get_property(GDBusConnection* connection, const gchar* sender, const gchar* object_path,
+    const gchar* interface_name, const gchar* property_name, GError** error, gpointer user_data)
+{
+    (void)connection;
+    (void)sender;
+    (void)object_path;
+    (void)interface_name;
+    (void)user_data;
+    return generic_version_property(property_name, error, 2); // OpenFile, SaveFile
+}
+
+static const GDBusInterfaceVTable filechooser_vtable = { handle_filechooser, filechooser_get_property, NULL, { 0 } };
+
 static const GDBusInterfaceVTable realtime_vtable = { handle_realtime, simple_version_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable powerprofile_vtable = { NULL, powerprofile_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable gamemode_vtable = { handle_gamemode, simple_version_get_property, NULL, { 0 } };
@@ -1032,6 +1180,7 @@ static InterfaceRegistration const interfaces[] = {
     { powerprofile_introspection, &powerprofile_vtable },
     { gamemode_introspection, &gamemode_vtable },
     { memorymonitor_introspection, &memorymonitor_vtable },
+    { filechooser_introspection, &filechooser_vtable },
 };
 
 static void register_interfaces(Portal* portal, GDBusConnection* connection)
