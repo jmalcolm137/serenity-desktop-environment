@@ -207,6 +207,24 @@ check "uint32 0" "$(call org.freedesktop.impl.portal.OpenURI.Activate /h app "" 
 sleep 0.3
 check "app" "$(cat "$RUNTIME/opened.txt" 2>/dev/null || echo '(no opener call)')"
 
+echo "=== backend declaration ==="
+portals_conf="$SDE_ROOT/contrib/xdg-desktop-portal/portals.conf"
+portal_file="$SDE_ROOT/contrib/xdg-desktop-portal/serenity.portal"
+dupes="$(grep -E '^org\.freedesktop\.portal\.' "$portals_conf" | cut -d= -f1 | sort | uniq -d)"
+if [ -z "$dupes" ]; then
+    echo "  ok: portals.conf has no duplicate interface keys"
+else
+    echo "  FAIL: portals.conf repeats interface keys: $dupes"
+    fail=1
+fi
+if grep -qF "org.freedesktop.portal.ScreenCast=serenity" "$portals_conf" \
+    && grep -qF "org.freedesktop.impl.portal.ScreenCast;" "$portal_file"; then
+    echo "  ok: ScreenCast declared and routed to serenity"
+else
+    echo "  FAIL: ScreenCast not consistently declared"
+    fail=1
+fi
+
 echo "=== Notification ==="
 call org.freedesktop.impl.portal.Notification.AddNotification id "{'title': <'Hello'>, 'body': <'World'>}" >/dev/null
 sleep 0.3
@@ -218,8 +236,7 @@ check "dialog-information" "$(cat "$RUNTIME/notified.txt" 2>/dev/null || echo '(
 check "()" "$(call org.freedesktop.impl.portal.Notification.RemoveNotification id2)"
 
 # Best-effort: prove the real xdg-desktop-portal frontend routes to us. Skipped
-# when the frontend is not installed.
-FRONTEND=""
+# when the frontend is not installed.FRONTEND=""
 for candidate in /usr/lib/xdg-desktop-portal /usr/libexec/xdg-desktop-portal; do
     [ -x "$candidate" ] && FRONTEND="$candidate" && break
 done
