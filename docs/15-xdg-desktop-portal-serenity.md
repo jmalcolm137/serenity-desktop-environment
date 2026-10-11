@@ -126,9 +126,14 @@ build/tools/xdg-desktop-portal-serenity &
 # Tell the frontend about it:
 install -Dm644 contrib/xdg-desktop-portal/serenity.portal \
     ~/.local/share/xdg-desktop-portal/portals/serenity.portal
+install -Dm644 contrib/xdg-desktop-portal/org.freedesktop.impl.portal.desktop.serenity.service \
+    ~/.local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.serenity.service
 install -Dm644 contrib/xdg-desktop-portal/portals.conf \
     ~/.config/xdg-desktop-portal/portals.conf
 ```
+
+The D-Bus service file lets the frontend activate the backend on demand (install
+the binary somewhere on `PATH`); the session also starts it directly.
 
 `UseIn=Serenity` gates the backend on `XDG_CURRENT_DESKTOP=Serenity`; the session
 sets that. With the mapping above, e.g.
@@ -140,14 +145,15 @@ org.freedesktop.appearance color-scheme` is served by this backend.
 
 To reach and surpass `xdg-desktop-portal-kde`:
 
-- **ScreenCast / RemoteDesktop / InputCapture** — ScreenCast (monitor + window,
-  hidden/embedded cursor) and **RemoteDesktop** (input injection via the virtual
-  pointer/keyboard) landed. Remaining: **InputCapture** (needs compositor input
-  routing or libei), DMA-BUF + the metadata cursor mode, `pipewire-serial` (v6).
+- **ScreenCast / RemoteDesktop** — monitor + window sources, hidden/embedded
+  cursor, `pipewire-serial` (v6), restore tokens and virtual-pointer/keyboard
+  input injection all landed. Remaining: **DMA-BUF** (zero-copy) and the
+  **metadata** cursor mode (`ext_image_copy_capture_cursor_session_v1` +
+  `SPA_META_Cursor`).
 - **InputCapture** — needs compositor input routing or libei; still the `gtk`
   fallback.
 - **Device**/**Camera** (v2) — device brokers and the camera PipeWire path
-  (USB/Microphone listing is in place; Camera needs a PipeWire camera producer).
+  (USB listing is in place; Camera needs a PipeWire camera producer).
 - A **permission store** integration and the `Request`/`Response`
   choreography.
 
