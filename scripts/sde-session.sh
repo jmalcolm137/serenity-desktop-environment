@@ -49,9 +49,15 @@ export XDG_SESSION_CLASS="user"
 export XDG_CURRENT_DESKTOP="SDE"
 export XDG_SESSION_DESKTOP="SDE"
 export DESKTOP_SESSION="sde"
-if [ -z "${WAYLAND_DISPLAY:-}" ]; then
-    export WAYLAND_DISPLAY="$SESSION_DISPLAY"
-fi
+# The display the *compositor* connects to: empty means "go native" (DRM+libinput
+# via wlr_backend_autocreate); a host socket (e.g. wayland-0) means "nest". Capture
+# it BEFORE pointing the rest of the session at our own socket, or the compositor
+# inherits WAYLAND_DISPLAY=sde and wrongly selects the nested Wayland backend
+# (R4.3 regression: "Could not connect to remote display").
+COMPOSITOR_DISPLAY="${WAYLAND_DISPLAY:-}"
+# Everything the session starts (apps, services, autostart, idle daemon) talks to
+# the compositor's own socket, not the host's.
+export WAYLAND_DISPLAY="$SESSION_DISPLAY"
 
 # A pid file so the power helper's portable logout fallback can stop us even
 # without logind.
@@ -125,7 +131,13 @@ run_autostart
 restarts=0
 while :; do
     echo "SDE session: starting compositor: $COMPOSITOR"
-    sh -c "$COMPOSITOR" &
+    # Native (no captured host display): leave WAYLAND_DISPLAY unset so
+    # wlr_backend_autocreate selects DRM+libinput. Nested: connect to the host.
+    if [ -n "$COMPOSITOR_DISPLAY" ]; then
+        WAYLAND_DISPLAY="$COMPOSITOR_DISPLAY" sh -c "$COMPOSITOR" &
+    else
+        env -u WAYLAND_DISPLAY -u DISPLAY sh -c "$COMPOSITOR" &
+    fi
     comp_pid=$!
 
     # Idle-to-lock (optional): wait briefly for the compositor socket, then arm
