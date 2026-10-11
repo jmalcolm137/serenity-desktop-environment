@@ -68,10 +68,25 @@ cc -O2 -Wall \
 
 # xdg-desktop-portal-serenity (R5): the SDE backend for the freedesktop portals
 # (org.freedesktop.impl.portal.*), so the xdg-desktop-portal frontend can route
-# requests to it. See contrib/xdg-desktop-portal/.
-cc -O2 -Wall \
+# requests to it. See contrib/xdg-desktop-portal/. ScreenCast captures via
+# ext-image-copy-capture-v1 and publishes a PipeWire stream.
+ICC_XML="$WP/staging/ext-image-copy-capture/ext-image-copy-capture-v1.xml"
+ICS_XML="$WP/staging/ext-image-capture-source/ext-image-capture-source-v1.xml"
+FTL_XML="$WP/staging/ext-foreign-toplevel-list/ext-foreign-toplevel-list-v1.xml"
+wayland-scanner client-header "$ICC_XML" "$TOOLS_BUILD/ext-image-copy-capture-v1-client-protocol.h"
+wayland-scanner private-code  "$ICC_XML" "$TOOLS_BUILD/ext-image-copy-capture-v1-protocol.c"
+wayland-scanner client-header "$ICS_XML" "$TOOLS_BUILD/ext-image-capture-source-v1-client-protocol.h"
+wayland-scanner private-code  "$ICS_XML" "$TOOLS_BUILD/ext-image-capture-source-v1-protocol.c"
+wayland-scanner client-header "$FTL_XML" "$TOOLS_BUILD/ext-foreign-toplevel-list-v1-client-protocol.h"
+wayland-scanner private-code  "$FTL_XML" "$TOOLS_BUILD/ext-foreign-toplevel-list-v1-protocol.c"
+cc -O2 -Wall -I "$TOOLS_BUILD" -I "$SDE_ROOT/tools" \
     "$SDE_ROOT/tools/xdg-desktop-portal-serenity.c" \
-    $(pkg-config --cflags --libs gio-2.0) \
+    "$SDE_ROOT/tools/portal-screencast.c" \
+    "$TOOLS_BUILD/ext-image-copy-capture-v1-protocol.c" \
+    "$TOOLS_BUILD/ext-image-capture-source-v1-protocol.c" \
+    "$TOOLS_BUILD/ext-foreign-toplevel-list-v1-protocol.c" \
+    $(pkg-config --cflags --libs gio-2.0 wayland-client libpipewire-0.3) \
+    -lpthread \
     -o "$TOOLS_BUILD/xdg-desktop-portal-serenity"
 
 echo "==> SDE tools: $TOOLS_BUILD/sde-idle $TOOLS_BUILD/sde-dpms $TOOLS_BUILD/sde-screenshot $TOOLS_BUILD/sde-settings-portal $TOOLS_BUILD/ext-workspace-test $TOOLS_BUILD/xdg-desktop-portal-serenity"

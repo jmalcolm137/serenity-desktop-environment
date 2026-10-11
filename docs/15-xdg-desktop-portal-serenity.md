@@ -39,6 +39,28 @@ This supersedes the earlier single-interface `tools/sde-settings-portal.c` (R4.4
 | `ProxyResolver` (v1) | `Lookup` returns an empty list (direct connection). |
 | `OpenURI` (v3) | `OpenURI`/`OpenDirectory`/`OpenFile` launch via `SDE_PORTAL_OPENER` (the session launcher) or GIO's default-app launch. |
 | `Notification` (v1) | `AddNotification`/`RemoveNotification` via `SDE_PORTAL_NOTIFIER` (the Serenity notify tool) or `notify-send`. |
+| `ScreenCast` (v4) | `CreateSession`/`SelectSources`/`Start`/`AvailableSourceTypes`/`AvailableCursorModes`. Captures an output with the standard **`ext-image-copy-capture-v1`** and publishes a **PipeWire** video stream (`sde-screencast`); `Start` returns the stream node id + position/size/source_type. |
+
+### ScreenCast pipeline (niri-inspired)
+
+The implementation follows **niri**'s producer design (`src/screencasting/`):
+
+- The Wayland thread drives `ext-image-copy-capture-v1` on the selected output
+  (`ext_output_image_capture_source_manager_v1` →
+  `ext_image_copy_capture_session_v1` → per-frame capture into an SHM buffer).
+- PipeWire runs on a `pw_thread_loop`; the stream is `Video/Source` with the
+  `PW_STREAM_FLAG_DRIVER` and the same param set niri advertises — `EnumFormat`
+  (video/raw/**BGRA** + size + framerate), `SPA_PARAM_Buffers` (memfd,
+  `blocks=1`, `buffers` range 2..16) and `SPA_PARAM_Meta` (`SPA_META_Header`).
+- A mutex-protected "latest frame" is memcpy'd into the negotiated buffer in the
+  stream `process` callback, so captured frames reach consumers (~30 fps).
+
+Still to add (niri parity, Phase 2b): **DMA-BUF** capture/negotiation (zero-copy),
+**embedded** and **metadata** cursor modes (`ext_image_copy_capture_cursor_session_v1`
++ `SPA_META_Cursor`), **window** sources
+(`ext_foreign_toplevel_image_capture_source_manager_v1`), the `pipewire-serial`
+(v6) property, restore tokens, and niri-style extras (dynamic cast target,
+"block out from screencast").
 
 ## 3. SDE integration seams
 
@@ -73,9 +95,10 @@ org.freedesktop.appearance color-scheme` is served by this backend.
 
 To reach and surpass `xdg-desktop-portal-kde`:
 
-- **ScreenCast / RemoteDesktop / InputCapture** — `ext-image-copy-capture-v1`
-  + PipeWire (`libpipewire-0.3` is available), with compositor-side input
-  injection.
+- **ScreenCast / RemoteDesktop / InputCapture** — ScreenCast (monitor) landed
+  (see above); DMA-BUF + cursor modes + window sources, then RemoteDesktop /
+  InputCapture (`ext-image-copy-capture-v1` + PipeWire + compositor input
+  injection).
 - **GlobalShortcuts** — compositor global-shortcut registration.
 - **DynamicLauncher**, **FileChooser** (native, via FileManager), **Print**,
   **USB**, **Device**, **Realtime**, **Camera** (v2), **PowerProfileMonitor**,
@@ -89,3 +112,8 @@ To reach and surpass `xdg-desktop-portal-kde`:
 Phase-1 interface directly (Settings, Account, Lockdown, Background, AppChooser,
 ProxyResolver, OpenURI, Notification), then — best effort — proves the real
 `xdg-desktop-portal` frontend routes `Settings` to this backend.
+
+`scripts/run-screencast-test.sh` starts a headless SDE compositor and the backend,
+runs a ScreenCast session (CreateSession → SelectSources → Start), asserts the
+returned stream node id, that the PipeWire node `sde-screencast` is published, and
+that frames are captured (a consumer pull is best-effort).

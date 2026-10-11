@@ -27,6 +27,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "portal-screencast.h"
+
 #define BUS_NAME "org.freedesktop.impl.portal.desktop.serenity"
 #define OBJECT_PATH "/org/freedesktop/portal/desktop"
 #define APPEARANCE_NAMESPACE "org.freedesktop.appearance"
@@ -866,6 +868,7 @@ static const GDBusInterfaceVTable location_vtable = { handle_location, NULL, NUL
 static const GDBusInterfaceVTable proxyresolver_vtable = { handle_proxyresolver, proxyresolver_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable openuri_vtable = { handle_openuri, openuri_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable notification_vtable = { handle_notification, notification_get_property, NULL, { 0 } };
+static const GDBusInterfaceVTable screencast_vtable = { portal_screencast_method_call, portal_screencast_get_property, NULL, { 0 } };
 
 static InterfaceRegistration const interfaces[] = {
     { settings_introspection, &settings_vtable },
@@ -878,6 +881,7 @@ static InterfaceRegistration const interfaces[] = {
     { proxyresolver_introspection, &proxyresolver_vtable },
     { openuri_introspection, &openuri_vtable },
     { notification_introspection, &notification_vtable },
+    { portal_screencast_introspection, &screencast_vtable },
 };
 
 static void register_interfaces(Portal* portal, GDBusConnection* connection)
