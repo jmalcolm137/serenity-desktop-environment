@@ -410,6 +410,10 @@ cursor settings (theme/size via `XCURSOR_*`; client cursors via
 > client cursor shapes; Mouse Settings' Cursor Theme / Cursor Highlight tabs write
 > it.
 >
+> **Theme:** Display Settings ▸ Themes applies through the theme broker; the
+> compositor persists the choice to `WindowServer.ini [Theme]` and applies it at
+> startup (clients follow via the broker/`[Theme]`).
+>
 > Verified by `scripts/run-fonts-test.sh`, `scripts/run-effects-test.sh`, and
 > Fonts/Effects tab screenshots. Also fixed a live-reload bug where the config
 > watchers added a file watch before the file existed, so only the first change

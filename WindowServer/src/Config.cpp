@@ -31,6 +31,7 @@ static unsigned g_main_screen { 0 };
 static Input g_input;
 static InputRanges g_input_ranges;
 static Fonts g_fonts;
+static Theme g_theme;
 static Vector<ByteString> g_applet_order;
 static Vector<ByteString> g_diagnostics;
 
@@ -301,6 +302,12 @@ void load()
     if (g_fonts.window_title_query.is_empty())
         g_fonts.window_title_query = "Katica 10 700 0"sv;
 
+    // The chosen system theme ([Theme]); the live channel is the theme broker.
+    g_theme.name = read_entry(user, defaults, "Theme"sv, "Name"sv);
+    if (g_theme.name.is_empty())
+        g_theme.name = "Default"sv;
+    g_theme.path = read_entry(user, defaults, "Theme"sv, "Path"sv);
+
     for (auto const& diagnostic : g_diagnostics)
         warnln("WindowServer: config: {}", diagnostic);
 
@@ -512,6 +519,22 @@ void set_fonts(Fonts fonts)
         config->write_entry("Fonts"sv, "FixedWidth"sv, g_fonts.fixed_width_query);
     if (!g_fonts.window_title_query.is_empty())
         config->write_entry("Fonts"sv, "WindowTitle"sv, g_fonts.window_title_query);
+    (void)config->sync();
+}
+
+Theme const& theme()
+{
+    return g_theme;
+}
+
+void set_theme(Theme theme)
+{
+    g_theme = move(theme);
+    (void)Core::Directory::create(state_directory(), Core::Directory::CreateDirectories::Yes);
+    auto config = Core::ConfigFile::open(file_path(), Core::ConfigFile::AllowWriting::Yes).release_value_but_fixme_should_propagate_errors();
+    config->write_entry("Theme"sv, "Name"sv, g_theme.name);
+    if (!g_theme.path.is_empty())
+        config->write_entry("Theme"sv, "Path"sv, g_theme.path);
     (void)config->sync();
 }
 

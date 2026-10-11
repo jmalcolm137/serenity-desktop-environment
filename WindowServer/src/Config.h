@@ -225,6 +225,15 @@ struct Fonts {
 Fonts const& fonts();
 void set_fonts(Fonts fonts);
 
+// The chosen system theme ([Theme] in WindowServer.ini), persisted so it survives
+// a restart; the live channel is the theme broker ($XDG_RUNTIME_DIR/sde-theme).
+struct Theme {
+    ByteString name { "Default"sv };
+    ByteString path;
+};
+Theme const& theme();
+void set_theme(Theme theme);
+
 Input const& input();
 void load_input();
 void watch_input(Function<void()> on_change);

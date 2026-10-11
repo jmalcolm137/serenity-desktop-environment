@@ -3481,8 +3481,11 @@ static void watch_theme_broker(Server& server)
         if (contents.is_error())
             return;
         auto theme_path = StringView { contents.value() }.trim_whitespace().to_byte_string();
-        if (!theme_path.is_empty())
+        if (!theme_path.is_empty()) {
             apply_theme_path(server, theme_path);
+            // Persist the choice so it survives a compositor/session restart.
+            Config::set_theme({ LexicalPath(theme_path).title(), theme_path });
+        }
     };
     if (auto directory = LexicalPath(path).dirname(); !directory.is_empty())
         (void)watcher->add_watch(directory, Core::FileWatcherEvent::Type::ChildCreated);
@@ -3657,6 +3660,9 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
             outln("Default={}", Config::fonts().default_query);
             outln("FixedWidth={}", Config::fonts().fixed_width_query);
             outln("WindowTitle={}", Config::fonts().window_title_query);
+            outln("[Theme]");
+            outln("Name={}", Config::theme().name);
+            outln("Path={}", Config::theme().path);
             outln("[Applet]");
             StringBuilder order;
             for (size_t i = 0; i < Config::applet_order().size(); ++i) {
@@ -3742,6 +3748,10 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     };
 
     watch_theme_broker(*server);
+    // R4.9: apply the persisted theme ([Theme]) at startup; the broker (a live
+    // choice) then takes over.
+    if (!Config::theme().path.is_empty())
+        apply_theme_path(*server, Config::theme().path);
     watch_fonts_broker(*server);
     apply_cursor_state(*server);
     watch_cursor_state(*server);
