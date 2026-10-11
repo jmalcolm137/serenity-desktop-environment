@@ -126,9 +126,20 @@ echo "== (C) lock surface reconfigures when an output changes size =="
 start_compositor lock-c 1
 env WAYLAND_DISPLAY=lock-c "$TOOLS_BUILD/lock-test" --hold 3000 > "$RUNTIME/lock-c.log" 2>&1 &
 LOCK_C_PID=$!
-sleep 1.5
+# Wait for the lock to be established (surfaces configured at the initial size)
+# before resizing, so the resize exercises the re-configure path rather than
+# racing the lock surface's initial configure.
+for _ in $(seq 1 50); do
+    grep -qF "LOCK-TEST: locked" "$RUNTIME/lock-c.log" && break
+    sleep 0.1
+done
 env WAYLAND_DISPLAY=lock-c "$TOOLS_BUILD/output-mode-test" 1024x768 > "$RUNTIME/mode.log" 2>&1 || true
-sleep 1
+# Wait for the lock client to ack the re-configure (it prints when it processes
+# the new configure) before stopping it.
+for _ in $(seq 1 50); do
+    grep -qF "LOCK-TEST: surface configured 1024x768" "$RUNTIME/lock-c.log" && break
+    sleep 0.1
+done
 kill "$LOCK_C_PID" 2>/dev/null || true
 wait "$LOCK_C_PID" 2>/dev/null || true
 stop_compositor
