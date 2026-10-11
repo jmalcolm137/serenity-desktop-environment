@@ -41,14 +41,41 @@ add_custom_command(
     VERBATIM
 )
 
+# xdg-session-management-v1: let apps restore their toplevels across a restart
+# (R4.2). Standard protocol; wlroots 0.20 has no manager for it, so we generate
+# and implement the server side (see src/SessionManager.cpp). The protocol
+# references the `xdg_toplevel` interface, and wlroots hides its copy, so we
+# generate xdg-shell's server code too (for the interface symbol only).
+set(XDG_SESSION_XML "${CMAKE_CURRENT_SOURCE_DIR}/protocol/xdg-session-management-v1.xml")
+pkg_get_variable(WAYLAND_PROTOCOLS_DATADIR wayland-protocols pkgdatadir)
+set(XDG_SHELL_XML "${WAYLAND_PROTOCOLS_DATADIR}/stable/xdg-shell/xdg-shell.xml")
+add_custom_command(
+    OUTPUT
+        "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-session-management-v1-server-protocol.h"
+        "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-session-management-v1-protocol.c"
+    COMMAND "${WAYLAND_SCANNER}" server-header "${XDG_SESSION_XML}" "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-session-management-v1-server-protocol.h"
+    COMMAND "${WAYLAND_SCANNER}" private-code "${XDG_SESSION_XML}" "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-session-management-v1-protocol.c"
+    DEPENDS "${XDG_SESSION_XML}"
+    VERBATIM
+)
+add_custom_command(
+    OUTPUT "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-shell-protocol.c"
+    COMMAND "${WAYLAND_SCANNER}" private-code "${XDG_SHELL_XML}" "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-shell-protocol.c"
+    DEPENDS "${XDG_SHELL_XML}"
+    VERBATIM
+)
+
 add_executable(WindowServer
     src/main.cpp
     src/AppletManager.cpp
     src/Config.cpp
     src/Overlays.cpp
+    src/SessionManager.cpp
     src/WindowManager.cpp
     src/WindowSwitcher.cpp
-    "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-window-protocol.c")
+    "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-window-protocol.c"
+    "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-shell-protocol.c"
+    "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-session-management-v1-protocol.c")
 
 target_include_directories(WindowServer PRIVATE
     ${WLROOTS_INCLUDE_DIRS}

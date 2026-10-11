@@ -137,7 +137,7 @@ R4 is delivered as **R4.1–R4.9**. Order is dependency-driven (see §4).
 | # | Milestone | Outcome | Depends on |
 |---|---|---|---|
 | **R4.1** | **Session safety net** | Idle detection, idle inhibit, session lock and DPMS/dim *(compositor side landed)* | — |
-| **R4.2** | **Session lifecycle & supervisor** | Session start/autostart, logout/reboot/shutdown, compositor restart + shell relaunch, save/restore *(supervisor/autostart/power landed)* | R4.1 |
+| **R4.2** | **Session lifecycle & supervisor** | Session start/autostart, logout/reboot/shutdown, compositor restart + shell relaunch, save/restore *(supervisor/autostart/power + `xdg-session-management-v1` restore landed)* | R4.1 |
 | **R4.3** | **logind / systemd / portal session** | `XDG_SESSION_TYPE`, `WAYLAND_DISPLAY`, D-Bus activation env, `graphical-session.target`, `xdg-desktop-portal`, VT switch | R4.2 |
 | **R4.4** | **Compositor config & live reload** | `WindowServer.ini` schema + validated live reload; Settings-portal exposure | — |
 | **R4.5** | **Display / output settings** | Mode/scale/rotation/arrangement backend (Monitor tab) + fractional scale | R4.4 |
@@ -230,7 +230,19 @@ signal, so the compositor's `wl_list_empty` check still saw it. The compositor n
 excludes the dying inhibitor when recomputing the inhibited state
 (`WindowServer/src/main.cpp`).
 
-**Remaining:** `xdg-session-management-v1` restore.
+**Session restore landed (`xdg-session-management-v1`).** The compositor serves the
+standard protocol (`WindowServer/src/SessionManager.cpp`): `get_session` (new →
+`created`, or load → `restored`; a second client taking an in-use id gets
+`replaced`), `add_toplevel`/`restore_toplevel`/`remove_toplevel`,
+`xdg_toplevel_session_v1.restored`, and per-session geometry persisted under
+`$SDE_STATE_DIR/sessions/<id>` (else `$XDG_RUNTIME_DIR/sde-sessions`). Toplevel
+position and size are captured as windows move/resize and reapplied on restore
+(size deferred to the initial commit, where `set_size` is safe). wlroots 0.20 has
+no manager for this protocol and hides the `xdg_toplevel` interface, so the
+compositor generates xdg-shell's server code for the interface symbol and
+resolves the toplevel via `wlr_xdg_toplevel->resource`. Verified by
+`scripts/run-session-management-test.sh`, which **restarts the compositor**
+between creating and restoring a session.
 
 ### R4.3 — logind / systemd / portal session integration
 

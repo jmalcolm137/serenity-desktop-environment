@@ -156,7 +156,11 @@ keymap/IME, input-device config) are catalogued in
   supervisor installs `/bin` shadow helpers (`shutdown`/`reboot`/`logout`) in
   `SDE_SESSION_BIN_DIR`, which the port's `resolve_executable_path()` honours, so
   the unmodified menu routes to logind (verified by `scripts/run-binpath-test.sh`).
-  Remaining: `xdg-session-management-v1` restore.
+  **Session restore** (`xdg-session-management-v1`, R4.2) landed: the compositor
+  serves the standard protocol and persists per-session toplevel geometry under
+  `$SDE_STATE_DIR/sessions`, so an app that opts in restores its toplevels across
+  a compositor restart — verified by `scripts/run-session-management-test.sh`
+  (which restarts the compositor). Remaining: supervision/restart of user apps.
 
 - **Session lifecycle (G6 / W5).** No greet/login, session start, autostart,
   save/restore, lock, logout, reboot, or shut-down; no SystemServer-style

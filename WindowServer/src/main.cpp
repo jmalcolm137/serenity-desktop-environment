@@ -23,6 +23,7 @@
 #include "Model.h"
 #include "Overlays.h"
 #include "AppletManager.h"
+#include "SessionManager.h"
 #include "WindowManager.h"
 #include "WindowSwitcher.h"
 
@@ -1128,6 +1129,9 @@ static void server_new_output(wl_listener* listener, void* data)
 
 static void toplevel_report_position(Toplevel& toplevel)
 {
+    // Store session geometry (R4.2), independent of whether the client has a
+    // chrome handle.
+    SessionManager::note_geometry(toplevel);
     if (!toplevel.chrome)
         return;
     // Report the *content* origin, not the frame origin: the client's coordinate
@@ -1270,9 +1274,11 @@ static void toplevel_map(wl_listener* listener, void*)
     wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
     toplevel->frame_active = true;
     toplevel_update_frame(*toplevel);
-    toplevel_report_position(*toplevel);
     // The new window joins the current workspace stack.
     WindowManager::on_toplevel_mapped(*toplevel);
+    // Apply a restored session position (R4.2), then report the final position.
+    SessionManager::on_toplevel_mapped(*toplevel);
+    toplevel_report_position(*toplevel);
     if (toplevel->foreign_handle && toplevel->server->primary_output)
         wlr_foreign_toplevel_handle_v1_output_enter(toplevel->foreign_handle, toplevel->server->primary_output);
     focus_toplevel(*toplevel->server, toplevel);
@@ -1321,8 +1327,16 @@ static void toplevel_commit(wl_listener* listener, void*)
 {
     Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, commit);
-    if (toplevel->xdg_toplevel->base->initial_commit)
-        wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
+    if (toplevel->xdg_toplevel->base->initial_commit) {
+        // Restore the stored session size (R4.2), if any; otherwise let the
+        // client pick.
+        if (toplevel->has_session_restore_size) {
+            wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, toplevel->session_restore_size.width(), toplevel->session_restore_size.height());
+            toplevel->has_session_restore_size = false;
+        } else {
+            wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
+        }
+    }
     // A decoration created before the surface was initialized is configured now.
     if (toplevel->decoration && toplevel->xdg_toplevel->base->initialized) {
         wlr_xdg_toplevel_decoration_v1_set_mode(toplevel->decoration, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
@@ -1342,6 +1356,7 @@ static void toplevel_destroy(wl_listener* listener, void*)
     Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, destroy);
     auto& server = *toplevel->server;
+    SessionManager::on_toplevel_destroyed(*toplevel);
     wl_list_remove(&toplevel->map.link);
     wl_list_remove(&toplevel->unmap.link);
     wl_list_remove(&toplevel->commit.link);
@@ -2671,6 +2686,7 @@ static ErrorOr<void> initialize(Server& server)
 
     server.foreign_toplevel_manager = wlr_foreign_toplevel_manager_v1_create(server.display);
     wl_global_create(server.display, &serenity_window_manager_interface, 1, &server, serenity_window_manager_bind);
+    SessionManager::initialize(server);
 
     server.output_manager = wlr_output_manager_v1_create(server.display);
     server.output_manager_apply.notify = output_manager_apply;

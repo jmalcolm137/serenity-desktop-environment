@@ -174,6 +174,17 @@ struct Toplevel {
     u32 workspace_row { 0 };
     u32 workspace_column { 0 };
     i32 wm_id { 0 };
+    // xdg-session-management-v1 (R4.2): set when this toplevel belongs to a
+    // session, so the compositor can store/restore its geometry.
+    bool session_managed { false };
+    ByteString session_id;
+    ByteString session_name;
+    Gfx::IntPoint session_restore_position;
+    bool has_session_restore_position { false };
+    // Applied at the initial commit (restore_toplevel runs before the toplevel
+    // is initialized, where set_size would assert).
+    Gfx::IntSize session_restore_size;
+    bool has_session_restore_size { false };
     // Monotonic focus sequence, so the window switcher can list windows
     // most-recently-focused first (mirroring Serenity's window stack). WS3.
     u64 focus_order { 0 };
