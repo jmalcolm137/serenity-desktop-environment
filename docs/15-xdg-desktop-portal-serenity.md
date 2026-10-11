@@ -1,6 +1,6 @@
 # xdg-desktop-portal-serenity (R5)
 
-**Status:** Phase 1 + Phase 2 landed (see §5 for the remaining Phase 2b items, §6 for the ones blocked on compositor/host infrastructure) ·
+**Status:** Phase 1 + Phase 2 landed; Phase 2b landed except **InputCapture**/Device/Camera. Metadata cursor mode and the DMA-BUF negotiation are in place (see §6 for the one remaining PipeWire blocker) ·
 **Related:** [`08-compositor-gaps.md`](08-compositor-gaps.md) §3,
 [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §R5,
 `contrib/xdg-desktop-portal/`
@@ -40,7 +40,7 @@ This supersedes the earlier single-interface `tools/sde-settings-portal.c` (R4.4
 | `ProxyResolver` (v1) | `Lookup` returns an empty list (direct connection). |
 | `OpenURI` (v3) | `OpenURI`/`OpenDirectory`/`OpenFile` launch via `SDE_PORTAL_OPENER` (the session launcher) or GIO's default-app launch; `OpenFile` materialises its fd, `Activate` launches an app id. |
 | `Notification` (v1) | `AddNotification`/`RemoveNotification` via `SDE_PORTAL_NOTIFIER` (the Serenity notify tool, called as `<id> <title> <body> <icon>`) or `notify-send`; exposes the `ActionInvoked`/`NotificationClosed` signals and passes a themed icon through. |
-| `ScreenCast` (v6) | `CreateSession`/`SelectSources`/`Start`/`AvailableSourceTypes`/`AvailableCursorModes`. Captures an output **or a window** with the standard **`ext-image-copy-capture-v1`** and publishes a **PipeWire** video stream (`sde-screencast`); `Start` returns the stream node id + `pipewire-serial` (v6) + position/size/source_type/id. Cursor modes: hidden, embedded. Restore tokens (`persist_mode`) are persisted and returned from `SelectSources`/`Start`. |
+| `ScreenCast` (v6) | `CreateSession`/`SelectSources`/`Start`/`AvailableSourceTypes`/`AvailableCursorModes`. Captures an output **or a window** with the standard **`ext-image-copy-capture-v1`** and publishes a **PipeWire** video stream (`sde-screencast`); `Start` returns the stream node id + `pipewire-serial` (v6) + position/size/source_type/id. Cursor modes: hidden, embedded, **metadata** (`SPA_META_Cursor`). Buffers are DMA-BUF when the compositor/PipeWire support it, else memfd. Restore tokens (`persist_mode`) are persisted and returned from `SelectSources`/`Start`. |
 | `Realtime` (v1) | Grants high-priority/realtime threads (accepted). |
 | `PowerProfileMonitor` (v1) | `power-saver-enabled` (from `SDE_POWER_SAVER`). |
 | `GameMode` (v1) | `RegisterGame`/`UnregisterGame`/`QueryStatus` (reports not active). |
@@ -70,13 +70,15 @@ The implementation follows **niri**'s producer design (`src/screencasting/`):
 - A mutex-protected "latest frame" is memcpy'd into the negotiated buffer in the
   stream `process` callback, so captured frames reach consumers (~30 fps).
 
-Still to add (niri parity, Phase 2b): **DMA-BUF** capture/negotiation (zero-copy)
-and the **metadata** cursor mode (`ext_image_copy_capture_cursor_session_v1` +
-`SPA_META_Cursor`). The interface advertises **v6** and returns the stream's
-`pipewire-serial`; **restore tokens** are minted when a client sets
-`persist_mode` and persisted under `screencast-tokens` in the state directory
-(returned from `SelectSources`/`Start`, accepted back as `restore_token`). niri
-extras (dynamic cast target, "block out from screencast") remain.
+Still to add (niri parity, Phase 2b): **DMA-BUF** capture/negotiation is
+implemented but blocked by a PipeWire client-node allocation failure (§6.2);
+the **metadata** cursor mode (`ext_image_copy_capture_cursor_session_v1` +
+`SPA_META_Cursor`) is landed and verified (§6.3). The interface advertises
+**v6** and returns the stream's `pipewire-serial`; **restore tokens** are minted
+when a client sets `persist_mode` and persisted under `screencast-tokens` in the
+state directory (returned from `SelectSources`/`Start`, accepted back as
+`restore_token`). niri extras (dynamic cast target, "block out from screencast")
+remain.
 
 **Source selection is a LibGUI app.** As with all SDE UI, the picker is a
 SerenityOS **LibGUI** app — `ScreenCastChooser/` (built by
@@ -152,9 +154,9 @@ To reach and surpass `xdg-desktop-portal-kde`:
 
 - **ScreenCast / RemoteDesktop** — monitor + window sources, hidden/embedded
   cursor, `pipewire-serial` (v6), restore tokens and virtual-pointer/keyboard
-  input injection all landed. Remaining: **DMA-BUF** (zero-copy) and the
-  **metadata** cursor mode (`ext_image_copy_capture_cursor_session_v1` +
-  `SPA_META_Cursor`).
+  input injection all landed. The **metadata** cursor mode is now implemented
+  (§6.3) and **DMA-BUF** negotiation is in place with a memfd fallback (§6.2);
+  the last mile is blocked by PipeWire, not by the backend.
 - **InputCapture** — needs compositor input routing or libei; still the `gtk`
   fallback.
 - **Device**/**Camera** (v2) — device brokers and the camera PipeWire path
@@ -162,65 +164,66 @@ To reach and surpass `xdg-desktop-portal-kde`:
 - A **permission store** integration and the `Request`/`Response`
   choreography.
 
-## 6. Infrastructure blocked
+## 6. Infrastructure (TTY) work
 
-The items below are **not blocked by backend code**. They need behaviour the
-**SDE compositor (`WindowServer`) or the host graphics stack** does not provide
-yet, so they cannot be built or verified under the current headless test path
-(`WLR_BACKENDS=headless` + the pixman renderer allocates SHM buffers, never
-DMA-BUFs, and has no real cursor). The backend side is already in place; the
-compositor side is the blocker.
+Both remaining ScreenCast items need a **real output** and a GPU renderer;
+the compositor side is done and was verified on a live TTY/DRM session
+(`scripts/run-screencast-live-test.sh`, `tools/capture-probe.c`). What is left
+is in the **portal backend** and, for DMA-BUF, in PipeWire itself.
 
-| Item | Blocked on | Owner |
-|---|---|---|
-| ScreenCast **DMA-BUF** (zero-copy) | compositor offering DMA-BUF buffers from `ext-image-copy-capture-v1`; PipeWire `SPA_DATA_DmaBuf` negotiation | `WindowServer` + backend |
-| ScreenCast **metadata cursor** | compositor implementing `ext_image_copy_capture_cursor_session_v1` | `WindowServer` + backend |
-| **InputCapture** | compositor input routing or libei/EIS | `WindowServer` (design) |
-| **Device (v2)** | a device broker | `WindowServer` / session |
-| **Camera (v2)** | a PipeWire camera producer | host/`WindowServer` |
+| Item | State |
+|---|---|
+| ScreenCast **metadata cursor** | **Landed** — `AvailableCursorModes = hidden\|embedded\|metadata`; a pointer-cursor session supplies position/hotspot/enter/leave and the cursor bitmap, published as `SPA_META_Cursor` (+ Header, VideoDamage). Verified live: the consumer receives `SPA_META_Cursor` with a real 64×64 bitmap. |
+| ScreenCast **DMA-BUF** (zero-copy) | Compositor offers it (proven by `capture-probe`); the backend negotiates it (GBM allocation, modifier fixation, `zwp_linux_dmabuf_v1` import). Blocked by PipeWire: this daemon fails the client-node DMA-BUF buffer allocation (`-EIO` at `port_use_buffers`). Opt-in (`SDE_SCREENCAST_DMABUF`); memfd is the default. |
+| **InputCapture** | compositor input routing or libei/EIS; design first (`08-compositor-gaps.md` §4). |
+| **Device (v2)** | a device broker. |
+| **Camera (v2)** | a PipeWire camera producer. |
 
-### 6.1 Environment required to unblock / verify
+### 6.1 Environment and tooling
 
-- A running SDE session with a **real output**, either on a **TTY (DRM backend)**
-  or **nested** on a DMA-BUF-capable parent compositor.
-- The renderer must be **GLES2 (EGL/GBM)** on a render node, not pixman:
-
-  ```sh
-  WLR_RENDERER=gles2 WLR_RENDER_DRM_DEVICE=/dev/dri/renderD128 \
-      scripts/start-sde-nested.sh      # or start-sde-session.sh on a TTY
-  ```
-
-- This machine qualifies: Intel Iris Plus (G7), `/dev/dri/card1` +
-  `/dev/dri/renderD128`, parent compositor advertises `zwp_linux_dmabuf_v1` v5.
-- Confirm the renderer actually came up with GLES2 (the compositor log must not
-  say `pixman`), otherwise everything below silently stays SHM.
-- `scripts/run-screencast-test.sh` currently forces headless; a live variant is
-  needed that points at the real `WAYLAND_DISPLAY` and asserts the negotiated
-  PipeWire buffer type / cursor metadata after each fix.
+- A running SDE session with a **real output** (TTY/DRM or nested) and a
+  **GLES2** renderer, not pixman:
+  `WLR_RENDERER=gles2 WLR_RENDER_DRM_DEVICE=/dev/dri/renderD128`.
+- `tools/capture-probe.c` reports what the live compositor can offer the
+  portal: capture-session **DMA-BUF formats** (and captures a real frame into
+  an imported DMA-BUF), plus the **pointer-cursor session** and a cursor
+  bitmap frame. `scripts/run-screencast-live-test.sh` runs it against
+  `$WAYLAND_DISPLAY`; it skips (pass) with no display, so CI stays green.
+- `tools/screencast-consumer.c` connects to the published PipeWire node and
+  reports the delivered buffer type (`SPA_DATA_DmaBuf` vs `MemFd`) and whether
+  `SPA_META_Cursor` is present — the backend-level check.
+- The headless `scripts/run-screencast-test.sh` still forces
+  `WLR_BACKENDS=headless` (pixman → SHM only), so it cannot exercise DMA-BUF.
 
 ### 6.2 ScreenCast DMA-BUF (zero-copy)
 
-- **Today:** `tools/portal-screencast.c` captures via
-  `ext_image_copy_capture_session_v1` into a memfd and memcpy's into the PipeWire
-  buffer (`SPA_PARAM_Buffers` memfd, `blocks=1`). It works, but it is a copy.
-- **Compositor work:** allocate DMA-BUF-backed buffers in the capture path and
-  advertise them in the capture session (`WindowServer/`, the
-  `wlr_output_capture`/screencopy code), with `zwp_linux_dmabuf_v1` feedback.
-- **Backend work:** negotiate `SPA_DATA_DmaBuf` (+ plane offsets/modifiers) in
-  `SPA_PARAM_Buffers`, hand the fds to PipeWire, keep SHM as fallback.
-- **Verify:** the consumer receives `SPA_DATA_DmaBuf`, not `MemFd`, with no
-  per-frame copy.
+- **Compositor (done):** `ext-image-copy-capture-v1` advertises DMA-BUF
+  formats for the output and cursor sources; `capture-probe` imports a
+  GBM-allocated, `zwp_linux_dmabuf_v1` buffer and the compositor renders the
+  frame into it.
+- **Backend (in place):** the stream offers a DMA-BUF `EnumFormat` (the
+  compositor's modifiers, `DONT_FIXATE`) plus a memfd fallback, fixates a
+  modifier the allocator accepts, advertises `SPA_DATA_DmaBuf`, allocates a
+  GBM BO per buffer and imports it as a `wl_buffer`.
+- **Blocker:** PipeWire's client-node returns `-EIO` from
+  `port_use_buffers` for the DMA-BUF layout, so `add_buffer` is never called
+  and the link fails to allocate. Until that is resolved, DMA-BUF is opt-in
+  and the memfd path is used.
+- **Verify (when unblocked):** the consumer must see `SPA_DATA_DmaBuf`, not
+  `MemFd`, with no per-frame copy.
 
 ### 6.3 ScreenCast metadata cursor mode
 
-- **Today:** only `hidden` and `embedded` (`PAINT_CURSORS`) are offered in
-  `AvailableCursorModes`.
-- **Compositor work:** implement `ext_image_copy_capture_cursor_session_v1` so
-  the cursor image + hotspot are a separate source.
-- **Backend work:** advertise the `metadata` cursor mode, request a cursor
-  session, and publish `SPA_META_Cursor` on the stream.
-- **Verify:** move the cursor over a live session and assert the metadata
-  (position + hotspot) arrives instead of being burned into the frame.
+- **Compositor (done):** `ext_image_copy_capture_cursor_session_v1` is served
+  (wlroots); `capture-probe` shows enter/position/hotspot and a cursor bitmap
+  frame.
+- **Backend (landed):** `AvailableCursorModes` advertises
+  `hidden|embedded|metadata`; in metadata mode the backend creates the pointer
+  cursor session, tracks position/hotspot, captures the cursor bitmap and
+  publishes `SPA_META_Cursor` (RGBA bitmap + hotspot), with `SPA_META_Header`
+  and `SPA_META_VideoDamage`.
+- **Verify:** `tools/screencast-consumer.c` reports `cursor_meta` and
+  `cursor_bitmap` (verified live).
 
 ### 6.4 InputCapture
 
@@ -266,3 +269,9 @@ picker).
 `scripts/run-portal-ui-test.sh` launches each LibGUI dialog under a headless
 compositor, screenshots it and asserts the client area rendered (a blank-dialog
 regression guard).
+
+`scripts/run-screencast-live-test.sh` (a real TTY session; skipped in CI)
+drives `tools/capture-probe` to prove the compositor offers DMA-BUF capture and
+a pointer-cursor session, and captures real DMA-BUF and cursor-bitmap frames.
+`tools/screencast-consumer.c` is a libpipewire consumer that reports the
+delivered buffer type and `SPA_META_Cursor`.
