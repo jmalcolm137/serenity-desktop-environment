@@ -83,6 +83,17 @@ if [[ -x "$IMAGE_DECODER" ]]; then
     IMAGE_DECODER_PID=$!
 fi
 
+# The SDE Settings portal backend (R4.4): exposes color-scheme / accent-color /
+# contrast over org.freedesktop.impl.portal.Settings so xdg-desktop-portal (and
+# thus GTK/Qt/Flatpak apps) follow the SDE theme. Selected via portals.conf;
+# harmless when xdg-desktop-portal is absent.
+SETTINGS_PORTAL="$SDE_ROOT/build/tools/sde-settings-portal"
+SETTINGS_PORTAL_PID=""
+if [[ -x "$SETTINGS_PORTAL" ]]; then
+    "$SETTINGS_PORTAL" &
+    SETTINGS_PORTAL_PID=$!
+fi
+
 echo "SDE: starting WindowServer (${SDE_BACKENDS:-drm,libinput}) on $XDG_RUNTIME_DIR"
 # Build the portable session tools (sde-idle) if needed.
 if [ ! -x "$SDE_ROOT/build/tools/sde-idle" ]; then
@@ -99,5 +110,8 @@ if [[ -n "$LAUNCH_SERVER_PID" ]]; then
 fi
 if [[ -n "$IMAGE_DECODER_PID" ]]; then
     kill "$IMAGE_DECODER_PID" 2>/dev/null || true
+fi
+if [[ -n "$SETTINGS_PORTAL_PID" ]]; then
+    kill "$SETTINGS_PORTAL_PID" 2>/dev/null || true
 fi
 exit "$status"

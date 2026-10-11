@@ -48,9 +48,16 @@ if [ -x "$IMAGE_DECODER" ]; then
     "$IMAGE_DECODER" &
     IMAGE_PID=$!
 fi
+# The SDE Settings portal backend (R4.4).
+SETTINGS_PORTAL_PID=""
+if [ -x "$SDE_ROOT/build/tools/sde-settings-portal" ]; then
+    "$SDE_ROOT/build/tools/sde-settings-portal" &
+    SETTINGS_PORTAL_PID=$!
+fi
 cleanup() {
     [ -n "$LAUNCH_PID" ] && kill "$LAUNCH_PID" 2>/dev/null || true
     [ -n "$IMAGE_PID" ] && kill "$IMAGE_PID" 2>/dev/null || true
+    [ -n "$SETTINGS_PORTAL_PID" ] && kill "$SETTINGS_PORTAL_PID" 2>/dev/null || true
 }
 trap cleanup EXIT
 

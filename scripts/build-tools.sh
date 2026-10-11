@@ -46,4 +46,13 @@ cc -O2 -I "$TOOLS_BUILD" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/sde-screenshot"
 
-echo "==> SDE tools: $TOOLS_BUILD/sde-idle $TOOLS_BUILD/sde-dpms $TOOLS_BUILD/sde-screenshot"
+# sde-settings-portal (R4.4): the SDE backend for the freedesktop Settings portal
+# (org.freedesktop.impl.portal.Settings) — reports color-scheme / accent-color /
+# contrast from the active SDE theme, so GTK/Qt/Flatpak apps follow it. Host
+# D-Bus via GIO.
+cc -O2 -Wall \
+    "$SDE_ROOT/tools/sde-settings-portal.c" \
+    $(pkg-config --cflags --libs gio-2.0) \
+    -o "$TOOLS_BUILD/sde-settings-portal"
+
+echo "==> SDE tools: $TOOLS_BUILD/sde-idle $TOOLS_BUILD/sde-dpms $TOOLS_BUILD/sde-screenshot $TOOLS_BUILD/sde-settings-portal"
