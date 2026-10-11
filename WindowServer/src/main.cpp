@@ -13,6 +13,7 @@
 #include <AK/ByteString.h>
 #include <AK/Error.h>
 #include <AK/Format.h>
+#include <AK/StringBuilder.h>
 #include <AK/LexicalPath.h>
 #include <AK/NonnullOwnPtr.h>
 #include <AK/NonnullRefPtr.h>
@@ -658,6 +659,15 @@ static void process_cursor_motion(Server& server, uint32_t time)
         wlr_seat_pointer_clear_focus(server.seat);
     }
 
+    // [Focus] FollowsMouse (R4.4): focus the toplevel under the cursor.
+    if (Config::focus().follows_mouse && server.cursor_mode == CursorMode::Passthrough && !server.pointer_grab_surface) {
+        double focus_x = 0;
+        double focus_y = 0;
+        wlr_surface* focus_surface = nullptr;
+        if (auto* toplevel = toplevel_at(server, server.cursor->x, server.cursor->y, &focus_surface, &focus_x, &focus_y))
+            focus_toplevel(server, toplevel);
+    }
+
     // Set the cursor for our chrome last: clearing client focus above resets it
     // to the default arrow, so the resize cursor must come after.
     if (hit.region != FrameRegion::None)
@@ -1145,6 +1155,10 @@ static float auto_output_scale(struct wlr_output* output, struct wlr_output_mode
         if (end != env && value >= 1.0)
             return static_cast<float>(value);
     }
+
+    // [Output] DefaultScale (R4.4): 0 = auto, else a fixed integer scale.
+    if (int const configured = Config::output().default_scale; configured > 0)
+        return static_cast<float>(configured);
 
     int const width = mode ? mode->width : output->width;
     int const height = mode ? mode->height : output->height;
@@ -3057,10 +3071,47 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
 
     StringView startup_command;
     StringView socket_name;
+    bool check_config = false;
+    bool print_config = false;
     Core::ArgsParser args_parser;
     args_parser.add_option(startup_command, "Command to run once the compositor is up", nullptr, 's', "command");
     args_parser.add_option(socket_name, "Wayland socket name", nullptr, 'n', "name");
+    args_parser.add_option(check_config, "Validate the compositor config and exit", "check-config");
+    args_parser.add_option(print_config, "Print the effective compositor config and exit", "print-config");
     args_parser.parse(arguments);
+
+    if (check_config || print_config) {
+        Config::load();
+        if (print_config) {
+            outln("[Workspaces]");
+            outln("Rows={}", Config::workspaces().rows);
+            outln("Columns={}", Config::workspaces().columns);
+            outln("[Tiling]");
+            outln("EdgeThreshold={}", Config::tiling().edge_threshold);
+            outln("DragToEdge={}", Config::tiling().drag_to_edge);
+            outln("[Focus]");
+            outln("FollowsMouse={}", Config::focus().follows_mouse);
+            outln("[Effects]");
+            outln("WindowGeometry={}", Config::effects().window_geometry);
+            outln("[Output]");
+            outln("DefaultScale={}", Config::output().default_scale);
+            outln("[Applet]");
+            StringBuilder order;
+            for (size_t i = 0; i < Config::applet_order().size(); ++i) {
+                if (i > 0)
+                    order.append(',');
+                order.append(Config::applet_order()[i]);
+            }
+            outln("Order={}", order.to_byte_string());
+        }
+        for (auto const& diagnostic : Config::diagnostics())
+            warnln("sde-config: {}", diagnostic);
+        if (!Config::diagnostics().is_empty())
+            return 1;
+        if (check_config)
+            outln("sde-config: {} OK", Config::file_path());
+        return 0;
+    }
 
     TRY(initialize_gfx());
 

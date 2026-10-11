@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# sde-config — read/write/validate the SDE compositor config (WindowServer.ini).
+#
+# The file lives in the shared SDE state directory ($XDG_CONFIG_HOME/sde, override
+# SDE_STATE_DIR) and is layered over the SerenityOS defaults under the resource
+# root. The compositor validates it (rejecting invalid values) and live-reloads on
+# change; this helper reuses the compositor's own rules via --print-config /
+# --check-config so there is one source of truth. See docs/14-r4.4-config.md.
+set -euo pipefail
+
+SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
+SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
+BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
+COMP="$SDE_ROOT/build/WindowServer/WindowServer"
+STATE_DIR="${SDE_STATE_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/sde}"
+FILE="$STATE_DIR/WindowServer.ini"
+
+usage() {
+    cat <<EOF
+Usage: sde-config <command>
+
+  path                          Print the user config file path
+  list                          Print the effective configuration
+  get <section> <key>           Print an effective value
+  set <section> <key> <value>   Set a value in the user config
+  validate                      Validate the config (non-zero exit on error)
+EOF
+}
+
+run_compositor() {
+    env -u WAYLAND_DISPLAY -u DISPLAY \
+        LD_LIBRARY_PATH="$BUILD/lib" \
+        SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
+        SDE_STATE_DIR="$STATE_DIR" \
+        "$COMP" "$@"
+}
+
+case "${1:-}" in
+path)
+    echo "$FILE"
+    ;;
+list)
+    run_compositor --print-config 2>/dev/null
+    ;;
+validate)
+    run_compositor --check-config
+    ;;
+get)
+    if [ $# -ne 3 ]; then usage; exit 2; fi
+    run_compositor --print-config 2>/dev/null | awk -v s="[$2]" -v k="$3" '
+        $0 == s { in_section = 1; next }
+        /^\[/ { in_section = 0 }
+        in_section && index($0, k "=") == 1 { print substr($0, length(k) + 2); found = 1; exit }
+        END { if (!found) exit 1 }'
+    ;;
+set)
+    if [ $# -ne 4 ]; then usage; exit 2; fi
+    mkdir -p "$STATE_DIR"
+    python3 - "$FILE" "$2" "$3" "$4" <<'PY'
+import sys
+
+path, section, key, value = sys.argv[1:5]
+section_header = f"[{section}]"
+
+try:
+    with open(path) as handle:
+        lines = handle.read().splitlines()
+except FileNotFoundError:
+    lines = []
+
+output = []
+in_section = False
+saw_section = False
+replaced = False
+for line in lines:
+    stripped = line.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        if in_section and not replaced:
+            output.append(f"{key}={value}")
+            replaced = True
+        in_section = stripped == section_header
+        if in_section:
+            saw_section = True
+        output.append(line)
+        continue
+    if in_section:
+        existing_key = line.split("=", 1)[0].strip()
+        if existing_key == key:
+            output.append(f"{key}={value}")
+            replaced = True
+            continue
+    output.append(line)
+
+if not saw_section:
+    if output and output[-1].strip() != "":
+        output.append("")
+    output.append(section_header)
+    output.append(f"{key}={value}")
+elif not replaced:
+    output.append(f"{key}={value}")
+
+with open(path, "w") as handle:
+    handle.write("\n".join(output) + "\n")
+PY
+    echo "sde-config: set [$2] $3=$4"
+    ;;
+*)
+    usage
+    exit 2
+    ;;
+esac

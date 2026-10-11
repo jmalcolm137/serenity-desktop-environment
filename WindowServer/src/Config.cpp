@@ -7,6 +7,7 @@
 #include "Config.h"
 
 #include <AK/Format.h>
+#include <AK/Optional.h>
 #include <AK/StringView.h>
 #include <LibCore/ConfigFile.h>
 #include <LibCore/Directory.h>
@@ -18,7 +19,12 @@
 namespace Config {
 
 static Workspaces g_workspaces;
+static Tiling g_tiling;
+static Focus g_focus;
+static Effects g_effects;
+static Output g_output;
 static Vector<ByteString> g_applet_order;
+static Vector<ByteString> g_diagnostics;
 
 ByteString state_directory()
 {
@@ -98,13 +104,60 @@ static ByteString read_entry(RefPtr<Core::ConfigFile> const& user, RefPtr<Core::
     return {};
 }
 
+// Returns the valued integer if the key is set and valid; records a diagnostic
+// (and returns empty, so the previous value is kept) if it is out of range.
+static Optional<int> read_int(RefPtr<Core::ConfigFile> const& user, RefPtr<Core::ConfigFile> const& defaults, StringView group, StringView key, int min, int max)
+{
+    auto raw = read_entry(user, defaults, group, key);
+    if (raw.is_empty())
+        return {};
+    auto value = raw.to_number<int>();
+    if (!value.has_value() || value.value() < min || value.value() > max) {
+        g_diagnostics.append(ByteString::formatted("[{}] {}='{}' invalid (expected {}-{})", group, key, raw, min, max));
+        return {};
+    }
+    return value;
+}
+
+static Optional<bool> read_bool(RefPtr<Core::ConfigFile> const& user, RefPtr<Core::ConfigFile> const& defaults, StringView group, StringView key)
+{
+    auto raw = read_entry(user, defaults, group, key);
+    if (raw.is_empty())
+        return {};
+    auto lower = raw.to_lowercase();
+    if (lower == "true" || lower == "1" || lower == "yes" || lower == "on")
+        return true;
+    if (lower == "false" || lower == "0" || lower == "no" || lower == "off")
+        return false;
+    g_diagnostics.append(ByteString::formatted("[{}] {}='{}' invalid (expected true/false)", group, key, raw));
+    return {};
+}
+
 void load()
 {
+    g_diagnostics.clear();
+
     auto user = open_config(file_path());
     auto defaults = open_config(default_config_path());
 
-    g_workspaces.rows = read_entry(user, defaults, "Workspaces"sv, "Rows"sv).to_number<int>().value_or(2);
-    g_workspaces.columns = read_entry(user, defaults, "Workspaces"sv, "Columns"sv).to_number<int>().value_or(2);
+    if (auto value = read_int(user, defaults, "Workspaces"sv, "Rows"sv, 1, 16); value.has_value())
+        g_workspaces.rows = value.value();
+    if (auto value = read_int(user, defaults, "Workspaces"sv, "Columns"sv, 1, 16); value.has_value())
+        g_workspaces.columns = value.value();
+
+    if (auto value = read_int(user, defaults, "Tiling"sv, "EdgeThreshold"sv, 1, 512); value.has_value())
+        g_tiling.edge_threshold = value.value();
+    if (auto value = read_bool(user, defaults, "Tiling"sv, "DragToEdge"sv); value.has_value())
+        g_tiling.drag_to_edge = value.value();
+
+    if (auto value = read_bool(user, defaults, "Focus"sv, "FollowsMouse"sv); value.has_value())
+        g_focus.follows_mouse = value.value();
+
+    if (auto value = read_bool(user, defaults, "Effects"sv, "WindowGeometry"sv); value.has_value())
+        g_effects.window_geometry = value.value();
+
+    if (auto value = read_int(user, defaults, "Output"sv, "DefaultScale"sv, 0, 4); value.has_value())
+        g_output.default_scale = value.value();
 
     g_applet_order.clear();
     for (auto& entry : read_entry(user, defaults, "Applet"sv, "Order"sv).split(',')) {
@@ -113,7 +166,13 @@ void load()
             g_applet_order.append(trimmed);
     }
 
-    dbgln("WindowServer: config: workspaces {}x{}, {} applets ordered", g_workspaces.rows, g_workspaces.columns, g_applet_order.size());
+    for (auto const& diagnostic : g_diagnostics)
+        warnln("WindowServer: config: {}", diagnostic);
+
+    dbgln("WindowServer: config: workspaces {}x{}, applets {}, tiling edge {}px (drag {}), follows-mouse {}, geometry {}, output scale {}",
+        g_workspaces.rows, g_workspaces.columns, g_applet_order.size(),
+        g_tiling.edge_threshold, g_tiling.drag_to_edge ? "on" : "off",
+        g_focus.follows_mouse ? "on" : "off", g_effects.window_geometry ? "on" : "off", g_output.default_scale);
 }
 
 void watch(Function<void()> on_reload)
@@ -143,9 +202,34 @@ Workspaces const& workspaces()
     return g_workspaces;
 }
 
+Tiling const& tiling()
+{
+    return g_tiling;
+}
+
+Focus const& focus()
+{
+    return g_focus;
+}
+
+Effects const& effects()
+{
+    return g_effects;
+}
+
+Output const& output()
+{
+    return g_output;
+}
+
 Vector<ByteString> const& applet_order()
 {
     return g_applet_order;
+}
+
+Vector<ByteString> const& diagnostics()
+{
+    return g_diagnostics;
 }
 
 }

@@ -397,6 +397,11 @@ void hide_geometry_hud()
 
 static void show_geometry_hud(Server& server, Gfx::IntRect geometry)
 {
+    // [Effects] WindowGeometry=false disables the HUD (WS2).
+    if (!Config::effects().window_geometry) {
+        hide_geometry_hud();
+        return;
+    }
     if (!server.overlay_tree || geometry.is_empty())
         return;
 
@@ -463,11 +468,20 @@ static Gfx::IntRect toplevel_frame_rect(Toplevel const& toplevel)
 
 void update_move_snap(Server& server, Toplevel& toplevel)
 {
+    // [Tiling] DragToEdge=false disables edge snapping entirely (WS2).
+    if (!Config::tiling().drag_to_edge) {
+        if (s_tile_preview)
+            s_tile_preview->set_visible(false);
+        s_pending_tile = WindowTileType::None;
+        hide_geometry_hud();
+        return;
+    }
+
     auto area = usable_area(server);
     if (area.is_empty())
         return;
 
-    int const edge = 48;
+    int const edge = Config::tiling().edge_threshold;
     double const x = server.cursor->x;
     double const y = server.cursor->y;
 

@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# Headless test for the R4.4 compositor config (docs/14-r4.4-config.md):
+# defaults, get/set, validation (invalid rejected with a clear error), and live
+# reload taking effect in a running compositor.
+set -euo pipefail
+
+SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
+SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
+BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
+COMP="$SDE_ROOT/build/WindowServer/WindowServer"
+CONFIG="$SDE_ROOT/scripts/sde-config"
+
+"$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
+
+RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-config.XXXXXX")"
+chmod 700 "$RUNTIME"
+trap 'rm -rf "$RUNTIME"' EXIT
+export SDE_STATE_DIR="$RUNTIME"
+sde_config() { SDE_STATE_DIR="$RUNTIME" "$CONFIG" "$@"; }
+
+fail=0
+check() {
+    if grep -qF "$1" <<<"$2"; then
+        echo "  ok: $1"
+    else
+        echo "  MISSING ($2): $1"
+        fail=1
+    fi
+}
+
+echo "=== (A) defaults ==="
+defaults="$(sde_config list)"
+check "Rows=2" "$defaults"
+check "EdgeThreshold=48" "$defaults"
+check "FollowsMouse=false" "$defaults"
+check "WindowGeometry=true" "$defaults"
+check "DefaultScale=0" "$defaults"
+
+echo "=== (B) set / get ==="
+sde_config set Focus FollowsMouse true >/dev/null
+sde_config set Tiling EdgeThreshold 120 >/dev/null
+if [ "$(sde_config get Focus FollowsMouse)" = "true" ]; then
+    echo "  ok: get FollowsMouse=true"
+else
+    echo "  FAIL: get FollowsMouse (got '$(sde_config get Focus FollowsMouse)')"
+    fail=1
+fi
+check "EdgeThreshold=120" "$(sde_config list)"
+
+echo "=== (C) validation ==="
+if sde_config validate >/dev/null 2>&1; then
+    echo "  ok: valid config passes"
+else
+    echo "  FAIL: valid config rejected"
+    fail=1
+fi
+sde_config set Workspaces Rows 99 >/dev/null
+if sde_config validate >"$RUNTIME/invalid.log" 2>&1; then
+    echo "  FAIL: invalid config accepted"
+    fail=1
+else
+    echo "  ok: invalid config rejected"
+    check "Rows='99' invalid (expected 1-16)" "$(cat "$RUNTIME/invalid.log")"
+fi
+sde_config set Workspaces Rows 2 >/dev/null  # back to a valid grid
+
+echo "=== (D) live reload ==="
+sock="sde-config-$$"
+env -u WAYLAND_DISPLAY -u DISPLAY \
+    WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
+    SDE_STATE_DIR="$RUNTIME" \
+    SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
+    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
+    LD_LIBRARY_PATH="$BUILD/lib" \
+    "$COMP" -n "$sock" > "$RUNTIME/comp.log" 2>&1 &
+COMP_PID=$!
+# Wait for the socket, which is created after initialize() (incl. Config::watch()).
+for _ in $(seq 1 80); do
+    [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$sock" ]] && break
+    sleep 0.1
+done
+check "config: workspaces 2x2" "$(cat "$RUNTIME/comp.log")"
+
+sde_config set Workspaces Rows 4 >/dev/null
+for _ in $(seq 1 60); do
+    grep -qF "workspaces 4x2" "$RUNTIME/comp.log" 2>/dev/null && break
+    sleep 0.1
+done
+check "workspaces 4x2" "$(cat "$RUNTIME/comp.log")"
+
+pkill -P "$COMP_PID" 2>/dev/null || true
+kill "$COMP_PID" 2>/dev/null || true
+wait "$COMP_PID" 2>/dev/null || true
+
+if [[ "$fail" -ne 0 ]]; then
+    echo "==> config test FAILED"
+    exit 1
+fi
+echo "==> config test PASSED"
