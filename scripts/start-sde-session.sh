@@ -83,15 +83,21 @@ if [[ -x "$IMAGE_DECODER" ]]; then
     IMAGE_DECODER_PID=$!
 fi
 
-# The SDE Settings portal backend (R4.4): exposes color-scheme / accent-color /
-# contrast over org.freedesktop.impl.portal.Settings so xdg-desktop-portal (and
-# thus GTK/Qt/Flatpak apps) follow the SDE theme. Selected via portals.conf;
-# harmless when xdg-desktop-portal is absent.
+# The SDE portal backend (R5): xdg-desktop-portal-serenity implements the
+# org.freedesktop.impl.portal.* interfaces (Settings, ScreenCast, RemoteDesktop,
+# FileChooser, Screenshot, Print, ...) that portals.conf selects, so
+# xdg-desktop-portal (and thus GTK/Qt/Flatpak apps) follow the SDE session.
+# Falls back to the R4.4 Settings-only backend; harmless when xdg-desktop-portal
+# is absent.
+PORTAL_BACKEND="$SDE_ROOT/build/tools/xdg-desktop-portal-serenity"
 SETTINGS_PORTAL="$SDE_ROOT/build/tools/sde-settings-portal"
-SETTINGS_PORTAL_PID=""
-if [[ -x "$SETTINGS_PORTAL" ]]; then
+PORTAL_PID=""
+if [[ -x "$PORTAL_BACKEND" ]]; then
+    "$PORTAL_BACKEND" &
+    PORTAL_PID=$!
+elif [[ -x "$SETTINGS_PORTAL" ]]; then
     "$SETTINGS_PORTAL" &
-    SETTINGS_PORTAL_PID=$!
+    PORTAL_PID=$!
 fi
 
 echo "SDE: starting WindowServer (${SDE_BACKENDS:-drm,libinput}) on $XDG_RUNTIME_DIR"
@@ -111,7 +117,7 @@ fi
 if [[ -n "$IMAGE_DECODER_PID" ]]; then
     kill "$IMAGE_DECODER_PID" 2>/dev/null || true
 fi
-if [[ -n "$SETTINGS_PORTAL_PID" ]]; then
-    kill "$SETTINGS_PORTAL_PID" 2>/dev/null || true
+if [[ -n "$PORTAL_PID" ]]; then
+    kill "$PORTAL_PID" 2>/dev/null || true
 fi
 exit "$status"

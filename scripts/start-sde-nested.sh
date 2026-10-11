@@ -48,16 +48,21 @@ if [ -x "$IMAGE_DECODER" ]; then
     "$IMAGE_DECODER" &
     IMAGE_PID=$!
 fi
-# The SDE Settings portal backend (R4.4).
-SETTINGS_PORTAL_PID=""
-if [ -x "$SDE_ROOT/build/tools/sde-settings-portal" ]; then
+# The SDE portal backend (R5): prefer the combined xdg-desktop-portal-serenity
+# (implements all the impl.portal.* interfaces), falling back to the R4.4
+# Settings-only backend.
+PORTAL_PID=""
+if [ -x "$SDE_ROOT/build/tools/xdg-desktop-portal-serenity" ]; then
+    "$SDE_ROOT/build/tools/xdg-desktop-portal-serenity" &
+    PORTAL_PID=$!
+elif [ -x "$SDE_ROOT/build/tools/sde-settings-portal" ]; then
     "$SDE_ROOT/build/tools/sde-settings-portal" &
-    SETTINGS_PORTAL_PID=$!
+    PORTAL_PID=$!
 fi
 cleanup() {
     [ -n "$LAUNCH_PID" ] && kill "$LAUNCH_PID" 2>/dev/null || true
     [ -n "$IMAGE_PID" ] && kill "$IMAGE_PID" 2>/dev/null || true
-    [ -n "$SETTINGS_PORTAL_PID" ] && kill "$SETTINGS_PORTAL_PID" 2>/dev/null || true
+    [ -n "$PORTAL_PID" ] && kill "$PORTAL_PID" 2>/dev/null || true
 }
 trap cleanup EXIT
 
