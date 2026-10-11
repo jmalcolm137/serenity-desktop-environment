@@ -225,6 +225,24 @@ struct LayerSurface {
     // suffix, matched against [Applet] Order.
     bool is_applet { false };
     ByteString applet_name;
+    // The arrange-relevant committed state from the last commit that triggered a
+    // layer re-arrange. A content-only commit (a new buffer, damage) does not
+    // change these, so arrange_layers is skipped and every layer surface is not
+    // re-configured — otherwise a client that commits in response to a configure
+    // spins (the "configure storm"; see docs/04-known-gaps.md).
+    struct ArrangeState {
+        bool valid { false };
+        uint32_t desired_width { 0 };
+        uint32_t desired_height { 0 };
+        uint32_t anchor { 0 };
+        int32_t exclusive_zone { 0 };
+        int32_t margin_top { 0 };
+        int32_t margin_right { 0 };
+        int32_t margin_bottom { 0 };
+        int32_t margin_left { 0 };
+        uint32_t layer { 0 };
+    };
+    ArrangeState arrange_state;
     wl_listener map { };
     wl_listener unmap { };
     wl_listener commit { };

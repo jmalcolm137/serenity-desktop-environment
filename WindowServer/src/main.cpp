@@ -2125,6 +2125,37 @@ static void layer_surface_commit(wl_listener* listener, void*)
 {
     LayerSurface* layer = nullptr;
     layer = wl_container_of(listener, layer, commit);
+
+    // Only re-arrange when the committed state can actually change the layout.
+    // Layer-shell reconfigures every surface on commit; doing that for a
+    // content-only commit re-configures every layer surface and spins any client
+    // that commits in response to a configure (see docs/04-known-gaps.md).
+    auto const& state = layer->layer_surface->current;
+    auto const& previous = layer->arrange_state;
+    bool const arrange_relevant = !previous.valid
+        || previous.desired_width != state.desired_width
+        || previous.desired_height != state.desired_height
+        || previous.anchor != state.anchor
+        || previous.exclusive_zone != state.exclusive_zone
+        || previous.margin_top != state.margin.top
+        || previous.margin_right != state.margin.right
+        || previous.margin_bottom != state.margin.bottom
+        || previous.margin_left != state.margin.left
+        || previous.layer != static_cast<uint32_t>(state.layer);
+    if (!arrange_relevant)
+        return;
+
+    layer->arrange_state.valid = true;
+    layer->arrange_state.desired_width = state.desired_width;
+    layer->arrange_state.desired_height = state.desired_height;
+    layer->arrange_state.anchor = state.anchor;
+    layer->arrange_state.exclusive_zone = state.exclusive_zone;
+    layer->arrange_state.margin_top = state.margin.top;
+    layer->arrange_state.margin_right = state.margin.right;
+    layer->arrange_state.margin_bottom = state.margin.bottom;
+    layer->arrange_state.margin_left = state.margin.left;
+    layer->arrange_state.layer = static_cast<uint32_t>(state.layer);
+
     arrange_layers(*layer->server, layer->output);
 }
 
