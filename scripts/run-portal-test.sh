@@ -53,10 +53,17 @@ printf "Print to File\t2\n"
 EOF
 chmod +x "$PRINTDIALOG"
 
+ACCESSDIALOG="$RUNTIME/accessdialog.sh"
+cat > "$ACCESSDIALOG" <<'EOF'
+#!/usr/bin/env bash
+echo 0
+EOF
+chmod +x "$ACCESSDIALOG"
+
 # Settings reads the theme broker for color-scheme / accent.
 printf '%s\n' "$SERENITY/Base/res/themes/Redmond 2000.ini" > "$RUNTIME/sde-theme"
 
-SDE_STATE_DIR="$RUNTIME" SDE_PORTAL_OPENER="$OPENER" SDE_PORTAL_NOTIFIER="$NOTIFIER" SDE_PORTAL_FILE_CHOOSER="$FILECHOOSER" SDE_PORTAL_PRINT_DIALOG="$PRINTDIALOG" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
+SDE_STATE_DIR="$RUNTIME" SDE_PORTAL_OPENER="$OPENER" SDE_PORTAL_NOTIFIER="$NOTIFIER" SDE_PORTAL_FILE_CHOOSER="$FILECHOOSER" SDE_PORTAL_PRINT_DIALOG="$PRINTDIALOG" SDE_PORTAL_ACCESS_DIALOG="$ACCESSDIALOG" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
 PORTAL_PID=$!
 trap 'kill "$PORTAL_PID" 2>/dev/null || true' EXIT
 
@@ -139,7 +146,8 @@ else
     fail=1
 fi
 
-echo "=== Secret / USB / DynamicLauncher ==="
+echo "=== Secret / USB / DynamicLauncher / Access ==="
+check "uint32 0" "$(call org.freedesktop.impl.portal.Access.AccessDialog /h app "" "Allow?" "" "Please allow." "{}")"
 check "uint32 0" "$(call org.freedesktop.impl.portal.Secret.RetrieveSecret /h app "{}")"
 usb="$(call org.freedesktop.impl.portal.USB.ListDevices "{}")"
 check "uint32 0" "$usb"

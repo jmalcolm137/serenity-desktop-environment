@@ -53,6 +53,7 @@ This supersedes the earlier single-interface `tools/sde-settings-portal.c` (R4.4
 | `Secret` (v1) | `RetrieveSecret` returns a stable per-app 64-byte secret, generated once and kept under `secrets/` in the state directory. |
 | `USB` (v1) | `ListDevices`/`AcquireDevices`/`ReleaseDevices` — no device broker yet, so an empty device list (standards-compliant). |
 | `DynamicLauncher` (v1) | `RequestInstallToken` (random token), `PrepareInstall` (echoes the name), `Launch` (launches the desktop file). |
+| `Access` (v1) | `AccessDialog` through the LibGUI **AccessDialog** app (`SDE_PORTAL_ACCESS_DIALOG`); returns allowed (0) / denied (1). |
 
 ### ScreenCast pipeline (niri-inspired)
 
@@ -85,7 +86,8 @@ mode uses the capture session's `PAINT_CURSORS` option.
 The **FileChooser** portal is likewise a LibGUI app — `FileChooserDialog/`
 (`scripts/build-file-chooser-dialog.sh`), wrapping `GUI::FilePicker` — launched
 via `SDE_PORTAL_FILE_CHOOSER`. The **Print** dialog is `PrintDialog/`
-(`scripts/build-print-dialog.sh`).
+(`scripts/build-print-dialog.sh`), and the permission prompt is `AccessDialog/`
+(`scripts/build-access-dialog.sh`).
 
 ## 3. SDE integration seams
 
@@ -127,7 +129,8 @@ To reach and surpass `xdg-desktop-portal-kde`:
 - **GlobalShortcuts** — compositor global-shortcut registration.
 - **GlobalShortcuts** — landed (shortcuts in `global-shortcuts.ini`, activations
   over the session FIFO).
-- **DynamicLauncher**, **USB**, **Device**, **Camera** (v2).
+- **DynamicLauncher** (basics landed), **USB**/**Device**/**Camera** (v2)
+  (device/USB brokers and the camera PipeWire path).
 - A **permission store** integration and the `Request`/`Response` choreography for
   the interfaces that return a `handle`.
 

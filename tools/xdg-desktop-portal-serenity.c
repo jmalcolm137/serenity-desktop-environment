@@ -1684,6 +1684,83 @@ static void handle_dynamic_launcher(GDBusConnection* connection, const gchar* se
     g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "unknown method %s", method_name);
 }
 
+// --- Access -----------------------------------------------------------------
+
+static const char access_introspection[] =
+    "<node>"
+    "  <interface name='org.freedesktop.impl.portal.Access'>"
+    "    <property name='version' type='u' access='read'/>"
+    "    <method name='AccessDialog'>"
+    "      <arg type='o' name='handle' direction='in'/>"
+    "      <arg type='s' name='app_id' direction='in'/>"
+    "      <arg type='s' name='parent_window' direction='in'/>"
+    "      <arg type='s' name='title' direction='in'/>"
+    "      <arg type='s' name='subtitle' direction='in'/>"
+    "      <arg type='s' name='body' direction='in'/>"
+    "      <arg type='a{sv}' name='options' direction='in'/>"
+    "      <arg type='u' name='response' direction='out'/>"
+    "      <arg type='a{sv}' name='results' direction='out'/>"
+    "    </method>"
+    "  </interface>"
+    "</node>";
+
+// A LibGUI permission dialog (AccessDialog) prints 0 (allow) or 1 (deny).
+static void handle_access(GDBusConnection* connection, const gchar* sender, const gchar* object_path,
+    const gchar* interface_name, const gchar* method_name, GVariant* parameters,
+    GDBusMethodInvocation* invocation, gpointer user_data)
+{
+    (void)connection;
+    (void)sender;
+    (void)object_path;
+    (void)interface_name;
+    (void)user_data;
+
+    GVariantBuilder results;
+    g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
+
+    if (g_strcmp0(method_name, "AccessDialog") != 0) {
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "unknown method %s", method_name);
+        return;
+    }
+
+    char const* handle = NULL;
+    char const* app_id = NULL;
+    char const* parent_window = NULL;
+    char const* title = NULL;
+    char const* subtitle = NULL;
+    char const* body = NULL;
+    GVariant* options = NULL;
+    g_variant_get(parameters, "(o&s&s&s&s&s@a{sv})", &handle, &app_id, &parent_window, &title, &subtitle, &body, &options);
+
+    char const* dialog = getenv("SDE_PORTAL_ACCESS_DIALOG");
+    guint32 response = RESPONSE_CANCELLED;
+    if (dialog && *dialog) {
+        char const* argv[10];
+        int argc = 0;
+        argv[argc++] = dialog;
+        argv[argc++] = "-t";
+        argv[argc++] = title ? title : "Allow this request?";
+        argv[argc++] = "-s";
+        argv[argc++] = subtitle ? subtitle : "";
+        argv[argc++] = "-b";
+        argv[argc++] = body ? body : "";
+        argv[argc] = NULL;
+        char* out = NULL;
+        gint wait_status = 0;
+        GError* error = NULL;
+        if (g_spawn_sync(NULL, (char**)argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, &out, NULL, &wait_status, &error)
+            && out && g_spawn_check_wait_status(wait_status, NULL))
+            response = (guint32)MAX(0, atoi(g_strstrip(out)));
+        if (out)
+            g_free(out);
+        if (error)
+            g_error_free(error);
+    }
+    if (options)
+        g_variant_unref(options);
+    return_response(invocation, response, &results);
+}
+
 // --- Settings introspection -------------------------------------------------
 
 static const char settings_introspection[] =
@@ -1755,6 +1832,7 @@ static const GDBusInterfaceVTable wallpaper_vtable = { handle_wallpaper, simple_
 static const GDBusInterfaceVTable secret_vtable = { handle_secret, simple_version_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable usb_vtable = { handle_usb, simple_version_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable dynamic_launcher_vtable = { handle_dynamic_launcher, simple_version_get_property, NULL, { 0 } };
+static const GDBusInterfaceVTable access_vtable = { handle_access, simple_version_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable remote_desktop_vtable = { portal_remote_desktop_method_call, portal_remote_desktop_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable global_shortcuts_vtable = { portal_global_shortcuts_method_call, portal_global_shortcuts_get_property, NULL, { 0 } };
 
@@ -1786,6 +1864,7 @@ static InterfaceRegistration const interfaces[] = {
     { secret_introspection, &secret_vtable },
     { usb_introspection, &usb_vtable },
     { dynamiclauncher_introspection, &dynamic_launcher_vtable },
+    { access_introspection, &access_vtable },
     { portal_remote_desktop_introspection, &remote_desktop_vtable },
     { portal_global_shortcuts_introspection, &global_shortcuts_vtable },
 };
