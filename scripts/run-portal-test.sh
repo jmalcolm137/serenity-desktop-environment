@@ -128,9 +128,32 @@ shortcuts_ini="$(cat "$RUNTIME/global-shortcuts.ini" 2>/dev/null || echo '(no in
 check "Trigger=Ctrl+Alt+t" "$shortcuts_ini"
 check "Session=/org/freedesktop/portal/desktop/session/gs" "$shortcuts_ini"
 
+echo "=== Wallpaper ==="
+wallpaper_png="$SERENITY/Base/res/icons/16x16/app-mouse.png"
+wp="$(call org.freedesktop.impl.portal.Wallpaper.SetWallpaper /h app "" "file://$wallpaper_png" "{}")"
+check "uint32 0" "$wp"
+if [ -s "$RUNTIME/wallpaper.raw" ]; then
+    echo "  ok: wallpaper.raw written"
+else
+    echo "  FAIL: wallpaper.raw not written ($wp)"
+    fail=1
+fi
+
+echo "=== Secret / USB / DynamicLauncher ==="
+check "uint32 0" "$(call org.freedesktop.impl.portal.Secret.RetrieveSecret /h app "{}")"
+usb="$(call org.freedesktop.impl.portal.USB.ListDevices "{}")"
+check "uint32 0" "$usb"
+check "devices" "$usb"
+token="$(call org.freedesktop.impl.portal.DynamicLauncher.RequestInstallToken app "{}")"
+if [ ${#token} -gt 5 ]; then
+    echo "  ok: install token ($token)"
+else
+    echo "  FAIL: install token ($token)"
+    fail=1
+fi
+
 echo "=== OpenURI ==="
-check "uint32 0" "$(call org.freedesktop.impl.portal.OpenURI.OpenURI /x "" https://example.com "{}")"
-sleep 0.3
+check "uint32 0" "$(call org.freedesktop.impl.portal.OpenURI.OpenURI /x "" https://example.com "{}")"sleep 0.3
 check "https://example.com" "$(cat "$RUNTIME/opened.txt" 2>/dev/null || echo '(no opener call)')"
 
 echo "=== Notification ==="

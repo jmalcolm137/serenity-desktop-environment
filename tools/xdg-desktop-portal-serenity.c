@@ -22,6 +22,7 @@
 
 #include <gio/gio.h>
 #include <gio/gunixfdlist.h>
+#include <gdk-pixbuf/gdk-pixbuf.h>
 #include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1345,6 +1346,344 @@ static void handle_print(GDBusConnection* connection, const gchar* sender, const
     g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "unknown method %s", method_name);
 }
 
+// --- Wallpaper --------------------------------------------------------------
+
+static gchar* portal_state_file(char const* name)
+{
+    char const* state = getenv("SDE_STATE_DIR");
+    gchar* base;
+    if (state && *state)
+        base = g_strdup(state);
+    else {
+        char const* config = getenv("XDG_CONFIG_HOME");
+        if (config && *config)
+            base = g_build_filename(config, "sde", NULL);
+        else {
+            char const* home = getenv("HOME");
+            base = g_build_filename(home ? home : "/tmp", ".config", "sde", NULL);
+        }
+    }
+    g_mkdir_with_parents(base, 0700);
+    gchar* path = g_build_filename(base, name, NULL);
+    g_free(base);
+    return path;
+}
+
+// Decode the image at `uri` and write the compositor's wallpaper state
+// (wallpaper.raw: {magic, format=BGRA8888, width, height, pitch} + pixels).
+static gboolean write_wallpaper_raw(char const* uri)
+{
+    if (!uri || !g_str_has_prefix(uri, "file://"))
+        return FALSE;
+    GError* error = NULL;
+    gchar* path = g_filename_from_uri(uri, NULL, &error);
+    if (error)
+        g_error_free(error);
+    if (!path)
+        return FALSE;
+    GdkPixbuf* pixbuf = gdk_pixbuf_new_from_file(path, NULL);
+    g_free(path);
+    if (!pixbuf)
+        return FALSE;
+
+    int width = gdk_pixbuf_get_width(pixbuf);
+    int height = gdk_pixbuf_get_height(pixbuf);
+    int channels = gdk_pixbuf_get_n_channels(pixbuf);
+    int rowstride = gdk_pixbuf_get_rowstride(pixbuf);
+    guchar* pixels = gdk_pixbuf_get_pixels(pixbuf);
+    int pitch = width * 4;
+
+    struct {
+        guint32 magic;
+        guint32 format;
+        guint32 width;
+        guint32 height;
+        guint32 pitch;
+    } header = { 0x53445750u, 2u /* BGRA8888 */, (guint32)width, (guint32)height, (guint32)pitch };
+
+    gsize total = sizeof(header) + (gsize)pitch * (gsize)height;
+    guchar* out = g_malloc(total);
+    memcpy(out, &header, sizeof(header));
+    for (int y = 0; y < height; ++y) {
+        guchar const* src = pixels + (gsize)y * rowstride;
+        guchar* dst = out + sizeof(header) + (gsize)y * pitch;
+        for (int x = 0; x < width; ++x) {
+            dst[x * 4 + 0] = src[x * channels + 2]; // B
+            dst[x * 4 + 1] = src[x * channels + 1]; // G
+            dst[x * 4 + 2] = src[x * channels + 0]; // R
+            dst[x * 4 + 3] = channels == 4 ? src[x * channels + 3] : 0xff;
+        }
+    }
+    gchar* raw_path = portal_state_file("wallpaper.raw");
+    gboolean ok = g_file_set_contents(raw_path, (char const*)out, (gssize)total, NULL);
+    g_free(raw_path);
+    g_free(out);
+    g_object_unref(pixbuf);
+    if (ok) {
+        gchar* mode_path = portal_state_file("wallpaper.mode");
+        g_file_set_contents(mode_path, "stretch", -1, NULL);
+        g_free(mode_path);
+    }
+    return ok;
+}
+
+static const char wallpaper_introspection[] =
+    "<node>"
+    "  <interface name='org.freedesktop.impl.portal.Wallpaper'>"
+    "    <property name='version' type='u' access='read'/>"
+    "    <method name='SetWallpaper'>"
+    "      <arg type='o' name='handle' direction='in'/>"
+    "      <arg type='s' name='app_id' direction='in'/>"
+    "      <arg type='s' name='parent_window' direction='in'/>"
+    "      <arg type='s' name='uri' direction='in'/>"
+    "      <arg type='a{sv}' name='options' direction='in'/>"
+    "      <arg type='u' name='response' direction='out'/>"
+    "      <arg type='a{sv}' name='results' direction='out'/>"
+    "    </method>"
+    "  </interface>"
+    "</node>";
+
+static void handle_wallpaper(GDBusConnection* connection, const gchar* sender, const gchar* object_path,
+    const gchar* interface_name, const gchar* method_name, GVariant* parameters,
+    GDBusMethodInvocation* invocation, gpointer user_data)
+{
+    (void)connection;
+    (void)sender;
+    (void)object_path;
+    (void)interface_name;
+    (void)user_data;
+
+    GVariantBuilder results;
+    g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
+
+    if (g_strcmp0(method_name, "SetWallpaper") != 0) {
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "unknown method %s", method_name);
+        return;
+    }
+
+    char const* handle = NULL;
+    char const* app_id = NULL;
+    char const* parent_window = NULL;
+    char const* uri = NULL;
+    GVariant* options = NULL;
+    g_variant_get(parameters, "(o&s&s&s@a{sv})", &handle, &app_id, &parent_window, &uri, &options);
+    gboolean ok = write_wallpaper_raw(uri);
+    if (options)
+        g_variant_unref(options);
+    return_response(invocation, ok ? RESPONSE_SUCCESS : RESPONSE_OTHER_ERROR, &results);
+}
+
+// --- Secret / USB / DynamicLauncher -----------------------------------------
+
+static gchar* sanitized_app_id(char const* app_id)
+{
+    gchar* result = g_strdup(app_id && *app_id ? app_id : "default");
+    for (gchar* p = result; *p; ++p)
+        if (*p == '/' || *p == '\\')
+            *p = '_';
+    return result;
+}
+
+static const char secret_introspection[] =
+    "<node>"
+    "  <interface name='org.freedesktop.impl.portal.Secret'>"
+    "    <property name='version' type='u' access='read'/>"
+    "    <method name='RetrieveSecret'>"
+    "      <arg type='o' name='handle' direction='in'/>"
+    "      <arg type='s' name='app_id' direction='in'/>"
+    "      <arg type='a{sv}' name='options' direction='in'/>"
+    "      <arg type='u' name='response' direction='out'/>"
+    "      <arg type='ay' name='secret' direction='out'/>"
+    "    </method>"
+    "  </interface>"
+    "</node>";
+
+// A stable per-app secret, generated once and kept in the state directory.
+static void handle_secret(GDBusConnection* connection, const gchar* sender, const gchar* object_path,
+    const gchar* interface_name, const gchar* method_name, GVariant* parameters,
+    GDBusMethodInvocation* invocation, gpointer user_data)
+{
+    (void)connection;
+    (void)sender;
+    (void)object_path;
+    (void)interface_name;
+    (void)user_data;
+
+    if (g_strcmp0(method_name, "RetrieveSecret") != 0) {
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "unknown method %s", method_name);
+        return;
+    }
+    char const* handle = NULL;
+    char const* app_id = NULL;
+    GVariant* options = NULL;
+    g_variant_get(parameters, "(o&s@a{sv})", &handle, &app_id, &options);
+
+    gchar* name = sanitized_app_id(app_id);
+    gchar* dir = portal_state_file("secrets");
+    g_mkdir_with_parents(dir, 0700);
+    gchar* path = g_build_filename(dir, name, NULL);
+
+    guchar secret[64];
+    gsize length = 0;
+    gchar* contents = NULL;
+    if (g_file_get_contents(path, &contents, &length, NULL) && length == sizeof(secret)) {
+        memcpy(secret, contents, sizeof(secret));
+        g_free(contents);
+    } else {
+        if (contents)
+            g_free(contents);
+        FILE* random = fopen("/dev/urandom", "rb");
+        if (!random || fread(secret, 1, sizeof(secret), random) != sizeof(secret)) {
+            for (gsize i = 0; i < sizeof(secret); ++i)
+                secret[i] = (guchar)g_random_int();
+        }
+        if (random)
+            fclose(random);
+        g_file_set_contents(path, (char const*)secret, sizeof(secret), NULL);
+    }
+    g_free(path);
+    g_free(dir);
+    g_free(name);
+    if (options)
+        g_variant_unref(options);
+
+    g_dbus_method_invocation_return_value(invocation,
+        g_variant_new("(u@ay)", RESPONSE_SUCCESS, g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE, secret, sizeof(secret), 1)));
+}
+
+static const char usb_introspection[] =
+    "<node>"
+    "  <interface name='org.freedesktop.impl.portal.USB'>"
+    "    <property name='version' type='u' access='read'/>"
+    "    <method name='ListDevices'>"
+    "      <arg type='a{sv}' name='options' direction='in'/>"
+    "      <arg type='u' name='response' direction='out'/>"
+    "      <arg type='a{sv}' name='results' direction='out'/>"
+    "    </method>"
+    "    <method name='AcquireDevices'>"
+    "      <arg type='o' name='handle' direction='in'/>"
+    "      <arg type='o' name='session_handle' direction='in'/>"
+    "      <arg type='s' name='app_id' direction='in'/>"
+    "      <arg type='s' name='parent_window' direction='in'/>"
+    "      <arg type='a(ua{sv})' name='devices' direction='in'/>"
+    "      <arg type='a{sv}' name='options' direction='in'/>"
+    "      <arg type='u' name='response' direction='out'/>"
+    "      <arg type='a{sv}' name='results' direction='out'/>"
+    "    </method>"
+    "    <method name='ReleaseDevices'>"
+    "      <arg type='o' name='handle' direction='in'/>"
+    "      <arg type='o' name='session_handle' direction='in'/>"
+    "      <arg type='a(ua{sv})' name='devices' direction='in'/>"
+    "      <arg type='a{sv}' name='options' direction='in'/>"
+    "      <arg type='u' name='response' direction='out'/>"
+    "      <arg type='a{sv}' name='results' direction='out'/>"
+    "    </method>"
+    "  </interface>"
+    "</node>";
+
+static void handle_usb(GDBusConnection* connection, const gchar* sender, const gchar* object_path,
+    const gchar* interface_name, const gchar* method_name, GVariant* parameters,
+    GDBusMethodInvocation* invocation, gpointer user_data)
+{
+    (void)connection;
+    (void)sender;
+    (void)object_path;
+    (void)interface_name;
+    (void)parameters;
+    (void)user_data;
+
+    GVariantBuilder results;
+    g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
+    if (g_strcmp0(method_name, "ListDevices") == 0) {
+        // No USB device broker: report an empty list (standards-compliant).
+        GVariantBuilder devices;
+        g_variant_builder_init(&devices, G_VARIANT_TYPE("a(ua{sv})"));
+        g_variant_builder_add(&results, "{sv}", "devices", g_variant_builder_end(&devices));
+        return_response(invocation, RESPONSE_SUCCESS, &results);
+        return;
+    }
+    if (g_strcmp0(method_name, "AcquireDevices") == 0 || g_strcmp0(method_name, "ReleaseDevices") == 0) {
+        return_response(invocation, RESPONSE_SUCCESS, &results);
+        return;
+    }
+    g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "unknown method %s", method_name);
+}
+
+static const char dynamiclauncher_introspection[] =
+    "<node>"
+    "  <interface name='org.freedesktop.impl.portal.DynamicLauncher'>"
+    "    <property name='version' type='u' access='read'/>"
+    "    <method name='PrepareInstall'>"
+    "      <arg type='o' name='handle' direction='in'/>"
+    "      <arg type='s' name='app_id' direction='in'/>"
+    "      <arg type='s' name='parent_window' direction='in'/>"
+    "      <arg type='s' name='name' direction='in'/>"
+    "      <arg type='v' name='icon_v' direction='in'/>"
+    "      <arg type='h' name='icon_fd' direction='in'/>"
+    "      <arg type='a{sv}' name='options' direction='in'/>"
+    "      <arg type='u' name='response' direction='out'/>"
+    "      <arg type='a{sv}' name='results' direction='out'/>"
+    "    </method>"
+    "    <method name='RequestInstallToken'>"
+    "      <arg type='s' name='app_id' direction='in'/>"
+    "      <arg type='a{sv}' name='options' direction='in'/>"
+    "      <arg type='s' name='token' direction='out'/>"
+    "    </method>"
+    "    <method name='Launch'>"
+    "      <arg type='o' name='handle' direction='in'/>"
+    "      <arg type='s' name='app_id' direction='in'/>"
+    "      <arg type='s' name='parent_window' direction='in'/>"
+    "      <arg type='s' name='desktop_file_id' direction='in'/>"
+    "      <arg type='a{sv}' name='options' direction='in'/>"
+    "      <arg type='u' name='response' direction='out'/>"
+    "      <arg type='a{sv}' name='results' direction='out'/>"
+    "    </method>"
+    "  </interface>"
+    "</node>";
+
+static void handle_dynamic_launcher(GDBusConnection* connection, const gchar* sender, const gchar* object_path,
+    const gchar* interface_name, const gchar* method_name, GVariant* parameters,
+    GDBusMethodInvocation* invocation, gpointer user_data)
+{
+    (void)connection;
+    (void)sender;
+    (void)object_path;
+    (void)interface_name;
+    (void)user_data;
+
+    GVariantBuilder results;
+    g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
+
+    if (g_strcmp0(method_name, "RequestInstallToken") == 0) {
+        gchar token[33];
+        for (int i = 0; i < 32; ++i)
+            token[i] = "0123456789abcdef"[g_random_int_range(0, 16)];
+        token[32] = '\0';
+        g_dbus_method_invocation_return_value(invocation, g_variant_new("(s)", token));
+        return;
+    }
+    if (g_strcmp0(method_name, "PrepareInstall") == 0) {
+        char const* name = NULL;
+        g_variant_get(parameters, "(o&s&s&svh@a{sv})", NULL, NULL, NULL, &name, NULL, NULL, NULL);
+        // Echo the requested name; no icon post-processing.
+        g_variant_builder_add(&results, "{sv}", "name", g_variant_new_string(name ? name : "Application"));
+        return_response(invocation, RESPONSE_SUCCESS, &results);
+        return;
+    }
+    if (g_strcmp0(method_name, "Launch") == 0) {
+        char const* desktop_file_id = NULL;
+        g_variant_get(parameters, "(o&s&s&s@a{sv})", NULL, NULL, NULL, &desktop_file_id, NULL);
+        gboolean launched = FALSE;
+        if (desktop_file_id) {
+            gchar* argv[] = { (gchar*)"gio", (gchar*)"launch", (gchar*)desktop_file_id, NULL };
+            launched = g_spawn_async(NULL, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
+        }
+        return_response(invocation, launched ? RESPONSE_SUCCESS : RESPONSE_OTHER_ERROR, &results);
+        return;
+    }
+    g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "unknown method %s", method_name);
+}
+
 // --- Settings introspection -------------------------------------------------
 
 static const char settings_introspection[] =
@@ -1412,6 +1751,10 @@ static GVariant* filechooser_get_property(GDBusConnection* connection, const gch
 static const GDBusInterfaceVTable filechooser_vtable = { handle_filechooser, filechooser_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable screenshot_vtable = { handle_screenshot, simple_version_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable print_vtable = { handle_print, simple_version_get_property, NULL, { 0 } };
+static const GDBusInterfaceVTable wallpaper_vtable = { handle_wallpaper, simple_version_get_property, NULL, { 0 } };
+static const GDBusInterfaceVTable secret_vtable = { handle_secret, simple_version_get_property, NULL, { 0 } };
+static const GDBusInterfaceVTable usb_vtable = { handle_usb, simple_version_get_property, NULL, { 0 } };
+static const GDBusInterfaceVTable dynamic_launcher_vtable = { handle_dynamic_launcher, simple_version_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable remote_desktop_vtable = { portal_remote_desktop_method_call, portal_remote_desktop_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable global_shortcuts_vtable = { portal_global_shortcuts_method_call, portal_global_shortcuts_get_property, NULL, { 0 } };
 
@@ -1439,6 +1782,10 @@ static InterfaceRegistration const interfaces[] = {
     { filechooser_introspection, &filechooser_vtable },
     { screenshot_introspection, &screenshot_vtable },
     { print_introspection, &print_vtable },
+    { wallpaper_introspection, &wallpaper_vtable },
+    { secret_introspection, &secret_vtable },
+    { usb_introspection, &usb_vtable },
+    { dynamiclauncher_introspection, &dynamic_launcher_vtable },
     { portal_remote_desktop_introspection, &remote_desktop_vtable },
     { portal_global_shortcuts_introspection, &global_shortcuts_vtable },
 };
