@@ -159,6 +159,15 @@ else
     echo "  FAIL: wallpaper.raw not written ($wp)"
     fail=1
 fi
+rm -f "$RUNTIME/wallpaper.raw"
+bg_wallpaper="$(call org.freedesktop.impl.portal.Background.SetWallpaperURI /h app "" "file://$wallpaper_png" false "{}")"
+check "()" "$bg_wallpaper"
+if [ -s "$RUNTIME/wallpaper.raw" ]; then
+    echo "  ok: Background.SetWallpaperURI wrote wallpaper.raw"
+else
+    echo "  FAIL: Background.SetWallpaperURI did not write wallpaper.raw"
+    fail=1
+fi
 
 echo "=== Secret / USB / DynamicLauncher / Access ==="
 check "uint32 0" "$(call org.freedesktop.impl.portal.Access.AccessDialog /h app "" "Allow?" "" "Please allow." "{}")"

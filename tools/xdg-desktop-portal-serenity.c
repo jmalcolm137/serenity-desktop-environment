@@ -321,6 +321,10 @@ static GVariant* lockdown_get_property(GDBusConnection* connection, const gchar*
 
 // --- Background -------------------------------------------------------------
 
+// Defined with the Wallpaper portal below; shared so Background.SetWallpaperURI
+// writes the same desktop wallpaper state.
+static gboolean write_wallpaper_raw(char const* uri);
+
 static const char background_introspection[] =
     "<node>"
     "  <interface name='org.freedesktop.impl.portal.Background'>"
@@ -402,7 +406,14 @@ static void handle_background(GDBusConnection* connection, const gchar* sender, 
         return;
     }
     if (g_strcmp0(method_name, "SetWallpaperURI") == 0) {
-        // Handled by the Wallpaper interface's SetWallpaper; accept here.
+        // Same effect as Wallpaper.SetWallpaper: write the compositor's wallpaper
+        // state from the given file:// URI.
+        char const* uri = NULL;
+        GVariant* options = NULL;
+        g_variant_get(parameters, "(o&s&s&sb@a{sv})", NULL, NULL, NULL, &uri, NULL, &options);
+        write_wallpaper_raw(uri);
+        if (options)
+            g_variant_unref(options);
         g_dbus_method_invocation_return_value(invocation, NULL);
         return;
     }

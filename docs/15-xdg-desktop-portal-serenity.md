@@ -32,7 +32,7 @@ This supersedes the earlier single-interface `tools/sde-settings-portal.c` (R4.4
 | `Settings` (v2) | `color-scheme` (from the active theme's `Window` luminance), `accent-color` (theme `Accent`/`Selection`), `contrast` — read from the theme broker (`$XDG_RUNTIME_DIR/sde-theme`). |
 | `Account` (v1) | `GetUserInformation` from the passwd entry (`name`, `id`; `image` empty). |
 | `Lockdown` (v1) | Read-only properties; false by default, overridable by `SDE_PORTAL_LOCKDOWN_*`. |
-| `Background` (v1) | `ApplicationName`/`ApplicationID`; `SetStatus`; `SetAutostart` writes an XDG autostart entry (the SDE supervisor honours XDG autostart). |
+| `Background` (v1) | `ApplicationName`/`ApplicationID`; `SetStatus`; `SetAutostart` writes an XDG autostart entry (the SDE supervisor honours XDG autostart); `SetWallpaperURI` writes the compositor wallpaper state. |
 | `AppChooser` (v1) | `ChooseApplication` through the LibGUI **AppChooserDialog** app (`SDE_PORTAL_APP_CHOOSER`); falls back to the first offered application when no chooser is configured. |
 | `Email` (v1) | `ComposeEmail` opens a `mailto:` URI. |
 | `Location` (v1) | Reports "not available" (no location provider). |
