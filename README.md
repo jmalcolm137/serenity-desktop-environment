@@ -24,6 +24,7 @@ The stack is split across a small family of repositories:
 - [`docs/10-font-parity-decision.md`](docs/10-font-parity-decision.md) — the R3 font-parity decision (bitmap Katica, no size-based zoom) and the R4/G5 path to scalable fonts.
 - [`docs/11-r4-implementation-plan.md`](docs/11-r4-implementation-plan.md) — the R4 (Session & settings) execution plan, delivered as milestones R4.1–R4.9.
 - [`docs/12-r4.3-portable-session-integration.md`](docs/12-r4.3-portable-session-integration.md) — the R4.3 design: logind/systemd optional; portable session env, seat/DRM/VT via `libseat` backends, power provider chain, optional portals.
+- [`docs/13-native-session-and-aur-packaging.md`](docs/13-native-session-and-aur-packaging.md) — plan to run SDE natively (DRM/KMS) and package it for Arch/EndeavourOS (AUR) with an SDDM session entry.
 
 ## Status
 
