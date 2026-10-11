@@ -77,6 +77,23 @@ run_autostart() {
     done
 }
 
+# Power helpers: shadow /bin/{shutdown,reboot,logout,suspend} with sde-power, so
+# the unmodified Taskbar "Exit..." menu (whose ShutdownDialog spawns
+# /bin/shutdown, /bin/reboot, /bin/logout) routes to logind instead of failing on
+# host binaries. The port's Process::resolve_executable_path() consults
+# SDE_SESSION_BIN_DIR first. Serenity-stdlib convention, standard backend.
+SESSION_BIN="${SDE_SESSION_BIN_DIR:-${XDG_RUNTIME_DIR:-/tmp}/sde-session-bin}"
+mkdir -p "$SESSION_BIN"
+for action in shutdown reboot logout suspend; do
+    cat > "$SESSION_BIN/$action" <<EOF
+#!/bin/sh
+exec "$SDE_ROOT/scripts/sde-power.sh" $action "\$@"
+EOF
+    chmod +x "$SESSION_BIN/$action"
+done
+export SDE_SESSION_BIN_DIR="$SESSION_BIN"
+echo "SDE session: power helpers in $SESSION_BIN (/bin shadow)"
+
 run_autostart
 
 restarts=0

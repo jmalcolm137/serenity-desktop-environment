@@ -14,6 +14,9 @@ RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-session.XXXXXX")"
 chmod 700 "$RUNTIME"
 trap 'rm -rf "$RUNTIME"' EXIT
 
+# Keep the session's /bin-shadow helpers inside the test runtime dir.
+export SDE_SESSION_BIN_DIR="$RUNTIME/sbin"
+
 fail=0
 check() {
     if grep -qF "$1" "$2"; then
@@ -110,6 +113,19 @@ env SDE_SESSION_COMPOSITOR="sleep 1" \
     "$SDE" > "$RUNTIME/session-d.log" 2>&1 || true
 cat "$RUNTIME/session-d.log"
 check "idle-to-lock after 300s via 'sde-lock-test'" "$RUNTIME/session-d.log"
+
+echo "== (E) /bin power helpers are installed and route =="
+env SDE_SESSION_COMPOSITOR="sleep 0.3" \
+    SDE_SESSION_AUTOSTART=0 \
+    SDE_SESSION_BIN_DIR="$RUNTIME/sbin" \
+    SDE_SESSION_RESTART_DELAY=0 \
+    "$SDE" > "$RUNTIME/session-e.log" 2>&1 || true
+for helper in shutdown reboot logout; do
+    check_file "$RUNTIME/sbin/$helper"
+done
+env SDE_POWER_CMD="$RUNTIME/power-mock" POWER_LOG="$RUNTIME/power-e.log" \
+    "$RUNTIME/sbin/shutdown" --now || true
+check "shutdown" "$RUNTIME/power-e.log"
 
 if [ "$fail" -ne 0 ]; then
     echo "==> session test FAILED"

@@ -215,15 +215,22 @@ command after `SDE_SESSION_IDLE_SECONDS`. `scripts/sde-power.sh` routes
 `scripts/start-sde-session.sh` now delegates to the supervisor.
 `scripts/run-session-test.sh` and the extended `scripts/run-idle-test.sh` pass.
 
+**Power routing landed.** The supervisor writes `sde-power` **`/bin` shadow**
+helpers (`shutdown`, `reboot`, `logout`, `suspend`) into a session bin dir and
+exports `SDE_SESSION_BIN_DIR`; the port's
+`Core::Process::resolve_executable_path()` consults that dir **first** (port
+change, `patches/0011`), so the unmodified Taskbar `ShutdownDialog`
+(`/bin/shutdown --now`, `/bin/reboot`, `/bin/logout`) now routes to logind. Verified
+by `scripts/run-binpath-test.sh` (port-side `/bin` shadow) and
+`scripts/run-session-test.sh` phase (E).
+
 **Bug fixed along the way (R4.1):** releasing an idle inhibitor left the seat
 *permanently inhibited* — wlroots unlinks an inhibitor only *after* its destroy
 signal, so the compositor's `wl_list_empty` check still saw it. The compositor now
 excludes the dying inhibitor when recomputing the inhibited state
 (`WindowServer/src/main.cpp`).
 
-**Remaining:** point the Taskbar `ShutdownDialog`'s
-`/bin/{shutdown,reboot,logout}` at `sde-power.sh` (cross-repo: a host `/bin`
-mapping); and `xdg-session-management-v1` restore.
+**Remaining:** `xdg-session-management-v1` restore.
 
 ### R4.3 — logind / systemd / portal session integration
 
