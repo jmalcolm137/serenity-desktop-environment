@@ -180,6 +180,10 @@ call org.freedesktop.impl.portal.Notification.AddNotification id "{'title': <'He
 sleep 0.3
 check "Hello" "$(cat "$RUNTIME/notified.txt" 2>/dev/null || echo '(no notifier call)')"
 check "World" "$(cat "$RUNTIME/notified.txt" 2>/dev/null || echo '(no notifier call)')"
+call org.freedesktop.impl.portal.Notification.AddNotification id2 "{'title': <'T'>, 'body': <'B'>, 'icon': <('themed', <'dialog-information'>)>}" >/dev/null
+sleep 0.3
+check "dialog-information" "$(cat "$RUNTIME/notified.txt" 2>/dev/null || echo '(no notifier call)')"
+check "()" "$(call org.freedesktop.impl.portal.Notification.RemoveNotification id2)"
 
 # Best-effort: prove the real xdg-desktop-portal frontend routes to us. Skipped
 # when the frontend is not installed.

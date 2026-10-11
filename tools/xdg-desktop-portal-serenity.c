@@ -849,17 +849,27 @@ static const char notification_introspection[] =
     "    <method name='RemoveNotification'>"
     "      <arg type='s' name='id' direction='in'/>"
     "    </method>"
+    "    <signal name='ActionInvoked'>"
+    "      <arg type='s' name='id'/>"
+    "      <arg type='s' name='action'/>"
+    "      <arg type='s' name='parameter'/>"
+    "    </signal>"
+    "    <signal name='NotificationClosed'>"
+    "      <arg type='s' name='id'/>"
+    "      <arg type='u' name='reason'/>"
+    "    </signal>"
     "    <property name='version' type='u' access='read'/>"
     "  </interface>"
     "</node>";
 
-// Display a notification. SDE_PORTAL_NOTIFIER takes "summary\0body\0" as argv
-// (the session points this at the Serenity notify tool); otherwise notify-send.
-static void show_notification(char const* title, char const* body)
+// Display a notification. SDE_PORTAL_NOTIFIER takes "<id> <title> <body> <icon>"
+// as argv (the session points this at the Serenity notify tool); otherwise
+// notify-send is used (id and icon are then unused, matching SDE's contract).
+static void show_notification(char const* id, char const* title, char const* body, char const* icon)
 {
     char const* notifier = getenv("SDE_PORTAL_NOTIFIER");
     if (notifier && *notifier) {
-        gchar* argv[] = { (gchar*)notifier, (gchar*)title, (gchar*)body, NULL };
+        gchar* argv[] = { (gchar*)notifier, (gchar*)id, (gchar*)title, (gchar*)body, (gchar*)(icon ? icon : ""), NULL };
         (void)g_spawn_async(NULL, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
         return;
     }
@@ -871,10 +881,7 @@ static void handle_notification(GDBusConnection* connection, const gchar* sender
     const gchar* interface_name, const gchar* method_name, GVariant* parameters,
     GDBusMethodInvocation* invocation, gpointer user_data)
 {
-    (void)connection;
     (void)sender;
-    (void)object_path;
-    (void)interface_name;
     (void)user_data;
 
     if (g_strcmp0(method_name, "AddNotification") == 0) {
@@ -883,19 +890,55 @@ static void handle_notification(GDBusConnection* connection, const gchar* sender
         g_variant_get(parameters, "(&s@a{sv})", &id, &notification);
         char const* title = NULL;
         char const* body = NULL;
+        gchar* icon_name = NULL;
         if (notification) {
             if (!g_variant_lookup(notification, "title", "&s", &title))
                 title = "";
             if (!g_variant_lookup(notification, "body", "&s", &body))
                 body = "";
+            // 'icon' is a serialized (sv): "themed" + a name, or "file-descriptor"
+            // + an fd. Pass the themed name through; fd icons are skipped.
+            GVariant* icon_variant = g_variant_lookup_value(notification, "icon", NULL);
+            if (icon_variant) {
+                GVariant* icon_value = NULL;
+                if (g_variant_is_of_type(icon_variant, G_VARIANT_TYPE_VARIANT)) {
+                    icon_value = g_variant_get_variant(icon_variant);
+                    g_variant_unref(icon_variant);
+                } else {
+                    icon_value = icon_variant;
+                }
+                if (g_variant_is_of_type(icon_value, G_VARIANT_TYPE("(sv)"))) {
+                    char const* kind = NULL;
+                    GVariant* value = NULL;
+                    g_variant_get(icon_value, "(&s@v)", &kind, &value);
+                    if (value) {
+                        // The (sv)'s variant carries the themed name (s) or the
+                        // fd handle (h); only themed names are passed through.
+                        GVariant* inner = g_variant_get_variant(value);
+                        if (kind && strcmp(kind, "themed") == 0 && inner && g_variant_is_of_type(inner, G_VARIANT_TYPE_STRING))
+                            icon_name = g_strdup(g_variant_get_string(inner, NULL));
+                        if (inner)
+                            g_variant_unref(inner);
+                        g_variant_unref(value);
+                    }
+                }
+                g_variant_unref(icon_value);
+            }
         }
-        show_notification(title ? title : "", body ? body : "");
+        show_notification(id ? id : "", title ? title : "", body ? body : "", icon_name);
+        g_free(icon_name);
         if (notification)
             g_variant_unref(notification);
         g_dbus_method_invocation_return_value(invocation, NULL);
         return;
     }
     if (g_strcmp0(method_name, "RemoveNotification") == 0) {
+        char const* id = NULL;
+        g_variant_get(parameters, "(&s)", &id);
+        // Tell the client the notification is gone (reason 2 = dismissed).
+        g_dbus_connection_emit_signal(connection, NULL, object_path,
+            "org.freedesktop.impl.portal.Notification", "NotificationClosed",
+            g_variant_new("(su)", id ? id : "", 2), NULL);
         g_dbus_method_invocation_return_value(invocation, NULL);
         return;
     }
