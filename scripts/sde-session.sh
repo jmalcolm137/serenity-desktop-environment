@@ -111,8 +111,12 @@ while :; do
         echo "SDE session: idle-to-lock after ${IDLE_SECONDS}s via '$LOCK_CMD'"
     fi
 
+    # A SIGTERM/SIGINT means "stop the session", not "restart the compositor":
+    # kill it and break out of the loop (this is how logout shuts the session
+    # down). Single quotes so comp_pid/IDLE_PID resolve when the signal arrives.
+    stopping=0
     # shellcheck disable=SC2064
-    trap "kill -TERM $comp_pid ${IDLE_PID:+$IDLE_PID} 2>/dev/null" TERM INT
+    trap 'stopping=1; kill -TERM $comp_pid $IDLE_PID 2>/dev/null || true' TERM INT
     wait "$comp_pid"
     status=$?
     trap - TERM INT
@@ -121,6 +125,10 @@ while :; do
         IDLE_PID=""
     fi
 
+    if [ "$stopping" -eq 1 ]; then
+        echo "SDE session: stopping"
+        break
+    fi
     if [ "$status" -eq 0 ]; then
         echo "SDE session: compositor exited; stopping"
         break

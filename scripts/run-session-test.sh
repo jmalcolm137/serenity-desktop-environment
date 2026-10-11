@@ -127,6 +127,30 @@ env SDE_POWER_CMD="$RUNTIME/power-mock" POWER_LOG="$RUNTIME/power-e.log" \
     "$RUNTIME/sbin/shutdown" --now || true
 check "shutdown" "$RUNTIME/power-e.log"
 
+echo "== (F) SIGTERM stops the supervisor (does not restart) =="
+env SDE_SESSION_COMPOSITOR="sleep 30" \
+    SDE_SESSION_AUTOSTART=0 \
+    SDE_SESSION_MAX_RESTARTS=5 \
+    SDE_SESSION_RESTART_DELAY=0 \
+    "$SDE" > "$RUNTIME/session-f.log" 2>&1 &
+SUP_PID=$!
+sleep 1
+kill -TERM "$SUP_PID" 2>/dev/null || true
+sleep 1
+if kill -0 "$SUP_PID" 2>/dev/null; then
+    echo "  FAIL: supervisor still running after SIGTERM"
+    kill -KILL "$SUP_PID" 2>/dev/null || true
+    fail=1
+else
+    echo "  ok: supervisor stopped on SIGTERM"
+fi
+if grep -qF "restart " "$RUNTIME/session-f.log"; then
+    echo "  UNEXPECTED: supervisor restarted on SIGTERM"
+    fail=1
+else
+    echo "  ok: no restart on SIGTERM"
+fi
+
 if [ "$fail" -ne 0 ]; then
     echo "==> session test FAILED"
     exit 1

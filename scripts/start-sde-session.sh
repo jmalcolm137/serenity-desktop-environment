@@ -58,10 +58,16 @@ fi
 # The session LaunchServer owns the launch portal when it is built and running;
 # without it, applications fall back to the in-process LaunchServer inside
 # libgui-wayland. Either way launching works.
+#
+# IMPORTANT: a session service that spawns applications must run with the
+# session's WAYLAND_DISPLAY, or its children connect to the wrong compositor
+# (e.g. the host when nested). The compositor sets it for its own children; the
+# services are separate processes, so set it here.
+SESSION_DISPLAY="${SDE_SESSION_DISPLAY:-sde}"
 LAUNCH_SERVER="$SDE_ROOT/build/LaunchServer/LaunchServer"
 LAUNCH_SERVER_PID=""
 if [[ -x "$LAUNCH_SERVER" ]]; then
-    "$LAUNCH_SERVER" &
+    WAYLAND_DISPLAY="$SESSION_DISPLAY" "$LAUNCH_SERVER" &
     LAUNCH_SERVER_PID=$!
 fi
 
@@ -82,7 +88,7 @@ if [ ! -x "$SDE_ROOT/build/tools/sde-idle" ]; then
 fi
 # The session supervisor (R4.2) starts/restarts the compositor, runs XDG
 # Autostart, owns the session environment, and arms idle-to-lock.
-export SDE_SESSION_COMPOSITOR="$COMP -n sde -s \"$STARTUP\""
+export SDE_SESSION_COMPOSITOR="$COMP -n $SESSION_DISPLAY -s \"$STARTUP\""
 "$SDE_ROOT/scripts/sde-session.sh"
 status=$?
 
