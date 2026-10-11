@@ -93,6 +93,11 @@ via `SDE_PORTAL_FILE_CHOOSER`. The **Print** dialog is `PrintDialog/`
 (`scripts/build-color-picker.sh`), and the application chooser is
 `AppChooserDialog/` (`scripts/build-app-chooser-dialog.sh`).
 
+> Note: in the current `libgui-wayland` build, programmatic `GUI::Label`s are not
+> repainted (their region keeps the unpainted backing store), so the dialogs
+> carry their text in read-only `GUI::TextEditor`s / buttons rather than labels.
+> GML-declared labels (as in `GUI::FilePicker`) are unaffected.
+
 ## 3. SDE integration seams
 
 Two environment variables let the session point the backend at SDE components
