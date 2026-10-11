@@ -126,4 +126,12 @@ cc -O2 -Wall -Wextra -I "$TOOLS_BUILD" \
     $(pkg-config --cflags --libs wayland-client gbm libdrm) \
     -o "$TOOLS_BUILD/capture-probe"
 
-echo "==> SDE tools: $TOOLS_BUILD/sde-idle $TOOLS_BUILD/sde-dpms $TOOLS_BUILD/sde-screenshot $TOOLS_BUILD/sde-settings-portal $TOOLS_BUILD/ext-workspace-test $TOOLS_BUILD/native-app-test $TOOLS_BUILD/capture-probe $TOOLS_BUILD/xdg-desktop-portal-serenity"
+# screencast-consumer (R5): connects to the ScreenCast PipeWire node and reports
+# the delivered buffer type (DMA-BUF vs memfd) and cursor metadata. The
+# verification tool for docs/15 §6.2/§6.3.
+cc -O2 -Wall -Wextra \
+    "$SDE_ROOT/tools/screencast-consumer.c" \
+    $(pkg-config --cflags --libs libpipewire-0.3 libdrm) \
+    -o "$TOOLS_BUILD/screencast-consumer"
+
+echo "==> SDE tools: $TOOLS_BUILD/sde-idle $TOOLS_BUILD/sde-dpms $TOOLS_BUILD/sde-screenshot $TOOLS_BUILD/sde-settings-portal $TOOLS_BUILD/ext-workspace-test $TOOLS_BUILD/native-app-test $TOOLS_BUILD/capture-probe $TOOLS_BUILD/screencast-consumer $TOOLS_BUILD/xdg-desktop-portal-serenity"

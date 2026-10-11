@@ -6,10 +6,16 @@
 
 // R5 ScreenCast backend for xdg-desktop-portal-serenity.
 //
-// Captures an output with the *standard* ext-image-copy-capture-v1 protocol and
-// publishes the frames as a PipeWire video stream, which the frontend hands to
-// the requesting client. SHM capture (no DMA-BUF) keeps it portable; the stream
-// is BGRA at the output's size.
+// Captures an output/window with the *standard* ext-image-copy-capture-v1
+// protocol and publishes the frames as a PipeWire video stream, which the
+// frontend hands to the requesting client. Buffers are DMA-BUF (zero-copy)
+// where the compositor and consumer support it, with a memfd/SHM fallback;
+// the stream is BGRA and can carry cursor metadata (SPA_META_Cursor).
+//
+// The PipeWire producer mirrors KWin's screencast stream
+// (src/plugins/screencast/screencaststream.cpp): PW_STREAM_FLAG_DRIVER |
+// PW_STREAM_FLAG_ALLOC_BUFFERS, per-buffer allocation in add_buffer, and the
+// same Meta set (Cursor, VideoDamage, Header).
 //
 // Protocol flow per session:
 //   CreateSession -> SelectSources -> Start
@@ -31,6 +37,8 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include <gbm.h>
+#include <drm_fourcc.h>
 #include <pipewire/pipewire.h>
 #include <spa/buffer/meta.h>
 #include <spa/param/buffers.h>
@@ -44,6 +52,7 @@
 #include "ext-image-capture-source-v1-client-protocol.h"
 #include "ext-image-copy-capture-v1-client-protocol.h"
 #include "ext-foreign-toplevel-list-v1-client-protocol.h"
+#include "linux-dmabuf-v1-client-protocol.h"
 
 #define MAX_OUTPUTS 8
 #define MAX_TOPLEVELS 64
@@ -72,23 +81,26 @@ struct screencast_state {
     int stream_node_id;
     guint64 stream_serial;
     int core_sync_done;
+    gboolean produced_first_buffer;
+    // Negotiated stream format.
+    gboolean negotiated;
+    gboolean negotiated_dmabuf;
+    uint32_t negotiated_spa_format;
+    uint32_t negotiated_fourcc;
+    uint64_t negotiated_modifier;
+    gboolean fixate_offered;
+    uint64_t fixate_modifier;
     struct spa_hook stream_listener;
     struct spa_hook core_listener;
     struct spa_hook registry_listener;
-
-    // Latest captured frame, shared between the Wayland thread and the PipeWire
-    // process callback.
-    pthread_mutex_t frame_mutex;
-    uint8_t* frame_data;
-    int frame_width;
-    int frame_height;
-    gboolean frame_valid;
-    gboolean produced_first_buffer;
 
     // Wayland
     struct wl_display* display;
     struct wl_registry* registry;
     struct wl_shm* shm;
+    struct zwp_linux_dmabuf_v1* dmabuf;
+    struct wl_seat* seat;
+    struct wl_pointer* pointer;
     struct ext_output_image_capture_source_manager_v1* source_manager;
     struct ext_image_copy_capture_manager_v1* capture_manager;
     struct ext_foreign_toplevel_list_v1* foreign_toplevel_list;
@@ -98,8 +110,75 @@ struct screencast_state {
     struct toplevel_info toplevels[MAX_TOPLEVELS];
     size_t toplevel_count;
 
+    // GBM, for allocating DMA-BUF capture buffers.
+    struct gbm_device* gbm;
+    int gbm_fd;
+    gboolean dmabuf_enabled;
+
+    // Capture-session constraints (from ext-image-copy-capture): the DMA-BUF
+    // format + modifiers the compositor can render into.
+    gboolean capture_has_dmabuf;
+    uint32_t capture_dmabuf_fourcc;
+    uint64_t capture_dmabuf_modifiers[64];
+    size_t capture_dmabuf_modifier_count;
+
+    // Capture thread handshake: the PipeWire `process` callback queues a buffer
+    // and waits while the Wayland thread renders one frame into it.
+    pthread_mutex_t capture_mutex;
+    pthread_cond_t capture_cond;
+    int wake_pipe[2];
+    gboolean wayland_running;
+    struct capture* active_capture;
+    struct portal_buffer* pending_buffer;
+    int pending_status; // 0 = in flight, 1 = ready, -1 = failed
+    gboolean capture_in_flight;
+    uint64_t frame_sequence;
+
+    // Cursor metadata (metadata cursor mode).
+    gboolean cursor_metadata;
+    struct ext_image_copy_capture_cursor_session_v1* cursor_session;
+    struct ext_image_copy_capture_session_v1* cursor_capture;
+    struct ext_image_copy_capture_frame_v1* cursor_frame;
+    struct wl_buffer* cursor_buffer;
+    uint8_t* cursor_map;
+    size_t cursor_map_size;
+    int cursor_width;
+    int cursor_height;
+    int cursor_stride;
+    uint32_t cursor_shm_format;
+    uint8_t* cursor_bitmap;
+    gboolean cursor_bitmap_valid;
+    gboolean cursor_bitmap_dirty;
+    gboolean cursor_meta_logged;
+    gboolean cursor_visible;
+    int cursor_x;
+    int cursor_y;
+    int cursor_hotspot_x;
+    int cursor_hotspot_y;
+    int cursor_frames_since_refresh;
+
     pthread_t capture_thread;
     gboolean capture_thread_started;
+};
+
+// A PipeWire buffer, plus the backing memory and the wl_buffer the compositor
+// renders into. Allocated in the stream add_buffer callback.
+enum portal_buffer_kind {
+    PORTAL_BUFFER_NONE,
+    PORTAL_BUFFER_DMABUF,
+    PORTAL_BUFFER_MEMFD,
+};
+
+struct portal_buffer {
+    struct pw_buffer* pw_buffer;
+    struct wl_buffer* wl_buffer;
+    enum portal_buffer_kind kind;
+    struct gbm_bo* bo;
+    int fd;
+    size_t map_size;
+    int stride;
+    uint32_t fourcc;
+    uint64_t modifier;
 };
 
 struct session {
@@ -120,68 +199,289 @@ struct capture {
     int width;
     int height;
     uint32_t shm_format;
-    uint8_t* pixels;
-    size_t mapped_size;
-    int stride;
-    struct wl_buffer* buffer;
-    gboolean first_frame_logged;
     uint32_t source_type;
     char* source_id;
     uint32_t cursor_mode;
+    gboolean first_frame_logged;
 };
 
 static struct screencast_state g_state = { 0 };
 
 // --- PipeWire ---------------------------------------------------------------
 
-static void update_frame_from_pixels(struct capture* capture, uint8_t const* pixels, int width, int height, int stride)
+// DRM fourcc <-> PipeWire/SPA video format, mirroring KWin's table.
+static uint32_t spa_video_format_to_fourcc(uint32_t spa_format)
 {
-    pthread_mutex_lock(&g_state.frame_mutex);
-    size_t size = (size_t)stride;
-    if (!g_state.frame_data || g_state.frame_width != width || g_state.frame_height != height) {
-        free(g_state.frame_data);
-        g_state.frame_data = malloc((size_t)width * height * 4);
-        g_state.frame_width = width;
-        g_state.frame_height = height;
+    switch (spa_format) {
+    case SPA_VIDEO_FORMAT_BGRA:
+        return DRM_FORMAT_ARGB8888;
+    case SPA_VIDEO_FORMAT_BGRx:
+        return DRM_FORMAT_XRGB8888;
+    case SPA_VIDEO_FORMAT_RGBA:
+        return DRM_FORMAT_ABGR8888;
+    case SPA_VIDEO_FORMAT_RGBx:
+        return DRM_FORMAT_XBGR8888;
+    case SPA_VIDEO_FORMAT_ARGB:
+        return DRM_FORMAT_BGRA8888;
+    case SPA_VIDEO_FORMAT_xRGB:
+        return DRM_FORMAT_BGRX8888;
+    default:
+        return DRM_FORMAT_INVALID;
     }
-    for (int y = 0; y < height; ++y)
-        memcpy(g_state.frame_data + (size_t)y * width * 4, pixels + (size_t)y * stride, (size_t)width * 4);
-    g_state.frame_valid = TRUE;
-    pthread_mutex_unlock(&g_state.frame_mutex);
-    (void)size;
+}
+
+static uint32_t fourcc_to_spa_video_format(uint32_t fourcc)
+{
+    switch (fourcc) {
+    case DRM_FORMAT_ARGB8888:
+        return SPA_VIDEO_FORMAT_BGRA;
+    case DRM_FORMAT_XRGB8888:
+        return SPA_VIDEO_FORMAT_BGRx;
+    case DRM_FORMAT_ABGR8888:
+        return SPA_VIDEO_FORMAT_RGBA;
+    case DRM_FORMAT_XBGR8888:
+        return SPA_VIDEO_FORMAT_RGBx;
+    case DRM_FORMAT_BGRA8888:
+        return SPA_VIDEO_FORMAT_ARGB;
+    case DRM_FORMAT_BGRX8888:
+        return SPA_VIDEO_FORMAT_xRGB;
+    default:
+        return SPA_VIDEO_FORMAT_UNKNOWN;
+    }
+}
+
+#define CURSOR_BPP 4
+#define CURSOR_META_SIZE(w, h) (sizeof(struct spa_meta_cursor) + sizeof(struct spa_meta_bitmap) + (size_t)(w) * (h) * CURSOR_BPP)
+#define MAX_CURSOR_SIZE 256
+
+static size_t cursor_meta_size(void)
+{
+    int w = g_state.cursor_width > 0 ? g_state.cursor_width : 64;
+    int h = g_state.cursor_height > 0 ? g_state.cursor_height : 64;
+    if (w > MAX_CURSOR_SIZE)
+        w = MAX_CURSOR_SIZE;
+    if (h > MAX_CURSOR_SIZE)
+        h = MAX_CURSOR_SIZE;
+    return CURSOR_META_SIZE(w, h);
+}
+
+// A wl_buffer around a DMA-BUF plane, via zwp_linux_dmabuf_v1.
+static struct wl_buffer* create_dmabuf_wl_buffer(uint32_t fourcc, int width, int height,
+    uint32_t offset, uint32_t stride, uint64_t modifier, int fd)
+{
+    if (!g_state.dmabuf)
+        return NULL;
+    struct zwp_linux_buffer_params_v1* params = zwp_linux_dmabuf_v1_create_params(g_state.dmabuf);
+    zwp_linux_buffer_params_v1_add(params, fd, 0, offset, stride,
+        (uint32_t)(modifier >> 32), (uint32_t)(modifier & 0xffffffffu));
+    struct wl_buffer* buffer = zwp_linux_buffer_params_v1_create_immed(params, width, height, fourcc, 0);
+    zwp_linux_buffer_params_v1_destroy(params);
+    return buffer;
+}
+
+// A wl_buffer around a memfd, via wl_shm.
+static struct wl_buffer* create_shm_wl_buffer(int fd, int width, int height, int stride, uint32_t shm_format)
+{
+    if (!g_state.shm)
+        return NULL;
+    struct wl_shm_pool* pool = wl_shm_create_pool(g_state.shm, fd, stride * height);
+    struct wl_buffer* buffer = wl_shm_pool_create_buffer(pool, 0, width, height, stride, shm_format);
+    wl_shm_pool_destroy(pool);
+    return buffer;
+}
+
+static void portal_buffer_destroy(struct portal_buffer* pcb)
+{
+    if (!pcb)
+        return;
+    if (pcb->wl_buffer)
+        wl_buffer_destroy(pcb->wl_buffer);
+    if (pcb->bo)
+        gbm_bo_destroy(pcb->bo);
+    if (pcb->fd >= 0)
+        close(pcb->fd);
+    free(pcb);
+}
+
+static void announce_stream_params(struct screencast_state* state);
+static void write_cursor_meta(struct screencast_state* state, struct spa_buffer* spa_buffer);
+static int build_enum_formats(struct screencast_state* state, struct spa_pod_builder* b,
+    const struct spa_pod** params, gboolean fixate, uint64_t fixate_modifier, int width, int height);
+
+// Allocate the backing memory for a PipeWire buffer: a DMA-BUF (zero-copy) when
+// the negotiated format carries a modifier, else a memfd. Mirrors KWin's
+// add_buffer.
+static void on_stream_add_buffer(void* data, struct pw_buffer* pw_buffer)
+{
+    struct screencast_state* state = data;
+    struct spa_buffer* spa_buffer = pw_buffer->buffer;
+    if (!spa_buffer || spa_buffer->n_datas < 1)
+        return;
+    struct spa_data* spa_data = &spa_buffer->datas[0];
+
+    struct portal_buffer* pcb = calloc(1, sizeof(struct portal_buffer));
+    pcb->pw_buffer = pw_buffer;
+    pcb->fd = -1;
+
+    if (state->negotiated_dmabuf && state->gbm && state->capture_has_dmabuf) {
+        uint64_t modifiers[1] = { state->negotiated_modifier };
+        pcb->bo = gbm_bo_create_with_modifiers(state->gbm, (uint32_t)state->stream_width,
+            (uint32_t)state->stream_height, state->negotiated_fourcc, modifiers, 1);
+        if (pcb->bo) {
+            pcb->fd = gbm_bo_get_fd(pcb->bo);
+            pcb->stride = (int)gbm_bo_get_stride(pcb->bo);
+            pcb->fourcc = gbm_bo_get_format(pcb->bo);
+            pcb->modifier = gbm_bo_get_modifier(pcb->bo);
+            pcb->wl_buffer = create_dmabuf_wl_buffer(pcb->fourcc, state->stream_width, state->stream_height,
+                gbm_bo_get_offset(pcb->bo, 0), (uint32_t)pcb->stride, pcb->modifier, pcb->fd);
+            if (pcb->wl_buffer && pcb->fd >= 0 && pcb->stride > 0) {
+                spa_data->type = SPA_DATA_DmaBuf;
+                spa_data->flags = SPA_DATA_FLAG_READWRITE;
+                spa_data->mapoffset = 0;
+                spa_data->maxsize = pcb->stride * state->stream_height;
+                spa_data->fd = pcb->fd;
+                spa_data->data = NULL;
+                spa_data->chunk->offset = 0;
+                spa_data->chunk->size = spa_data->maxsize;
+                spa_data->chunk->stride = pcb->stride;
+                spa_data->chunk->flags = SPA_CHUNK_FLAG_NONE;
+                pcb->kind = PORTAL_BUFFER_DMABUF;
+                pw_buffer->user_data = pcb;
+                fprintf(stderr, "xdg-desktop-portal-serenity: screencast add_buffer DMA-BUF %dx%d fourcc=0x%08x modifier=0x%llx\n",
+                    state->stream_width, state->stream_height, pcb->fourcc, (unsigned long long)pcb->modifier);
+                return;
+            }
+            fprintf(stderr, "xdg-desktop-portal-serenity: screencast DMA-BUF add_buffer failed (bo=%p wl=%p fd=%d stride=%d), falling back to memfd\n",
+                (void*)pcb->bo, (void*)pcb->wl_buffer, pcb->fd, pcb->stride);
+            portal_buffer_destroy(pcb);
+            pcb = calloc(1, sizeof(struct portal_buffer));
+            pcb->pw_buffer = pw_buffer;
+            pcb->fd = -1;
+        }
+    }
+
+    // memfd fallback.
+    int stride = state->stream_width * 4;
+    size_t size = (size_t)stride * state->stream_height;
+    int fd = memfd_create("sde-screencast", MFD_CLOEXEC);
+    if (fd < 0 || ftruncate(fd, (off_t)size) != 0) {
+        if (fd >= 0)
+            close(fd);
+        free(pcb);
+        return;
+    }
+    pcb->fd = fd;
+    pcb->stride = stride;
+    pcb->fourcc = DRM_FORMAT_ARGB8888;
+    pcb->map_size = size;
+    pcb->wl_buffer = create_shm_wl_buffer(fd, state->stream_width, state->stream_height, stride, WL_SHM_FORMAT_ARGB8888);
+    if (!pcb->wl_buffer) {
+        portal_buffer_destroy(pcb);
+        return;
+    }
+    spa_data->type = SPA_DATA_MemFd;
+    spa_data->flags = SPA_DATA_FLAG_READWRITE;
+    spa_data->mapoffset = 0;
+    spa_data->maxsize = size;
+    spa_data->fd = fd;
+    spa_data->data = NULL;
+    spa_data->chunk->offset = 0;
+    spa_data->chunk->size = size;
+    spa_data->chunk->stride = stride;
+    spa_data->chunk->flags = SPA_CHUNK_FLAG_NONE;
+    pcb->kind = PORTAL_BUFFER_MEMFD;
+    pw_buffer->user_data = pcb;
+    fprintf(stderr, "xdg-desktop-portal-serenity: screencast add_buffer memfd %dx%d\n",
+        state->stream_width, state->stream_height);
+}
+
+static void on_stream_remove_buffer(void* data, struct pw_buffer* pw_buffer)
+{
+    (void)data;
+    struct portal_buffer* pcb = pw_buffer->user_data;
+    if (pcb) {
+        pw_buffer->user_data = NULL;
+        portal_buffer_destroy(pcb);
+    }
+}
+
+static void write_stream_meta(struct screencast_state* state, struct spa_buffer* spa_buffer)
+{
+    struct spa_meta_header* header = spa_buffer_find_meta_data(spa_buffer, SPA_META_Header, sizeof(struct spa_meta_header));
+    if (header) {
+        header->flags = 0;
+        header->dts_offset = 0;
+        header->seq = state->frame_sequence++;
+        header->pts = (int64_t)pw_stream_get_nsec(state->stream);
+    }
+
+    // Damage: the whole frame each time (the compositor's damage is not yet
+    // forwarded).
+    struct spa_meta* damage = spa_buffer_find_meta(spa_buffer, SPA_META_VideoDamage);
+    if (damage) {
+        struct spa_meta_region* region = spa_meta_first(damage);
+        if (spa_meta_check(region, damage)) {
+            region->region.position = SPA_POINT(0, 0);
+            region->region.size = SPA_RECTANGLE((uint32_t)state->stream_width, (uint32_t)state->stream_height);
+            region++;
+        }
+        if (spa_meta_check(region, damage)) {
+            region->region.position = SPA_POINT(0, 0);
+            region->region.size = SPA_RECTANGLE(0, 0);
+        }
+    }
+
+    write_cursor_meta(state, spa_buffer);
 }
 
 static void on_stream_process(void* data)
 {
     struct screencast_state* state = data;
-    struct pw_buffer* buffer = pw_stream_dequeue_buffer(state->stream);
-    if (!buffer)
+    struct pw_buffer* pw_buffer = pw_stream_dequeue_buffer(state->stream);
+    if (!pw_buffer)
         return;
-    struct spa_buffer* spa_buffer = buffer->buffer;
-    if (!spa_buffer->datas[0].data) {
-        pw_stream_queue_buffer(state->stream, buffer);
+    struct spa_buffer* spa_buffer = pw_buffer->buffer;
+    struct portal_buffer* pcb = pw_buffer->user_data;
+
+    if (!pcb || !pcb->wl_buffer || !state->wayland_running) {
+        fprintf(stderr, "xdg-desktop-portal-serenity: screencast process without buffer (pcb=%p wl=%p running=%d)\n",
+            (void*)pcb, pcb ? (void*)pcb->wl_buffer : NULL, state->wayland_running);
+        spa_buffer->datas[0].chunk->size = 0;
+        pw_stream_queue_buffer(state->stream, pw_buffer);
         return;
     }
 
-    pthread_mutex_lock(&state->frame_mutex);
-    if (state->frame_valid && state->frame_width > 0 && state->frame_height > 0) {
-        int width = state->frame_width;
-        int height = state->frame_height;
-        size_t size = (size_t)width * height * 4;
-        memcpy(spa_buffer->datas[0].data, state->frame_data, size);
-        spa_buffer->datas[0].chunk->offset = 0;
-        spa_buffer->datas[0].chunk->stride = width * 4;
-        spa_buffer->datas[0].chunk->size = size;
+    // Ask the Wayland thread to render one frame into this buffer, and wait.
+    pthread_mutex_lock(&state->capture_mutex);
+    state->pending_buffer = pcb;
+    state->pending_status = 0;
+    ssize_t written = write(state->wake_pipe[1], "w", 1);
+    (void)written;
+    while (state->pending_status == 0 && state->wayland_running)
+        pthread_cond_wait(&state->capture_cond, &state->capture_mutex);
+    int status = state->pending_status;
+    state->pending_buffer = NULL;
+    pthread_mutex_unlock(&state->capture_mutex);
+
+    struct spa_data* spa_data = &spa_buffer->datas[0];
+    if (status == 1) {
+        spa_data->chunk->offset = 0;
+        spa_data->chunk->size = spa_data->maxsize;
+        spa_data->chunk->stride = pcb->stride;
+        spa_data->chunk->flags = SPA_CHUNK_FLAG_NONE;
+        write_stream_meta(state, spa_buffer);
         if (!state->produced_first_buffer) {
             state->produced_first_buffer = TRUE;
-            fprintf(stderr, "xdg-desktop-portal-serenity: screencast first pipewire buffer (%dx%d)\n", width, height);
+            fprintf(stderr, "xdg-desktop-portal-serenity: screencast first pipewire buffer (%dx%d, %s)\n",
+                state->stream_width, state->stream_height,
+                pcb->kind == PORTAL_BUFFER_DMABUF ? "DMA-BUF" : "memfd");
         }
     } else {
-        spa_buffer->datas[0].chunk->size = 0;
+        spa_data->chunk->size = 0;
+        spa_data->chunk->flags = SPA_CHUNK_FLAG_CORRUPTED;
     }
-    pthread_mutex_unlock(&state->frame_mutex);
 
-    pw_stream_queue_buffer(state->stream, buffer);
+    pw_stream_queue_buffer(state->stream, pw_buffer);
 }
 
 static void on_stream_state_changed(void* data, enum pw_stream_state old, enum pw_stream_state state, char const* error)
@@ -197,9 +497,86 @@ static void on_stream_state_changed(void* data, enum pw_stream_state old, enum p
     }
 }
 
+static gboolean test_dmabuf_modifier(struct screencast_state* state, uint64_t modifier)
+{
+    if (!state->gbm || state->stream_width <= 0 || state->stream_height <= 0)
+        return FALSE;
+    uint32_t fourcc = state->capture_dmabuf_fourcc ? state->capture_dmabuf_fourcc : DRM_FORMAT_ARGB8888;
+    uint64_t modifiers[1] = { modifier };
+    struct gbm_bo* bo = gbm_bo_create_with_modifiers(state->gbm, (uint32_t)state->stream_width,
+        (uint32_t)state->stream_height, fourcc, modifiers, 1);
+    if (!bo)
+        return FALSE;
+    gbm_bo_destroy(bo);
+    return TRUE;
+}
+
+static void on_stream_param_changed(void* data, uint32_t id, const struct spa_pod* param)
+{
+    struct screencast_state* state = data;
+    if (id != SPA_PARAM_Format || !param)
+        return;
+    struct spa_video_info_raw info;
+    if (spa_format_video_raw_parse(param, &info) < 0)
+        return;
+
+    state->stream_width = (int)info.size.width;
+    state->stream_height = (int)info.size.height;
+    state->negotiated_spa_format = info.format;
+    state->negotiated_fourcc = spa_video_format_to_fourcc(info.format);
+    if (state->negotiated_fourcc == DRM_FORMAT_INVALID)
+        state->negotiated_fourcc = DRM_FORMAT_ARGB8888;
+
+    if (info.flags & SPA_VIDEO_FLAG_MODIFIER) {
+        // Dual modifier negotiation: pick one we can allocate and re-offer it
+        // fixated (mirrors KWin's onStreamParamChanged). Only offer once; if
+        // PipeWire still reports fixation-required, accept our choice.
+        if (info.flags & SPA_VIDEO_FLAG_MODIFIER_FIXATION_REQUIRED && !state->fixate_offered) {
+            const struct spa_pod_prop* prop = spa_pod_find_prop(param, NULL, SPA_FORMAT_VIDEO_modifier);
+            uint64_t chosen = state->capture_dmabuf_modifiers[0];
+            if (prop) {
+                uint32_t count = SPA_POD_CHOICE_N_VALUES(&prop->value);
+                uint64_t const* values = SPA_POD_CHOICE_VALUES(&prop->value);
+                for (uint32_t i = 0; i < count; ++i) {
+                    if (test_dmabuf_modifier(state, values[i])) {
+                        chosen = values[i];
+                        break;
+                    }
+                }
+            }
+            state->fixate_offered = TRUE;
+            state->fixate_modifier = chosen;
+            fprintf(stderr, "xdg-desktop-portal-serenity: screencast fixating DMA-BUF modifier=0x%llx\n", (unsigned long long)chosen);
+            uint8_t buffer[4096];
+            struct spa_pod_builder builder = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
+            const struct spa_pod* params[4];
+            int n = build_enum_formats(state, &builder, params, TRUE, chosen, state->stream_width, state->stream_height);
+            pw_stream_update_params(state->stream, params, n);
+            return;
+        }
+        state->negotiated_dmabuf = state->gbm && state->capture_has_dmabuf;
+        state->negotiated_modifier = state->negotiated_dmabuf
+            ? ((info.flags & SPA_VIDEO_FLAG_MODIFIER_FIXATION_REQUIRED) ? state->fixate_modifier : info.modifier)
+            : 0;
+    } else {
+        state->negotiated_dmabuf = FALSE;
+        state->negotiated_modifier = 0;
+    }
+    state->negotiated = TRUE;
+
+    fprintf(stderr, "xdg-desktop-portal-serenity: screencast negotiated %dx%d spa-format %d fourcc 0x%08x %s modifier=0x%llx\n",
+        state->stream_width, state->stream_height, info.format, state->negotiated_fourcc,
+        state->negotiated_dmabuf ? "DMA-BUF" : "memfd", (unsigned long long)state->negotiated_modifier);
+
+    announce_stream_params(state);
+}
+
 static const struct pw_stream_events stream_events = {
     PW_VERSION_STREAM_EVENTS,
     .state_changed = on_stream_state_changed,
+    .param_changed = on_stream_param_changed,
+    .add_buffer = on_stream_add_buffer,
+    .remove_buffer = on_stream_remove_buffer,
     .process = on_stream_process,
 };
 
@@ -246,6 +623,74 @@ static const struct pw_core_events core_events = {
 
 // Create and connect the PipeWire stream for `width`x`height` BGRA video. Returns
 // the node id, or -1.
+// Build the EnumFormat list: a DMA-BUF format (with the compositor's
+// modifiers, either as a DONT_FIXATE choice or fixated to one) plus a memfd
+// fallback. Mirrors KWin's buildFormats().
+static int build_enum_formats(struct screencast_state* state, struct spa_pod_builder* b,
+    const struct spa_pod** params, gboolean fixate, uint64_t fixate_modifier, int width, int height)
+{
+    int n = 0;
+    struct spa_rectangle size = SPA_RECTANGLE((uint32_t)width, (uint32_t)height);
+    struct spa_rectangle size_min = SPA_RECTANGLE(1, 1);
+    struct spa_rectangle size_max = SPA_RECTANGLE(16384, 16384);
+    struct spa_fraction rate = SPA_FRACTION(30, 1);
+
+    if (state->capture_has_dmabuf && state->dmabuf && state->gbm && state->dmabuf_enabled && state->capture_dmabuf_modifier_count > 0) {
+        uint32_t spa_format = fourcc_to_spa_video_format(state->capture_dmabuf_fourcc);
+        if (spa_format == SPA_VIDEO_FORMAT_UNKNOWN)
+            spa_format = SPA_VIDEO_FORMAT_BGRA;
+        // When fixating, offer the chosen modifier as a single fixated format
+        // first, then the full DONT_FIXATE choice (as KWin does).
+        if (fixate) {
+            struct spa_pod_frame frame;
+            spa_pod_builder_push_object(b, &frame, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat);
+            spa_pod_builder_add(b, SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video), 0);
+            spa_pod_builder_add(b, SPA_FORMAT_mediaSubtype, SPA_POD_Id(SPA_MEDIA_SUBTYPE_raw), 0);
+            spa_pod_builder_add(b, SPA_FORMAT_VIDEO_format, SPA_POD_Id(spa_format), 0);
+            spa_pod_builder_add(b, SPA_FORMAT_VIDEO_size,
+                SPA_POD_CHOICE_RANGE_Rectangle(SPA_POD_Rectangle(&size), SPA_POD_Rectangle(&size_min), SPA_POD_Rectangle(&size_max)), 0);
+            spa_pod_builder_add(b, SPA_FORMAT_VIDEO_framerate, SPA_POD_Fraction(&rate), 0);
+            spa_pod_builder_prop(b, SPA_FORMAT_VIDEO_modifier, SPA_POD_PROP_FLAG_MANDATORY);
+            spa_pod_builder_long(b, fixate_modifier);
+            params[n++] = spa_pod_builder_pop(b, &frame);
+        }
+        struct spa_pod_frame frame;
+        struct spa_pod_frame choice;
+        {
+            spa_pod_builder_push_object(b, &frame, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat);
+            spa_pod_builder_add(b, SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video), 0);
+            spa_pod_builder_add(b, SPA_FORMAT_mediaSubtype, SPA_POD_Id(SPA_MEDIA_SUBTYPE_raw), 0);
+            spa_pod_builder_add(b, SPA_FORMAT_VIDEO_format, SPA_POD_Id(spa_format), 0);
+            spa_pod_builder_add(b, SPA_FORMAT_VIDEO_size,
+                SPA_POD_CHOICE_RANGE_Rectangle(SPA_POD_Rectangle(&size), SPA_POD_Rectangle(&size_min), SPA_POD_Rectangle(&size_max)), 0);
+            spa_pod_builder_add(b, SPA_FORMAT_VIDEO_framerate, SPA_POD_Fraction(&rate), 0);
+            spa_pod_builder_prop(b, SPA_FORMAT_VIDEO_modifier, SPA_POD_PROP_FLAG_MANDATORY | SPA_POD_PROP_FLAG_DONT_FIXATE);
+            spa_pod_builder_push_choice(b, &choice, SPA_CHOICE_Enum, 0);
+            for (size_t i = 0; i < state->capture_dmabuf_modifier_count; ++i) {
+                spa_pod_builder_long(b, state->capture_dmabuf_modifiers[i]);
+                if (i == 0)
+                    spa_pod_builder_long(b, state->capture_dmabuf_modifiers[i]);
+            }
+            spa_pod_builder_pop(b, &choice);
+            params[n++] = spa_pod_builder_pop(b, &frame);
+        }
+    }
+
+    // memfd fallback format, always offered.
+    struct spa_pod_frame frame;
+    spa_pod_builder_push_object(b, &frame, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat);
+    spa_pod_builder_add(b, SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video), 0);
+    spa_pod_builder_add(b, SPA_FORMAT_mediaSubtype, SPA_POD_Id(SPA_MEDIA_SUBTYPE_raw), 0);
+    spa_pod_builder_add(b, SPA_FORMAT_VIDEO_format,
+        SPA_POD_CHOICE_ENUM_Id(3, SPA_VIDEO_FORMAT_BGRA, SPA_VIDEO_FORMAT_BGRA, SPA_VIDEO_FORMAT_BGRx), 0);
+    spa_pod_builder_add(b, SPA_FORMAT_VIDEO_size,
+        SPA_POD_CHOICE_RANGE_Rectangle(SPA_POD_Rectangle(&size), SPA_POD_Rectangle(&size_min), SPA_POD_Rectangle(&size_max)), 0);
+    spa_pod_builder_add(b, SPA_FORMAT_VIDEO_framerate,
+        SPA_POD_CHOICE_RANGE_Fraction(SPA_POD_Fraction(&rate), SPA_POD_Fraction(&rate), SPA_POD_Fraction(&rate)), 0);
+    params[n++] = spa_pod_builder_pop(b, &frame);
+    return n;
+}
+
 static int start_pipewire_stream(int width, int height)
 {
     if (!g_state.pw_loop) {
@@ -293,38 +738,38 @@ static int start_pipewire_stream(int width, int height)
         return -1;
     }
     pw_stream_add_listener(g_state.stream, &g_state.stream_listener, &stream_events, &g_state);
+    g_state.fixate_offered = FALSE;
+    g_state.negotiated = FALSE;
 
-    uint8_t buffer[1032];
+    uint8_t buffer[4096];
     struct spa_pod_builder builder = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
-    struct spa_pod_frame frame;
-    struct spa_rectangle size = SPA_RECTANGLE((uint32_t)width, (uint32_t)height);
-    struct spa_fraction rate = SPA_FRACTION(30, 1);
-
-    spa_pod_builder_push_object(&builder, &frame, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat);
-    spa_pod_builder_add(&builder, SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video), 0);
-    spa_pod_builder_add(&builder, SPA_FORMAT_mediaSubtype, SPA_POD_Id(SPA_MEDIA_SUBTYPE_raw), 0);
-    spa_pod_builder_add(&builder, SPA_FORMAT_VIDEO_format, SPA_POD_Id(SPA_VIDEO_FORMAT_BGRA), 0);
-    spa_pod_builder_add(&builder, SPA_FORMAT_VIDEO_size, SPA_POD_Rectangle(&size), 0);
-    spa_pod_builder_add(&builder, SPA_FORMAT_VIDEO_framerate, SPA_POD_Fraction(&rate), 0);
-    struct spa_pod* params[3] = { spa_pod_builder_pop(&builder, &frame) };
-
-    // Buffer requirements (niri-style): memfd-backed, a handful of buffers.
-    struct spa_pod_frame buffers_frame;
-    spa_pod_builder_push_object(&builder, &buffers_frame, SPA_TYPE_OBJECT_ParamBuffers, SPA_PARAM_Buffers);
-    spa_pod_builder_add(&builder, SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(8, 2, 16), 0);
-    spa_pod_builder_add(&builder, SPA_PARAM_BUFFERS_blocks, SPA_POD_Int(1), 0);
-    spa_pod_builder_add(&builder, SPA_PARAM_BUFFERS_dataType, SPA_POD_CHOICE_FLAGS_Int((1 << SPA_DATA_MemFd) | (1 << SPA_DATA_MemPtr)), 0);
-    params[1] = spa_pod_builder_pop(&builder, &buffers_frame);
-
-    // The header meta (timestamps/flags), as niri advertises.
-    struct spa_pod_frame meta_frame;
-    spa_pod_builder_push_object(&builder, &meta_frame, SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta);
-    spa_pod_builder_add(&builder, SPA_PARAM_META_type, SPA_POD_Id(SPA_META_Header), 0);
-    spa_pod_builder_add(&builder, SPA_PARAM_META_size, SPA_POD_Int((int)sizeof(struct spa_meta_header)), 0);
-    params[2] = spa_pod_builder_pop(&builder, &meta_frame);
+    const struct spa_pod* params[8];
+    int param_count = build_enum_formats(&g_state, &builder, params, FALSE, 0, width, height);
+    // Also offer the buffer layout and metadata up front, so the server can
+    // negotiate them together with the format.
+    {
+        int stride = width * 4;
+        int buffertypes = (1 << SPA_DATA_DmaBuf) | (1 << SPA_DATA_MemFd);
+        params[param_count++] = spa_pod_builder_add_object(&builder, SPA_TYPE_OBJECT_ParamBuffers, SPA_PARAM_Buffers,
+            SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(4, 1, 8),
+            SPA_PARAM_BUFFERS_blocks, SPA_POD_Int(1),
+            SPA_PARAM_BUFFERS_size, SPA_POD_Int(stride * height),
+            SPA_PARAM_BUFFERS_stride, SPA_POD_Int(stride),
+            SPA_PARAM_BUFFERS_dataType, SPA_POD_CHOICE_FLAGS_Int(buffertypes));
+        params[param_count++] = spa_pod_builder_add_object(&builder, SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta,
+            SPA_PARAM_META_type, SPA_POD_Id(SPA_META_Header),
+            SPA_PARAM_META_size, SPA_POD_Int((int)sizeof(struct spa_meta_header)));
+        params[param_count++] = spa_pod_builder_add_object(&builder, SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta,
+            SPA_PARAM_META_type, SPA_POD_Id(SPA_META_VideoDamage),
+            SPA_PARAM_META_size, SPA_POD_CHOICE_RANGE_Int((int)sizeof(struct spa_meta_region) * 16,
+                (int)sizeof(struct spa_meta_region), (int)sizeof(struct spa_meta_region) * 16));
+        params[param_count++] = spa_pod_builder_add_object(&builder, SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta,
+            SPA_PARAM_META_type, SPA_POD_Id(SPA_META_Cursor),
+            SPA_PARAM_META_size, SPA_POD_Int((int)cursor_meta_size()));
+    }
 
     int result = pw_stream_connect(g_state.stream, PW_DIRECTION_OUTPUT, PW_ID_ANY,
-        PW_STREAM_FLAG_DRIVER | PW_STREAM_FLAG_MAP_BUFFERS, (const struct spa_pod**)params, 3);
+        PW_STREAM_FLAG_ALLOC_BUFFERS, (const struct spa_pod**)params, param_count);
     if (result < 0) {
         fprintf(stderr, "xdg-desktop-portal-serenity: pw_stream_connect failed: %d\n", result);
         pw_stream_destroy(g_state.stream);
@@ -356,7 +801,111 @@ static int start_pipewire_stream(int width, int height)
     return g_state.stream_node_id;
 }
 
+// Buffer requirements + metadata for the negotiated format. Called from
+// param_changed (mirrors KWin's newStreamParams).
+static void announce_stream_params(struct screencast_state* state)
+{
+    uint8_t buffer[2048];
+    struct spa_pod_builder builder = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
+    const struct spa_pod* params[4];
+    int n = 0;
+
+    int buffertypes = state->negotiated_dmabuf ? (1 << SPA_DATA_DmaBuf) : (1 << SPA_DATA_MemFd);
+    int stride = state->stream_width * 4;
+
+    struct spa_pod_frame frame;
+    spa_pod_builder_push_object(&builder, &frame, SPA_TYPE_OBJECT_ParamBuffers, SPA_PARAM_Buffers);
+    spa_pod_builder_add(&builder, SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(4, 1, 8), 0);
+    spa_pod_builder_add(&builder, SPA_PARAM_BUFFERS_dataType, SPA_POD_CHOICE_FLAGS_Int(buffertypes), 0);
+    if (state->negotiated_dmabuf) {
+        spa_pod_builder_add(&builder, SPA_PARAM_BUFFERS_blocks, SPA_POD_Int(1),
+            SPA_PARAM_BUFFERS_size, SPA_POD_Int(stride * state->stream_height),
+            SPA_PARAM_BUFFERS_stride, SPA_POD_Int(stride), 0);
+    } else {
+        spa_pod_builder_add(&builder, SPA_PARAM_BUFFERS_blocks, SPA_POD_Int(1),
+            SPA_PARAM_BUFFERS_size, SPA_POD_Int(stride * state->stream_height),
+            SPA_PARAM_BUFFERS_stride, SPA_POD_Int(stride),
+            SPA_PARAM_BUFFERS_align, SPA_POD_Int(16), 0);
+    }
+    params[n++] = spa_pod_builder_pop(&builder, &frame);
+
+    params[n++] = spa_pod_builder_add_object(&builder, SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta,
+        SPA_PARAM_META_type, SPA_POD_Id(SPA_META_Header),
+        SPA_PARAM_META_size, SPA_POD_Int((int)sizeof(struct spa_meta_header)));
+    params[n++] = spa_pod_builder_add_object(&builder, SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta,
+        SPA_PARAM_META_type, SPA_POD_Id(SPA_META_VideoDamage),
+        SPA_PARAM_META_size, SPA_POD_CHOICE_RANGE_Int((int)sizeof(struct spa_meta_region) * 16,
+            (int)sizeof(struct spa_meta_region), (int)sizeof(struct spa_meta_region) * 16));
+    if (state->cursor_metadata)
+        params[n++] = spa_pod_builder_add_object(&builder, SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta,
+            SPA_PARAM_META_type, SPA_POD_Id(SPA_META_Cursor),
+            SPA_PARAM_META_size, SPA_POD_Int((int)cursor_meta_size()));
+
+    pw_stream_update_params(state->stream, params, n);
+}
+
+// Fill the SPA_META_Cursor metadata for the metadata cursor mode: position and
+// hotspot each frame, and the bitmap whenever it changed (mirrors KWin's
+// addCursorMetadata).
+static void write_cursor_meta(struct screencast_state* state, struct spa_buffer* spa_buffer)
+{
+    if (!state->cursor_metadata)
+        return;
+    struct spa_meta_cursor* cursor = spa_buffer_find_meta_data(spa_buffer, SPA_META_Cursor, sizeof(struct spa_meta_cursor));
+    if (!cursor) {
+        if (!state->cursor_meta_logged) {
+            state->cursor_meta_logged = TRUE;
+            fprintf(stderr, "xdg-desktop-portal-serenity: screencast no SPA_META_Cursor region (metadata=%d)\n", state->cursor_metadata);
+        }
+        return;
+    }
+
+    if (!state->cursor_visible) {
+        cursor->id = 0;
+        return;
+    }
+
+    cursor->id = 1;
+    cursor->position.x = state->cursor_x;
+    cursor->position.y = state->cursor_y;
+    cursor->hotspot.x = state->cursor_hotspot_x;
+    cursor->hotspot.y = state->cursor_hotspot_y;
+    cursor->bitmap_offset = 0;
+
+    if (!state->cursor_bitmap_dirty || !state->cursor_bitmap_valid)
+        return;
+    state->cursor_bitmap_dirty = FALSE;
+    cursor->bitmap_offset = (uint32_t)sizeof(struct spa_meta_cursor);
+
+    struct spa_meta_bitmap* bitmap = SPA_MEMBER(cursor, cursor->bitmap_offset, struct spa_meta_bitmap);
+    bitmap->format = SPA_VIDEO_FORMAT_RGBA;
+    bitmap->offset = (uint32_t)sizeof(struct spa_meta_bitmap);
+    bitmap->size.width = (uint32_t)state->cursor_width;
+    bitmap->size.height = (uint32_t)state->cursor_height;
+    bitmap->stride = state->cursor_stride;
+
+    uint8_t* data = SPA_MEMBER(bitmap, bitmap->offset, uint8_t);
+    size_t row = (size_t)state->cursor_width * 4;
+    size_t rows = (size_t)state->cursor_height;
+    if ((uint8_t*)data + row * rows <= (uint8_t*)spa_meta_end(spa_buffer_find_meta(spa_buffer, SPA_META_Cursor))) {
+        for (size_t y = 0; y < rows; ++y)
+            memcpy(data + y * row, state->cursor_bitmap + y * (size_t)state->cursor_stride, row);
+    }
+}
+
 // --- Wayland capture --------------------------------------------------------
+
+// Complete the in-flight capture request (called on the Wayland thread).
+static void complete_pending_capture(struct screencast_state* state, int status)
+{
+    pthread_mutex_lock(&state->capture_mutex);
+    if (state->capture_in_flight) {
+        state->capture_in_flight = FALSE;
+        state->pending_status = status;
+        pthread_cond_broadcast(&state->capture_cond);
+    }
+    pthread_mutex_unlock(&state->capture_mutex);
+}
 
 static void frame_transform(void* data, struct ext_image_copy_capture_frame_v1* frame, uint32_t transform)
 {
@@ -382,51 +931,25 @@ static void frame_presentation_time(void* data, struct ext_image_copy_capture_fr
     (void)nsec;
 }
 
-static void start_frame(struct capture* capture);
-
 static void frame_ready(void* data, struct ext_image_copy_capture_frame_v1* frame)
 {
     struct capture* capture = data;
-
-    if (capture->pixels && capture->width > 0 && capture->height > 0) {
-        update_frame_from_pixels(capture, capture->pixels, capture->width, capture->height, capture->stride);
-        if (!capture->first_frame_logged) {
-            capture->first_frame_logged = TRUE;
-            fprintf(stderr, "xdg-desktop-portal-serenity: screencast first frame %dx%d\n", capture->width, capture->height);
-        }
+    if (!capture->first_frame_logged) {
+        capture->first_frame_logged = TRUE;
+        fprintf(stderr, "xdg-desktop-portal-serenity: screencast first frame %dx%d\n", capture->width, capture->height);
     }
-
-    if (capture->buffer) {
-        wl_buffer_destroy(capture->buffer);
-        capture->buffer = NULL;
-    }
-    if (capture->pixels) {
-        munmap(capture->pixels, capture->mapped_size);
-        capture->pixels = NULL;
-    }
-
     ext_image_copy_capture_frame_v1_destroy(frame);
     capture->frame = NULL;
-
-    usleep(33000); // ~30 fps
-    start_frame(capture);
+    complete_pending_capture(capture->state, 1);
 }
 
 static void frame_failed(void* data, struct ext_image_copy_capture_frame_v1* frame, uint32_t reason)
 {
-    (void)reason;
     struct capture* capture = data;
+    (void)reason;
     ext_image_copy_capture_frame_v1_destroy(frame);
     capture->frame = NULL;
-    if (capture->buffer) {
-        wl_buffer_destroy(capture->buffer);
-        capture->buffer = NULL;
-    }
-    if (capture->pixels) {
-        munmap(capture->pixels, capture->mapped_size);
-        capture->pixels = NULL;
-    }
-    start_frame(capture);
+    complete_pending_capture(capture->state, -1);
 }
 
 static const struct ext_image_copy_capture_frame_v1_listener frame_listener = {
@@ -436,39 +959,6 @@ static const struct ext_image_copy_capture_frame_v1_listener frame_listener = {
     .ready = frame_ready,
     .failed = frame_failed,
 };
-
-static void start_frame(struct capture* capture)
-{
-    int stride = capture->width * 4;
-    size_t size = (size_t)stride * capture->height;
-
-    int fd = memfd_create("sde-screencast", MFD_CLOEXEC);
-    if (fd < 0)
-        return;
-    if (ftruncate(fd, (off_t)size) != 0) {
-        close(fd);
-        return;
-    }
-    uint8_t* pixels = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (pixels == MAP_FAILED) {
-        close(fd);
-        return;
-    }
-    struct wl_shm_pool* pool = wl_shm_create_pool(g_state.shm, fd, (int)size);
-    struct wl_buffer* buffer = wl_shm_pool_create_buffer(pool, 0, capture->width, capture->height, stride, capture->shm_format);
-    wl_shm_pool_destroy(pool);
-    close(fd);
-
-    capture->pixels = pixels;
-    capture->mapped_size = size;
-    capture->stride = stride;
-    capture->buffer = buffer;
-
-    capture->frame = ext_image_copy_capture_session_v1_create_frame(capture->session);
-    ext_image_copy_capture_frame_v1_add_listener(capture->frame, &frame_listener, capture);
-    ext_image_copy_capture_frame_v1_attach_buffer(capture->frame, buffer);
-    ext_image_copy_capture_frame_v1_capture(capture->frame);
-}
 
 static void capture_session_buffer_size(void* data, struct ext_image_copy_capture_session_v1* session, uint32_t width, uint32_t height)
 {
@@ -492,11 +982,24 @@ static void capture_session_dmabuf_device(void* data, struct ext_image_copy_capt
 }
 static void capture_session_dmabuf_format(void* data, struct ext_image_copy_capture_session_v1* session, uint32_t format, struct wl_array* modifiers)
 {
-    (void)data;
     (void)session;
-    (void)format;
-    (void)modifiers;
+    (void)data;
+    // Remember the first DMA-BUF format the compositor can render into.
+    if (g_state.capture_has_dmabuf)
+        return;
+    g_state.capture_dmabuf_fourcc = format;
+    g_state.capture_dmabuf_modifier_count = 0;
+    uint64_t* modifier;
+    wl_array_for_each(modifier, modifiers) {
+        if (g_state.capture_dmabuf_modifier_count < 64)
+            g_state.capture_dmabuf_modifiers[g_state.capture_dmabuf_modifier_count++] = *modifier;
+    }
+    g_state.capture_has_dmabuf = g_state.capture_dmabuf_modifier_count > 0;
 }
+
+static void setup_cursor_session(struct capture* capture);
+static void cursor_capture_next(void);
+
 static void capture_session_done(void* data, struct ext_image_copy_capture_session_v1* session)
 {
     (void)session;
@@ -505,10 +1008,13 @@ static void capture_session_done(void* data, struct ext_image_copy_capture_sessi
         fprintf(stderr, "xdg-desktop-portal-serenity: screencast session has no size\n");
         return;
     }
-    // Publish the PipeWire stream now that the size is known.
+    // Set up the cursor session first, so the Cursor metadata is advertised
+    // during stream negotiation. Then publish the PipeWire stream; frames are
+    // produced on demand (one per PipeWire process()).
+    if (capture->cursor_mode == 4)
+        setup_cursor_session(capture);
     if (g_state.stream_node_id <= 0)
         start_pipewire_stream(capture->width, capture->height);
-    start_frame(capture);
 }
 static void capture_session_stopped(void* data, struct ext_image_copy_capture_session_v1* session)
 {
@@ -524,6 +1030,218 @@ static const struct ext_image_copy_capture_session_v1_listener capture_session_l
     .done = capture_session_done,
     .stopped = capture_session_stopped,
 };
+
+// --- cursor metadata --------------------------------------------------------
+
+static void cursor_session_enter(void* data, struct ext_image_copy_capture_cursor_session_v1* session)
+{
+    (void)data;
+    (void)session;
+    g_state.cursor_visible = TRUE;
+    cursor_capture_next();
+}
+static void cursor_session_leave(void* data, struct ext_image_copy_capture_cursor_session_v1* session)
+{
+    (void)data;
+    (void)session;
+    g_state.cursor_visible = FALSE;
+}
+static void cursor_session_position(void* data, struct ext_image_copy_capture_cursor_session_v1* session, int32_t x, int32_t y)
+{
+    (void)data;
+    (void)session;
+    g_state.cursor_x = x;
+    g_state.cursor_y = y;
+}
+static void cursor_session_hotspot(void* data, struct ext_image_copy_capture_cursor_session_v1* session, int32_t x, int32_t y)
+{
+    (void)data;
+    (void)session;
+    g_state.cursor_hotspot_x = x;
+    g_state.cursor_hotspot_y = y;
+}
+static const struct ext_image_copy_capture_cursor_session_v1_listener cursor_session_listener = {
+    .enter = cursor_session_enter,
+    .leave = cursor_session_leave,
+    .position = cursor_session_position,
+    .hotspot = cursor_session_hotspot,
+};
+
+static void cursor_capture_buffer_size(void* data, struct ext_image_copy_capture_session_v1* session, uint32_t width, uint32_t height)
+{
+    (void)session;
+    (void)data;
+    g_state.cursor_width = (int)width;
+    g_state.cursor_height = (int)height;
+}
+static void cursor_capture_shm_format(void* data, struct ext_image_copy_capture_session_v1* session, uint32_t format)
+{
+    (void)session;
+    (void)data;
+    if (g_state.cursor_shm_format == 0)
+        g_state.cursor_shm_format = format;
+}
+static void cursor_capture_dmabuf_device(void* data, struct ext_image_copy_capture_session_v1* session, struct wl_array* device)
+{
+    (void)data;
+    (void)session;
+    (void)device;
+}
+static void cursor_capture_dmabuf_format(void* data, struct ext_image_copy_capture_session_v1* session, uint32_t format, struct wl_array* modifiers)
+{
+    (void)data;
+    (void)session;
+    (void)format;
+    (void)modifiers;
+}
+static void cursor_capture_done(void* data, struct ext_image_copy_capture_session_v1* session)
+{
+    (void)session;
+    (void)data;
+    cursor_capture_next();
+}
+static void cursor_capture_stopped(void* data, struct ext_image_copy_capture_session_v1* session)
+{
+    (void)data;
+    (void)session;
+}
+static const struct ext_image_copy_capture_session_v1_listener cursor_capture_listener = {
+    .buffer_size = cursor_capture_buffer_size,
+    .shm_format = cursor_capture_shm_format,
+    .dmabuf_device = cursor_capture_dmabuf_device,
+    .dmabuf_format = cursor_capture_dmabuf_format,
+    .done = cursor_capture_done,
+    .stopped = cursor_capture_stopped,
+};
+
+static void cursor_capture_frame(void);
+
+static void cursor_frame_ready(void* data, struct ext_image_copy_capture_frame_v1* frame)
+{
+    (void)data;
+    ext_image_copy_capture_frame_v1_destroy(frame);
+    g_state.cursor_frame = NULL;
+
+    if (g_state.cursor_map && g_state.cursor_width > 0 && g_state.cursor_height > 0) {
+        uint32_t fourcc = g_state.cursor_shm_format ? (uint32_t)g_state.cursor_shm_format : DRM_FORMAT_ARGB8888;
+        uint32_t spa_format = fourcc_to_spa_video_format(fourcc);
+        int stride = g_state.cursor_stride;
+        size_t row = (size_t)g_state.cursor_width * 4;
+        size_t rows = (size_t)g_state.cursor_height;
+        uint8_t* dst = realloc(g_state.cursor_bitmap, row * rows);
+        if (dst) {
+            g_state.cursor_bitmap = dst;
+            for (size_t y = 0; y < rows; ++y) {
+                uint8_t const* src = g_state.cursor_map + y * (size_t)stride;
+                uint8_t* out = g_state.cursor_bitmap + y * row;
+                for (int x = 0; x < g_state.cursor_width; ++x) {
+                    // wl_shm ARGB8888 is premultiplied BGRA in memory; the meta
+                    // bitmap is RGBA (as KWin sends it).
+                    out[x * 4 + 0] = src[x * 4 + 2];
+                    out[x * 4 + 1] = src[x * 4 + 1];
+                    out[x * 4 + 2] = src[x * 4 + 0];
+                    out[x * 4 + 3] = src[x * 4 + 3];
+                }
+            }
+            g_state.cursor_bitmap_valid = TRUE;
+            g_state.cursor_bitmap_dirty = TRUE;
+            (void)spa_format;
+        }
+    }
+
+    if (g_state.cursor_map) {
+        munmap(g_state.cursor_map, g_state.cursor_map_size);
+        g_state.cursor_map = NULL;
+    }
+    if (g_state.cursor_buffer) {
+        wl_buffer_destroy(g_state.cursor_buffer);
+        g_state.cursor_buffer = NULL;
+    }
+}
+static void cursor_frame_failed(void* data, struct ext_image_copy_capture_frame_v1* frame, uint32_t reason)
+{
+    (void)data;
+    (void)reason;
+    ext_image_copy_capture_frame_v1_destroy(frame);
+    g_state.cursor_frame = NULL;
+    if (g_state.cursor_map) {
+        munmap(g_state.cursor_map, g_state.cursor_map_size);
+        g_state.cursor_map = NULL;
+    }
+    if (g_state.cursor_buffer) {
+        wl_buffer_destroy(g_state.cursor_buffer);
+        g_state.cursor_buffer = NULL;
+    }
+}
+static const struct ext_image_copy_capture_frame_v1_listener cursor_frame_listener = {
+    .transform = frame_transform,
+    .damage = frame_damage,
+    .presentation_time = frame_presentation_time,
+    .ready = cursor_frame_ready,
+    .failed = cursor_frame_failed,
+};
+
+// Capture the cursor bitmap (best effort, one frame at a time).
+static void cursor_capture_frame(void)
+{
+    if (!g_state.cursor_capture || g_state.cursor_frame)
+        return;
+    if (g_state.cursor_width <= 0 || g_state.cursor_height <= 0)
+        return;
+    int stride = g_state.cursor_width * 4;
+    size_t size = (size_t)stride * g_state.cursor_height;
+    int fd = memfd_create("sde-cursor", MFD_CLOEXEC);
+    if (fd < 0 || ftruncate(fd, (off_t)size) != 0) {
+        if (fd >= 0)
+            close(fd);
+        return;
+    }
+    uint8_t* map = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (map == MAP_FAILED) {
+        close(fd);
+        return;
+    }
+    uint32_t shm_format = g_state.cursor_shm_format ? g_state.cursor_shm_format : WL_SHM_FORMAT_ARGB8888;
+    struct wl_shm_pool* pool = wl_shm_create_pool(g_state.shm, fd, (int)size);
+    struct wl_buffer* buffer = wl_shm_pool_create_buffer(pool, 0, g_state.cursor_width, g_state.cursor_height, stride, shm_format);
+    wl_shm_pool_destroy(pool);
+    close(fd);
+
+    g_state.cursor_map = map;
+    g_state.cursor_map_size = size;
+    g_state.cursor_stride = stride;
+    g_state.cursor_buffer = buffer;
+    g_state.cursor_frame = ext_image_copy_capture_session_v1_create_frame(g_state.cursor_capture);
+    ext_image_copy_capture_frame_v1_add_listener(g_state.cursor_frame, &cursor_frame_listener, NULL);
+    ext_image_copy_capture_frame_v1_attach_buffer(g_state.cursor_frame, buffer);
+    ext_image_copy_capture_frame_v1_capture(g_state.cursor_frame);
+    wl_display_flush(g_state.display);
+}
+
+static void cursor_capture_next(void)
+{
+    if (g_state.cursor_metadata && g_state.cursor_visible && !g_state.cursor_frame)
+        cursor_capture_frame();
+}
+
+static void setup_cursor_session(struct capture* capture)
+{
+    if (!g_state.pointer || !g_state.capture_manager) {
+        fprintf(stderr, "xdg-desktop-portal-serenity: metadata cursor requested but no wl_pointer\n");
+        return;
+    }
+    struct ext_image_capture_source_v1* source =
+        ext_output_image_capture_source_manager_v1_create_source(g_state.source_manager, g_state.outputs[0]);
+    g_state.cursor_metadata = TRUE;
+    g_state.cursor_session = ext_image_copy_capture_manager_v1_create_pointer_cursor_session(
+        g_state.capture_manager, source, g_state.pointer);
+    ext_image_capture_source_v1_destroy(source);
+    ext_image_copy_capture_cursor_session_v1_add_listener(g_state.cursor_session, &cursor_session_listener, NULL);
+    g_state.cursor_capture = ext_image_copy_capture_cursor_session_v1_get_capture_session(g_state.cursor_session);
+    ext_image_copy_capture_session_v1_add_listener(g_state.cursor_capture, &cursor_capture_listener, NULL);
+    fprintf(stderr, "xdg-desktop-portal-serenity: screencast metadata cursor session created\n");
+    (void)capture;
+}
 
 static void ftl_handle_closed(void* data, struct ext_foreign_toplevel_handle_v1* handle)
 {
@@ -586,12 +1304,34 @@ static const struct ext_foreign_toplevel_list_v1_listener ftl_listener = {
     .finished = ftl_finished,
 };
 
+static void seat_capabilities(void* data, struct wl_seat* seat, uint32_t caps)
+{
+    (void)data;
+    if ((caps & WL_SEAT_CAPABILITY_POINTER) && !g_state.pointer)
+        g_state.pointer = wl_seat_get_pointer(seat);
+}
+static void seat_name(void* data, struct wl_seat* seat, char const* name)
+{
+    (void)data;
+    (void)seat;
+    (void)name;
+}
+static const struct wl_seat_listener seat_listener = {
+    .capabilities = seat_capabilities,
+    .name = seat_name,
+};
+
 static void registry_global(void* data, struct wl_registry* registry, uint32_t name, char const* interface, uint32_t version)
 {
     (void)data;
     if (strcmp(interface, wl_shm_interface.name) == 0)
         g_state.shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
-    else if (strcmp(interface, ext_output_image_capture_source_manager_v1_interface.name) == 0)
+    else if (strcmp(interface, zwp_linux_dmabuf_v1_interface.name) == 0)
+        g_state.dmabuf = wl_registry_bind(registry, name, &zwp_linux_dmabuf_v1_interface, version < 4 ? version : 4);
+    else if (strcmp(interface, wl_seat_interface.name) == 0 && !g_state.seat) {
+        g_state.seat = wl_registry_bind(registry, name, &wl_seat_interface, version < 7 ? version : 7);
+        wl_seat_add_listener(g_state.seat, &seat_listener, NULL);
+    } else if (strcmp(interface, ext_output_image_capture_source_manager_v1_interface.name) == 0)
         g_state.source_manager = wl_registry_bind(registry, name, &ext_output_image_capture_source_manager_v1_interface, 1);
     else if (strcmp(interface, ext_image_copy_capture_manager_v1_interface.name) == 0)
         g_state.capture_manager = wl_registry_bind(registry, name, &ext_image_copy_capture_manager_v1_interface, 1);
@@ -615,10 +1355,61 @@ static const struct wl_registry_listener registry_listener = {
     .global_remove = registry_global_remove,
 };
 
+// Start the pending capture request (a PipeWire process() waiting on a frame).
+// Runs on the Wayland thread, which owns the capture session.
+static void begin_pending_capture(struct screencast_state* state)
+{
+    pthread_mutex_lock(&state->capture_mutex);
+    if (!state->pending_buffer || state->capture_in_flight || !state->active_capture
+        || state->active_capture->frame || !state->active_capture->session) {
+        pthread_mutex_unlock(&state->capture_mutex);
+        return;
+    }
+    struct portal_buffer* pcb = state->pending_buffer;
+    struct capture* capture = state->active_capture;
+    state->capture_in_flight = TRUE;
+    pthread_mutex_unlock(&state->capture_mutex);
+
+    capture->frame = ext_image_copy_capture_session_v1_create_frame(capture->session);
+    ext_image_copy_capture_frame_v1_add_listener(capture->frame, &frame_listener, capture);
+    ext_image_copy_capture_frame_v1_attach_buffer(capture->frame, pcb->wl_buffer);
+    ext_image_copy_capture_frame_v1_capture(capture->frame);
+}
+
 static void* capture_thread(void* data)
 {
-    (void)data;
-    while (wl_display_dispatch(g_state.display) >= 0) {
+    struct screencast_state* state = data;
+    while (state->wayland_running) {
+        begin_pending_capture(state);
+        wl_display_dispatch_pending(state->display);
+        while (wl_display_prepare_read(state->display) != 0) {
+            if (wl_display_dispatch_pending(state->display) < 0)
+                return NULL;
+        }
+        wl_display_flush(state->display);
+        struct pollfd fds[2] = {
+            { wl_display_get_fd(state->display), POLLIN, 0 },
+            { state->wake_pipe[0], POLLIN, 0 },
+        };
+        int n = poll(fds, 2, 200);
+        if (n < 0) {
+            wl_display_cancel_read(state->display);
+            if (errno == EINTR)
+                continue;
+            return NULL;
+        }
+        if (fds[0].revents & (POLLIN | POLLHUP | POLLERR)) {
+            if (wl_display_read_events(state->display) < 0)
+                return NULL;
+            wl_display_dispatch_pending(state->display);
+        } else {
+            wl_display_cancel_read(state->display);
+        }
+        if (fds[1].revents & POLLIN) {
+            char drain[128];
+            while (read(state->wake_pipe[0], drain, sizeof(drain)) > 0) {
+            }
+        }
     }
     return NULL;
 }
@@ -628,6 +1419,35 @@ static gboolean ensure_wayland(struct screencast_state* state)
 {
     if (state->display)
         return TRUE;
+
+    pthread_mutex_init(&state->capture_mutex, NULL);
+    pthread_cond_init(&state->capture_cond, NULL);
+    if (pipe(state->wake_pipe) != 0)
+        return FALSE;
+    fcntl(state->wake_pipe[0], F_SETFL, O_NONBLOCK);
+    fcntl(state->wake_pipe[1], F_SETFL, O_NONBLOCK);
+    state->wayland_running = TRUE;
+
+    // GBM device for allocating DMA-BUF capture buffers (zero-copy).
+    char const* node = getenv("SDE_SCREENCAST_RENDER_NODE");
+    if (!node || !*node)
+        node = getenv("WLR_RENDER_DRM_DEVICE");
+    if (!node || !*node)
+        node = "/dev/dri/renderD128";
+    state->gbm_fd = open(node, O_RDWR | O_CLOEXEC);
+    if (state->gbm_fd >= 0) {
+        state->gbm = gbm_create_device(state->gbm_fd);
+        if (!state->gbm) {
+            close(state->gbm_fd);
+            state->gbm_fd = -1;
+        }
+    }
+    if (!state->gbm)
+        fprintf(stderr, "xdg-desktop-portal-serenity: screencast could not open GBM (%s); using memfd\n", node);
+    // DMA-BUF capture is opt-in: this PipeWire build fails client-node buffer
+    // allocation for the DMA-BUF path (docs/15 §6.2), so memfd is the default.
+    state->dmabuf_enabled = getenv("SDE_SCREENCAST_DMABUF") != NULL;
+
     state->display = wl_display_connect(NULL);
     if (!state->display) {
         fprintf(stderr, "xdg-desktop-portal-serenity: screencast cannot connect to Wayland\n");
@@ -636,6 +1456,7 @@ static gboolean ensure_wayland(struct screencast_state* state)
     state->registry = wl_display_get_registry(state->display);
     wl_registry_add_listener(state->registry, &registry_listener, state);
     wl_display_roundtrip(state->display); // globals
+    wl_display_roundtrip(state->display); // seat capabilities
     wl_display_roundtrip(state->display); // output/toplevel info
     return TRUE;
 }
@@ -690,6 +1511,10 @@ static struct capture* begin_capture(struct screencast_state* state, struct sess
     capture->shm_format = WL_SHM_FORMAT_XRGB8888;
     capture->cursor_mode = session ? session->cursor_mode : 1;
 
+    // Reset the DMA-BUF constraint info for this session.
+    state->capture_has_dmabuf = FALSE;
+    state->capture_dmabuf_modifier_count = 0;
+
     // A chosen window when the compositor offers it; otherwise the primary output.
     struct ext_image_capture_source_v1* source = NULL;
     if (session && session->chosen_toplevel_index >= 0 && state->foreign_source_manager) {
@@ -706,12 +1531,15 @@ static struct capture* begin_capture(struct screencast_state* state, struct sess
     }
 
     // cursor_mode 2 = embedded: ask the compositor to paint the cursor into the
-    // capture (niri's "embedded" mode).
+    // capture (niri's "embedded" mode). 4 = metadata: capture the cursor
+    // separately and describe it with SPA_META_Cursor (setup once the size is
+    // known, in capture_session_done).
     uint32_t options = (capture->cursor_mode == 2) ? EXT_IMAGE_COPY_CAPTURE_MANAGER_V1_OPTIONS_PAINT_CURSORS : 0;
     capture->session = ext_image_copy_capture_manager_v1_create_session(state->capture_manager, source, options);
     ext_image_capture_source_v1_destroy(source);
     ext_image_copy_capture_session_v1_add_listener(capture->session, &capture_session_listener, capture);
 
+    state->active_capture = capture;
     if (!state->capture_thread_started) {
         state->capture_thread_started = TRUE;
         pthread_create(&state->capture_thread, NULL, capture_thread, state);
@@ -1024,7 +1852,7 @@ void portal_screencast_method_call(GDBusConnection* connection, gchar const* sen
 
     if (g_strcmp0(method_name, "AvailableCursorModes") == 0) {
         g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
-        g_variant_builder_add(&results, "{sv}", "cursor_modes", g_variant_new_uint32(3)); // hidden | embedded
+        g_variant_builder_add(&results, "{sv}", "cursor_modes", g_variant_new_uint32(7)); // hidden | embedded | metadata
         return_response(invocation, 0, &results);
         return;
     }
