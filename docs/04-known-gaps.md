@@ -101,18 +101,20 @@ click was already handled and returned earlier).
   `scripts/run-tooltip-test.sh`.
   - Remaining: tooltips on **applets** can be slightly offset, because the
     compositor repositions the applet layer surfaces (WS4) without telling the
-    client; and **window-title button tooltips** are compositor chrome, so the
-    compositor still has to draw those itself (not yet done).
+    client; a fix needs the compositor to report the layer surface's position
+    (the `serenity-window` `position` event currently covers xdg toplevels only).
+    Window-title button tooltips are **not** a gap: SerenityOS's `WindowFrame`
+    sets no button tooltips either.
 - **Applet area / system tray parity** — done (WS4). The compositor lays applets
   out (AppletManager) right-to-left by `[Applet] Order`, emits
   `applet_area_size_changed` and consumes `set_applet_area_position`, with the
   Taskbar sizing and positioning the area. Applets are identified by the
   `serenity-applet:<name>` layer namespace.
-- **Layer-surface configure storm** — `arrange_layers` reconfigures every layer
-  surface on every commit, so a client that commits unconditionally on each
-  configure spins (the LibWindowServer clients and the Taskbar commit only when
-  their size changes, so they are unaffected). A future fix is to skip redundant
-  `wlr_layer_surface_v1_configure` calls.
+- **Layer-surface configure storm** — fixed. `layer_surface_commit` now
+  re-arranges only when the committed state changes the layout (desired size,
+  anchor, margins, exclusive zone, layer), so a content-only commit no longer
+  re-configures every layer surface. (Previously `arrange_layers` ran on every
+  commit, spinning any client that commits in response to a configure.)
 - **Font parity (WS7)** — decided: fixed to the bitmap Katica family, so
   size-based zoom is a no-op. This matches upstream SerenityOS (also Katica) and
   does not block R3; the evidence and the R4/G5 path are in
@@ -167,7 +169,10 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
   serves the standard protocol and persists per-session toplevel geometry under
   `$SDE_STATE_DIR/sessions`, so an app that opts in restores its toplevels across
   a compositor restart — verified by `scripts/run-session-management-test.sh`
-  (which restarts the compositor). Remaining: supervision/restart of user apps.
+  (which restarts the compositor). Remaining: supervision/restart of user apps —
+  the supervisor now (re)launches XDG Autostart entries inside its loop once the
+  compositor socket is up, so they start after the compositor and are relaunched
+  after a restart; supervising long-running apps beyond that is not yet done.
 
 - **Session lifecycle (G6 / W5).** No greet/login, session start, autostart,
   save/restore, lock, logout, reboot, or shut-down; no SystemServer-style

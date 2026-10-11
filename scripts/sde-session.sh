@@ -109,6 +109,17 @@ run_autostart() {
     done
 }
 
+# Wait (bounded) for the compositor's Wayland socket before launching clients.
+wait_for_socket() {
+    local socket="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SESSION_DISPLAY"
+    local i
+    for i in $(seq 1 50); do
+        [ -e "$socket" ] && return 0
+        sleep 0.1
+    done
+    return 1
+}
+
 # Power helpers: shadow /bin/{shutdown,reboot,logout,suspend} with sde-power, so
 # the unmodified Taskbar "Exit..." menu (whose ShutdownDialog spawns
 # /bin/shutdown, /bin/reboot, /bin/logout) routes to logind instead of failing on
@@ -125,8 +136,6 @@ EOF
 done
 export SDE_SESSION_BIN_DIR="$SESSION_BIN"
 echo "SDE session: power helpers in $SESSION_BIN (/bin shadow)"
-
-run_autostart
 
 restarts=0
 while :; do
@@ -153,6 +162,15 @@ while :; do
             echo "SDE session: idle-to-lock after ${IDLE_SECONDS}s via '$LOCK_CMD'"
         fi
         IDLE_PID=$!
+    fi
+
+    # Launch the XDG Autostart entries once the compositor's socket is up. Inside
+    # the loop so they are relaunched after a compositor restart (they were
+    # disconnected when the old compositor exited), and never before the socket
+    # exists. The shell is (re)launched by the compositor's own -s command.
+    if [ "$RUN_AUTOSTART" = "1" ]; then
+        wait_for_socket || true
+        run_autostart
     fi
 
     # A SIGTERM/SIGINT means "stop the session", not "restart the compositor":
