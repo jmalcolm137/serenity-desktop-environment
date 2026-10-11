@@ -10,6 +10,7 @@
 
 #include <AK/NonnullOwnPtr.h>
 #include <AK/NonnullRefPtr.h>
+#include <LibGfx/Forward.h>
 
 namespace Core {
 class LocalSocket;
@@ -32,6 +33,8 @@ struct HostHooks {
     void (*report_position)(Toplevel&) { nullptr };
     // WS2: begin an interactive move/resize (start_window_resize).
     void (*begin_interactive)(Toplevel&, CursorMode, uint32_t edges) { nullptr };
+    // WS2: the current theme palette, for the geometry HUD.
+    Gfx::Palette const& (*palette)(Server&) { nullptr };
 };
 void set_host_hooks(HostHooks);
 
@@ -84,5 +87,12 @@ bool handle_tile_key(Server&, u32 keysym, u32 modifiers);
 // preview) and on release (tiles to the previewed target, if any).
 void update_move_snap(Server&, Toplevel&);
 void finish_move_snap(Server&, Toplevel&);
+
+// WS2 geometry HUD (SerenityOS WindowGeometryOverlay): a small size readout shown
+// while moving or resizing. The move path updates it from update_move_snap(); the
+// resize path calls update_resize_hud() with the intended content rect. Hide it
+// when the interactive grab ends.
+void update_resize_hud(Server&, Toplevel&, Gfx::IntRect content_rect);
+void hide_geometry_hud();
 
 }

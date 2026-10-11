@@ -10,7 +10,9 @@
 #include <AK/Optional.h>
 #include <AK/Vector.h>
 #include <LibCore/Socket.h>
+#include <LibGfx/Font/FontDatabase.h>
 #include <LibGfx/Painter.h>
+#include <LibGfx/Palette.h>
 #include <LibGfx/Point.h>
 #include <LibGfx/Rect.h>
 #include <LibIPC/Connection.h>
@@ -379,9 +381,88 @@ bool handle_tile_key(Server& server, u32 keysym, u32 modifiers)
 static OwnPtr<ChromeNode> s_tile_preview;
 static WindowTileType s_pending_tile { WindowTileType::None };
 
+// --- geometry HUD (WS2) -----------------------------------------------------
+//
+// SerenityOS WindowGeometryOverlay: a small size readout shown while moving or
+// resizing. During a move that is previewing a tile it shows the prospective tile
+// size instead of the window's.
+
+static OwnPtr<ChromeNode> s_geometry_hud;
+
+void hide_geometry_hud()
+{
+    if (s_geometry_hud)
+        s_geometry_hud->set_visible(false);
+}
+
+static void show_geometry_hud(Server& server, Gfx::IntRect geometry)
+{
+    if (!server.overlay_tree || geometry.is_empty())
+        return;
+
+    auto label = ByteString::formatted("{}x{}", geometry.width(), geometry.height());
+    auto const& font = Gfx::FontDatabase::default_font();
+    int const pad_x = 10;
+    int const pad_y = 4;
+    Gfx::IntSize const hud_size { font.width_rounded_up(label) + pad_x * 2, font.pixel_size_rounded_up() + pad_y * 2 };
+    Gfx::IntRect hud_rect { {}, hud_size };
+    hud_rect.center_within(geometry);
+
+    // Keep the HUD on the screen.
+    auto const area = usable_area(server);
+    if (!area.is_empty()) {
+        if (hud_rect.left() < area.left())
+            hud_rect.set_x(area.x());
+        if (hud_rect.top() < area.top())
+            hud_rect.set_y(area.y());
+        if (hud_rect.right() > area.right())
+            hud_rect.set_right_without_resize(area.right());
+        if (hud_rect.bottom() > area.bottom())
+            hud_rect.set_bottom_without_resize(area.bottom());
+    }
+
+    if (!s_geometry_hud)
+        s_geometry_hud = make<ChromeNode>(*server.overlay_tree);
+    s_geometry_hud->set_rect(hud_rect);
+
+    auto const* palette = g_hooks.palette ? &g_hooks.palette(server) : nullptr;
+    s_geometry_hud->render([&](Gfx::Painter& painter) {
+        Gfx::IntRect local { {}, hud_size };
+        Gfx::Color background = Gfx::Color::from_rgb(0x2b2b2b).with_alpha(0xe0);
+        Gfx::Color border = Gfx::Color::from_rgb(0x9db8d2);
+        Gfx::Color text = Gfx::Color::White;
+        if (palette) {
+            background = palette->overlay_background();
+            border = palette->overlay_text().with_alpha(0x80);
+            text = palette->overlay_text();
+        }
+        painter.fill_rect(local, background);
+        painter.draw_rect(local.shrunken(1, 1), border);
+        painter.draw_ui_text(local, label, font, Gfx::TextAlignment::Center, text);
+    });
+    s_geometry_hud->set_visible(true);
+    s_geometry_hud->raise_to_top();
+}
+
+void update_resize_hud(Server& server, Toplevel& toplevel, Gfx::IntRect content_rect)
+{
+    // Show the frame rect (content plus the server-side frame), like SerenityOS.
+    Gfx::IntRect geometry {
+        content_rect.x() - toplevel.frame_left,
+        content_rect.y() - toplevel.frame_top,
+        content_rect.width() + toplevel.frame_left + toplevel.frame_right,
+        content_rect.height() + toplevel.frame_top + toplevel.frame_bottom,
+    };
+    show_geometry_hud(server, geometry);
+}
+
+static Gfx::IntRect toplevel_frame_rect(Toplevel const& toplevel)
+{
+    return { toplevel.scene_tree->node.x, toplevel.scene_tree->node.y, toplevel.frame_size.width(), toplevel.frame_size.height() };
+}
+
 void update_move_snap(Server& server, Toplevel& toplevel)
 {
-    (void)toplevel;
     auto area = usable_area(server);
     if (area.is_empty())
         return;
@@ -405,31 +486,35 @@ void update_move_snap(Server& server, Toplevel& toplevel)
         target = WindowTileType::Bottom;
 
     s_pending_tile = target;
-    if (target == WindowTileType::None) {
-        if (s_tile_preview)
-            s_tile_preview->set_visible(false);
-        return;
-    }
-    if (!server.overlay_tree)
-        return;
-    if (!s_tile_preview)
-        s_tile_preview = make<ChromeNode>(*server.overlay_tree);
 
-    auto rect = tile_rect(area, target);
-    s_tile_preview->set_rect(rect);
-    s_tile_preview->render([rect](Gfx::Painter& painter) {
-        Gfx::IntRect local { { }, rect.size() };
-        painter.fill_rect(local, Gfx::Color::from_rgb(0x3b6ea5).with_alpha(0x50));
-        painter.draw_rect(local.shrunken(1, 1), Gfx::Color::from_rgb(0x9db8d2).with_alpha(0xc0));
-    });
-    s_tile_preview->set_visible(true);
-    s_tile_preview->raise_to_top();
+    if (target != WindowTileType::None) {
+        if (server.overlay_tree) {
+            if (!s_tile_preview)
+                s_tile_preview = make<ChromeNode>(*server.overlay_tree);
+            auto rect = tile_rect(area, target);
+            s_tile_preview->set_rect(rect);
+            s_tile_preview->render([rect](Gfx::Painter& painter) {
+                Gfx::IntRect local { { }, rect.size() };
+                painter.fill_rect(local, Gfx::Color::from_rgb(0x3b6ea5).with_alpha(0x50));
+                painter.draw_rect(local.shrunken(1, 1), Gfx::Color::from_rgb(0x9db8d2).with_alpha(0xc0));
+            });
+            s_tile_preview->set_visible(true);
+            s_tile_preview->raise_to_top();
+        }
+    } else if (s_tile_preview) {
+        s_tile_preview->set_visible(false);
+    }
+
+    // The HUD previews the prospective tile while one is shown, else the window.
+    auto geometry = target != WindowTileType::None ? tile_rect(area, target) : toplevel_frame_rect(toplevel);
+    show_geometry_hud(server, geometry);
 }
 
 void finish_move_snap(Server& server, Toplevel& toplevel)
 {
     if (s_tile_preview)
         s_tile_preview->set_visible(false);
+    hide_geometry_hud();
     if (s_pending_tile != WindowTileType::None)
         set_tiled(server, toplevel, s_pending_tile);
     s_pending_tile = WindowTileType::None;

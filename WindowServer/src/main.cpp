@@ -420,6 +420,8 @@ static void reset_cursor_mode(Server& server)
 {
     server.cursor_mode = CursorMode::Passthrough;
     server.grabbed_toplevel = nullptr;
+    // The interactive grab ended: hide the geometry HUD (WS2).
+    WindowManager::hide_geometry_hud();
 }
 
 static void process_cursor_move(Server& server)
@@ -467,6 +469,8 @@ static void process_cursor_resize(Server& server)
     auto* geometry = &toplevel->xdg_toplevel->base->geometry;
     wlr_scene_node_set_position(&toplevel->scene_tree->node, new_left - geometry->x, new_top - geometry->y);
     wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, new_right - new_left, new_bottom - new_top);
+    // Show the geometry HUD with the intended size while resizing (WS2).
+    WindowManager::update_resize_hud(server, *toplevel, { new_left, new_top, new_right - new_left, new_bottom - new_top });
 }
 
 enum class FrameRegion {
@@ -2907,7 +2911,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     if (!wm_server->listen(wm_portal))
         warnln("WindowServer: could not listen on {}", wm_portal);
     // Let the window manager call back into the compositor's focus/menu code.
-    WindowManager::set_host_hooks({ focus_toplevel, open_window_menu, primary_usable_area, toplevel_report_position, toplevel_begin_interactive });
+    WindowManager::set_host_hooks({ focus_toplevel, open_window_menu, primary_usable_area, toplevel_report_position, toplevel_begin_interactive, current_palette });
     WindowSwitcher::set_host_hooks({ current_palette, focus_toplevel, WindowManager::switch_workspace });
     AppletManager::set_host_hooks({ WindowManager::tell_wms_applet_area_size_changed, primary_usable_area });
     // Bring the workspace grid up from the config, and follow later edits.

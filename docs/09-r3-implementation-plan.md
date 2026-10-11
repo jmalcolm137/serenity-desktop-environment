@@ -127,8 +127,10 @@ scheduled as prerequisites rather than late surprises.
 2. **Snapping + overlays (WS2) — done.** `WindowTileType`, Super+arrow
    maximize/minimize/tile (plus Super+Alt horizontal/vertical maximize)
    propagating `xdg_toplevel` tiled/maximized state; drag-to-edge snapping with a
-   LibGfx `TileWindowOverlay` preview; and `start_window_resize` routed through
-   the interactive resize.
+   LibGfx `TileWindowOverlay` preview; a `WindowGeometryOverlay`-style geometry HUD
+   (a `ChromeNode` size readout shown while moving/resizing, previewing the tile
+   when one is active); and `start_window_resize` routed through the interactive
+   resize.
 3. **Switcher with live thumbnails (WS3) — done.** Alt+Tab (current workspace) /
    Super+Tab (all workspaces), Shift reverses, activate on modifier release; a
    `WindowSwitcher` module listing live `snapshot_toplevel()` thumbnails, title and

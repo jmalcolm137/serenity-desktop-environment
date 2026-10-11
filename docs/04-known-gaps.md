@@ -68,7 +68,8 @@ click was already handled and returned earlier).
   commit while open.
 - **Snapping** — done (WS2). `WindowTileType` + Super+arrows
   (maximize/minimize/tile, Super+Alt horizontal/vertical maximize), drag-to-edge
-  snapping with a LibGfx tile preview, `xdg_toplevel` tiled/maximized state, and
+  snapping with a LibGfx tile preview, `xdg_toplevel` tiled/maximized state, a
+  geometry HUD (a `ChromeNode` size readout shown while moving/resizing), and
   `start_window_resize` routed through the interactive resize.
 - **Workspaces** — done (WS1). The stack grid comes from `[Workspaces]` in
   `WindowServer.ini`; `set_workspace`/`workspace_changed` and the real `(row,

@@ -131,6 +131,12 @@ geometry.
 handling), `WindowServer/Overlays.{h,cpp}` (`TileWindowOverlay`,
 `WindowGeometryOverlay`).
 
+> **Status (R3):** implemented in `WindowServer/src/WindowManager.cpp`. The tile
+> preview and the geometry HUD are `ChromeNode` overlays in `overlay_tree`; the
+> move path drives both from `update_move_snap()` (and `finish_move_snap()` on
+> release), the resize path from `update_resize_hud()`, and `start_window_resize`
+> routes through `toplevel_begin_interactive`.
+
 ### WS3 — Window switcher with live thumbnails
 
 Compositor-side by decision — Serenity's `WindowSwitcher` is `WindowServer`
