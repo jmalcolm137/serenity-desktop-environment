@@ -1159,6 +1159,17 @@ static void toplevel_report_position(Toplevel& toplevel)
     serenity_toplevel_send_position(toplevel.chrome, content_x, content_y);
 }
 
+// Report a layer surface's (an applet's) real output position. The compositor
+// moves applets into the Taskbar's applet area, away from their anchored corner,
+// so the client cannot know its own origin without this.
+static void layer_report_position(LayerSurface& layer)
+{
+    if (!layer.chrome || !layer.scene)
+        return;
+    serenity_toplevel_send_position(layer.chrome,
+        static_cast<int>(layer.scene->tree->node.x), static_cast<int>(layer.scene->tree->node.y));
+}
+
 static void toplevel_update_foreign(Toplevel& toplevel)
 {
     if (!toplevel.foreign_handle)
@@ -2374,11 +2385,24 @@ static void output_manager_test(wl_listener* listener, void* data)
 
 // --- serenity-window (compositor -> LibWindowServer chrome control) --------
 
+// User data for a serenity_toplevel chrome handle: it is attached to either an
+// xdg toplevel (menubar visibility, position) or a layer surface/applet
+// (position), so the two share one resource type.
+struct SerenityChrome {
+    Toplevel* toplevel { nullptr };
+    LayerSurface* layer { nullptr };
+};
+
 static void serenity_toplevel_resource_destroy(wl_resource* resource)
 {
-    auto* toplevel = static_cast<Toplevel*>(wl_resource_get_user_data(resource));
-    if (toplevel && toplevel->chrome == resource)
-        toplevel->chrome = nullptr;
+    auto* chrome = static_cast<SerenityChrome*>(wl_resource_get_user_data(resource));
+    if (!chrome)
+        return;
+    if (chrome->toplevel && chrome->toplevel->chrome == resource)
+        chrome->toplevel->chrome = nullptr;
+    if (chrome->layer && chrome->layer->chrome == resource)
+        chrome->layer->chrome = nullptr;
+    delete chrome;
 }
 
 static void serenity_toplevel_request_destroy(wl_client*, wl_resource* resource)
@@ -2402,7 +2426,19 @@ static void serenity_window_manager_get_toplevel(wl_client* client, wl_resource*
             break;
         }
     }
+
+    // Layer surfaces (the applet area) also get a chrome handle, so the compositor
+    // can report where it actually put them.
+    LayerSurface* layer = nullptr;
     if (!toplevel) {
+        for (auto& candidate : server.layer_surfaces) {
+            if (candidate->layer_surface && candidate->layer_surface->surface == wlr_surface) {
+                layer = candidate.ptr();
+                break;
+            }
+        }
+    }
+    if (!toplevel && !layer) {
         wl_resource_post_error(resource, WL_DISPLAY_ERROR_INVALID_OBJECT, "unknown wl_surface");
         return;
     }
@@ -2412,12 +2448,18 @@ static void serenity_window_manager_get_toplevel(wl_client* client, wl_resource*
         wl_client_post_no_memory(client);
         return;
     }
-    wl_resource_set_implementation(chrome, &s_serenity_toplevel_implementation, toplevel, serenity_toplevel_resource_destroy);
-    toplevel->chrome = chrome;
+    wl_resource_set_implementation(chrome, &s_serenity_toplevel_implementation, new SerenityChrome { toplevel, layer }, serenity_toplevel_resource_destroy);
 
-    // Bring the client up to date with the current menubar visibility.
-    if (!toplevel->menubar_visible)
-        serenity_toplevel_send_menubar_visibility(chrome, 0);
+    if (toplevel) {
+        toplevel->chrome = chrome;
+        // Bring the client up to date with the current menubar visibility.
+        if (!toplevel->menubar_visible)
+            serenity_toplevel_send_menubar_visibility(chrome, 0);
+        toplevel_report_position(*toplevel);
+    } else if (layer) {
+        layer->chrome = chrome;
+        layer_report_position(*layer);
+    }
 }
 
 static void serenity_window_manager_resource_destroy(wl_resource* resource)
@@ -2978,7 +3020,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     // Let the window manager call back into the compositor's focus/menu code.
     WindowManager::set_host_hooks({ focus_toplevel, open_window_menu, primary_usable_area, toplevel_report_position, toplevel_begin_interactive, current_palette });
     WindowSwitcher::set_host_hooks({ current_palette, focus_toplevel, WindowManager::switch_workspace });
-    AppletManager::set_host_hooks({ WindowManager::tell_wms_applet_area_size_changed, primary_usable_area });
+    AppletManager::set_host_hooks({ WindowManager::tell_wms_applet_area_size_changed, primary_usable_area, layer_report_position });
     // Bring the workspace grid up from the config, and follow later edits.
     WindowManager::load_workspaces(*server);
     Config::watch([&] { WindowManager::load_workspaces(*server); });

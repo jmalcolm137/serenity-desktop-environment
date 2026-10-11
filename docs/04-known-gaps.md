@@ -99,12 +99,12 @@ click was already handled and returned earlier).
   undecorated, non-focusable **overlay** layer surface (`serenity-tooltip`), so it
   is above normal windows and out of the window list/switcher. Covered by
   `scripts/run-tooltip-test.sh`.
-  - Remaining: tooltips on **applets** can be slightly offset, because the
-    compositor repositions the applet layer surfaces (WS4) without telling the
-    client; a fix needs the compositor to report the layer surface's position
-    (the `serenity-window` `position` event currently covers xdg toplevels only).
-    Window-title button tooltips are **not** a gap: SerenityOS's `WindowFrame`
-    sets no button tooltips either.
+  - Applet tooltips are now exact: the compositor reports each applet's real
+    output position over `serenity-window` (the `position` event now covers
+    layer surfaces too, via the applet's chrome handle), so the client's origin
+    is no longer stale when the applet area moves it. Window-title button
+    tooltips are **not** a gap: SerenityOS's `WindowFrame` sets no button
+    tooltips either.
 - **Applet area / system tray parity** — done (WS4). The compositor lays applets
   out (AppletManager) right-to-left by `[Applet] Order`, emits
   `applet_area_size_changed` and consumes `set_applet_area_position`, with the

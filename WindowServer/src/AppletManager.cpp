@@ -129,6 +129,8 @@ static void apply(Server& server)
         int x = origin.x() + applet.rect.x();
         int y = origin.y() + applet.rect.y();
         wlr_scene_node_set_position(&applet.surface->scene->tree->node, x, y);
+        if (g_hooks.report_position)
+            g_hooks.report_position(*applet.surface);
         signature = ByteString::formatted("{}'{}' {}x{}+{},{}; ", signature, applet.surface->applet_name,
             applet.rect.width(), applet.rect.height(), x, y);
     }

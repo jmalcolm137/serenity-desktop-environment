@@ -225,6 +225,11 @@ struct LayerSurface {
     // suffix, matched against [Applet] Order.
     bool is_applet { false };
     ByteString applet_name;
+    // The client's serenity_toplevel chrome handle, if it requested one. Used to
+    // report the applet's real output position (the applet area moves it away
+    // from its anchored corner), so widget/screen-relative coordinates (tooltips)
+    // are exact.
+    wl_resource* chrome { nullptr };
     // The arrange-relevant committed state from the last commit that triggered a
     // layer re-arrange. A content-only commit (a new buffer, damage) does not
     // change these, so arrange_layers is skipped and every layer surface is not

@@ -27,6 +27,9 @@ struct HostHooks {
     // The primary output's usable area; the applet area falls back to its
     // bottom-right corner until the Taskbar reports a position.
     Gfx::IntRect (*primary_usable_area)(Server&) { nullptr };
+    // Report an applet's real output position to its client (serenity_toplevel
+    // position), so widget/screen-relative coordinates (tooltips) are exact.
+    void (*report_position)(LayerSurface&) { nullptr };
 };
 void set_host_hooks(HostHooks);
 
