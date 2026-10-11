@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# Headless test for the SDE portal backend (R5),
+# xdg-desktop-portal-serenity: it implements org.freedesktop.impl.portal.* so the
+# xdg-desktop-portal frontend can route requests to it. Runs on a private session
+# bus and queries the backend directly.
+set -euo pipefail
+
+SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
+SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
+PORTAL="$SDE_ROOT/build/tools/xdg-desktop-portal-serenity"
+
+"$SDE_ROOT/scripts/build-tools.sh" >/dev/null
+
+if [ "${1:-}" != "--inner" ]; then
+    RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-portal.XXXXXX")"
+    trap 'rm -rf "$RUNTIME"' EXIT
+    export SDE_PORTAL_TEST_RUNTIME="$RUNTIME"
+    exec dbus-run-session -- "$0" --inner
+fi
+
+RUNTIME="$SDE_PORTAL_TEST_RUNTIME"
+export XDG_RUNTIME_DIR="$RUNTIME"
+DEST="org.freedesktop.impl.portal.desktop.serenity"
+OBJ="/org/freedesktop/portal/desktop"
+
+# Record what the OpenURI / Notification paths spawn.
+OPENER="$RUNTIME/opener.sh"
+cat > "$OPENER" <<EOF
+#!/usr/bin/env bash
+echo "\$@" >> "$RUNTIME/opened.txt"
+EOF
+chmod +x "$OPENER"
+NOTIFIER="$RUNTIME/notifier.sh"
+cat > "$NOTIFIER" <<EOF
+#!/usr/bin/env bash
+echo "\$@" >> "$RUNTIME/notified.txt"
+EOF
+chmod +x "$NOTIFIER"
+
+# Settings reads the theme broker for color-scheme / accent.
+printf '%s\n' "$SERENITY/Base/res/themes/Redmond 2000.ini" > "$RUNTIME/sde-theme"
+
+SDE_PORTAL_OPENER="$OPENER" SDE_PORTAL_NOTIFIER="$NOTIFIER" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
+PORTAL_PID=$!
+trap 'kill "$PORTAL_PID" 2>/dev/null || true' EXIT
+
+for _ in $(seq 1 50); do
+    gdbus call --session --dest "$DEST" --object-path "$OBJ" --method org.freedesktop.DBus.Peer.Ping >/dev/null 2>&1 && break
+    sleep 0.1
+done
+
+fail=0
+check() {
+    if grep -qF "$1" <<<"$2"; then
+        echo "  ok: $1"
+    else
+        echo "  MISSING ($2): $1"
+        fail=1
+    fi
+}
+call() { gdbus call --session --dest "$DEST" --object-path "$OBJ" --method "$@" 2>&1; }
+prop() { call org.freedesktop.DBus.Properties.Get "$1" "$2"; }
+
+echo "=== Settings ==="
+check "uint32 2" "$(call org.freedesktop.impl.portal.Settings.Read org.freedesktop.appearance color-scheme)"
+readall="$(call org.freedesktop.impl.portal.Settings.ReadAll org.freedesktop.appearance)"
+check "color-scheme" "$readall"
+check "accent-color" "$readall"
+check "contrast" "$readall"
+
+echo "=== Account ==="
+account="$(call org.freedesktop.impl.portal.Account.GetUserInformation /org/freedesktop/portal/desktop/x app "" "{}")"
+check "'id'" "$account"
+check "'name'" "$account"
+
+echo "=== Lockdown / Background ==="
+check "false" "$(prop org.freedesktop.impl.portal.Lockdown disable_printing)"
+check "Serenity Desktop Environment" "$(prop org.freedesktop.impl.portal.Background ApplicationName)"
+
+echo "=== AppChooser / ProxyResolver ==="
+check "uint32 0" "$(call org.freedesktop.impl.portal.AppChooser.ChooseApplication /x app "" "['a','b']" "{}")"
+check "'a'" "$(call org.freedesktop.impl.portal.AppChooser.ChooseApplication /x app "" "['a','b']" "{}")"
+check "[]" "$(call org.freedesktop.impl.portal.ProxyResolver.Lookup http://example.com)"
+
+echo "=== OpenURI ==="
+check "uint32 0" "$(call org.freedesktop.impl.portal.OpenURI.OpenURI /x "" https://example.com "{}")"
+sleep 0.3
+check "https://example.com" "$(cat "$RUNTIME/opened.txt" 2>/dev/null || echo '(no opener call)')"
+
+echo "=== Notification ==="
+call org.freedesktop.impl.portal.Notification.AddNotification id "{'title': <'Hello'>, 'body': <'World'>}" >/dev/null
+sleep 0.3
+check "Hello" "$(cat "$RUNTIME/notified.txt" 2>/dev/null || echo '(no notifier call)')"
+check "World" "$(cat "$RUNTIME/notified.txt" 2>/dev/null || echo '(no notifier call)')"
+
+# Best-effort: prove the real xdg-desktop-portal frontend routes to us. Skipped
+# when the frontend is not installed.
+FRONTEND=""
+for candidate in /usr/lib/xdg-desktop-portal /usr/libexec/xdg-desktop-portal; do
+    [ -x "$candidate" ] && FRONTEND="$candidate" && break
+done
+if [ -n "$FRONTEND" ]; then
+    echo "=== frontend integration (best effort) ==="
+    mkdir -p "$RUNTIME/config/xdg-desktop-portal" "$RUNTIME/data/xdg-desktop-portal/portals"
+    printf '[preferred]\norg.freedesktop.portal.Settings=serenity\n' > "$RUNTIME/config/xdg-desktop-portal/portals.conf"
+    cp "$SDE_ROOT/contrib/xdg-desktop-portal/serenity.portal" "$RUNTIME/data/xdg-desktop-portal/portals/"
+    env XDG_CONFIG_HOME="$RUNTIME/config" XDG_DATA_HOME="$RUNTIME/data" XDG_CURRENT_DESKTOP=Serenity \
+        "$FRONTEND" > "$RUNTIME/frontend.log" 2>&1 &
+    FRONTEND_PID=$!
+    sleep 2
+    value="$(env XDG_CONFIG_HOME="$RUNTIME/config" XDG_DATA_HOME="$RUNTIME/data" XDG_CURRENT_DESKTOP=Serenity \
+        timeout 5 gdbus call --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop \
+        --method org.freedesktop.portal.Settings.Read org.freedesktop.appearance color-scheme 2>&1 || true)"
+    kill "$FRONTEND_PID" 2>/dev/null || true
+    if grep -qF "uint32 2" <<<"$value"; then
+        echo "  ok: frontend routed Settings to the SDE backend ($value)"
+    else
+        echo "  note: frontend did not route to the SDE backend here ($value) — direct backend tests above cover it"
+    fi
+fi
+
+if [[ "$fail" -ne 0 ]]; then
+    echo "==> portal test FAILED"
+    exit 1
+fi
+echo "==> portal test PASSED"

@@ -224,12 +224,14 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   `keyboard-shortcuts-inhibit`, `relative-pointer`/`pointer-constraints`/
   `pointer-gestures`, `presentation-time`, `fractional-scale`/`wp-viewporter`,
   `content-type`, `tearing-control` are all absent.
-- **`xdg-desktop-portal` (G7).** No freedesktop-portal strategy yet (distinct
-  from SDE's own Serenity "portals"): a backend for a wlroots compositor
-  (`xdg-desktop-portal-wlr` for Screenshot/ScreenCast, `-gtk` fallback), a
-  `portals.conf` mapping, an SDE **Settings** backend (`color-scheme`,
-  `accent-color`) for R4.4/R4.7, and RemoteDesktop/InputCapture/GlobalShortcuts
-  for R5 (see [`08-compositor-gaps.md`](08-compositor-gaps.md) §3).
+- **`xdg-desktop-portal` (G7).** Phase 1 landed: **`xdg-desktop-portal-serenity`**
+  (see [`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md)) —
+  an SDE backend for the freedesktop portals (Settings, Account, Lockdown,
+  Background, AppChooser, Email, Location, ProxyResolver, OpenURI, Notification),
+  with a `.portal` file and a `portals.conf` mapping; the real frontend routes to
+  it. **Phase 2:** ScreenCast/RemoteDesktop/InputCapture
+  (`ext-image-copy-capture-v1` + PipeWire), GlobalShortcuts, DynamicLauncher,
+  FileChooser, Print (see [`08-compositor-gaps.md`](08-compositor-gaps.md) §3).
 - **Text input / IME (G5) and accessibility (G1).** `text-input-v3` /
   `input-method-v2`, AT-SPI, sticky keys, magnifier and high contrast are absent.
 

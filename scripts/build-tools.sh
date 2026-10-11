@@ -66,4 +66,12 @@ cc -O2 -Wall \
     $(pkg-config --cflags --libs gio-2.0) \
     -o "$TOOLS_BUILD/sde-settings-portal"
 
-echo "==> SDE tools: $TOOLS_BUILD/sde-idle $TOOLS_BUILD/sde-dpms $TOOLS_BUILD/sde-screenshot $TOOLS_BUILD/sde-settings-portal $TOOLS_BUILD/ext-workspace-test"
+# xdg-desktop-portal-serenity (R5): the SDE backend for the freedesktop portals
+# (org.freedesktop.impl.portal.*), so the xdg-desktop-portal frontend can route
+# requests to it. See contrib/xdg-desktop-portal/.
+cc -O2 -Wall \
+    "$SDE_ROOT/tools/xdg-desktop-portal-serenity.c" \
+    $(pkg-config --cflags --libs gio-2.0) \
+    -o "$TOOLS_BUILD/xdg-desktop-portal-serenity"
+
+echo "==> SDE tools: $TOOLS_BUILD/sde-idle $TOOLS_BUILD/sde-dpms $TOOLS_BUILD/sde-screenshot $TOOLS_BUILD/sde-settings-portal $TOOLS_BUILD/ext-workspace-test $TOOLS_BUILD/xdg-desktop-portal-serenity"
