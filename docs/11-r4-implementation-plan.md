@@ -142,7 +142,7 @@ R4 is delivered as **R4.1–R4.9**. Order is dependency-driven (see §4).
 | **R4.4** | **Compositor config & live reload** | `WindowServer.ini` schema + validated live reload; Settings-portal exposure | — |
 | **R4.5** | **Display / output settings** (landed; fractional scale deferred) | Mode/scale/rotation/arrangement backend (Monitor tab) + fractional scale | R4.4 |
 | **R4.6** | **Input settings & keymaps** (landed) | libinput device config + keyboard layouts/keymap + MouseSettings | R4.4 |
-| **R4.7** | **Appearance, effects & fonts** | Scrollable fonts/zoom, Effects, cursor; exposed via Settings portal | R4.4 |
+| **R4.7** | **Appearance, effects & fonts** (landed; cursor shapes deferred) | Scrollable fonts/zoom, Effects, cursor; exposed via Settings portal | R4.4 |
 | **R4.8** | **Workspaces & toplevels** | Workspaces tab drives the grid; expose `ext-workspace-v1` + `ext-foreign-toplevel-list-v1` | R4.4 |
 | **R4.9** | **Applications enablement** | Terminal, SystemMonitor, CrashReporter/Debugger feasibility | R4.1–R4.3 |
 
@@ -392,6 +392,26 @@ cursor settings (theme/size via `XCURSOR_*`; client cursors via
 - **Exit test:** `scripts/run-fonts-test.sh` — a system-font change applies and
   TextEditor zoom changes the size (update `libwm-font-parity-test`);
   `scripts/run-effects-test.sh` — an effect toggles live.
+
+> **Landed (R4.7).** A session **font broker** (`$XDG_RUNTIME_DIR/sde-fonts`)
+> applies a chosen default / fixed-width / window-title font to every client
+> (`set_system_fonts`, and `fast_greet` on connect) and to the compositor, and
+> persists it to `WindowServer.ini [Fonts]`. The default stays the bundled bitmap
+> **Katica** (Csilla fixed-width), matching upstream SerenityOS; picking a
+> scalable family (SerenitySans) is what makes size-based zoom resolve. Display
+> Settings ▸ **Fonts** reflects the session font and applies through the broker.
+>
+> **Effects:** Display Settings ▸ Effects reads `WindowServer.ini [Effects]`;
+> `set_system_effects` applies to the client and writes `[Effects]`
+> (`ShowGeometry`/`TileWindow` plus the toggles), which the compositor applies
+> live (the geometry HUD honours the mode). **Cursor:** the compositor applies the
+> theme/size from `cursor.ini` and publishes `XCURSOR_*`; per-window cursor shapes
+> (`wp-cursor-shape-v1`) and the highlight overlay are follow-ups.
+>
+> Verified by `scripts/run-fonts-test.sh`, `scripts/run-effects-test.sh`, and
+> Fonts/Effects tab screenshots. Also fixed a live-reload bug where the config
+> watchers added a file watch before the file existed, so only the first change
+> reloaded (affects R4.4–R4.6 watchers too).
 
 ### R4.8 — Workspaces & toplevels
 

@@ -30,6 +30,7 @@ static Vector<OutputSettings> g_outputs;
 static unsigned g_main_screen { 0 };
 static Input g_input;
 static InputRanges g_input_ranges;
+static Fonts g_fonts;
 static Vector<ByteString> g_applet_order;
 static Vector<ByteString> g_diagnostics;
 
@@ -243,6 +244,12 @@ void load()
 
     if (auto value = read_bool(user, defaults, "Effects"sv, "WindowGeometry"sv); value.has_value())
         g_effects.window_geometry = value.value();
+    g_effects.show_geometry = read_entry(user, defaults, "Effects"sv, "ShowGeometry"sv);
+    if (g_effects.show_geometry.is_empty())
+        g_effects.show_geometry = "OnMoveAndResize"sv;
+    g_effects.tile_window = read_entry(user, defaults, "Effects"sv, "TileWindow"sv);
+    if (g_effects.tile_window.is_empty())
+        g_effects.tile_window = "ShowTileOverlay"sv;
 
     if (auto value = read_int(user, defaults, "Output"sv, "DefaultScale"sv, 0, 4); value.has_value())
         g_output.default_scale = value.value();
@@ -281,13 +288,27 @@ void load()
     g_input_ranges.double_click_min = read_entry(user, defaults, "Input"sv, "DoubleClickMin"sv).to_number<int>().value_or(100);
     g_input_ranges.double_click_max = read_entry(user, defaults, "Input"sv, "DoubleClickMax"sv).to_number<int>().value_or(900);
 
+    // System fonts ([Fonts]): persisted so a chosen family/size survives a restart.
+    // SDE defaults to the bundled bitmap Katica/Csilla families (as upstream
+    // SerenityOS does); picking a scalable family is what enables size zoom.
+    g_fonts.default_query = read_entry(user, defaults, "Fonts"sv, "Default"sv);
+    if (g_fonts.default_query.is_empty())
+        g_fonts.default_query = "Katica 10 400 0"sv;
+    g_fonts.fixed_width_query = read_entry(user, defaults, "Fonts"sv, "FixedWidth"sv);
+    if (g_fonts.fixed_width_query.is_empty())
+        g_fonts.fixed_width_query = "Csilla 10 400 0"sv;
+    g_fonts.window_title_query = read_entry(user, defaults, "Fonts"sv, "WindowTitle"sv);
+    if (g_fonts.window_title_query.is_empty())
+        g_fonts.window_title_query = "Katica 10 700 0"sv;
+
     for (auto const& diagnostic : g_diagnostics)
         warnln("WindowServer: config: {}", diagnostic);
 
-    dbgln("WindowServer: config: workspaces {}x{}, applets {}, tiling edge {}px (drag {}), follows-mouse {}, geometry {}, output scale {}",
+    dbgln("WindowServer: config: workspaces {}x{}, applets {}, tiling edge {}px (drag {}), follows-mouse {}, geometry {} (show-geometry '{}', tile-window '{}'), output scale {}",
         g_workspaces.rows, g_workspaces.columns, g_applet_order.size(),
         g_tiling.edge_threshold, g_tiling.drag_to_edge ? "on" : "off",
-        g_focus.follows_mouse ? "on" : "off", g_effects.window_geometry ? "on" : "off", g_output.default_scale);
+        g_focus.follows_mouse ? "on" : "off", g_effects.window_geometry ? "on" : "off",
+        g_effects.show_geometry, g_effects.tile_window, g_output.default_scale);
 }
 
 void watch(Function<void()> on_reload)
@@ -309,6 +330,10 @@ void watch(Function<void()> on_reload)
         coalesce->restart();
     };
     (void)watcher->add_watch(directory, Core::FileWatcherEvent::Type::ChildCreated);
+    // Ensure the file exists so its content can be watched: a directory watch
+    // only reports child creation, not the in-place edits we reload on.
+    if (Core::File::open(file_path(), Core::File::OpenMode::Read).is_error())
+        (void)Core::File::open(file_path(), Core::File::OpenMode::Write);
     (void)watcher->add_watch(file_path(), Core::FileWatcherEvent::Type::ContentModified | Core::FileWatcherEvent::Type::MetadataModified | Core::FileWatcherEvent::Type::Deleted);
 }
 
@@ -397,6 +422,8 @@ void watch_outputs(Function<void()> on_change)
         coalesce->restart();
     };
     (void)watcher->add_watch(directory, Core::FileWatcherEvent::Type::ChildCreated);
+    if (Core::File::open(outputs_file(), Core::File::OpenMode::Read).is_error())
+        (void)Core::File::open(outputs_file(), Core::File::OpenMode::Write);
     (void)watcher->add_watch(outputs_file(), Core::FileWatcherEvent::Type::ContentModified | Core::FileWatcherEvent::Type::MetadataModified | Core::FileWatcherEvent::Type::Deleted);
 }
 
@@ -470,6 +497,24 @@ InputRanges const& input_ranges()
     return g_input_ranges;
 }
 
+Fonts const& fonts()
+{
+    return g_fonts;
+}
+
+void set_fonts(Fonts fonts)
+{
+    g_fonts = move(fonts);
+    (void)Core::Directory::create(state_directory(), Core::Directory::CreateDirectories::Yes);
+    auto config = Core::ConfigFile::open(file_path(), Core::ConfigFile::AllowWriting::Yes).release_value_but_fixme_should_propagate_errors();
+    config->write_entry("Fonts"sv, "Default"sv, g_fonts.default_query);
+    if (!g_fonts.fixed_width_query.is_empty())
+        config->write_entry("Fonts"sv, "FixedWidth"sv, g_fonts.fixed_width_query);
+    if (!g_fonts.window_title_query.is_empty())
+        config->write_entry("Fonts"sv, "WindowTitle"sv, g_fonts.window_title_query);
+    (void)config->sync();
+}
+
 void watch_input(Function<void()> on_change)
 {
     static RefPtr<Core::FileWatcher> watcher;
@@ -486,6 +531,8 @@ void watch_input(Function<void()> on_change)
         coalesce->restart();
     };
     (void)watcher->add_watch(directory, Core::FileWatcherEvent::Type::ChildCreated);
+    if (Core::File::open(input_file(), Core::File::OpenMode::Read).is_error())
+        (void)Core::File::open(input_file(), Core::File::OpenMode::Write);
     (void)watcher->add_watch(input_file(), Core::FileWatcherEvent::Type::ContentModified | Core::FileWatcherEvent::Type::MetadataModified | Core::FileWatcherEvent::Type::Deleted);
 }
 

@@ -24,6 +24,7 @@
 
 #include "AppletManager.h"
 #include "Config.h"
+#include <WindowServer/SystemEffects.h>
 #include "Overlays.h"
 #include "WindowManagerServerDefaultStub.h"
 
@@ -374,10 +375,19 @@ void hide_geometry_hud()
         s_geometry_hud->set_visible(false);
 }
 
-static void show_geometry_hud(Server& server, Gfx::IntRect geometry)
+static void show_geometry_hud(Server& server, Gfx::IntRect geometry, bool resizing)
 {
-    // [Effects] WindowGeometry=false disables the HUD (WS2).
-    if (!Config::effects().window_geometry) {
+    // [Effects] WindowGeometry=false disables the HUD entirely; ShowGeometry
+    // selects whether it appears while moving, resizing, both or never (R4.7).
+    auto const& effects = Config::effects();
+    if (!effects.window_geometry) {
+        hide_geometry_hud();
+        return;
+    }
+    auto const show = WindowServer::ShowGeometryTools::string_to_enum(effects.show_geometry);
+    if (show == WindowServer::ShowGeometry::Never
+        || (show == WindowServer::ShowGeometry::OnMoveOnly && resizing)
+        || (show == WindowServer::ShowGeometry::OnResizeOnly && !resizing)) {
         hide_geometry_hud();
         return;
     }
@@ -437,7 +447,7 @@ void update_resize_hud(Server& server, Toplevel& toplevel, Gfx::IntRect content_
         content_rect.width() + toplevel.frame_left + toplevel.frame_right,
         content_rect.height() + toplevel.frame_top + toplevel.frame_bottom,
     };
-    show_geometry_hud(server, geometry);
+    show_geometry_hud(server, geometry, true);
 }
 
 static Gfx::IntRect toplevel_frame_rect(Toplevel const& toplevel)
@@ -500,7 +510,7 @@ void update_move_snap(Server& server, Toplevel& toplevel)
 
     // The HUD previews the prospective tile while one is shown, else the window.
     auto geometry = target != WindowTileType::None ? tile_rect(area, target) : toplevel_frame_rect(toplevel);
-    show_geometry_hud(server, geometry);
+    show_geometry_hud(server, geometry, false);
 }
 
 void finish_move_snap(Server& server, Toplevel& toplevel)

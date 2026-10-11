@@ -66,6 +66,10 @@ struct Focus {
 // System effects (SerenityOS SystemEffects subset).
 struct Effects {
     bool window_geometry { true };
+    // From WindowServer/SystemEffects.h (ShowGeometryTools/TileWindowTools names),
+    // so the Effects settings tab and the compositor agree (R4.7).
+    ByteString show_geometry { "OnMoveAndResize"sv };
+    ByteString tile_window { "ShowTileOverlay"sv };
 };
 
 // Output defaults.
@@ -208,6 +212,18 @@ struct InputRanges {
 };
 
 InputRanges const& input_ranges();
+
+// System fonts ([Fonts] in WindowServer.ini): the queries the compositor and
+// clients resolve fonts from (R4.7). Written when the session font broker
+// changes.
+struct Fonts {
+    ByteString default_query;
+    ByteString fixed_width_query;
+    ByteString window_title_query;
+};
+
+Fonts const& fonts();
+void set_fonts(Fonts fonts);
 
 Input const& input();
 void load_input();

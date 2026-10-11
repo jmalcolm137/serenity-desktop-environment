@@ -1,6 +1,6 @@
 # Serenity Desktop Environment — Font parity decision (WS7)
 
-**Status:** Decided · **Date:** 2026-10-10
+**Status:** Decided — R4.7 landed the session font broker; **Katica stays the SDE default** (picking a scalable family such as SerenitySans is what enables size zoom) · **Date:** 2026-10-10
 **Related:** [`02-compositor-decision.md`](02-compositor-decision.md) §11 · [`04-known-gaps.md`](04-known-gaps.md) · [`05-r3-plan.md`](05-r3-plan.md) §4 WS7 · [`09-r3-implementation-plan.md`](09-r3-implementation-plan.md)
 
 ## 1. Decision
