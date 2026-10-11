@@ -260,7 +260,7 @@ R4's additional milestones:
 |---|---|
 | **R4.1** | Session safety net — idle, inhibit, lock, DPMS (+ a lock client) |
 | **R4.2** | Session lifecycle & supervisor — autostart, logout/reboot/shutdown, restart |
-| **R4.3** | logind / systemd session integration |
+| **R4.3** | Portable session integration (logind/systemd optional) |
 | **R4.4** | Compositor configuration & live reload |
 | **R4.5** | Display / output settings (+ Monitor tab) |
 | **R4.6** | Input settings & keymaps (+ MouseSettings) |

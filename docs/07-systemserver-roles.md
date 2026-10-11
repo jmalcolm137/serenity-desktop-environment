@@ -129,9 +129,12 @@ headless tests use it so they cannot disturb a live session).
   (`/etc/ssl/certs/ca-certificates.crt`, …) — patch `0024`. DNS already uses the
   host resolver (`Core::System::getaddrinfo`).
 
-## 3. The systemd mapping
+## 3. The systemd mapping (optional)
 
-If SDE is packaged for a systemd host, the substitutes above map onto
+`systemd` is **optional** (R4.3 — see
+[`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md));
+the portable session owns ordering itself and uses `libseat` for the seat. *If*
+SDE is packaged for a systemd host, the substitutes above map onto
 `systemd --user` units:
 
 | Our substitute | systemd analogue |

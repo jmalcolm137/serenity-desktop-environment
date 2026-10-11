@@ -35,10 +35,12 @@ not R5/R6.
   `zwp_idle_inhibit_v1`, `ext-session-lock-v1`, dim/lock-on-idle, or
   DPMS/backlight handling. `ext-session-lock-v1` in particular must blank and
   lock every output, including hotplugged ones, which is non-trivial.
-- **System-session integration (G6).** No description of the systemd user
-  session (`graphical-session.target`), `XDG_SESSION_TYPE=wayland`,
-  `WAYLAND_DISPLAY` propagation, or `dbus-update-activation-environment`, which
-  apps and portals rely on.
+- **System-session integration (G6).** No description of the standard session
+  environment (`XDG_SESSION_TYPE=wayland`, `WAYLAND_DISPLAY` propagation,
+  `dbus-update-activation-environment` where a bus exists) that apps and portals
+  rely on. Resolved as **portable** — logind/systemd optional, no
+  `graphical-session.target` dependency
+  ([`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md)).
 
 ## 2. Robustness, recovery & configuration (R6, plus R3/R4 for config)
 

@@ -134,6 +134,12 @@ Compositor-facing session/input gaps (logind contract, idle/inhibit/lock/DPMS,
 keymap/IME, input-device config) are catalogued in
 [`08-compositor-gaps.md`](08-compositor-gaps.md) §1 and §4.
 
+**Session integration is portable (R4.3).** logind and systemd are **optional,
+runtime-detected, never required**: the session sets the standard environment,
+uses `libseat` (`seatd`/`builtin`) for seat/DRM/VT, routes power through a
+provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
+[`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md).
+
 - **Session safety net (R4.1)** — compositor side landed: `WindowServer` now
   serves `ext-idle-notify-v1`, `zwp_idle_inhibit_v1`, `wlr-output-power-management`
   (DPMS) and `ext-session-lock-v1` (per-output lock surfaces, `locked` once every

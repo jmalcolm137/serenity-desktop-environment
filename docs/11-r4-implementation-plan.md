@@ -93,8 +93,8 @@ legend: **stable** ⊂ wayland-protocols `stable/`; **staging** = ready for adop
 | Output power / DPMS | `zwlr_output_power_management_v1` | wlroots | R4.1 | no standard yet; `wlopm` speaks it |
 | Session save/restore | `xdg-session-management-v1` | staging | R4.2 | KDE/Firefox implementing; complements the supervisor |
 | Autostart | XDG Autostart spec | spec | R4.2 | `*.desktop` in `autostart/` |
-| Power, logout, reboot | `org.freedesktop.login1` (D-Bus) | spec | R4.2/R4.3 | not Wayland; the portable mechanism |
-| Session/seat, VT switch | `libseat` + logind | spec | R4.3 | `wlr_backend_autocreate` already uses libseat |
+| Power, logout, reboot | `org.freedesktop.login1` (D-Bus), **optional** | spec | R4.2/R4.3 | logind opportunistic, never required; provider chain `SDE_POWER_CMD` → logind → fallbacks ([`12`](12-r4.3-portable-session-integration.md)) |
+| Session/seat, VT switch | `libseat` (`logind`/`seatd`/`builtin`) | spec | R4.3 | `wlr_backend_autocreate` uses libseat; logind optional, `seatd` recommended ([`12`](12-r4.3-portable-session-integration.md)) |
 | Transient seats | `ext-transient-seat-v1` | staging | R4.3/R4.6 | remote desktop, on-screen keyboard |
 | **Appearance settings** | `org.freedesktop.portal.Settings` (+ backend) | spec (portal) | R4.4/R4.7 | `color-scheme`, `accent-color`, `contrast` → toolkits match the theme |
 | Output management | `zwlr_output_management_v1` | wlroots | R4.5 | no standard equivalent yet |
@@ -138,7 +138,7 @@ R4 is delivered as **R4.1–R4.9**. Order is dependency-driven (see §4).
 |---|---|---|---|
 | **R4.1** | **Session safety net** | Idle detection, idle inhibit, session lock and DPMS/dim *(compositor side landed)* | — |
 | **R4.2** | **Session lifecycle & supervisor** | Session start/autostart, logout/reboot/shutdown, compositor restart + shell relaunch, save/restore *(supervisor/autostart/power + `xdg-session-management-v1` restore landed)* | R4.1 |
-| **R4.3** | **logind / systemd / portal session** | `XDG_SESSION_TYPE`, `WAYLAND_DISPLAY`, D-Bus activation env, `graphical-session.target`, `xdg-desktop-portal`, VT switch | R4.2 |
+| **R4.3** | **Portable session integration** | logind/systemd **optional** (detected, never required): standard env, seat/VT via `libseat` (`seatd`/`builtin`), power provider chain, optional D-Bus/portals — [`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md) | R4.2 |
 | **R4.4** | **Compositor config & live reload** | `WindowServer.ini` schema + validated live reload; Settings-portal exposure | — |
 | **R4.5** | **Display / output settings** | Mode/scale/rotation/arrangement backend (Monitor tab) + fractional scale | R4.4 |
 | **R4.6** | **Input settings & keymaps** | libinput device config + keyboard layouts/keymap + MouseSettings | R4.4 |
@@ -244,18 +244,34 @@ resolves the toplevel via `wlr_xdg_toplevel->resource`. Verified by
 `scripts/run-session-management-test.sh`, which **restarts the compositor**
 between creating and restoring a session.
 
-### R4.3 — logind / systemd / portal session integration
+### R4.3 — Portable session integration (logind/systemd optional)
 
-Export `XDG_SESSION_TYPE=wayland`, `WAYLAND_DISPLAY`, `XDG_CURRENT_DESKTOP` and
-push them to D-Bus (`dbus-update-activation-environment`) so portals and apps see
-a Wayland session; order under `graphical-session.target`; VT switching and DRM
-master handover via `libseat` (documented, not re-implemented). Start
-**`xdg-desktop-portal`** with an appropriate backend (see §2.1) and a
-`portals.conf` mapping; expose **`ext-transient-seat-v1`** for transient seats
-(remote desktop / on-screen keyboard).
+**Reframed — see
+[`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md).**
+logind and systemd are **optional, runtime-detected accelerators — never
+dependencies** (P4). The session must start, run, lock and (where the OS permits)
+power off with **no logind/systemd at all**, degrading gracefully. In summary:
 
-- **Exit test:** scripted env assertions; `xdg-desktop-portal` runs and answers a
-  Settings query; manual VT switch on real hardware.
+- **Environment:** always set `XDG_SESSION_TYPE`, `XDG_SESSION_CLASS`,
+  `WAYLAND_DISPLAY`, `XDG_CURRENT_DESKTOP`/`XDG_SESSION_DESKTOP`,
+  `DESKTOP_SESSION`; push them onto the **D-Bus activation environment** only if a
+  session bus and helper exist. **No `graphical-session.target`** — the supervisor
+  (`scripts/sde-session.sh`) owns ordering.
+- **Seat / DRM / VT:** keep using **`libseat`** (`logind`/`seatd`/`builtin`
+  backends; `seatd` recommended, `builtin` for a bare TTY). Never reimplement DRM
+  master or VT switching. Nested needs no seat at all.
+- **Power:** an ordered **provider chain** in `sde-power.sh` — `SDE_POWER_CMD` →
+  logind (D-Bus) → portable fallbacks → *unavailable* — behind the existing `/bin`
+  shadow helpers, so the unmodified Taskbar menu stays provider-agnostic.
+- **Portals / D-Bus:** **optional**. `xdg-desktop-portal` activates over D-Bus
+  where present; absent portals must not break the session (the in-process
+  Serenity shims carry on). `ext-transient-seat-v1` stays future/optional.
+
+- **Exit tests:** headless with logind/systemd/D-Bus absent (mocked) — standard env
+  set, provider chain selected, capability probe correct, graceful degradation —
+  plus manual verification on real hardware for each `libseat` backend (`seatd`,
+  `builtin`) and nested. Details in
+  [`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md) §5.
 
 ### R4.4 — Compositor configuration & live reload
 
@@ -370,7 +386,7 @@ SerenityOS means writing an app or service ourselves, we do, and we build it as 
 ## 4. Sequencing & critical path
 
 ```
- R4.1 safety net ──▶ R4.2 lifecycle/supervisor ──▶ R4.3 logind/systemd/portal
+ R4.1 safety net ──▶ R4.2 lifecycle/supervisor ──▶ R4.3 portable session
       │                                                 │
       └──────────────────┬──────────────────────────────┘
                          ▼
@@ -394,7 +410,7 @@ R4.9 can run alongside once the session is safe and startable.
 | **Portals** | Which `xdg-desktop-portal` backend(s) and `portals.conf` for SDE? Does `-wlr` suffice once capture protocols land? | R4.3/R5 |
 | **Output management on nested vs DRM** | How much of the Monitor tab is meaningful headless/nested vs real hardware? | R4.5 exit test |
 | **Font broker** | Broker file shape and relayout trigger for a live system-font change | R4.7 |
-| **logind availability** | Is logind present in the target environments, and what is the fallback? | R4.2/R4.3 |
+| **logind availability** | Is logind present in the target environments, and what is the fallback? | R4.2/R4.3 — **resolved:** logind is optional; portable providers (`seatd`/`builtin`, power chain) in [`12`](12-r4.3-portable-session-integration.md) |
 
 ## 6. Testing strategy
 
@@ -417,8 +433,10 @@ R4 is done when:
    honoured, using standard `ext-idle-notify-v1`/`ext-session-lock-v1`;
 2. the session **starts, autostarts, logs out and powers off/reboots** correctly,
    and a compositor fault is **recovered**;
-3. the session is a proper Wayland session for portals/apps (env + target +
-   `xdg-desktop-portal`);
+3. the session is a proper Wayland session for portals/apps (standard env,
+   D-Bus activation env pushed where present) **without requiring logind or
+   systemd**, degrading gracefully when `xdg-desktop-portal` is absent
+   ([`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md));
 4. DisplaySettings is **functional end to end** — Monitor, Fonts (working zoom),
    Input, Appearance/Effects, Workspaces — driven by a documented,
    live-reloadable config, with appearance exposed via the Settings portal;
@@ -441,7 +459,7 @@ R4 is done when:
 | No SerenityOS lock screen | R4.1 | Use a standard locker; native client is future work (§10) |
 | Lock needs authentication (PAM) | R4.1 | Native client only; swaylock already does PAM |
 | `xdg-desktop-portal` coverage | R4.3/R5 | `-wlr` for capture; `-gtk` fallback; Settings backend of our own for R4 |
-| logind/systemd may be absent | R4.2/R4.3 | Document a scripted fallback path |
+| logind/systemd may be absent | R4.2/R4.3 | Now a **first-class supported mode**, detected and never required ([`12`](12-r4.3-portable-session-integration.md)) |
 | `ext-session-lock-v1` on hotplug/scale | R4.1 | Must cover every output, including new ones |
 | Font change requires live relayout | R4.7 | Cross-repo (`libgui-wayland`); broker like the theme |
 | `CrashReporter`/`Debugger` may need shims | R4.9 | Feasibility-assess; drop if unreasonable |
