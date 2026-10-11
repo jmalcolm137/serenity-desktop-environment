@@ -33,7 +33,7 @@ This supersedes the earlier single-interface `tools/sde-settings-portal.c` (R4.4
 | `Account` (v1) | `GetUserInformation` from the passwd entry (`name`, `id`; `image` empty). |
 | `Lockdown` (v1) | Read-only properties; false by default, overridable by `SDE_PORTAL_LOCKDOWN_*`. |
 | `Background` (v1) | `ApplicationName`/`ApplicationID`; `SetStatus`; `SetAutostart` writes an XDG autostart entry (the SDE supervisor honours XDG autostart). |
-| `AppChooser` (v1) | `ChooseApplication` returns the first offered application (a real chooser is Phase 2). |
+| `AppChooser` (v1) | `ChooseApplication` through the LibGUI **AppChooserDialog** app (`SDE_PORTAL_APP_CHOOSER`); falls back to the first offered application when no chooser is configured. |
 | `Email` (v1) | `ComposeEmail` opens a `mailto:` URI. |
 | `Location` (v1) | Reports "not available" (no location provider). |
 | `ProxyResolver` (v1) | `Lookup` returns an empty list (direct connection). |
@@ -90,7 +90,8 @@ The **FileChooser** portal is likewise a LibGUI app — `FileChooserDialog/`
 via `SDE_PORTAL_FILE_CHOOSER`. The **Print** dialog is `PrintDialog/`
 (`scripts/build-print-dialog.sh`), and the permission prompt is `AccessDialog/`
 (`scripts/build-access-dialog.sh`). The color picker is `ColorPicker/`
-(`scripts/build-color-picker.sh`).
+(`scripts/build-color-picker.sh`), and the application chooser is
+`AppChooserDialog/` (`scripts/build-app-chooser-dialog.sh`).
 
 ## 3. SDE integration seams
 

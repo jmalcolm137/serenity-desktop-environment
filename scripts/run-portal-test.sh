@@ -60,10 +60,17 @@ echo 0
 EOF
 chmod +x "$ACCESSDIALOG"
 
+APPCHOOSER="$RUNTIME/appchooser.sh"
+cat > "$APPCHOOSER" <<'EOF'
+#!/usr/bin/env bash
+echo 1
+EOF
+chmod +x "$APPCHOOSER"
+
 # Settings reads the theme broker for color-scheme / accent.
 printf '%s\n' "$SERENITY/Base/res/themes/Redmond 2000.ini" > "$RUNTIME/sde-theme"
 
-SDE_STATE_DIR="$RUNTIME" SDE_PORTAL_OPENER="$OPENER" SDE_PORTAL_NOTIFIER="$NOTIFIER" SDE_PORTAL_FILE_CHOOSER="$FILECHOOSER" SDE_PORTAL_PRINT_DIALOG="$PRINTDIALOG" SDE_PORTAL_ACCESS_DIALOG="$ACCESSDIALOG" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
+SDE_STATE_DIR="$RUNTIME" SDE_PORTAL_OPENER="$OPENER" SDE_PORTAL_NOTIFIER="$NOTIFIER" SDE_PORTAL_FILE_CHOOSER="$FILECHOOSER" SDE_PORTAL_PRINT_DIALOG="$PRINTDIALOG" SDE_PORTAL_ACCESS_DIALOG="$ACCESSDIALOG" SDE_PORTAL_APP_CHOOSER="$APPCHOOSER" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
 PORTAL_PID=$!
 trap 'kill "$PORTAL_PID" 2>/dev/null || true' EXIT
 
@@ -102,7 +109,7 @@ check "Serenity Desktop Environment" "$(prop org.freedesktop.impl.portal.Backgro
 
 echo "=== AppChooser / ProxyResolver ==="
 check "uint32 0" "$(call org.freedesktop.impl.portal.AppChooser.ChooseApplication /x app "" "['a','b']" "{}")"
-check "'a'" "$(call org.freedesktop.impl.portal.AppChooser.ChooseApplication /x app "" "['a','b']" "{}")"
+check "'b'" "$(call org.freedesktop.impl.portal.AppChooser.ChooseApplication /x app "" "['a','b']" "{}")"
 check "[]" "$(call org.freedesktop.impl.portal.ProxyResolver.Lookup http://example.com)"
 
 echo "=== Realtime / PowerProfileMonitor / GameMode / MemoryMonitor ==="

@@ -460,19 +460,55 @@ static void handle_appchooser(GDBusConnection* connection, const gchar* sender, 
         return;
     }
 
-    // Phase 1: choose the first offered application (a real chooser UI is a
-    // follow-up). The frontend passes the ordered choices.
+    // Prefer the LibGUI AppChooserDialog (SDE_PORTAL_APP_CHOOSER); otherwise fall
+    // back to the first offered application. The frontend passes ordered choices.
+    char const* handle = NULL;
+    char const* app_id = NULL;
+    char const* parent_window = NULL;
     GVariant* choices = NULL;
-    g_variant_get(parameters, "(oss@as@a{sv})", NULL, NULL, NULL, &choices, NULL);
+    GVariant* options = NULL;
+    g_variant_get(parameters, "(o&s&s@as@a{sv})", &handle, &app_id, &parent_window, &choices, &options);
+
     GVariantBuilder results;
     g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
     guint32 response = RESPONSE_CANCELLED;
-    if (choices && g_variant_n_children(choices) > 0) {
-        GVariant* first = g_variant_get_child_value(choices, 0);
-        g_variant_builder_add(&results, "{sv}", "choice", g_variant_new_string(g_variant_get_string(first, NULL)));
-        g_variant_unref(first);
+
+    gsize count = choices ? g_variant_n_children(choices) : 0;
+    int chosen = -1;
+    char const* chooser = getenv("SDE_PORTAL_APP_CHOOSER");
+    if (count > 0 && chooser && *chooser) {
+        GString* joined = g_string_new("");
+        for (gsize i = 0; i < count; ++i) {
+            GVariant* child = g_variant_get_child_value(choices, i);
+            if (i)
+                g_string_append_c(joined, '\n');
+            g_string_append(joined, g_variant_get_string(child, NULL));
+            g_variant_unref(child);
+        }
+        char const* argv[] = { chooser, "-t", "Choose an Application", "-c", joined->str, NULL };
+        char* out = NULL;
+        gint wait_status = 0;
+        GError* error = NULL;
+        if (g_spawn_sync(NULL, (char**)argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, &out, NULL, &wait_status, &error)
+            && out && g_spawn_check_wait_status(wait_status, NULL))
+            chosen = atoi(g_strstrip(out));
+        if (out)
+            g_free(out);
+        if (error)
+            g_error_free(error);
+        g_string_free(joined, TRUE);
+    }
+
+    if (count > 0) {
+        if (chosen < 0 || (gsize)chosen >= count)
+            chosen = 0; // default to the first offered application
+        GVariant* child = g_variant_get_child_value(choices, (gsize)chosen);
+        g_variant_builder_add(&results, "{sv}", "choice", g_variant_new_string(g_variant_get_string(child, NULL)));
+        g_variant_unref(child);
         response = RESPONSE_SUCCESS;
     }
+    if (options)
+        g_variant_unref(options);
     if (choices)
         g_variant_unref(choices);
     g_dbus_method_invocation_return_value(invocation, g_variant_new("(ua{sv})", response, &results));
