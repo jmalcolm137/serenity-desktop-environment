@@ -106,3 +106,21 @@ we commit to:
   mismatches print the real sizes.
 - **`AK::SourceLocation`** as a defaulted argument (`= SourceLocation::current()`) for debug
   instrumentation, instead of preprocessor macros.
+
+## D7 — Verify UI by screenshot (the gold standard), not by bespoke instrumentation
+
+To verify rendering and UI behaviour, **take a screenshot of the composited output**
+(from a nested or native session) and look at it; for scripted checks, compare
+images. This is the gold standard and the default way we test the UI.
+
+- When something looks wrong, screenshot it and **fix the rendering** — do not grow
+  a pile of debug output in its place.
+- Prefer image comparisons over log scraping wherever the behaviour is visual
+  (e.g. `scripts/run-hidpi-fidelity-test.sh` renders an app at 1× and 2× and asserts
+  the 2× is the 1× pixel-doubled).
+- Do **not** add ad-hoc, test-only hooks (`WINDOWSERVER_DUMP_*` / `SDE_*` one-offs,
+  per-run debug branches) to the compositor mid-debug. If a capture facility is
+  genuinely needed for headless CI, it is **one** small, general, permanent way to
+  capture an output — not a bespoke env var invented to chase one bug.
+- Make the shot reproducible with scripted input
+  (`tools/virtual-input-test` can snap/move/focus) rather than manual steps.
