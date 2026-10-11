@@ -1,6 +1,7 @@
 # xdg-desktop-portal-serenity (R5)
 
-**Status:** Phase 1 landed · **Related:** [`08-compositor-gaps.md`](08-compositor-gaps.md) §3,
+**Status:** Phase 1 + Phase 2 landed (see §5 for the remaining Phase 2b items) ·
+**Related:** [`08-compositor-gaps.md`](08-compositor-gaps.md) §3,
 [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §R5,
 `contrib/xdg-desktop-portal/`
 
@@ -25,7 +26,7 @@ interfaces, no vendor-private surface).
 This supersedes the earlier single-interface `tools/sde-settings-portal.c` (R4.4):
 `Settings` now lives here alongside the other interfaces.
 
-## 2. Phase 1 interfaces
+## 2. Interfaces
 
 | Interface | Behaviour |
 |---|---|
@@ -141,7 +142,7 @@ sets that. With the mapping above, e.g.
 /org/freedesktop/portal/desktop --method org.freedesktop.portal.Settings.Read
 org.freedesktop.appearance color-scheme` is served by this backend.
 
-## 5. Phase 2 (roadmap)
+## 5. Phase 2b (remaining)
 
 To reach and surpass `xdg-desktop-portal-kde`:
 
