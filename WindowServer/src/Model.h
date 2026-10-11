@@ -137,6 +137,8 @@ struct Output {
     wl_listener frame { };
     wl_listener request_state { };
     wl_listener destroy { };
+    // Re-configure a session lock surface on output size/scale change (R4.1).
+    wl_listener commit { };
 };
 
 struct Toplevel {
@@ -259,6 +261,7 @@ struct LockSurface {
     wlr_session_lock_surface_v1* lock_surface { nullptr };
     wlr_scene_surface* scene { nullptr };
     bool configured { false };
+    Gfx::IntSize configured_size;
     wl_listener commit { };
     wl_listener destroy { };
 };

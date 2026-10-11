@@ -36,9 +36,24 @@ cc -O2 -I "$TOOLS_BUILD" \
     "$TOOLS_BUILD/wlr-output-power-management-unstable-v1-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/idle-test"
-# The portable idle daemon (sde-idle), built by the shared tools script.
+# The portable idle daemon (sde-idle) and sde-dpms, built by the shared tools script.
 "$SDE_ROOT/scripts/build-tools.sh" >/dev/null
 SDE_IDLE="$SDE_ROOT/build/tools/sde-idle"
+SDE_DPMS="$SDE_ROOT/build/tools/sde-dpms"
+
+# The virtual pointer, to trigger a "resumed" (activity) event.
+VK_XML="$WLROOTS_SRC/protocol/virtual-keyboard-unstable-v1.xml"
+VP_XML="$WLROOTS_SRC/protocol/wlr-virtual-pointer-unstable-v1.xml"
+wayland-scanner client-header "$VK_XML" "$TOOLS_BUILD/virtual-keyboard-unstable-v1-client-protocol.h"
+wayland-scanner private-code  "$VK_XML" "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c"
+wayland-scanner client-header "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-client-protocol.h"
+wayland-scanner private-code  "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c"
+cc -O2 -I "$TOOLS_BUILD" \
+    "$SDE_ROOT/tools/virtual-input-test.c" \
+    "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c" \
+    "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c" \
+    $(pkg-config --cflags --libs wayland-client xkbcommon) \
+    -o "$TOOLS_BUILD/virtual-input-test"
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-idle.XXXXXX")"
 chmod 700 "$RUNTIME"
@@ -85,6 +100,23 @@ kill "$SDE_IDLE_PID" 2>/dev/null || true
 wait "$SDE_IDLE_PID" 2>/dev/null || true
 cat "$RUNTIME/sde-idle.log"
 
+echo "== (E) sde-idle resume + sde-dpms (blank before lock) =="
+# sde-dpms blanks/restores the output via wlr-output-power-management.
+env WAYLAND_DISPLAY="$SOCK" "$SDE_DPMS" off > "$RUNTIME/sde-dpms-off.log" 2>&1 || true
+env WAYLAND_DISPLAY="$SOCK" "$SDE_DPMS" on > "$RUNTIME/sde-dpms-on.log" 2>&1 || true
+# sde-idle: lock after 1s, then a pointer move triggers the resume command.
+env WAYLAND_DISPLAY="$SOCK" "$SDE_IDLE" \
+    timeout 1 "touch $RUNTIME/idle2" resume "touch $RUNTIME/resumed2" \
+    > "$RUNTIME/sde-idle-resume.log" 2>&1 &
+RESUME_PID=$!
+sleep 2
+env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
+    --extent 1280 720 --move 400 300 --sleep 200 > /dev/null 2>&1 || true
+sleep 1.5
+kill "$RESUME_PID" 2>/dev/null || true
+wait "$RESUME_PID" 2>/dev/null || true
+cat "$RUNTIME/sde-idle-resume.log"
+
 sleep 0.5
 kill "$COMP_PID" 2>/dev/null || true
 wait "$COMP_PID" 2>/dev/null || true
@@ -130,6 +162,17 @@ else
     echo "  MISSING: sde-idle did not run its command"
     fail=1
 fi
+
+# sde-dpms blanked/restored the output; sde-idle ran its resume command on activity.
+check "sde-idle: resumed; running" "$RUNTIME/sde-idle-resume.log"
+for f in idle2 resumed2; do
+    if [[ -e "$RUNTIME/$f" ]]; then
+        echo "  ok: sde-idle ran '$f'"
+    else
+        echo "  MISSING: sde-idle did not run '$f'"
+        fail=1
+    fi
+done
 
 if [[ "$fail" -ne 0 ]]; then
     echo "==> session safety net test FAILED"

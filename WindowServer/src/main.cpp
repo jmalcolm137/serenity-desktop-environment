@@ -108,6 +108,8 @@ static void notify_activity(Server& server);
 // While the session is locked, input goes to the lock surface on the output
 // under the cursor.
 static LockSurface* lock_surface_at_cursor(Server& server);
+// Re-configure the lock surface for an output whose size/scale changed (R4.1).
+static void reconfigure_lock_surface(Server& server, wlr_output* output);
 // Spawn the configured lock client (R4.1); a standard ext-session-lock-v1 client.
 static void spawn_lock_client();
 
@@ -1084,9 +1086,17 @@ static void output_destroy(wl_listener* listener, void*)
     wl_list_remove(&output->frame.link);
     wl_list_remove(&output->request_state.link);
     wl_list_remove(&output->destroy.link);
+    wl_list_remove(&output->commit.link);
     if (output->background)
         wlr_scene_node_destroy(&output->background->node);
     remove_owned(output->server->outputs, output);
+}
+
+static void output_commit(wl_listener* listener, void*)
+{
+    Output* output = nullptr;
+    output = wl_container_of(listener, output, commit);
+    reconfigure_lock_surface(*output->server, output->output);
 }
 
 static void server_new_output(wl_listener* listener, void* data)
@@ -1114,6 +1124,8 @@ static void server_new_output(wl_listener* listener, void* data)
     wl_signal_add(&wlr_output->events.request_state, &output->request_state);
     output->destroy.notify = output_destroy;
     wl_signal_add(&wlr_output->events.destroy, &output->destroy);
+    output->commit.notify = output_commit;
+    wl_signal_add(&wlr_output->events.commit, &output->commit);
 
     auto* layout_output = wlr_output_layout_add_auto(server->output_layout, wlr_output);
     auto* scene_output = wlr_scene_output_create(server->scene, wlr_output);
@@ -2519,6 +2531,26 @@ static LockSurface* lock_surface_at_cursor(Server& server)
     return nullptr;
 }
 
+static void reconfigure_lock_surface(Server& server, wlr_output* output)
+{
+    if (!server.locked || !output)
+        return;
+    auto* lock = lock_surface_for_output(server, output);
+    if (!lock)
+        return;
+    // output.commit fires every frame; only reconfigure on a real size change.
+    Gfx::IntSize wanted { output->width, output->height };
+    if (lock->configured_size == wanted)
+        return;
+    lock->configured_size = wanted;
+    wlr_box box { };
+    wlr_output_layout_get_box(server.output_layout, output, &box);
+    dbgln("WindowServer: lock surface re-configured for '{}' {}x{}", output->name ? output->name : "?", output->width, output->height);
+    if (lock->scene)
+        wlr_scene_node_set_position(&lock->scene->buffer->node, box.x, box.y);
+    wlr_session_lock_surface_v1_configure(lock->lock_surface, static_cast<uint32_t>(output->width), static_cast<uint32_t>(output->height));
+}
+
 static void lock_surface_commit(wl_listener* listener, void*)
 {
     LockSurface* lock = wl_container_of(listener, lock, commit);
@@ -2583,8 +2615,10 @@ static void session_lock_new_surface(wl_listener* listener, void* data)
     entry->destroy.notify = lock_surface_destroy;
     wl_signal_add(&lock_surface->events.destroy, &entry->destroy);
 
-    if (output)
+    if (output) {
+        entry->configured_size = { static_cast<int>(output->width), static_cast<int>(output->height) };
         wlr_session_lock_surface_v1_configure(lock_surface, static_cast<uint32_t>(output->width), static_cast<uint32_t>(output->height));
+    }
 
     server->lock_surfaces.append(move(entry));
 }

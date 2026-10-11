@@ -37,6 +37,7 @@
 static struct wl_seat* seat;
 static struct ext_idle_notifier_v1* notifier;
 static volatile sig_atomic_t s_running = 1;
+static char* s_resume_command = NULL;
 
 static void handle_idled(void* data, struct ext_idle_notification_v1* notification)
 {
@@ -52,6 +53,12 @@ static void handle_resumed(void* data, struct ext_idle_notification_v1* notifica
 {
     (void)data;
     (void)notification;
+    if (s_resume_command) {
+        fprintf(stderr, "sde-idle: resumed; running: %s\n", s_resume_command);
+        fflush(stderr);
+        int status = system(s_resume_command);
+        (void)status;
+    }
 }
 
 static struct ext_idle_notification_v1_listener const s_listener = {
@@ -99,8 +106,11 @@ int main(int argc, char** argv)
             commands[count] = argv[i + 2];
             ++count;
             i += 3;
+        } else if (strcmp(argv[i], "resume") == 0 && i + 1 < argc && s_resume_command == NULL) {
+            s_resume_command = argv[i + 1];
+            i += 2;
         } else {
-            fprintf(stderr, "usage: sde-idle [timeout <seconds> <command>]...\n");
+            fprintf(stderr, "usage: sde-idle [timeout <seconds> <command>]... [resume <command>]\n");
             return 2;
         }
     }

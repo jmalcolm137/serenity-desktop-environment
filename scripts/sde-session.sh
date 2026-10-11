@@ -35,6 +35,8 @@ RUN_AUTOSTART="${SDE_SESSION_AUTOSTART:-1}"
 IDLE_SECONDS="${SDE_SESSION_IDLE_SECONDS:-0}"
 IDLE_BIN="${SDE_SESSION_IDLE_BIN:-$SDE_ROOT/build/tools/sde-idle}"
 LOCK_CMD="${SDE_LOCK_CMD:-swaylock}"
+DPMS_BIN="${SDE_SESSION_DPMS_BIN:-$SDE_ROOT/build/tools/sde-dpms}"
+DPMS_SECONDS="${SDE_SESSION_IDLE_DPMS_SECONDS:-0}"
 IDLE_PID=""
 
 # Session environment (R4.3, docs/12). Set the standard variables so apps and
@@ -130,9 +132,15 @@ while :; do
     # the portable idle daemon against it.
     if [ "$IDLE_SECONDS" -gt 0 ] && [ -x "$IDLE_BIN" ]; then
         sleep 0.3
-        "$IDLE_BIN" timeout "$IDLE_SECONDS" "$LOCK_CMD" >/dev/null 2>&1 &
+        if [ "$DPMS_SECONDS" -gt 0 ] && [ -x "$DPMS_BIN" ]; then
+            # Blank (DPMS off) before locking; restore on activity.
+            "$IDLE_BIN" timeout "$DPMS_SECONDS" "$DPMS_BIN off" timeout "$IDLE_SECONDS" "$LOCK_CMD" resume "$DPMS_BIN on" >/dev/null 2>&1 &
+            echo "SDE session: blank at ${DPMS_SECONDS}s, lock at ${IDLE_SECONDS}s via '$LOCK_CMD'"
+        else
+            "$IDLE_BIN" timeout "$IDLE_SECONDS" "$LOCK_CMD" >/dev/null 2>&1 &
+            echo "SDE session: idle-to-lock after ${IDLE_SECONDS}s via '$LOCK_CMD'"
+        fi
         IDLE_PID=$!
-        echo "SDE session: idle-to-lock after ${IDLE_SECONDS}s via '$LOCK_CMD'"
     fi
 
     # A SIGTERM/SIGINT means "stop the session", not "restart the compositor":

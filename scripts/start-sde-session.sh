@@ -44,6 +44,8 @@ export SDE_LOCK_CMD="${SDE_LOCK_CMD:-swaylock}"
 # Idle-to-lock after this many seconds (0 disables). Uses the portable sde-idle
 # daemon (a plain ext-idle-notify-v1 client). Build it with scripts/build-tools.sh.
 export SDE_SESSION_IDLE_SECONDS="${SDE_SESSION_IDLE_SECONDS:-300}"
+# Blank the screen (sde-dpms) this many seconds before locking (0 disables).
+export SDE_SESSION_IDLE_DPMS_SECONDS="${SDE_SESSION_IDLE_DPMS_SECONDS:-60}"
 
 # Seed the SerenityOS skeleton user config, so apps that read default
 # configuration at startup (e.g. Browser) find it.

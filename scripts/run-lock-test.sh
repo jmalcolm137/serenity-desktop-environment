@@ -42,6 +42,14 @@ cc -O2 -I "$TOOLS_BUILD" \
     "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c" \
     $(pkg-config --cflags --libs wayland-client xkbcommon) \
     -o "$TOOLS_BUILD/virtual-input-test"
+OM_XML="$WLROOTS_SRC/protocol/wlr-output-management-unstable-v1.xml"
+wayland-scanner client-header "$OM_XML" "$TOOLS_BUILD/wlr-output-management-unstable-v1-client-protocol.h"
+wayland-scanner private-code  "$OM_XML" "$TOOLS_BUILD/wlr-output-management-unstable-v1-protocol.c"
+cc -O2 -I "$TOOLS_BUILD" \
+    "$SDE_ROOT/tools/output-mode-test.c" \
+    "$TOOLS_BUILD/wlr-output-management-unstable-v1-protocol.c" \
+    $(pkg-config --cflags --libs wayland-client) \
+    -o "$TOOLS_BUILD/output-mode-test"
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-lock.XXXXXX")"
 chmod 700 "$RUNTIME"
@@ -113,6 +121,22 @@ cat "$RUNTIME/comp-lock-b.log"
 
 check "WindowServer: locking via" "$RUNTIME/comp-lock-b.log"
 check "WindowServer: session locked" "$RUNTIME/comp-lock-b.log"
+
+echo "== (C) lock surface reconfigures when an output changes size =="
+start_compositor lock-c 1
+env WAYLAND_DISPLAY=lock-c "$TOOLS_BUILD/lock-test" --hold 3000 > "$RUNTIME/lock-c.log" 2>&1 &
+LOCK_C_PID=$!
+sleep 1.5
+env WAYLAND_DISPLAY=lock-c "$TOOLS_BUILD/output-mode-test" 1024x768 > "$RUNTIME/mode.log" 2>&1 || true
+sleep 1
+kill "$LOCK_C_PID" 2>/dev/null || true
+wait "$LOCK_C_PID" 2>/dev/null || true
+stop_compositor
+cat "$RUNTIME/mode.log"
+grep "surface configured" "$RUNTIME/lock-c.log" || true
+
+check "WindowServer: lock surface re-configured" "$RUNTIME/comp-lock-c.log"
+check "LOCK-TEST: surface configured 1024x768" "$RUNTIME/lock-c.log"
 
 if [[ "$fail" -ne 0 ]]; then
     echo "==> session-lock test FAILED"
