@@ -232,6 +232,9 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   it. **Phase 2:** ScreenCast/RemoteDesktop/InputCapture
   (`ext-image-copy-capture-v1` + PipeWire), GlobalShortcuts, DynamicLauncher,
   FileChooser, Print (see [`08-compositor-gaps.md`](08-compositor-gaps.md) §3).
+  The compositor/host-blocked remainder (DMA-BUF, metadata cursor, InputCapture,
+  Device/Camera) is in
+  [`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md) §6.
 - **Text input / IME (G5) and accessibility (G1).** `text-input-v3` /
   `input-method-v2`, AT-SPI, sticky keys, magnifier and high contrast are absent.
 

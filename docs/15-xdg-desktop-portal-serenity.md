@@ -1,6 +1,6 @@
 # xdg-desktop-portal-serenity (R5)
 
-**Status:** Phase 1 + Phase 2 landed (see §5 for the remaining Phase 2b items) ·
+**Status:** Phase 1 + Phase 2 landed (see §5 for the remaining Phase 2b items, §6 for the ones blocked on compositor/host infrastructure) ·
 **Related:** [`08-compositor-gaps.md`](08-compositor-gaps.md) §3,
 [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §R5,
 `contrib/xdg-desktop-portal/`
@@ -162,7 +162,94 @@ To reach and surpass `xdg-desktop-portal-kde`:
 - A **permission store** integration and the `Request`/`Response`
   choreography.
 
-## 6. Test
+## 6. Infrastructure blocked
+
+The items below are **not blocked by backend code**. They need behaviour the
+**SDE compositor (`WindowServer`) or the host graphics stack** does not provide
+yet, so they cannot be built or verified under the current headless test path
+(`WLR_BACKENDS=headless` + the pixman renderer allocates SHM buffers, never
+DMA-BUFs, and has no real cursor). The backend side is already in place; the
+compositor side is the blocker.
+
+| Item | Blocked on | Owner |
+|---|---|---|
+| ScreenCast **DMA-BUF** (zero-copy) | compositor offering DMA-BUF buffers from `ext-image-copy-capture-v1`; PipeWire `SPA_DATA_DmaBuf` negotiation | `WindowServer` + backend |
+| ScreenCast **metadata cursor** | compositor implementing `ext_image_copy_capture_cursor_session_v1` | `WindowServer` + backend |
+| **InputCapture** | compositor input routing or libei/EIS | `WindowServer` (design) |
+| **Device (v2)** | a device broker | `WindowServer` / session |
+| **Camera (v2)** | a PipeWire camera producer | host/`WindowServer` |
+
+### 6.1 Environment required to unblock / verify
+
+- A running SDE session with a **real output**, either on a **TTY (DRM backend)**
+  or **nested** on a DMA-BUF-capable parent compositor.
+- The renderer must be **GLES2 (EGL/GBM)** on a render node, not pixman:
+
+  ```sh
+  WLR_RENDERER=gles2 WLR_RENDER_DRM_DEVICE=/dev/dri/renderD128 \
+      scripts/start-sde-nested.sh      # or start-sde-session.sh on a TTY
+  ```
+
+- This machine qualifies: Intel Iris Plus (G7), `/dev/dri/card1` +
+  `/dev/dri/renderD128`, parent compositor advertises `zwp_linux_dmabuf_v1` v5.
+- Confirm the renderer actually came up with GLES2 (the compositor log must not
+  say `pixman`), otherwise everything below silently stays SHM.
+- `scripts/run-screencast-test.sh` currently forces headless; a live variant is
+  needed that points at the real `WAYLAND_DISPLAY` and asserts the negotiated
+  PipeWire buffer type / cursor metadata after each fix.
+
+### 6.2 ScreenCast DMA-BUF (zero-copy)
+
+- **Today:** `tools/portal-screencast.c` captures via
+  `ext_image_copy_capture_session_v1` into a memfd and memcpy's into the PipeWire
+  buffer (`SPA_PARAM_Buffers` memfd, `blocks=1`). It works, but it is a copy.
+- **Compositor work:** allocate DMA-BUF-backed buffers in the capture path and
+  advertise them in the capture session (`WindowServer/`, the
+  `wlr_output_capture`/screencopy code), with `zwp_linux_dmabuf_v1` feedback.
+- **Backend work:** negotiate `SPA_DATA_DmaBuf` (+ plane offsets/modifiers) in
+  `SPA_PARAM_Buffers`, hand the fds to PipeWire, keep SHM as fallback.
+- **Verify:** the consumer receives `SPA_DATA_DmaBuf`, not `MemFd`, with no
+  per-frame copy.
+
+### 6.3 ScreenCast metadata cursor mode
+
+- **Today:** only `hidden` and `embedded` (`PAINT_CURSORS`) are offered in
+  `AvailableCursorModes`.
+- **Compositor work:** implement `ext_image_copy_capture_cursor_session_v1` so
+  the cursor image + hotspot are a separate source.
+- **Backend work:** advertise the `metadata` cursor mode, request a cursor
+  session, and publish `SPA_META_Cursor` on the stream.
+- **Verify:** move the cursor over a live session and assert the metadata
+  (position + hotspot) arrives instead of being burned into the frame.
+
+### 6.4 InputCapture
+
+- The frontend still routes `org.freedesktop.portal.InputCapture` to `gtk`. A
+  backend can only implement it if the compositor can deliver input events to it
+  — via libei/EIS or a `WindowServer` input-capture path.
+- **Needs a design decision first** (`08-compositor-gaps.md` §4); no backend code
+  can land before that.
+
+### 6.5 Device (v2) / Camera (v2)
+
+- `Device`: no device broker exists anywhere in the session; `USB` already
+  returns a standards-compliant empty list.
+- `Camera`: needs a PipeWire camera producer (`IsCameraPresent` +
+  `OpenPipeWireRemote`); none exists on the SDE side.
+
+### 6.6 Not blocked (code-only — safe without a live session)
+
+These live in §5 and are plain backend work:
+
+- **Async (non-blocking) dialogs** — six `g_spawn_sync` call sites across five
+  handlers (plus the ScreenCast source picker) block the backend's main loop;
+  convert them to an async subprocess helper.
+- **Permission-store integration** and the `Request`/`Response` choreography.
+- **`Inhibit`** — the installed frontend and both the `gtk` and `kde` backends
+  implement it; we still fall back to `gtk`. Wire it to the SDE idle/logind power
+  path (`scripts/sde-idle`, `sde-power`).
+
+## 7. Test
 
 `scripts/run-portal-test.sh` starts the backend on a private bus and queries every
 Phase-1 interface directly (Settings, Account, Lockdown, Background, AppChooser,

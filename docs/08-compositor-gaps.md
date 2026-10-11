@@ -94,7 +94,10 @@ table.
   `accent-color`, `contrast`) for R4; and, for R5, RemoteDesktop/InputCapture/
   GlobalShortcuts (lean on `ext-image-copy-capture-v1` + PipeWire). Note the theme
   broker will eventually need to interoperate with the Settings portal's
-  `color-scheme`.
+  `color-scheme`. The SDE backend is now implemented
+  ([`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md)); its
+  compositor-blocked remainder (DMA-BUF capture, metadata cursor, InputCapture,
+  Device/Camera) is enumerated in that doc's §6.
 - **XWayland (G7).** A single R5 bullet today; rootless XWayland, scaling,
   clipboard/DnD integration and rootful fallback is a large feature that needs
   its own plan.
