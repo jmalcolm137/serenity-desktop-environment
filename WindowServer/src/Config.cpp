@@ -32,6 +32,7 @@ static Input g_input;
 static InputRanges g_input_ranges;
 static Fonts g_fonts;
 static Theme g_theme;
+static Vector<GlobalShortcut> g_global_shortcuts;
 static Vector<ByteString> g_applet_order;
 static Vector<ByteString> g_diagnostics;
 
@@ -557,6 +558,65 @@ void watch_input(Function<void()> on_change)
     if (Core::File::open(input_file(), Core::File::OpenMode::Read).is_error())
         (void)Core::File::open(input_file(), Core::File::OpenMode::Write);
     (void)watcher->add_watch(input_file(), Core::FileWatcherEvent::Type::ContentModified | Core::FileWatcherEvent::Type::MetadataModified | Core::FileWatcherEvent::Type::Deleted);
+}
+
+// --- global shortcuts (R5) --------------------------------------------------
+
+static ByteString global_shortcuts_file()
+{
+    return state_file("global-shortcuts.ini"sv);
+}
+
+void load_global_shortcuts()
+{
+    g_global_shortcuts.clear();
+    auto config = open_config(global_shortcuts_file());
+    if (!config)
+        return;
+    for (auto const& group : config->groups()) {
+        auto trigger = config->read_entry(group, "Trigger"sv);
+        auto session = config->read_entry(group, "Session"sv);
+        auto id = config->read_entry(group, "Id"sv);
+        if (trigger.is_empty() || session.is_empty() || id.is_empty())
+            continue;
+        u32 keysym = 0;
+        u32 modifiers = 0;
+        if (!parse_combo(trigger, keysym, modifiers))
+            continue;
+        GlobalShortcut shortcut;
+        shortcut.keysym = keysym;
+        shortcut.modifiers = modifiers;
+        shortcut.session = session;
+        shortcut.id = id;
+        g_global_shortcuts.append(move(shortcut));
+    }
+    dbgln("WindowServer: config: {} global shortcut(s)", g_global_shortcuts.size());
+}
+
+Vector<GlobalShortcut> const& global_shortcuts()
+{
+    return g_global_shortcuts;
+}
+
+void watch_global_shortcuts(Function<void()> on_change)
+{
+    static RefPtr<Core::FileWatcher> watcher;
+    static RefPtr<Core::Timer> coalesce;
+    coalesce = Core::Timer::create_single_shot(30, [on_change = move(on_change)] {
+        load_global_shortcuts();
+        on_change();
+    });
+    watcher = Core::FileWatcher::create().release_value_but_fixme_should_propagate_errors();
+    auto directory = state_directory();
+    watcher->on_change = [directory](Core::FileWatcherEvent const& event) {
+        if (!event.event_path.starts_with(directory))
+            return;
+        coalesce->restart();
+    };
+    (void)watcher->add_watch(directory, Core::FileWatcherEvent::Type::ChildCreated);
+    if (Core::File::open(global_shortcuts_file(), Core::File::OpenMode::Read).is_error())
+        (void)Core::File::open(global_shortcuts_file(), Core::File::OpenMode::Write);
+    (void)watcher->add_watch(global_shortcuts_file(), Core::FileWatcherEvent::Type::ContentModified | Core::FileWatcherEvent::Type::MetadataModified | Core::FileWatcherEvent::Type::Deleted);
 }
 
 Tiling const& tiling()

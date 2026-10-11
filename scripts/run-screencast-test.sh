@@ -45,7 +45,7 @@ echo 1
 EOF
 chmod +x "$RUNTIME/chooser.sh"
 
-SDE_PORTAL_CHOOSER="$RUNTIME/chooser.sh" WAYLAND_DISPLAY="$SOCK" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
+SDE_PORTAL_CHOOSER="$RUNTIME/chooser.sh" SDE_STATE_DIR="$RUNTIME" WAYLAND_DISPLAY="$SOCK" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
 PORTAL_PID=$!
 trap 'kill "$PORTAL_PID" "$COMP_PID" 2>/dev/null || true' EXIT
 
@@ -126,6 +126,16 @@ call "$RD.NotifyPointerMotion" /org/freedesktop/portal/desktop/session/rd "{}" 5
 sleep 0.3
 check "virtual keyboard connected" "$(cat "$RUNTIME/comp.log")"
 check "virtual pointer connected" "$(cat "$RUNTIME/comp.log")"
+
+echo "=== GlobalShortcuts reaches the compositor config ==="
+GS="org.freedesktop.impl.portal.GlobalShortcuts"
+call "$GS.CreateSession" /h /org/freedesktop/portal/desktop/session/gs app "{}" >/dev/null
+call "$GS.BindShortcuts" /h /org/freedesktop/portal/desktop/session/gs "[('sc1', {'trigger': <'CTRL+ALT+g'>, 'description': <'Test'>})]" "" "{}" >/dev/null
+for _ in $(seq 1 40); do
+    grep -qF "1 global shortcut(s)" "$RUNTIME/comp.log" 2>/dev/null && break
+    sleep 0.1
+done
+check "1 global shortcut(s)" "$(cat "$RUNTIME/comp.log")"
 
 echo "=== Screenshot portal ==="
 shot="$(call org.freedesktop.impl.portal.Screenshot.Screenshot /h app "" "{}")"

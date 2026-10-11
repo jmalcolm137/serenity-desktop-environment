@@ -48,6 +48,7 @@ This supersedes the earlier single-interface `tools/sde-settings-portal.c` (R4.4
 | `Screenshot` (v1) | `Screenshot` captures the primary output (via the ScreenCast capture pipeline, on its own Wayland connection) into a PNG and returns its `uri`. |
 | `Print` (v1) | `PreparePrint` via the LibGUI **PrintDialog** app (`SDE_PORTAL_PRINT_DIALOG`; printers from `lpstat`); `Print` feeds the document fd to `SDE_PORTAL_PRINT_CMD` (e.g. `lp`). |
 | `RemoteDesktop` (v2) | `CreateSession`/`SelectDevices`/`Start` (devices + the paired ScreenCast stream) and the `Notify*` input methods — pointer motion/absolute/button/axis and keyboard keycodes — injected via `wlr-virtual-pointer` / `virtual-keyboard`. `ConnectToEIS` (libei) is not supported, so apps use the `Notify*` methods. |
+| `GlobalShortcuts` (v1) | `CreateSession`/`BindShortcuts`/`ListShortcuts`. Shortcuts are stored in the SDE **config system** (`global-shortcuts.ini`, `[ShortcutN] Session/Id/Trigger`) for the compositor to bind like any other keybinding; activations are reported over a session FIFO (`sde-global-shortcuts.fifo`) and emitted as the `Activated` signal. |
 
 ### ScreenCast pipeline (niri-inspired)
 
@@ -119,6 +120,8 @@ To reach and surpass `xdg-desktop-portal-kde`:
   pointer/keyboard) landed. Remaining: **InputCapture** (needs compositor input
   routing or libei), DMA-BUF + the metadata cursor mode, `pipewire-serial` (v6).
 - **GlobalShortcuts** — compositor global-shortcut registration.
+- **GlobalShortcuts** — landed (shortcuts in `global-shortcuts.ini`, activations
+  over the session FIFO).
 - **DynamicLauncher**, **USB**, **Device**, **Camera** (v2).
 - A **permission store** integration and the `Request`/`Response` choreography for
   the interfaces that return a `handle`.

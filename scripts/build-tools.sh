@@ -100,6 +100,7 @@ cc -O2 -Wall -I "$TOOLS_BUILD" -I "$SDE_ROOT/tools" \
     "$SDE_ROOT/tools/xdg-desktop-portal-serenity.c" \
     "$SDE_ROOT/tools/portal-screencast.c" \
     "$SDE_ROOT/tools/portal-remote-desktop.c" \
+    "$SDE_ROOT/tools/portal-global-shortcuts.c" \
     "$TOOLS_BUILD/ext-image-copy-capture-v1-protocol.c" \
     "$TOOLS_BUILD/ext-image-capture-source-v1-protocol.c" \
     "$TOOLS_BUILD/ext-foreign-toplevel-list-v1-protocol.c" \

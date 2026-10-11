@@ -238,4 +238,20 @@ Input const& input();
 void load_input();
 void watch_input(Function<void()> on_change);
 
+// --- global shortcuts (R5) --------------------------------------------------
+//
+// Shortcuts an app requested through the GlobalShortcuts portal, stored in
+// global-shortcuts.ini by the backend and bound by the compositor. When one
+// fires, the compositor reports it on the session FIFO the backend watches.
+struct GlobalShortcut {
+    u32 keysym { 0 };
+    u32 modifiers { 0 };
+    ByteString session;
+    ByteString id;
+};
+
+Vector<GlobalShortcut> const& global_shortcuts();
+void load_global_shortcuts();
+void watch_global_shortcuts(Function<void()> on_change);
+
 }

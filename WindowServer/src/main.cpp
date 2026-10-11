@@ -318,6 +318,24 @@ static bool perform_key_action(Server& server, Config::Action action)
     return WindowManager::perform_action(server, action);
 }
 
+// Report a GlobalShortcuts activation to the portal backend over the session FIFO
+// it watches (R5).
+static void report_global_shortcut(StringView session, StringView id)
+{
+    ByteString path;
+    if (auto const* runtime = getenv("XDG_RUNTIME_DIR"); runtime && *runtime)
+        path = ByteString::formatted("{}/sde-global-shortcuts.fifo", runtime);
+    else
+        path = ByteString { "/tmp/sde-global-shortcuts.fifo" };
+    int fd = ::open(path.characters(), O_WRONLY | O_NONBLOCK | O_CLOEXEC);
+    if (fd < 0)
+        return;
+    auto message = ByteString::formatted("{}\t{}\n", session, id);
+    (void)::write(fd, message.characters(), message.length());
+    ::close(fd);
+    dbgln("WindowServer: global shortcut activated ('{}' {})", id, session);
+}
+
 static bool handle_keybinding(Server& server, xkb_keysym_t sym, uint32_t modifiers)
 {
     // Alt+Escape quits the compositor (development convenience).
@@ -384,6 +402,16 @@ static void keyboard_key(wl_listener* listener, void* data)
         for (int i = 0; i < syms_count; ++i) {
             if (auto action = Config::action_for(syms[i], config_mods); action.has_value())
                 handled |= perform_key_action(server, action.value());
+        }
+        // R5: app global shortcuts (GlobalShortcuts portal).
+        for (int i = 0; i < syms_count; ++i) {
+            for (auto const& shortcut : Config::global_shortcuts()) {
+                if (shortcut.keysym == syms[i] && shortcut.modifiers == config_mods) {
+                    report_global_shortcut(shortcut.session, shortcut.id);
+                    handled = true;
+                    break;
+                }
+            }
         }
     }
     {
@@ -3428,6 +3456,8 @@ static ErrorOr<void> initialize_gfx()
     // R4.6: input device settings (input.ini) are applied as devices are created
     // (server_new_input).
     Config::load_input();
+    // R5: global shortcuts requested by apps (global-shortcuts.ini).
+    Config::load_global_shortcuts();
 
     // R4.7: a persisted font choice ([Fonts]) overrides the Katica default.
     if (!Config::fonts().default_query.is_empty()) {
@@ -3735,6 +3765,8 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     Config::watch_outputs([&] { apply_loaded_screen_layout(*server); });
     // R4.6: apply input-setting edits (input.ini) to the live devices.
     Config::watch_input([&] { apply_input_settings(*server); });
+    // R5: pick up app-requested global shortcuts (global-shortcuts.ini).
+    Config::watch_global_shortcuts([&] { });
     apply_input_settings(*server);
     wm_server->on_accept = [&](NonnullOwnPtr<Core::LocalSocket> socket) {
         WindowManager::accept_connection(*server, move(socket));

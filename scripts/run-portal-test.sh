@@ -56,7 +56,7 @@ chmod +x "$PRINTDIALOG"
 # Settings reads the theme broker for color-scheme / accent.
 printf '%s\n' "$SERENITY/Base/res/themes/Redmond 2000.ini" > "$RUNTIME/sde-theme"
 
-SDE_PORTAL_OPENER="$OPENER" SDE_PORTAL_NOTIFIER="$NOTIFIER" SDE_PORTAL_FILE_CHOOSER="$FILECHOOSER" SDE_PORTAL_PRINT_DIALOG="$PRINTDIALOG" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
+SDE_STATE_DIR="$RUNTIME" SDE_PORTAL_OPENER="$OPENER" SDE_PORTAL_NOTIFIER="$NOTIFIER" SDE_PORTAL_FILE_CHOOSER="$FILECHOOSER" SDE_PORTAL_PRINT_DIALOG="$PRINTDIALOG" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
 PORTAL_PID=$!
 trap 'kill "$PORTAL_PID" 2>/dev/null || true' EXIT
 
@@ -117,6 +117,16 @@ check "uint32 0" "$print_result"
 check "printer" "$print_result"
 check "Print to File" "$print_result"
 check "copies" "$print_result"
+
+echo "=== GlobalShortcuts ==="
+call org.freedesktop.impl.portal.GlobalShortcuts.CreateSession /h /org/freedesktop/portal/desktop/session/gs app "{}" >/dev/null
+bind="$(call org.freedesktop.impl.portal.GlobalShortcuts.BindShortcuts /h /org/freedesktop/portal/desktop/session/gs "[('shortcut1', {'trigger': <'CTRL+ALT+t'>, 'description': <'Test'>})]" "" "{}")"
+check "uint32 0" "$bind"
+check "shortcuts" "$bind"
+check "Ctrl+Alt+t" "$bind"
+shortcuts_ini="$(cat "$RUNTIME/global-shortcuts.ini" 2>/dev/null || echo '(no ini)')"
+check "Trigger=Ctrl+Alt+t" "$shortcuts_ini"
+check "Session=/org/freedesktop/portal/desktop/session/gs" "$shortcuts_ini"
 
 echo "=== OpenURI ==="
 check "uint32 0" "$(call org.freedesktop.impl.portal.OpenURI.OpenURI /x "" https://example.com "{}")"
