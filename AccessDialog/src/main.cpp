@@ -13,9 +13,11 @@
 #include <LibGUI/Application.h>
 #include <LibGUI/BoxLayout.h>
 #include <LibGUI/Button.h>
+#include <LibGUI/Label.h>
 #include <LibGUI/TextEditor.h>
 #include <LibGUI/Widget.h>
 #include <LibGUI/Window.h>
+#include <LibGfx/TextAlignment.h>
 #include <LibMain/Main.h>
 
 ErrorOr<int> serenity_main(Main::Arguments arguments)
@@ -35,39 +37,51 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
 
     auto window = GUI::Window::construct();
     window->set_title(window_title);
-    window->resize(420, 260);
+    window->resize(420, 240);
     window->set_resizable(false);
 
     auto main_widget = GUI::Widget::construct();
     main_widget->set_layout<GUI::VerticalBoxLayout>(8);
+    // As with GML dialogs, the root widget paints the window background.
+    main_widget->set_fill_with_background_color(true);
     window->set_main_widget(main_widget);
 
-    // The request text (title/subtitle/body) goes in a read-only editor; the
-    // window title carries the request's short title.
-    StringBuilder request_text;
-    request_text.append(title);
-    if (!subtitle.is_empty())
-        request_text.appendff("\n{}", subtitle);
-    if (!body.is_empty())
-        request_text.appendff("\n\n{}", body);
-    auto& body_editor = main_widget->add<GUI::TextEditor>();
-    body_editor.set_text(request_text.to_byte_string());
-    body_editor.set_mode(GUI::TextEditor::Mode::ReadOnly);
+    auto add_label = [&](StringView text, int height, Gfx::TextAlignment alignment) -> ErrorOr<void> {
+        auto label = TRY(GUI::Label::try_create());
+        label->set_text(TRY(String::from_utf8(text)));
+        label->set_text_alignment(alignment);
+        label->set_fixed_height(height);
+        return main_widget->try_add_child(*label);
+    };
 
-    auto& buttons = main_widget->add<GUI::Widget>();
-    buttons.set_layout<GUI::HorizontalBoxLayout>(6);
-    buttons.set_fixed_height(28);
-    auto& allow_button = buttons.add<GUI::Button>("Allow"_string);
-    allow_button.set_fixed_width(90);
-    auto& deny_button = buttons.add<GUI::Button>("Deny"_string);
-    deny_button.set_fixed_width(90);
+    TRY(add_label(title, 20, Gfx::TextAlignment::CenterLeft));
+    if (!subtitle.is_empty())
+        TRY(add_label(subtitle, 18, Gfx::TextAlignment::CenterLeft));
+
+    auto body_editor = TRY(GUI::TextEditor::try_create());
+    body_editor->set_text(body);
+    body_editor->set_mode(GUI::TextEditor::Mode::ReadOnly);
+    TRY(main_widget->try_add_child(*body_editor));
+
+    auto buttons = TRY(GUI::Widget::try_create());
+    buttons->set_layout<GUI::HorizontalBoxLayout>(6);
+    buttons->set_fixed_height(28);
+    auto allow_button = TRY(GUI::Button::try_create());
+    allow_button->set_text("Allow"_string);
+    allow_button->set_fixed_width(90);
+    TRY(buttons->try_add_child(*allow_button));
+    auto deny_button = TRY(GUI::Button::try_create());
+    deny_button->set_text("Deny"_string);
+    deny_button->set_fixed_width(90);
+    TRY(buttons->try_add_child(*deny_button));
+    TRY(main_widget->try_add_child(*buttons));
 
     int response = 1;
-    allow_button.on_click = [&](auto) {
+    allow_button->on_click = [&](auto) {
         response = 0;
         app->quit();
     };
-    deny_button.on_click = [&](auto) {
+    deny_button->on_click = [&](auto) {
         response = 1;
         app->quit();
     };

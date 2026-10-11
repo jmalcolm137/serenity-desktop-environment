@@ -93,10 +93,11 @@ via `SDE_PORTAL_FILE_CHOOSER`. The **Print** dialog is `PrintDialog/`
 (`scripts/build-color-picker.sh`), and the application chooser is
 `AppChooserDialog/` (`scripts/build-app-chooser-dialog.sh`).
 
-> Note: in the current `libgui-wayland` build, programmatic `GUI::Label`s are not
-> repainted (their region keeps the unpainted backing store), so the dialogs
-> carry their text in read-only `GUI::TextEditor`s / buttons rather than labels.
-> GML-declared labels (as in `GUI::FilePicker`) are unaffected.
+> Note: programmatic widgets that draw text (such as `GUI::Label`) are only
+> visible when the root widget paints the window background, so the dialogs call
+> `set_fill_with_background_color(true)` on their main widget — exactly what GML
+> dialogs declare (`fill_with_background_color: true`). Without it the client
+> buffer stays black and black label text disappears.
 
 ## 3. SDE integration seams
 

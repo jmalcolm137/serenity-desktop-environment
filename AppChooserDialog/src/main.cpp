@@ -35,6 +35,8 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
 
     auto main_widget = GUI::Widget::construct();
     main_widget->set_layout<GUI::VerticalBoxLayout>(6);
+    // As with GML dialogs, the root widget paints the window background.
+    main_widget->set_fill_with_background_color(true);
     window->set_main_widget(main_widget);
 
     int index = 0;
