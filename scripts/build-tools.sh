@@ -84,6 +84,7 @@ cc -O2 -Wall \
 ICC_XML="$WP/staging/ext-image-copy-capture/ext-image-copy-capture-v1.xml"
 ICS_XML="$WP/staging/ext-image-capture-source/ext-image-capture-source-v1.xml"
 FTL_XML="$WP/staging/ext-foreign-toplevel-list/ext-foreign-toplevel-list-v1.xml"
+DMABUF_XML="$WP/stable/linux-dmabuf/linux-dmabuf-v1.xml"
 VPOINTER_XML="$WLROOTS_SRC/protocol/wlr-virtual-pointer-unstable-v1.xml"
 VKEYBOARD_XML="$WLROOTS_SRC/protocol/virtual-keyboard-unstable-v1.xml"
 wayland-scanner client-header "$ICC_XML" "$TOOLS_BUILD/ext-image-copy-capture-v1-client-protocol.h"
@@ -92,6 +93,8 @@ wayland-scanner client-header "$ICS_XML" "$TOOLS_BUILD/ext-image-capture-source-
 wayland-scanner private-code  "$ICS_XML" "$TOOLS_BUILD/ext-image-capture-source-v1-protocol.c"
 wayland-scanner client-header "$FTL_XML" "$TOOLS_BUILD/ext-foreign-toplevel-list-v1-client-protocol.h"
 wayland-scanner private-code  "$FTL_XML" "$TOOLS_BUILD/ext-foreign-toplevel-list-v1-protocol.c"
+wayland-scanner client-header "$DMABUF_XML" "$TOOLS_BUILD/linux-dmabuf-v1-client-protocol.h"
+wayland-scanner private-code  "$DMABUF_XML" "$TOOLS_BUILD/linux-dmabuf-v1-protocol.c"
 wayland-scanner client-header "$VPOINTER_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-client-protocol.h"
 wayland-scanner private-code  "$VPOINTER_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c"
 wayland-scanner client-header "$VKEYBOARD_XML" "$TOOLS_BUILD/virtual-keyboard-unstable-v1-client-protocol.h"
@@ -104,10 +107,23 @@ cc -O2 -Wall -I "$TOOLS_BUILD" -I "$SDE_ROOT/tools" \
     "$TOOLS_BUILD/ext-image-copy-capture-v1-protocol.c" \
     "$TOOLS_BUILD/ext-image-capture-source-v1-protocol.c" \
     "$TOOLS_BUILD/ext-foreign-toplevel-list-v1-protocol.c" \
+    "$TOOLS_BUILD/linux-dmabuf-v1-protocol.c" \
     "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c" \
     "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c" \
-    $(pkg-config --cflags --libs gio-2.0 wayland-client libpipewire-0.3 gdk-pixbuf-2.0 xkbcommon) \
+    $(pkg-config --cflags --libs gio-2.0 wayland-client libpipewire-0.3 gdk-pixbuf-2.0 xkbcommon gbm libdrm) \
     -lpthread \
     -o "$TOOLS_BUILD/xdg-desktop-portal-serenity"
 
-echo "==> SDE tools: $TOOLS_BUILD/sde-idle $TOOLS_BUILD/sde-dpms $TOOLS_BUILD/sde-screenshot $TOOLS_BUILD/sde-settings-portal $TOOLS_BUILD/ext-workspace-test $TOOLS_BUILD/native-app-test $TOOLS_BUILD/xdg-desktop-portal-serenity"
+# capture-probe (R5): reports what the live compositor can offer the ScreenCast
+# portal — DMA-BUF capture formats, a real DMA-BUF frame, and the pointer-cursor
+# session. The live counterpart to run-screencast-test.sh (docs/15 §6).
+cc -O2 -Wall -Wextra -I "$TOOLS_BUILD" \
+    "$SDE_ROOT/tools/capture-probe.c" \
+    "$TOOLS_BUILD/ext-image-copy-capture-v1-protocol.c" \
+    "$TOOLS_BUILD/ext-image-capture-source-v1-protocol.c" \
+    "$TOOLS_BUILD/ext-foreign-toplevel-list-v1-protocol.c" \
+    "$TOOLS_BUILD/linux-dmabuf-v1-protocol.c" \
+    $(pkg-config --cflags --libs wayland-client gbm libdrm) \
+    -o "$TOOLS_BUILD/capture-probe"
+
+echo "==> SDE tools: $TOOLS_BUILD/sde-idle $TOOLS_BUILD/sde-dpms $TOOLS_BUILD/sde-screenshot $TOOLS_BUILD/sde-settings-portal $TOOLS_BUILD/ext-workspace-test $TOOLS_BUILD/native-app-test $TOOLS_BUILD/capture-probe $TOOLS_BUILD/xdg-desktop-portal-serenity"
