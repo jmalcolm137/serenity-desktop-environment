@@ -83,6 +83,13 @@ check "uint32 0" "$(call org.freedesktop.impl.portal.AppChooser.ChooseApplicatio
 check "'a'" "$(call org.freedesktop.impl.portal.AppChooser.ChooseApplication /x app "" "['a','b']" "{}")"
 check "[]" "$(call org.freedesktop.impl.portal.ProxyResolver.Lookup http://example.com)"
 
+echo "=== Realtime / PowerProfileMonitor / GameMode / MemoryMonitor ==="
+check "uint32 0" "$(call org.freedesktop.impl.portal.Realtime.MakeThreadHighPriority /x /org/freedesktop/portal/desktop/session/a 1 "{}")"
+check "false" "$(prop org.freedesktop.impl.portal.PowerProfileMonitor power-saver-enabled)"
+check "uint32 0" "$(call org.freedesktop.impl.portal.GameMode.QueryStatus /x app)"
+check "'active': <false>" "$(call org.freedesktop.impl.portal.GameMode.QueryStatus /x app)"
+check "uint32 1" "$(prop org.freedesktop.impl.portal.MemoryMonitor version)"
+
 echo "=== OpenURI ==="
 check "uint32 0" "$(call org.freedesktop.impl.portal.OpenURI.OpenURI /x "" https://example.com "{}")"
 sleep 0.3

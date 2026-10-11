@@ -828,6 +828,136 @@ static GVariant* notification_get_property(GDBusConnection* connection, const gc
     return NULL;
 }
 
+// --- Realtime / PowerProfileMonitor / GameMode / MemoryMonitor --------------
+
+static const char realtime_introspection[] =
+    "<node>"
+    "  <interface name='org.freedesktop.impl.portal.Realtime'>"
+    "    <method name='MakeThreadHighPriority'>"
+    "      <arg type='o' name='handle' direction='in'/>"
+    "      <arg type='o' name='session_handle' direction='in'/>"
+    "      <arg type='i' name='priority' direction='in'/>"
+    "      <arg type='a{sv}' name='options' direction='in'/>"
+    "      <arg type='u' name='response' direction='out'/>"
+    "      <arg type='a{sv}' name='results' direction='out'/>"
+    "    </method>"
+    "    <method name='MakeThreadRealtime'>"
+    "      <arg type='o' name='handle' direction='in'/>"
+    "      <arg type='o' name='session_handle' direction='in'/>"
+    "      <arg type='t' name='thread' direction='in'/>"
+    "      <arg type='i' name='priority' direction='in'/>"
+    "      <arg type='a{sv}' name='options' direction='in'/>"
+    "      <arg type='u' name='response' direction='out'/>"
+    "      <arg type='a{sv}' name='results' direction='out'/>"
+    "    </method>"
+    "    <property name='version' type='u' access='read'/>"
+    "  </interface>"
+    "</node>";
+
+static void handle_realtime(GDBusConnection* connection, const gchar* sender, const gchar* object_path,
+    const gchar* interface_name, const gchar* method_name, GVariant* parameters,
+    GDBusMethodInvocation* invocation, gpointer user_data)
+{
+    (void)connection;
+    (void)sender;
+    (void)object_path;
+    (void)interface_name;
+    (void)method_name;
+    (void)parameters;
+    (void)user_data;
+    // Accepted (the frontend/realtime policy decides; SDE grants it).
+    GVariantBuilder results;
+    g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
+    g_dbus_method_invocation_return_value(invocation, g_variant_new("(ua{sv})", RESPONSE_SUCCESS, &results));
+}
+
+static GVariant* generic_version_property(gchar const* property_name, GError** error, guint32 version)
+{
+    if (g_strcmp0(property_name, "version") == 0)
+        return g_variant_new_uint32(version);
+    g_set_error(error, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_PROPERTY, "unknown property %s", property_name);
+    return NULL;
+}
+
+static const char powerprofile_introspection[] =
+    "<node>"
+    "  <interface name='org.freedesktop.impl.portal.PowerProfileMonitor'>"
+    "    <property name='version' type='u' access='read'/>"
+    "    <property name='power-saver-enabled' type='b' access='read'/>"
+    "  </interface>"
+    "</node>";
+
+static GVariant* powerprofile_get_property(GDBusConnection* connection, const gchar* sender, const gchar* object_path,
+    const gchar* interface_name, const gchar* property_name, GError** error, gpointer user_data)
+{
+    (void)connection;
+    (void)sender;
+    (void)object_path;
+    (void)interface_name;
+    (void)user_data;
+    if (g_strcmp0(property_name, "power-saver-enabled") == 0) {
+        char const* value = getenv("SDE_POWER_SAVER");
+        return g_variant_new_boolean(value && *value && g_strcmp0(value, "0") != 0);
+    }
+    return generic_version_property(property_name, error, 1);
+}
+
+static const char gamemode_introspection[] =
+    "<node>"
+    "  <interface name='org.freedesktop.impl.portal.GameMode'>"
+    "    <method name='RegisterGame'>"
+    "      <arg type='o' name='handle' direction='in'/>"
+    "      <arg type='s' name='app_id' direction='in'/>"
+    "      <arg type='s' name='parent_window' direction='in'/>"
+    "      <arg type='a{sv}' name='options' direction='in'/>"
+    "      <arg type='u' name='response' direction='out'/>"
+    "      <arg type='a{sv}' name='results' direction='out'/>"
+    "    </method>"
+    "    <method name='UnregisterGame'>"
+    "      <arg type='o' name='handle' direction='in'/>"
+    "      <arg type='o' name='session_handle' direction='in'/>"
+    "    </method>"
+    "    <method name='QueryStatus'>"
+    "      <arg type='o' name='handle' direction='in'/>"
+    "      <arg type='s' name='app_id' direction='in'/>"
+    "      <arg type='u' name='response' direction='out'/>"
+    "      <arg type='a{sv}' name='results' direction='out'/>"
+    "    </method>"
+    "    <property name='version' type='u' access='read'/>"
+    "  </interface>"
+    "</node>";
+
+static void handle_gamemode(GDBusConnection* connection, const gchar* sender, const gchar* object_path,
+    const gchar* interface_name, const gchar* method_name, GVariant* parameters,
+    GDBusMethodInvocation* invocation, gpointer user_data)
+{
+    (void)connection;
+    (void)sender;
+    (void)object_path;
+    (void)interface_name;
+    (void)parameters;
+    (void)user_data;
+    if (g_strcmp0(method_name, "UnregisterGame") == 0) {
+        g_dbus_method_invocation_return_value(invocation, NULL);
+        return;
+    }
+    GVariantBuilder results;
+    g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
+    if (g_strcmp0(method_name, "QueryStatus") == 0)
+        g_variant_builder_add(&results, "{sv}", "active", g_variant_new_boolean(FALSE));
+    g_dbus_method_invocation_return_value(invocation, g_variant_new("(ua{sv})", RESPONSE_SUCCESS, &results));
+}
+
+static const char memorymonitor_introspection[] =
+    "<node>"
+    "  <interface name='org.freedesktop.impl.portal.MemoryMonitor'>"
+    "    <signal name='LowMemoryWarning'>"
+    "      <arg type='u' name='level'/>"
+    "    </signal>"
+    "    <property name='version' type='u' access='read'/>"
+    "  </interface>"
+    "</node>";
+
 // --- Settings introspection -------------------------------------------------
 
 static const char settings_introspection[] =
@@ -870,6 +1000,22 @@ static const GDBusInterfaceVTable openuri_vtable = { handle_openuri, openuri_get
 static const GDBusInterfaceVTable notification_vtable = { handle_notification, notification_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable screencast_vtable = { portal_screencast_method_call, portal_screencast_get_property, NULL, { 0 } };
 
+static GVariant* simple_version_get_property(GDBusConnection* connection, const gchar* sender, const gchar* object_path,
+    const gchar* interface_name, const gchar* property_name, GError** error, gpointer user_data)
+{
+    (void)connection;
+    (void)sender;
+    (void)object_path;
+    (void)interface_name;
+    (void)user_data;
+    return generic_version_property(property_name, error, 1);
+}
+
+static const GDBusInterfaceVTable realtime_vtable = { handle_realtime, simple_version_get_property, NULL, { 0 } };
+static const GDBusInterfaceVTable powerprofile_vtable = { NULL, powerprofile_get_property, NULL, { 0 } };
+static const GDBusInterfaceVTable gamemode_vtable = { handle_gamemode, simple_version_get_property, NULL, { 0 } };
+static const GDBusInterfaceVTable memorymonitor_vtable = { NULL, simple_version_get_property, NULL, { 0 } };
+
 static InterfaceRegistration const interfaces[] = {
     { settings_introspection, &settings_vtable },
     { account_introspection, &account_vtable },
@@ -882,6 +1028,10 @@ static InterfaceRegistration const interfaces[] = {
     { openuri_introspection, &openuri_vtable },
     { notification_introspection, &notification_vtable },
     { portal_screencast_introspection, &screencast_vtable },
+    { realtime_introspection, &realtime_vtable },
+    { powerprofile_introspection, &powerprofile_vtable },
+    { gamemode_introspection, &gamemode_vtable },
+    { memorymonitor_introspection, &memorymonitor_vtable },
 };
 
 static void register_interfaces(Portal* portal, GDBusConnection* connection)

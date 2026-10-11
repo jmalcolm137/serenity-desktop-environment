@@ -40,6 +40,10 @@ This supersedes the earlier single-interface `tools/sde-settings-portal.c` (R4.4
 | `OpenURI` (v3) | `OpenURI`/`OpenDirectory`/`OpenFile` launch via `SDE_PORTAL_OPENER` (the session launcher) or GIO's default-app launch. |
 | `Notification` (v1) | `AddNotification`/`RemoveNotification` via `SDE_PORTAL_NOTIFIER` (the Serenity notify tool) or `notify-send`. |
 | `ScreenCast` (v4) | `CreateSession`/`SelectSources`/`Start`/`AvailableSourceTypes`/`AvailableCursorModes`. Captures an output **or a window** with the standard **`ext-image-copy-capture-v1`** and publishes a **PipeWire** video stream (`sde-screencast`); `Start` returns the stream node id + position/size/source_type/id. Cursor modes: hidden, embedded. |
+| `Realtime` (v1) | Grants high-priority/realtime threads (accepted). |
+| `PowerProfileMonitor` (v1) | `power-saver-enabled` (from `SDE_POWER_SAVER`). |
+| `GameMode` (v1) | `RegisterGame`/`UnregisterGame`/`QueryStatus` (reports not active). |
+| `MemoryMonitor` (v1) | `LowMemoryWarning` signal; `version` only. |
 
 ### ScreenCast pipeline (niri-inspired)
 
@@ -106,9 +110,8 @@ To reach and surpass `xdg-desktop-portal-kde`:
   InputCapture (`ext-image-copy-capture-v1` + PipeWire + compositor input
   injection).
 - **GlobalShortcuts** — compositor global-shortcut registration.
-- **DynamicLauncher**, **FileChooser** (native, via FileManager), **Print**,
-  **USB**, **Device**, **Realtime**, **Camera** (v2), **PowerProfileMonitor**,
-  **GameMode**, **MemoryMonitor**.
+- **DynamicLauncher**, **FileChooser** (native, via a **LibGUI** file dialog),
+  **Print** (LibGUI), **USB**, **Device**, **Camera** (v2).
 - A **permission store** integration and the `Request`/`Response` choreography for
   the interfaces that return a `handle`.
 
