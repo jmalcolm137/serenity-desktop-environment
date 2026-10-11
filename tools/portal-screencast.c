@@ -22,6 +22,8 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <gdk-pixbuf/gdk-pixbuf.h>
+#include <poll.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -844,4 +846,241 @@ GVariant* portal_screencast_get_property(GDBusConnection* connection, gchar cons
         return g_variant_new_uint32(4);
     g_set_error(error, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_PROPERTY, "unknown property %s", property_name);
     return NULL;
+}
+
+// --- one-shot screenshot (Screenshot portal) --------------------------------
+
+struct screenshot_capture {
+    int width;
+    int height;
+    uint32_t shm_format;
+    uint8_t* pixels;
+    size_t size;
+    int stride;
+    struct wl_shm* shm;
+    struct wl_buffer* buffer;
+    struct ext_image_copy_capture_frame_v1* frame;
+    int status; // 0 pending, 1 ready, -1 failed
+};
+
+static void shot_session_buffer_size(void* data, struct ext_image_copy_capture_session_v1* session, uint32_t width, uint32_t height)
+{
+    (void)session;
+    struct screenshot_capture* shot = data;
+    shot->width = (int)width;
+    shot->height = (int)height;
+}
+static void shot_session_shm_format(void* data, struct ext_image_copy_capture_session_v1* session, uint32_t format)
+{
+    (void)session;
+    struct screenshot_capture* shot = data;
+    if (shot->shm_format == 0)
+        shot->shm_format = format;
+}
+static void shot_session_dmabuf_device(void* data, struct ext_image_copy_capture_session_v1* session, struct wl_array* device)
+{
+    (void)data;
+    (void)session;
+    (void)device;
+}
+static void shot_session_dmabuf_format(void* data, struct ext_image_copy_capture_session_v1* session, uint32_t format, struct wl_array* modifiers)
+{
+    (void)data;
+    (void)session;
+    (void)format;
+    (void)modifiers;
+}
+static void shot_frame_transform(void* data, struct ext_image_copy_capture_frame_v1* frame, uint32_t transform)
+{
+    (void)data;
+    (void)frame;
+    (void)transform;
+}
+static void shot_frame_damage(void* data, struct ext_image_copy_capture_frame_v1* frame, int32_t x, int32_t y, int32_t width, int32_t height)
+{
+    (void)data;
+    (void)frame;
+    (void)x;
+    (void)y;
+    (void)width;
+    (void)height;
+}
+static void shot_frame_presentation_time(void* data, struct ext_image_copy_capture_frame_v1* frame, uint32_t sec_hi, uint32_t sec_lo, uint32_t nsec)
+{
+    (void)data;
+    (void)frame;
+    (void)sec_hi;
+    (void)sec_lo;
+    (void)nsec;
+}
+static void shot_frame_ready(void* data, struct ext_image_copy_capture_frame_v1* frame)
+{
+    struct screenshot_capture* shot = data;
+    shot->status = 1;
+    ext_image_copy_capture_frame_v1_destroy(frame);
+    shot->frame = NULL;
+}
+static void shot_frame_failed(void* data, struct ext_image_copy_capture_frame_v1* frame, uint32_t reason)
+{
+    (void)reason;
+    struct screenshot_capture* shot = data;
+    shot->status = -1;
+    ext_image_copy_capture_frame_v1_destroy(frame);
+    shot->frame = NULL;
+}
+static const struct ext_image_copy_capture_frame_v1_listener shot_frame_listener = {
+    .transform = shot_frame_transform,
+    .damage = shot_frame_damage,
+    .presentation_time = shot_frame_presentation_time,
+    .ready = shot_frame_ready,
+    .failed = shot_frame_failed,
+};
+static void shot_session_done(void* data, struct ext_image_copy_capture_session_v1* session)
+{
+    struct screenshot_capture* shot = data;
+    if (shot->width <= 0 || shot->height <= 0 || shot->shm_format == 0) {
+        shot->status = -1;
+        return;
+    }
+    shot->stride = shot->width * 4;
+    shot->size = (size_t)shot->stride * shot->height;
+    int fd = memfd_create("sde-screenshot", MFD_CLOEXEC);
+    if (fd < 0 || ftruncate(fd, (off_t)shot->size) != 0) {
+        shot->status = -1;
+        if (fd >= 0)
+            close(fd);
+        return;
+    }
+    shot->pixels = mmap(NULL, shot->size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (shot->pixels == MAP_FAILED) {
+        shot->pixels = NULL;
+        shot->status = -1;
+        close(fd);
+        return;
+    }
+    struct wl_shm_pool* pool = wl_shm_create_pool(shot->shm, fd, (int)shot->size);
+    shot->buffer = wl_shm_pool_create_buffer(pool, 0, shot->width, shot->height, shot->stride, shot->shm_format);
+    wl_shm_pool_destroy(pool);
+    close(fd);
+
+    shot->frame = ext_image_copy_capture_session_v1_create_frame(session);
+    ext_image_copy_capture_frame_v1_add_listener(shot->frame, &shot_frame_listener, shot);
+    ext_image_copy_capture_frame_v1_attach_buffer(shot->frame, shot->buffer);
+    ext_image_copy_capture_frame_v1_capture(shot->frame);
+}
+static void shot_session_stopped(void* data, struct ext_image_copy_capture_session_v1* session)
+{
+    (void)session;
+    struct screenshot_capture* shot = data;
+    if (shot->status == 0)
+        shot->status = -1;
+}
+static const struct ext_image_copy_capture_session_v1_listener shot_session_listener = {
+    .buffer_size = shot_session_buffer_size,
+    .shm_format = shot_session_shm_format,
+    .dmabuf_device = shot_session_dmabuf_device,
+    .dmabuf_format = shot_session_dmabuf_format,
+    .done = shot_session_done,
+    .stopped = shot_session_stopped,
+};
+
+// A dedicated registry for the one-shot screenshot connection.
+struct shot_globals {
+    struct wl_shm* shm;
+    struct ext_output_image_capture_source_manager_v1* source_manager;
+    struct ext_image_copy_capture_manager_v1* capture_manager;
+    struct wl_output* output;
+};
+
+static void shot_registry_global(void* data, struct wl_registry* registry, uint32_t name, char const* interface, uint32_t version)
+{
+    struct shot_globals* globals = data;
+    if (strcmp(interface, wl_shm_interface.name) == 0)
+        globals->shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
+    else if (strcmp(interface, ext_output_image_capture_source_manager_v1_interface.name) == 0)
+        globals->source_manager = wl_registry_bind(registry, name, &ext_output_image_capture_source_manager_v1_interface, 1);
+    else if (strcmp(interface, ext_image_copy_capture_manager_v1_interface.name) == 0)
+        globals->capture_manager = wl_registry_bind(registry, name, &ext_image_copy_capture_manager_v1_interface, 1);
+    else if (strcmp(interface, wl_output_interface.name) == 0 && !globals->output)
+        globals->output = wl_registry_bind(registry, name, &wl_output_interface, version);
+}
+static void shot_registry_global_remove(void* data, struct wl_registry* registry, uint32_t name)
+{
+    (void)data;
+    (void)registry;
+    (void)name;
+}
+static const struct wl_registry_listener shot_registry_listener = {
+    .global = shot_registry_global,
+    .global_remove = shot_registry_global_remove,
+};
+
+int portal_screencast_capture_png(char const* path)
+{
+    // A dedicated Wayland connection, so a one-shot capture never races the
+    // streaming capture thread on the shared display.
+    struct wl_display* display = wl_display_connect(NULL);
+    if (!display) {
+        fprintf(stderr, "xdg-desktop-portal-serenity: screenshot cannot connect to Wayland\n");
+        return -1;
+    }
+    struct wl_registry* registry = wl_display_get_registry(display);
+    struct shot_globals globals = { 0 };
+    wl_registry_add_listener(registry, &shot_registry_listener, &globals);
+    wl_display_roundtrip(display);
+    wl_display_roundtrip(display);
+
+    if (!globals.shm || !globals.source_manager || !globals.capture_manager || !globals.output) {
+        fprintf(stderr, "xdg-desktop-portal-serenity: screenshot missing capture globals\n");
+        wl_display_disconnect(display);
+        return -1;
+    }
+
+    struct screenshot_capture shot = { 0 };
+    shot.shm = globals.shm;
+    struct ext_image_capture_source_v1* source = ext_output_image_capture_source_manager_v1_create_source(globals.source_manager, globals.output);
+    struct ext_image_copy_capture_session_v1* session = ext_image_copy_capture_manager_v1_create_session(globals.capture_manager, source, 0);
+    ext_image_capture_source_v1_destroy(source);
+    ext_image_copy_capture_session_v1_add_listener(session, &shot_session_listener, &shot);
+
+    for (int i = 0; i < 300 && shot.status == 0; ++i) {
+        wl_display_flush(display);
+        struct pollfd pfd = { wl_display_get_fd(display), POLLIN, 0 };
+        if (poll(&pfd, 1, 20) > 0)
+            wl_display_dispatch(display);
+        else
+            wl_display_dispatch_pending(display);
+    }
+
+    int result = -1;
+    if (shot.status == 1 && shot.pixels && shot.width > 0 && shot.height > 0) {
+        GdkPixbuf* pixbuf = gdk_pixbuf_new(GDK_COLORSPACE_RGB, FALSE, 8, shot.width, shot.height);
+        if (pixbuf) {
+            guchar* dst = gdk_pixbuf_get_pixels(pixbuf);
+            int dst_stride = gdk_pixbuf_get_rowstride(pixbuf);
+            for (int y = 0; y < shot.height; ++y) {
+                for (int x = 0; x < shot.width; ++x) {
+                    uint8_t* src = shot.pixels + (size_t)y * shot.stride + (size_t)x * 4;
+                    guchar* out = dst + (size_t)y * dst_stride + (size_t)x * 3;
+                    out[0] = src[2]; // R (SHM is BGRA in memory)
+                    out[1] = src[1]; // G
+                    out[2] = src[0]; // B
+                }
+            }
+            if (gdk_pixbuf_save(pixbuf, path, "png", NULL, NULL))
+                result = 0;
+            g_object_unref(pixbuf);
+        }
+    }
+
+    if (shot.frame)
+        ext_image_copy_capture_frame_v1_destroy(shot.frame);
+    if (shot.buffer)
+        wl_buffer_destroy(shot.buffer);
+    if (shot.pixels)
+        munmap(shot.pixels, shot.size);
+    ext_image_copy_capture_session_v1_destroy(session);
+    wl_display_flush(display);
+    wl_display_disconnect(display);
+    return result;
 }

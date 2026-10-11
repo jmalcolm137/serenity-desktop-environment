@@ -113,6 +113,19 @@ else
     echo "  note: native-app-test not built; skipping the window-source check"
 fi
 
+echo "=== Screenshot portal ==="
+shot="$(call org.freedesktop.impl.portal.Screenshot.Screenshot /h app "" "{}")"
+check "uint32 0" "$shot"
+check "uri" "$shot"
+shot_uri="$(grep -oE "file://[^' ]+" <<<"$shot" | head -1)"
+shot_path="${shot_uri#file://}"
+if [ -n "$shot_uri" ] && [ -f "$shot_path" ]; then
+    echo "  ok: screenshot written to $shot_path"
+else
+    echo "  FAIL: screenshot file missing ($shot)"
+    fail=1
+fi
+
 echo "=== the PipeWire stream node exists ==="
 if command -v pw-cli >/dev/null 2>&1; then
     if pw-cli ls Node 2>/dev/null | grep -q "sde-screencast"; then

@@ -1093,6 +1093,60 @@ static void handle_filechooser(GDBusConnection* connection, const gchar* sender,
     return_response(invocation, response, &results);
 }
 
+// --- Screenshot -------------------------------------------------------------
+
+static const char screenshot_introspection[] =
+    "<node>"
+    "  <interface name='org.freedesktop.impl.portal.Screenshot'>"
+    "    <property name='version' type='u' access='read'/>"
+    "    <method name='Screenshot'>"
+    "      <arg type='o' name='handle' direction='in'/>"
+    "      <arg type='s' name='app_id' direction='in'/>"
+    "      <arg type='s' name='parent_window' direction='in'/>"
+    "      <arg type='a{sv}' name='options' direction='in'/>"
+    "      <arg type='u' name='response' direction='out'/>"
+    "      <arg type='a{sv}' name='results' direction='out'/>"
+    "    </method>"
+    "  </interface>"
+    "</node>";
+
+// Capture the screen (reusing the ScreenCast capture) into a PNG and return its
+// file:// URI.
+static void handle_screenshot(GDBusConnection* connection, const gchar* sender, const gchar* object_path,
+    const gchar* interface_name, const gchar* method_name, GVariant* parameters,
+    GDBusMethodInvocation* invocation, gpointer user_data)
+{
+    (void)connection;
+    (void)sender;
+    (void)object_path;
+    (void)interface_name;
+    (void)parameters;
+    (void)user_data;
+
+    GVariantBuilder results;
+    g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
+
+    if (g_strcmp0(method_name, "Screenshot") != 0) {
+        g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "unknown method %s", method_name);
+        return;
+    }
+
+    char const* runtime = g_get_user_runtime_dir();
+    gchar* path = g_strdup_printf("%s/sde-screenshot-%d.png", runtime ? runtime : "/tmp", (int)getpid());
+    int captured = portal_screencast_capture_png(path);
+    if (captured == 0) {
+        if (gchar* uri = g_filename_to_uri(path, NULL, NULL)) {
+            g_variant_builder_add(&results, "{sv}", "uri", g_variant_new_string(uri));
+            g_free(uri);
+            g_free(path);
+            return_response(invocation, RESPONSE_SUCCESS, &results);
+            return;
+        }
+    }
+    g_free(path);
+    return_response(invocation, RESPONSE_OTHER_ERROR, &results);
+}
+
 // --- Settings introspection -------------------------------------------------
 
 static const char settings_introspection[] =
@@ -1158,6 +1212,7 @@ static GVariant* filechooser_get_property(GDBusConnection* connection, const gch
 }
 
 static const GDBusInterfaceVTable filechooser_vtable = { handle_filechooser, filechooser_get_property, NULL, { 0 } };
+static const GDBusInterfaceVTable screenshot_vtable = { handle_screenshot, simple_version_get_property, NULL, { 0 } };
 
 static const GDBusInterfaceVTable realtime_vtable = { handle_realtime, simple_version_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable powerprofile_vtable = { NULL, powerprofile_get_property, NULL, { 0 } };
@@ -1181,6 +1236,7 @@ static InterfaceRegistration const interfaces[] = {
     { gamemode_introspection, &gamemode_vtable },
     { memorymonitor_introspection, &memorymonitor_vtable },
     { filechooser_introspection, &filechooser_vtable },
+    { screenshot_introspection, &screenshot_vtable },
 };
 
 static void register_interfaces(Portal* portal, GDBusConnection* connection)

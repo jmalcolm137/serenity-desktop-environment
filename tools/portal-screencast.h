@@ -19,3 +19,7 @@ void portal_screencast_method_call(GDBusConnection* connection, gchar const* sen
 
 GVariant* portal_screencast_get_property(GDBusConnection* connection, gchar const* sender, gchar const* object_path,
     gchar const* interface_name, gchar const* property_name, GError** error, gpointer user_data);
+
+// One-shot capture of the primary output into a PNG at `path`; returns 0 on
+// success. Used by the Screenshot portal.
+int portal_screencast_capture_png(char const* path);

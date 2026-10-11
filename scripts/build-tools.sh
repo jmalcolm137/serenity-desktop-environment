@@ -96,7 +96,7 @@ cc -O2 -Wall -I "$TOOLS_BUILD" -I "$SDE_ROOT/tools" \
     "$TOOLS_BUILD/ext-image-copy-capture-v1-protocol.c" \
     "$TOOLS_BUILD/ext-image-capture-source-v1-protocol.c" \
     "$TOOLS_BUILD/ext-foreign-toplevel-list-v1-protocol.c" \
-    $(pkg-config --cflags --libs gio-2.0 wayland-client libpipewire-0.3) \
+    $(pkg-config --cflags --libs gio-2.0 wayland-client libpipewire-0.3 gdk-pixbuf-2.0) \
     -lpthread \
     -o "$TOOLS_BUILD/xdg-desktop-portal-serenity"
 

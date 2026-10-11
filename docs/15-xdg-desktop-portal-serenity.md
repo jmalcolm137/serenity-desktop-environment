@@ -45,6 +45,7 @@ This supersedes the earlier single-interface `tools/sde-settings-portal.c` (R4.4
 | `GameMode` (v1) | `RegisterGame`/`UnregisterGame`/`QueryStatus` (reports not active). |
 | `MemoryMonitor` (v1) | `LowMemoryWarning` signal; `version` only. |
 | `FileChooser` (v2) | `OpenFile`/`SaveFile` (directory mode via the `directory` option) through the LibGUI **FileChooserDialog** app (`SDE_PORTAL_FILE_CHOOSER`); returns the chosen `uris`. |
+| `Screenshot` (v1) | `Screenshot` captures the primary output (via the ScreenCast capture pipeline, on its own Wayland connection) into a PNG and returns its `uri`. |
 
 ### ScreenCast pipeline (niri-inspired)
 
