@@ -133,7 +133,10 @@ table.
   measurement — and no perf-regression test.
 - **HiDPI is cross-repo (N5, host).** R6 lists it, but the real blocker is the
   LibWindowServer client backing-store scale (host M8), not compositor code; the
-  dependency must be stated explicitly.
+  dependency must be stated explicitly. An **integer output-scale stopgap** now
+  makes high-DPI panels usable (nearest-filtered 2x; see
+  [`13-native-session-and-aur-packaging.md`](13-native-session-and-aur-packaging.md)
+  Appendix A); the backing-store scale remains the real fix.
 
 ## 6. Architecture, observability & docs (R6)
 

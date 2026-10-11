@@ -238,3 +238,33 @@ RUNPATH to `/usr/lib/sde/lib`.
   `scripts/fetch-serenity.sh`.
 - Arch packaging — `PKGBUILD(5)`, `makepkg(8)`, `patchelf`, SDDM
   `wayland-sessions`.
+
+---
+
+## Appendix A — HiDPI stopgap (integer output scale)
+
+**Status:** implemented prototype · `WindowServer/src/main.cpp`
+
+Serenity's LibGUI has no fractional-scale support and its fonts are fixed
+bitmaps, so a 1x session on a high-DPI panel is unusably small. As a **stopgap**
+the compositor now integer-scales high-DPI outputs:
+
+- **Auto rule** (`auto_output_scale`): 2x when the panel's true DPI is `>= 144`
+  (from `phys_width`), else 1x; when the panel omits its physical size (common on
+  eDP) it falls back to `width >= 2560 && height >= 1600`. So 1080p/1440p stay
+  1x, while 1600p/1800p/4K scale 2x.
+- **Override:** `SDE_OUTPUT_SCALE=1|2` forces the factor (handy for tests).
+- **Crispness:** the content/chrome buffers the compositor creates (desktop
+  background, app surfaces, layer surfaces, popups, SSD frame, lock surface) are
+  set to `WLR_SCALE_FILTER_NEAREST`, so an integer upscale is pixel-doubling, not
+  bilinear-soft — and it is a no-op at 1x.
+- **Logical sizing:** the compositor now sizes its own surfaces from
+  `wlr_output_effective_resolution()` (logical), not `wlr_output->width/height`
+  (physical); the desktop background and lock surface were fixed for 2x.
+
+**This is a stopgap, not HiDPI support.** It closes no protocol surface (no
+`wp-fractional-scale-v1`, no `wp_viewporter`, no backing-store scale), so client
+text is upscaled rather than rendered at native resolution, fractional scaling is
+unsupported, and other 1x content (e.g. the cursor) is upscaled too. The real fix
+is the **LibWindowServer backing-store scale (host M8)** — see §10 above and
+[`08-compositor-gaps.md`](08-compositor-gaps.md) §5.

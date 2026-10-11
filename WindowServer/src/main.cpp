@@ -919,12 +919,37 @@ static void server_new_virtual_pointer(wl_listener* listener, void* data)
 // Compose the desktop background for an output: the theme's background colour,
 // optionally overlaid with a wallpaper image. Rebuilt only when the output size
 // changes.
+// Logical size of an output (physical resolution divided by scale). The scene is
+// laid out in logical coordinates, so anything we size or place ourselves must use
+// this, not wlr_output->width/height (which are physical pixels).
+static Gfx::IntSize output_logical_size(wlr_output* output)
+{
+    int width = 0;
+    int height = 0;
+    wlr_output_effective_resolution(output, &width, &height);
+    return { width, height };
+}
+
+// Nearest filtering makes an integer upscale crisp (pixel-doubling) instead of
+// bilinear-soft, and is a no-op at 1x. Applied to the app content and compositor
+// chrome buffers so the HiDPI stopgap looks sharp.
+static void set_buffer_nearest(struct wlr_scene_buffer* buffer, int, int, void*)
+{
+    wlr_scene_buffer_set_filter_mode(buffer, WLR_SCALE_FILTER_NEAREST);
+}
+
+static void use_nearest_filter(struct wlr_scene_node* node)
+{
+    wlr_scene_node_for_each_buffer(node, set_buffer_nearest, nullptr);
+}
+
 static void update_desktop_background(Server& server, Output& output)
 {
     if (!g_palette)
         return;
-    int width = output.output->width;
-    int height = output.output->height;
+    auto const logical = output_logical_size(output.output);
+    int width = logical.width();
+    int height = logical.height();
     if (width <= 0 || height <= 0)
         return;
 
@@ -969,6 +994,7 @@ static void update_desktop_background(Server& server, Output& output)
     } else {
         wlr_scene_buffer_set_buffer(output.background, buffer);
     }
+    use_nearest_filter(&output.background->node);
     wlr_buffer_drop(buffer);
     output.background_size = size;
 
@@ -1099,6 +1125,37 @@ static void output_commit(wl_listener* listener, void*)
     reconfigure_lock_surface(*output->server, output->output);
 }
 
+// --- HiDPI: integer output scale (stopgap) -------------------------------
+//
+// Scale a display by an integer factor (2x) on high-DPI panels and leave
+// everything else at 1x. Serenity's LibGUI has no fractional-scale support and
+// its fonts are fixed bitmaps, so an integer upscale of the 1x buffers is the
+// pragmatic way to make a HiDPI panel usable. This adds no protocol surface
+// (no wp-fractional-scale-v1, no backing-store scale); the real fix is the
+// LibWindowServer M8 work. See docs/13-native-session-and-aur-packaging.md.
+static float auto_output_scale(struct wlr_output* output, struct wlr_output_mode* mode)
+{
+    // Explicit override: SDE_OUTPUT_SCALE=1 disables, =2 forces.
+    if (auto const* env = getenv("SDE_OUTPUT_SCALE"); env && *env) {
+        char* end = nullptr;
+        double const value = strtod(env, &end);
+        if (end != env && value >= 1.0)
+            return static_cast<float>(value);
+    }
+
+    int const width = mode ? mode->width : output->width;
+    int const height = mode ? mode->height : output->height;
+
+    // Prefer the panel's physical size (true DPI) when it reports one...
+    if (output->phys_width > 0) {
+        double const dpi = width / (static_cast<double>(output->phys_width) / 25.4);
+        return dpi >= 144.0 ? 2.0f : 1.0f;
+    }
+    // ...but eDP panels often omit it, so fall back to a resolution threshold
+    // that keeps 1080p/1440p displays at 1x while catching 1600p/1800p/4K panels.
+    return (width >= 2560 && height >= 1600) ? 2.0f : 1.0f;
+}
+
 static void server_new_output(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
@@ -1110,8 +1167,15 @@ static void server_new_output(wl_listener* listener, void* data)
     wlr_output_state state;
     wlr_output_state_init(&state);
     wlr_output_state_set_enabled(&state, true);
-    if (auto* mode = wlr_output_preferred_mode(wlr_output))
+    auto* mode = wlr_output_preferred_mode(wlr_output);
+    if (mode)
         wlr_output_state_set_mode(&state, mode);
+    // HiDPI stopgap: integer-scale high-DPI panels (see auto_output_scale).
+    if (float const scale = auto_output_scale(wlr_output, mode); scale != 1.0f) {
+        wlr_output_state_set_scale(&state, scale);
+        dbgln("WindowServer: output '{}' is high-DPI — scaling {}x",
+            wlr_output->name ? wlr_output->name : "?", static_cast<int>(scale));
+    }
     wlr_output_commit_state(wlr_output, &state);
     wlr_output_state_finish(&state);
 
@@ -1134,7 +1198,8 @@ static void server_new_output(wl_listener* listener, void* data)
     if (!server->primary_output)
         server->primary_output = wlr_output;
 
-    dbgln("WindowServer: output '{}' {}x{}", wlr_output->name ? wlr_output->name : "?", wlr_output->width, wlr_output->height);
+    auto const logical_size = output_logical_size(wlr_output);
+    dbgln("WindowServer: output '{}' {}x{} @{}x", wlr_output->name ? wlr_output->name : "?", logical_size.width(), logical_size.height(), static_cast<int>(wlr_output->scale));
     server->outputs.append(move(output));
     update_desktop_background(*server, *server->outputs.last());
     arrange_layers(*server, wlr_output);
@@ -1287,6 +1352,7 @@ static void toplevel_update_frame(Toplevel& toplevel)
     } else {
         wlr_scene_buffer_set_buffer(toplevel.frame_buffer, buffer);
     }
+    use_nearest_filter(&toplevel.frame_buffer->node);
     wlr_buffer_drop(buffer);
 }
 
@@ -1982,6 +2048,7 @@ static void server_new_xdg_toplevel(wl_listener* listener, void* data)
     toplevel->scene_tree->node.data = toplevel.ptr();
     toplevel->content_tree = wlr_scene_xdg_surface_create(toplevel->scene_tree, xdg_toplevel->base);
     xdg_toplevel->base->data = toplevel->content_tree;
+    use_nearest_filter(&toplevel->content_tree->node);
 
     if (server->foreign_toplevel_manager) {
         toplevel->foreign_handle = wlr_foreign_toplevel_handle_v1_create(server->foreign_toplevel_manager);
@@ -2048,7 +2115,9 @@ static void server_new_xdg_popup(wl_listener* listener, void* data)
     if (!parent)
         return;
     auto* parent_tree = static_cast<wlr_scene_tree*>(parent->data);
-    xdg_popup->base->data = wlr_scene_xdg_surface_create(parent_tree, xdg_popup->base);
+    auto* popup_tree = wlr_scene_xdg_surface_create(parent_tree, xdg_popup->base);
+    xdg_popup->base->data = popup_tree;
+    use_nearest_filter(&popup_tree->node);
 
     popup->commit.notify = popup_commit;
     wl_signal_add(&xdg_popup->base->surface->events.commit, &popup->commit);
@@ -2244,6 +2313,7 @@ static void server_new_layer_surface(wl_listener* listener, void* data)
     dbgln("WindowServer: layer surface namespace='{}' layer={}", layer_surface->layer_namespace ? layer_surface->layer_namespace : "", layer_name);
     layer->scene = wlr_scene_layer_surface_v1_create(layer_parent, layer_surface);
     layer->scene->tree->node.data = layer.ptr();
+    use_nearest_filter(&layer->scene->tree->node);
     layer_surface->data = layer.ptr();
 
     layer->map.notify = layer_surface_map;
@@ -2612,16 +2682,16 @@ static void reconfigure_lock_surface(Server& server, wlr_output* output)
     if (!lock)
         return;
     // output.commit fires every frame; only reconfigure on a real size change.
-    Gfx::IntSize wanted { output->width, output->height };
+    Gfx::IntSize const wanted = output_logical_size(output);
     if (lock->configured_size == wanted)
         return;
     lock->configured_size = wanted;
     wlr_box box { };
     wlr_output_layout_get_box(server.output_layout, output, &box);
-    dbgln("WindowServer: lock surface re-configured for '{}' {}x{}", output->name ? output->name : "?", output->width, output->height);
+    dbgln("WindowServer: lock surface re-configured for '{}' {}x{}", output->name ? output->name : "?", wanted.width(), wanted.height());
     if (lock->scene)
         wlr_scene_node_set_position(&lock->scene->buffer->node, box.x, box.y);
-    wlr_session_lock_surface_v1_configure(lock->lock_surface, static_cast<uint32_t>(output->width), static_cast<uint32_t>(output->height));
+    wlr_session_lock_surface_v1_configure(lock->lock_surface, static_cast<uint32_t>(wanted.width()), static_cast<uint32_t>(wanted.height()));
 }
 
 static void lock_surface_commit(wl_listener* listener, void*)
@@ -2677,6 +2747,7 @@ static void session_lock_new_surface(wl_listener* listener, void* data)
     entry->server = server;
     entry->lock_surface = lock_surface;
     entry->scene = wlr_scene_surface_create(server->overlay_tree, lock_surface->surface);
+    use_nearest_filter(&entry->scene->buffer->node);
     wlr_box box { };
     if (output)
         wlr_output_layout_get_box(server->output_layout, output, &box);
@@ -2689,8 +2760,9 @@ static void session_lock_new_surface(wl_listener* listener, void* data)
     wl_signal_add(&lock_surface->events.destroy, &entry->destroy);
 
     if (output) {
-        entry->configured_size = { static_cast<int>(output->width), static_cast<int>(output->height) };
-        wlr_session_lock_surface_v1_configure(lock_surface, static_cast<uint32_t>(output->width), static_cast<uint32_t>(output->height));
+        auto const wanted = output_logical_size(output);
+        entry->configured_size = wanted;
+        wlr_session_lock_surface_v1_configure(lock_surface, static_cast<uint32_t>(wanted.width()), static_cast<uint32_t>(wanted.height()));
     }
 
     server->lock_surfaces.append(move(entry));
