@@ -692,6 +692,14 @@ static const char openuri_introspection[] =
     "      <arg type='u' name='response' direction='out'/>"
     "      <arg type='a{sv}' name='results' direction='out'/>"
     "    </method>"
+    "    <method name='Activate'>"
+    "      <arg type='o' name='handle' direction='in'/>"
+    "      <arg type='s' name='app_id' direction='in'/>"
+    "      <arg type='s' name='parent_window' direction='in'/>"
+    "      <arg type='a{sv}' name='options' direction='in'/>"
+    "      <arg type='u' name='response' direction='out'/>"
+    "      <arg type='a{sv}' name='results' direction='out'/>"
+    "    </method>"
     "    <property name='version' type='u' access='read'/>"
     "  </interface>"
     "</node>";
@@ -713,6 +721,48 @@ static gboolean launch_uri(char const* uri)
     return ok;
 }
 
+// Materialise the file passed by fd (OpenFile) into a temporary readable path so
+// the opener can be handed a stable file:// URI. Returns a newly allocated path,
+// or NULL.
+static gchar* open_file_fd_to_temp(int index, GDBusMethodInvocation* invocation)
+{
+    GDBusMessage* message = g_dbus_method_invocation_get_message(invocation);
+    GUnixFDList* fd_list = message ? g_dbus_message_get_unix_fd_list(message) : NULL;
+    if (!fd_list)
+        return NULL;
+
+    GError* error = NULL;
+    gint fd = g_unix_fd_list_get(fd_list, index, &error);
+    if (fd < 0) {
+        if (error)
+            g_error_free(error);
+        return NULL;
+    }
+
+    gchar* path = g_build_filename(g_get_tmp_dir(), "sde-openfile-XXXXXX", NULL);
+    int out = g_mkstemp(path);
+    if (out < 0) {
+        close(fd);
+        g_free(path);
+        return NULL;
+    }
+    lseek(fd, 0, SEEK_SET);
+    char buffer[65536];
+    ssize_t n;
+    while ((n = read(fd, buffer, sizeof(buffer))) > 0) {
+        ssize_t off = 0;
+        while (off < n) {
+            ssize_t written = write(out, buffer + off, (size_t)(n - off));
+            if (written <= 0)
+                break;
+            off += written;
+        }
+    }
+    close(out);
+    close(fd);
+    return path;
+}
+
 static void handle_openuri(GDBusConnection* connection, const gchar* sender, const gchar* object_path,
     const gchar* interface_name, const gchar* method_name, GVariant* parameters,
     GDBusMethodInvocation* invocation, gpointer user_data)
@@ -724,24 +774,53 @@ static void handle_openuri(GDBusConnection* connection, const gchar* sender, con
     (void)user_data;
 
     char const* uri = NULL;
+    gchar* temp_path = NULL;
+    gchar* temp_uri = NULL;
+
     if (g_strcmp0(method_name, "OpenURI") == 0 || g_strcmp0(method_name, "OpenDirectory") == 0) {
         g_variant_get(parameters, "(o&s&s@a{sv})", NULL, NULL, &uri, NULL);
     } else if (g_strcmp0(method_name, "OpenFile") == 0) {
-        // OpenFile passes an fd; build a file:// URI from /proc/self/fd/N.
-        gint fd = -1;
-        g_variant_get(parameters, "(os h@a{sv})", NULL, NULL, &fd, NULL);
-        static char fd_uri[64];
-        g_snprintf(fd_uri, sizeof(fd_uri), "file:///proc/self/fd/%d", fd);
-        uri = fd_uri;
+        // Resolve the handle to a real fd via the message's fd list, materialise
+        // it, and open the resulting file:// URI.
+        gint32 index = -1;
+        g_variant_get(parameters, "(o&s&sh@a{sv})", NULL, NULL, &index, NULL);
+        temp_path = open_file_fd_to_temp(index, invocation);
+        if (temp_path) {
+            temp_uri = g_filename_to_uri(temp_path, NULL, NULL);
+            uri = temp_uri;
+        }
+    } else if (g_strcmp0(method_name, "Activate") == 0) {
+        // Activate an installed application by its app id (desktop file id).
+        char const* app_id = NULL;
+        g_variant_get(parameters, "(o&s&s@a{sv})", NULL, &app_id, NULL, NULL);
+        gboolean launched = FALSE;
+        if (app_id && *app_id) {
+            char const* opener = getenv("SDE_PORTAL_OPENER");
+            if (opener && *opener) {
+                gchar* argv[] = { (gchar*)opener, (gchar*)app_id, NULL };
+                launched = g_spawn_async(NULL, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
+            } else {
+                gchar* argv[] = { (gchar*)"gio", (gchar*)"launch", (gchar*)app_id, NULL };
+                launched = g_spawn_async(NULL, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
+            }
+        }
+        g_free(temp_path);
+        g_free(temp_uri);
+        GVariantBuilder results;
+        g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
+        return_response(invocation, launched ? RESPONSE_SUCCESS : RESPONSE_OTHER_ERROR, &results);
+        return;
     } else {
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "unknown method %s", method_name);
         return;
     }
 
     gboolean opened = uri && launch_uri(uri);
+    g_free(temp_path);
+    g_free(temp_uri);
     GVariantBuilder results;
     g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
-    g_dbus_method_invocation_return_value(invocation, g_variant_new("(ua{sv})", opened ? RESPONSE_SUCCESS : RESPONSE_OTHER_ERROR, &results));
+    return_response(invocation, opened ? RESPONSE_SUCCESS : RESPONSE_OTHER_ERROR, &results);
 }
 
 static GVariant* openuri_get_property(GDBusConnection* connection, const gchar* sender, const gchar* object_path,
@@ -991,6 +1070,16 @@ static const char filechooser_introspection[] =
     "      <arg type='u' name='response' direction='out'/>"
     "      <arg type='a{sv}' name='results' direction='out'/>"
     "    </method>"
+    "    <method name='SaveFiles'>"
+    "      <arg type='o' name='handle' direction='in'/>"
+    "      <arg type='s' name='app_id' direction='in'/>"
+    "      <arg type='s' name='parent_window' direction='in'/>"
+    "      <arg type='s' name='title' direction='in'/>"
+    "      <arg type='a{sv}' name='options' direction='in'/>"
+    "      <arg type='as' name='files' direction='in'/>"
+    "      <arg type='u' name='response' direction='out'/>"
+    "      <arg type='a{sv}' name='results' direction='out'/>"
+    "    </method>"
     "  </interface>"
     "</node>";
 
@@ -1008,7 +1097,7 @@ static void handle_filechooser(GDBusConnection* connection, const gchar* sender,
     GVariantBuilder results;
     g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
 
-    if (g_strcmp0(method_name, "OpenFile") != 0 && g_strcmp0(method_name, "SaveFile") != 0) {
+    if (g_strcmp0(method_name, "OpenFile") != 0 && g_strcmp0(method_name, "SaveFile") != 0 && g_strcmp0(method_name, "SaveFiles") != 0) {
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "unknown method %s", method_name);
         return;
     }
@@ -1018,7 +1107,12 @@ static void handle_filechooser(GDBusConnection* connection, const gchar* sender,
     char const* parent_window = NULL;
     char const* title = NULL;
     GVariant* options = NULL;
-    g_variant_get(parameters, "(o&s&s&s@a{sv})", &handle, &app_id, &parent_window, &title, &options);
+    GVariant* files = NULL;
+    gboolean const is_save_files = g_strcmp0(method_name, "SaveFiles") == 0;
+    if (is_save_files)
+        g_variant_get(parameters, "(o&s&s&s@a{sv}@as)", &handle, &app_id, &parent_window, &title, &options, &files);
+    else
+        g_variant_get(parameters, "(o&s&s&s@a{sv})", &handle, &app_id, &parent_window, &title, &options);
 
     gboolean multiple = FALSE;
     gboolean directory = FALSE;
@@ -1030,18 +1124,23 @@ static void handle_filechooser(GDBusConnection* connection, const gchar* sender,
         g_variant_lookup(options, "current_name", "&s", &current_name);
         current_folder = g_variant_lookup_value(options, "current_folder", G_VARIANT_TYPE_BYTESTRING);
     }
+    // SaveFiles names the files to save; use the first as the suggested name.
+    if (is_save_files && files && g_variant_n_children(files) > 0)
+        g_variant_get_child(files, 0, "&s", &current_name);
 
     char const* chooser = getenv("SDE_PORTAL_FILE_CHOOSER");
     if (!chooser || !*chooser) {
         if (current_folder)
             g_variant_unref(current_folder);
+        if (files)
+            g_variant_unref(files);
         if (options)
             g_variant_unref(options);
         return_response(invocation, RESPONSE_OTHER_ERROR, &results);
         return;
     }
 
-    char const* mode = (g_strcmp0(method_name, "SaveFile") == 0) ? "save" : (directory ? "folder" : "open");
+    char const* mode = (g_strcmp0(method_name, "OpenFile") == 0) ? (directory ? "folder" : "open") : "save";
     gchar* folder_arg = current_folder ? g_strdup(g_variant_get_bytestring(current_folder)) : g_strdup(g_get_home_dir());
     gchar* name_arg = g_strdup(current_name && *current_name ? current_name : "Untitled");
     gchar* title_arg = g_strdup(title && *title ? title : "Select File");
@@ -1070,14 +1169,30 @@ static void handle_filechooser(GDBusConnection* connection, const gchar* sender,
     if (ok && out && g_spawn_check_wait_status(wait_status, NULL)) {
         gchar* path = g_strstrip(out);
         if (*path) {
+            GVariantBuilder uris;
+            g_variant_builder_init(&uris, G_VARIANT_TYPE("as"));
             if (gchar* uri = g_filename_to_uri(path, NULL, NULL)) {
-                GVariantBuilder uris;
-                g_variant_builder_init(&uris, G_VARIANT_TYPE("as"));
                 g_variant_builder_add(&uris, "s", uri);
-                g_variant_builder_add(&results, "{sv}", "uris", g_variant_builder_end(&uris));
                 g_free(uri);
-                response = RESPONSE_SUCCESS;
             }
+            // SaveFiles: the remaining files are placed next to the chosen one.
+            if (is_save_files && files) {
+                gchar* dir = g_path_get_dirname(path);
+                gsize count = g_variant_n_children(files);
+                for (gsize i = 1; i < count; ++i) {
+                    char const* name = NULL;
+                    g_variant_get_child(files, i, "&s", &name);
+                    gchar* joined = g_build_filename(dir, name, NULL);
+                    if (gchar* uri = g_filename_to_uri(joined, NULL, NULL)) {
+                        g_variant_builder_add(&uris, "s", uri);
+                        g_free(uri);
+                    }
+                    g_free(joined);
+                }
+                g_free(dir);
+            }
+            g_variant_builder_add(&results, "{sv}", "uris", g_variant_builder_end(&uris));
+            response = RESPONSE_SUCCESS;
         }
     } else if (error) {
         response = RESPONSE_OTHER_ERROR;
@@ -1091,6 +1206,8 @@ static void handle_filechooser(GDBusConnection* connection, const gchar* sender,
         g_error_free(error);
     if (current_folder)
         g_variant_unref(current_folder);
+    if (files)
+        g_variant_unref(files);
     if (options)
         g_variant_unref(options);
 
@@ -1899,7 +2016,7 @@ static GVariant* filechooser_get_property(GDBusConnection* connection, const gch
     (void)object_path;
     (void)interface_name;
     (void)user_data;
-    return generic_version_property(property_name, error, 2); // OpenFile, SaveFile
+    return generic_version_property(property_name, error, 3); // OpenFile, SaveFile, SaveFiles
 }
 
 static GVariant* screenshot_get_property(GDBusConnection* connection, const gchar* sender, const gchar* object_path,

@@ -118,6 +118,13 @@ check "uint32 0" "$filechooser"
 check "uris" "$filechooser"
 check "picked.txt" "$filechooser"
 
+echo "=== FileChooser SaveFiles (v3) ==="
+savefiles="$(call org.freedesktop.impl.portal.FileChooser.SaveFiles /h app "" "Save" "{}" "['first.txt', 'second.txt']")"
+check "uint32 0" "$savefiles"
+check "uris" "$savefiles"
+check "picked.txt" "$savefiles"
+check "second.txt" "$savefiles"
+
 echo "=== Print ==="
 print_result="$(call org.freedesktop.impl.portal.Print.PreparePrint /h app "" "Doc" "{}" "{}" "{}")"
 check "uint32 0" "$print_result"
@@ -161,8 +168,12 @@ else
 fi
 
 echo "=== OpenURI ==="
-check "uint32 0" "$(call org.freedesktop.impl.portal.OpenURI.OpenURI /x "" https://example.com "{}")"sleep 0.3
+check "uint32 0" "$(call org.freedesktop.impl.portal.OpenURI.OpenURI /x "" https://example.com "{}")"
+sleep 0.3
 check "https://example.com" "$(cat "$RUNTIME/opened.txt" 2>/dev/null || echo '(no opener call)')"
+check "uint32 0" "$(call org.freedesktop.impl.portal.OpenURI.Activate /h app "" "{}")"
+sleep 0.3
+check "app" "$(cat "$RUNTIME/opened.txt" 2>/dev/null || echo '(no opener call)')"
 
 echo "=== Notification ==="
 call org.freedesktop.impl.portal.Notification.AddNotification id "{'title': <'Hello'>, 'body': <'World'>}" >/dev/null
