@@ -94,7 +94,8 @@ via `SDE_PORTAL_FILE_CHOOSER`. The **Print** dialog is `PrintDialog/`
 (`scripts/build-color-picker.sh`), and the application chooser is
 `AppChooserDialog/` (`scripts/build-app-chooser-dialog.sh`). The interactive
 screenshot area selector is `ScreenshotOverlay/`
-(`scripts/build-screenshot-overlay.sh`).
+(`scripts/build-screenshot-overlay.sh`). `scripts/build-portal-apps.sh` builds
+all of them in one go.
 
 > Note: programmatic widgets that draw text (such as `GUI::Label`) are only
 > visible when the root widget paints the window background, so the dialogs call

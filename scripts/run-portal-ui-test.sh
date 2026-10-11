@@ -14,9 +14,7 @@ SHOT="$SDE_ROOT/build/tools/sde-screenshot"
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 "$SDE_ROOT/scripts/build-tools.sh" >/dev/null
-for app in access-dialog print-dialog app-chooser-dialog color-picker screen-cast-chooser file-chooser-dialog; do
-    "$SDE_ROOT/scripts/build-$app.sh" >/dev/null
-done
+"$SDE_ROOT/scripts/build-portal-apps.sh" >/dev/null
 
 if ! command -v convert >/dev/null 2>&1; then
     echo "==> portal UI test SKIPPED (ImageMagick convert not found)"
