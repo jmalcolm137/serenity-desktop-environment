@@ -29,7 +29,7 @@ This supersedes the earlier single-interface `tools/sde-settings-portal.c` (R4.4
 
 | Interface | Behaviour |
 |---|---|
-| `Settings` (v2) | `color-scheme` (from the active theme's `Window` luminance), `accent-color` (theme `Accent`/`Selection`), `contrast` — read from the theme broker (`$XDG_RUNTIME_DIR/sde-theme`). |
+| `Settings` (v2) | `color-scheme` (from the active theme's `Window` luminance), `accent-color` (theme `Accent`/`Selection`), `contrast` — read from the theme broker (`$XDG_RUNTIME_DIR/sde-theme`); `SettingChanged` is emitted when the broker changes. |
 | `Account` (v1) | `GetUserInformation` from the passwd entry (`name`, `id`; `image` empty). |
 | `Lockdown` (v1) | Read-only properties; false by default, overridable by `SDE_PORTAL_LOCKDOWN_*`. |
 | `Background` (v1) | `ApplicationName`/`ApplicationID`; `SetStatus`; `SetAutostart` writes an XDG autostart entry (the SDE supervisor honours XDG autostart); `SetWallpaperURI` writes the compositor wallpaper state. |

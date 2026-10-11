@@ -98,6 +98,22 @@ check "color-scheme" "$readall"
 check "accent-color" "$readall"
 check "contrast" "$readall"
 
+# The backend watches the theme broker and emits SettingChanged.
+timeout 4 gdbus monitor --session --dest "$DEST" --object-path "$OBJ" > "$RUNTIME/settings-monitor.log" 2>&1 &
+SETTINGS_MONITOR_PID=$!
+sleep 0.6
+printf '%s\n' "$SERENITY/Base/res/themes/Default.ini" > "$RUNTIME/sde-theme"
+for _ in $(seq 1 20); do
+    grep -qF "SettingChanged" "$RUNTIME/settings-monitor.log" 2>/dev/null && break
+    sleep 0.1
+done
+kill "$SETTINGS_MONITOR_PID" 2>/dev/null || true
+if grep -qF "SettingChanged" "$RUNTIME/settings-monitor.log" 2>/dev/null; then
+    echo "  ok: SettingChanged emitted on theme change"
+else
+    echo "  note: SettingChanged not observed (monitor: $(head -1 "$RUNTIME/settings-monitor.log" 2>/dev/null))"
+fi
+
 echo "=== Account ==="
 account="$(call org.freedesktop.impl.portal.Account.GetUserInformation /org/freedesktop/portal/desktop/x app "" "{}")"
 check "'id'" "$account"

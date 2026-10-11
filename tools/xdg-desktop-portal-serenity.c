@@ -2183,12 +2183,51 @@ static void register_interfaces(Portal* portal, GDBusConnection* connection)
     }
 }
 
+static GFileMonitor* g_theme_monitor = NULL;
+
+// Emit Settings.SettingChanged for the appearance keys when the theme broker
+// changes, so the frontend can tell applications the theme switched.
+static void emit_appearance_changed(GDBusConnection* connection)
+{
+    guint32 color_scheme = 2;
+    double ar = 0;
+    double ag = 0;
+    double ab = 0;
+    read_appearance(&color_scheme, &ar, &ag, &ab);
+    g_dbus_connection_emit_signal(connection, NULL, OBJECT_PATH,
+        "org.freedesktop.impl.portal.Settings", "SettingChanged",
+        g_variant_new("(sv)", APPEARANCE_NAMESPACE, g_variant_new_uint32(color_scheme)), NULL);
+    g_dbus_connection_emit_signal(connection, NULL, OBJECT_PATH,
+        "org.freedesktop.impl.portal.Settings", "SettingChanged",
+        g_variant_new("(sv)", APPEARANCE_NAMESPACE, g_variant_new("(ddd)", ar, ag, ab)), NULL);
+}
+
+static void on_theme_broker_changed(GFileMonitor* monitor, GFile* file, GFile* other_file,
+    GFileMonitorEvent event_type, gpointer user_data)
+{
+    (void)monitor;
+    (void)file;
+    (void)other_file;
+    (void)event_type;
+    emit_appearance_changed((GDBusConnection*)user_data);
+}
+
 static void on_bus_acquired(GDBusConnection* connection, const gchar* name, gpointer user_data)
 {
     (void)name;
     Portal* portal = user_data;
     portal->connection = connection;
     register_interfaces(portal, connection);
+
+    // Watch the theme broker (see Config/theme broker) for runtime theme switches.
+    gchar* broker = g_build_filename(g_get_user_runtime_dir(), "sde-theme", NULL);
+    GFile* broker_file = g_file_new_for_path(broker);
+    g_theme_monitor = g_file_monitor_file(broker_file, G_FILE_MONITOR_NONE, NULL, NULL);
+    if (g_theme_monitor)
+        g_signal_connect(g_theme_monitor, "changed", G_CALLBACK(on_theme_broker_changed), connection);
+    g_object_unref(broker_file);
+    g_free(broker);
+
     g_print("xdg-desktop-portal-serenity: serving %s on %s\n", OBJECT_PATH, BUS_NAME);
 }
 
