@@ -72,6 +72,9 @@ extern "C" {
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_foreign_toplevel_management_v1.h>
+#include <wlr/types/wlr_ext_workspace_v1.h>
+#include <wlr/types/wlr_ext_foreign_toplevel_list_v1.h>
+#include <wlr/types/wlr_xdg_activation_v1.h>
 #include <wlr/types/wlr_idle_inhibit_v1.h>
 #include <wlr/types/wlr_idle_notify_v1.h>
 #include <wlr/types/wlr_input_device.h>
@@ -1400,12 +1403,24 @@ static void layer_report_position(LayerSurface& layer)
         static_cast<int>(layer.scene->tree->node.x), static_cast<int>(layer.scene->tree->node.y));
 }
 
+static void toplevel_update_ext_foreign(Toplevel& toplevel)
+{
+    if (!toplevel.ext_foreign_handle)
+        return;
+    wlr_ext_foreign_toplevel_handle_v1_state state {
+        .title = toplevel.xdg_toplevel->title ? toplevel.xdg_toplevel->title : "",
+        .app_id = toplevel.xdg_toplevel->app_id ? toplevel.xdg_toplevel->app_id : "",
+    };
+    wlr_ext_foreign_toplevel_handle_v1_update_state(toplevel.ext_foreign_handle, &state);
+}
+
 static void toplevel_update_foreign(Toplevel& toplevel)
 {
-    if (!toplevel.foreign_handle)
-        return;
-    wlr_foreign_toplevel_handle_v1_set_title(toplevel.foreign_handle, toplevel.xdg_toplevel->title ? toplevel.xdg_toplevel->title : "");
-    wlr_foreign_toplevel_handle_v1_set_app_id(toplevel.foreign_handle, toplevel.xdg_toplevel->app_id ? toplevel.xdg_toplevel->app_id : "");
+    if (toplevel.foreign_handle) {
+        wlr_foreign_toplevel_handle_v1_set_title(toplevel.foreign_handle, toplevel.xdg_toplevel->title ? toplevel.xdg_toplevel->title : "");
+        wlr_foreign_toplevel_handle_v1_set_app_id(toplevel.foreign_handle, toplevel.xdg_toplevel->app_id ? toplevel.xdg_toplevel->app_id : "");
+    }
+    toplevel_update_ext_foreign(toplevel);
 }
 
 static void toplevel_update_frame(Toplevel& toplevel)
@@ -1629,6 +1644,8 @@ static void toplevel_destroy(wl_listener* listener, void*)
     wl_list_remove(&toplevel->foreign_request_close.link);
     if (toplevel->foreign_handle)
         wlr_foreign_toplevel_handle_v1_destroy(toplevel->foreign_handle);
+    if (toplevel->ext_foreign_handle)
+        wlr_ext_foreign_toplevel_handle_v1_destroy(toplevel->ext_foreign_handle);
     // The chrome resource may outlive the toplevel (the client owns it), so make
     // sure its destroy handler can't touch freed memory.
     if (toplevel->chrome)
@@ -2222,6 +2239,14 @@ static void server_new_xdg_toplevel(wl_listener* listener, void* data)
         wl_signal_add(&toplevel->foreign_handle->events.request_activate, &toplevel->foreign_request_activate);
         toplevel->foreign_request_close.notify = toplevel_foreign_request_close;
         wl_signal_add(&toplevel->foreign_handle->events.request_close, &toplevel->foreign_request_close);
+    }
+
+    if (server->ext_foreign_toplevel_list) {
+        wlr_ext_foreign_toplevel_handle_v1_state state {
+            .title = xdg_toplevel->title ? xdg_toplevel->title : "",
+            .app_id = xdg_toplevel->app_id ? xdg_toplevel->app_id : "",
+        };
+        toplevel->ext_foreign_handle = wlr_ext_foreign_toplevel_handle_v1_create(server->ext_foreign_toplevel_list, &state);
     }
 
     toplevel->map.notify = toplevel_map;
@@ -3056,6 +3081,98 @@ static void session_lock_new_lock(wl_listener* listener, void* data)
 
 // --- setup ----------------------------------------------------------------
 
+// --- R4.8: standard interop (ext-workspace-v1, xdg-activation-v1) ----------
+
+// Publish the SDE workspace grid over ext-workspace-v1: one group (the outputs)
+// and one workspace per grid cell, with grid coordinates and the active state.
+static void rebuild_ext_workspaces(Server& server)
+{
+    for (auto* workspace : server.ext_workspaces)
+        wlr_ext_workspace_handle_v1_destroy(workspace);
+    server.ext_workspaces.clear();
+    if (!server.ext_workspace_manager)
+        return;
+
+    if (!server.ext_workspace_group) {
+        server.ext_workspace_group = wlr_ext_workspace_group_handle_v1_create(server.ext_workspace_manager, 0);
+        for (auto& output : server.outputs)
+            wlr_ext_workspace_group_handle_v1_output_enter(server.ext_workspace_group, output->output);
+    }
+
+    u32 rows = WindowManager::workspace_rows();
+    u32 columns = WindowManager::workspace_columns();
+    u32 current_row = WindowManager::current_workspace_row();
+    u32 current_column = WindowManager::current_workspace_column();
+    for (u32 row = 0; row < rows; ++row) {
+        for (u32 column = 0; column < columns; ++column) {
+            auto id = ByteString::formatted("{},{}", row, column);
+            auto* workspace = wlr_ext_workspace_handle_v1_create(server.ext_workspace_manager, id.characters(), EXT_WORKSPACE_HANDLE_V1_WORKSPACE_CAPABILITIES_ACTIVATE);
+            auto name = ByteString::formatted("{}", row * columns + column + 1);
+            wlr_ext_workspace_handle_v1_set_name(workspace, name.characters());
+            uint32_t coordinates[2] = { column, row };
+            wlr_ext_workspace_handle_v1_set_coordinates(workspace, coordinates, 2);
+            wlr_ext_workspace_handle_v1_set_group(workspace, server.ext_workspace_group);
+            wlr_ext_workspace_handle_v1_set_active(workspace, row == current_row && column == current_column);
+            server.ext_workspaces.append(workspace);
+        }
+    }
+    dbgln("WindowServer: ext-workspace-v1 published {}x{} grid", rows, columns);
+}
+
+static void update_ext_workspace_active(Server& server)
+{
+    if (!server.ext_workspace_manager)
+        return;
+    u32 columns = max(1u, WindowManager::workspace_columns());
+    if (server.ext_workspaces.size() != WindowManager::workspace_rows() * columns) {
+        rebuild_ext_workspaces(server);
+        return;
+    }
+    u32 current_row = WindowManager::current_workspace_row();
+    u32 current_column = WindowManager::current_workspace_column();
+    for (size_t index = 0; index < server.ext_workspaces.size(); ++index) {
+        u32 row = static_cast<u32>(index) / columns;
+        u32 column = static_cast<u32>(index) % columns;
+        wlr_ext_workspace_handle_v1_set_active(server.ext_workspaces[index], row == current_row && column == current_column);
+    }
+}
+
+static void ext_workspace_commit(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, ext_workspace_commit);
+    auto* event = static_cast<wlr_ext_workspace_v1_commit_event*>(data);
+    wlr_ext_workspace_v1_request* request = nullptr;
+    wl_list_for_each(request, event->requests, link)
+    {
+        if (request->type != WLR_EXT_WORKSPACE_V1_REQUEST_ACTIVATE || !request->activate.workspace)
+            continue;
+        auto* workspace = request->activate.workspace;
+        if (workspace->coordinates.size < 2 * sizeof(uint32_t))
+            continue;
+        auto const* coordinates = static_cast<uint32_t const*>(workspace->coordinates.data);
+        dbgln("WindowServer: ext-workspace-v1 activate {},{}", coordinates[1], coordinates[0]);
+        WindowManager::switch_workspace(*server, coordinates[1], coordinates[0], false);
+    }
+}
+
+// xdg-activation-v1: a client asked to be focused. Switch to its workspace and
+// focus it.
+static void xdg_activation_activate(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, xdg_activation_activate);
+    auto* event = static_cast<wlr_xdg_activation_v1_request_activate_event*>(data);
+    for (auto& toplevel : server->toplevels) {
+        if (!toplevel->xdg_toplevel || toplevel->xdg_toplevel->base->surface != event->surface)
+            continue;
+        WindowManager::switch_workspace(*server, toplevel->workspace_row, toplevel->workspace_column, false);
+        focus_toplevel(*server, toplevel.ptr());
+        dbgln("WindowServer: xdg-activation focused '{}'", toplevel->xdg_toplevel->title ? toplevel->xdg_toplevel->title : "");
+        break;
+    }
+}
+
 static ErrorOr<void> initialize(Server& server)
 {
     server.display = wl_display_create();
@@ -3114,6 +3231,17 @@ static ErrorOr<void> initialize(Server& server)
     server.foreign_toplevel_manager = wlr_foreign_toplevel_manager_v1_create(server.display);
     wl_global_create(server.display, &serenity_window_manager_interface, 1, &server, serenity_window_manager_bind);
     SessionManager::initialize(server);
+
+    // R4.8: the standard interop surface. ext-workspace-v1 maps the SDE grid;
+    // ext-foreign-toplevel-list-v1 maps the window list; xdg-activation-v1 lets a
+    // client ask to be focused.
+    server.ext_workspace_manager = wlr_ext_workspace_manager_v1_create(server.display, 1);
+    server.ext_workspace_commit.notify = ext_workspace_commit;
+    wl_signal_add(&server.ext_workspace_manager->events.commit, &server.ext_workspace_commit);
+    server.ext_foreign_toplevel_list = wlr_ext_foreign_toplevel_list_v1_create(server.display, 1);
+    server.xdg_activation = wlr_xdg_activation_v1_create(server.display);
+    server.xdg_activation_activate.notify = xdg_activation_activate;
+    wl_signal_add(&server.xdg_activation->events.request_activate, &server.xdg_activation_activate);
 
     // Screen capture. Expose the standard ext-image-copy-capture-v1 (the primary,
     // portable capture surface) and the wlr-screencopy-unstable-v1 compat so
@@ -3522,7 +3650,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     if (!wm_server->listen(wm_portal))
         warnln("WindowServer: could not listen on {}", wm_portal);
     // Let the window manager call back into the compositor's focus/menu code.
-    WindowManager::set_host_hooks({ focus_toplevel, open_window_menu, primary_usable_area, toplevel_report_position, toplevel_begin_interactive, current_palette });
+    WindowManager::set_host_hooks({ focus_toplevel, open_window_menu, primary_usable_area, toplevel_report_position, toplevel_begin_interactive, current_palette, update_ext_workspace_active });
     WindowSwitcher::set_host_hooks({ current_palette, focus_toplevel, WindowManager::switch_workspace });
     AppletManager::set_host_hooks({ WindowManager::tell_wms_applet_area_size_changed, primary_usable_area, layer_report_position });
     // Bring the workspace grid up from the config, and follow later edits.

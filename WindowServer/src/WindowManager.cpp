@@ -565,6 +565,8 @@ void load_workspaces(Server& server)
     for (auto& toplevel : server.toplevels)
         update_toplevel_visibility(*toplevel);
     dbgln("WindowServer: workspaces {}x{}, current {},{}", s_rows, s_columns, s_current_row, s_current_column);
+    if (g_hooks.workspace_changed)
+        g_hooks.workspace_changed(server);
 }
 
 void switch_workspace(Server& server, u32 row, u32 column, bool carry_focused)
@@ -599,6 +601,8 @@ void switch_workspace(Server& server, u32 row, u32 column, bool carry_focused)
     for (auto& toplevel : server.toplevels)
         emit_window_state(*toplevel);
     emit_workspace_changed(server);
+    if (g_hooks.workspace_changed)
+        g_hooks.workspace_changed(server);
     dbgln("WindowServer: switched to workspace {},{}", row, column);
 }
 

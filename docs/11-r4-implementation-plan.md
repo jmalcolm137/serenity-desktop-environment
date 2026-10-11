@@ -143,7 +143,7 @@ R4 is delivered as **R4.1–R4.9**. Order is dependency-driven (see §4).
 | **R4.5** | **Display / output settings** (landed; fractional scale deferred) | Mode/scale/rotation/arrangement backend (Monitor tab) + fractional scale | R4.4 |
 | **R4.6** | **Input settings & keymaps** (landed) | libinput device config + keyboard layouts/keymap + MouseSettings | R4.4 |
 | **R4.7** | **Appearance, effects & fonts** (landed; cursor shapes deferred) | Scrollable fonts/zoom, Effects, cursor; exposed via Settings portal | R4.4 |
-| **R4.8** | **Workspaces & toplevels** | Workspaces tab drives the grid; expose `ext-workspace-v1` + `ext-foreign-toplevel-list-v1` | R4.4 |
+| **R4.8** | **Workspaces & toplevels** (landed) | Workspaces tab drives the grid; expose `ext-workspace-v1` + `ext-foreign-toplevel-list-v1` | R4.4 |
 | **R4.9** | **Applications enablement** | Terminal, SystemMonitor, CrashReporter/Debugger feasibility | R4.1–R4.3 |
 
 ### R4.1 — Session safety net
@@ -428,6 +428,18 @@ standard protocols become the primary interop surface. Pair activation with
 
 - **Exit test:** apply a grid change; the workspace picker and switching match;
   `waybar` (or a scripted `ext-workspace-v1` client) sees SDE's workspaces.
+
+> **Landed (R4.8).** Display Settings ▸ Workspaces reads the live grid and
+> `apply_workspace_settings` writes `[Workspaces]`, which the compositor
+> live-reloads and persists. The standard **`ext-workspace-v1`**
+> (`wlr_ext_workspace_v1`) publishes the grid — one group for the outputs and one
+> workspace per cell, with grid coordinates and the active state — and activation
+> requests switch the compositor. **`ext-foreign-toplevel-list-v1`** publishes the
+> window list (title/app_id), and **`xdg-activation-v1`** focuses a requesting
+> toplevel and switches to its workspace. The Serenity `WindowManagerServer` path
+> stays for the unmodified Taskbar/WorkspacePicker. Verified by
+> `scripts/run-workspaces-test.sh` (a scripted `ext-workspace-v1` client) and a
+> Workspaces-tab screenshot.
 
 ### R4.9 — Applications enablement
 

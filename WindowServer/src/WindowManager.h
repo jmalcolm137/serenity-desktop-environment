@@ -37,6 +37,9 @@ struct HostHooks {
     void (*begin_interactive)(Toplevel&, CursorMode, uint32_t edges) { nullptr };
     // WS2: the current theme palette, for the geometry HUD.
     Gfx::Palette const& (*palette)(Server&) { nullptr };
+    // R4.8: the current workspace or the grid changed, so the ext-workspace-v1
+    // state can be refreshed.
+    void (*workspace_changed)(Server&) { nullptr };
 };
 void set_host_hooks(HostHooks);
 

@@ -33,6 +33,14 @@ struct wlr_backend;
 struct wlr_cursor;
 struct wlr_foreign_toplevel_handle_v1;
 struct wlr_foreign_toplevel_manager_v1;
+// R4.8 standard interop protocols (ext-workspace-v1, ext-foreign-toplevel-list-v1,
+// xdg-activation-v1).
+struct wlr_ext_workspace_manager_v1;
+struct wlr_ext_workspace_group_handle_v1;
+struct wlr_ext_workspace_handle_v1;
+struct wlr_ext_foreign_toplevel_list_v1;
+struct wlr_ext_foreign_toplevel_handle_v1;
+struct wlr_xdg_activation_v1;
 struct wlr_idle_inhibit_manager_v1;
 struct wlr_idle_inhibitor_v1;
 struct wlr_idle_notifier_v1;
@@ -192,6 +200,8 @@ struct Toplevel {
     // most-recently-focused first (mirroring Serenity's window stack). WS3.
     u64 focus_order { 0 };
     wlr_foreign_toplevel_handle_v1* foreign_handle { nullptr };
+    // R4.8: the ext-foreign-toplevel-list handle (title/app_id), if exposed.
+    wlr_ext_foreign_toplevel_handle_v1* ext_foreign_handle { nullptr };
     wl_listener map { };
     wl_listener unmap { };
     wl_listener commit { };
@@ -308,6 +318,14 @@ struct Server {
     wlr_xdg_shell* xdg_shell { nullptr };
     wlr_layer_shell_v1* layer_shell { nullptr };
     wlr_foreign_toplevel_manager_v1* foreign_toplevel_manager { nullptr };
+    // R4.8: the standard interop surface. ext-workspace-v1 maps the SDE grid,
+    // ext-foreign-toplevel-list-v1 maps the window list, xdg-activation-v1 lets
+    // clients ask to be focused.
+    wlr_ext_workspace_manager_v1* ext_workspace_manager { nullptr };
+    wlr_ext_workspace_group_handle_v1* ext_workspace_group { nullptr };
+    Vector<wlr_ext_workspace_handle_v1*> ext_workspaces;
+    wlr_ext_foreign_toplevel_list_v1* ext_foreign_toplevel_list { nullptr };
+    wlr_xdg_activation_v1* xdg_activation { nullptr };
     wlr_output_manager_v1* output_manager { nullptr };
     // Virtual input (wlr virtual-keyboard / virtual-pointer), so headless tests
     // can script keyboard and pointer events. See docs/09 §2.4.
@@ -336,6 +354,8 @@ struct Server {
     wl_listener seat_request_set_selection { };
     wl_listener new_virtual_keyboard { };
     wl_listener new_virtual_pointer { };
+    wl_listener ext_workspace_commit { };
+    wl_listener xdg_activation_activate { };
 
     Vector<NonnullOwnPtr<Output>> outputs;
     Vector<NonnullOwnPtr<Toplevel>> toplevels;

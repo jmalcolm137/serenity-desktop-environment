@@ -46,6 +46,17 @@ cc -O2 -I "$TOOLS_BUILD" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/sde-screenshot"
 
+# ext-workspace-test (R4.8): a scripted ext-workspace-v1 client, so the standard
+# workspace protocol can be exercised without waybar.
+WS_XML="$WP/staging/ext-workspace/ext-workspace-v1.xml"
+wayland-scanner client-header "$WS_XML" "$TOOLS_BUILD/ext-workspace-v1-client-protocol.h"
+wayland-scanner private-code  "$WS_XML" "$TOOLS_BUILD/ext-workspace-v1-protocol.c"
+cc -O2 -I "$TOOLS_BUILD" \
+    "$SDE_ROOT/tools/ext-workspace-test.c" \
+    "$TOOLS_BUILD/ext-workspace-v1-protocol.c" \
+    $(pkg-config --cflags --libs wayland-client) \
+    -o "$TOOLS_BUILD/ext-workspace-test"
+
 # sde-settings-portal (R4.4): the SDE backend for the freedesktop Settings portal
 # (org.freedesktop.impl.portal.Settings) — reports color-scheme / accent-color /
 # contrast from the active SDE theme, so GTK/Qt/Flatpak apps follow it. Host
@@ -55,4 +66,4 @@ cc -O2 -Wall \
     $(pkg-config --cflags --libs gio-2.0) \
     -o "$TOOLS_BUILD/sde-settings-portal"
 
-echo "==> SDE tools: $TOOLS_BUILD/sde-idle $TOOLS_BUILD/sde-dpms $TOOLS_BUILD/sde-screenshot $TOOLS_BUILD/sde-settings-portal"
+echo "==> SDE tools: $TOOLS_BUILD/sde-idle $TOOLS_BUILD/sde-dpms $TOOLS_BUILD/sde-screenshot $TOOLS_BUILD/sde-settings-portal $TOOLS_BUILD/ext-workspace-test"
