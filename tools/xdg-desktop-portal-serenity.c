@@ -29,6 +29,7 @@
 #include <unistd.h>
 
 #include "portal-screencast.h"
+#include "portal-remote-desktop.h"
 
 #define BUS_NAME "org.freedesktop.impl.portal.desktop.serenity"
 #define OBJECT_PATH "/org/freedesktop/portal/desktop"
@@ -1410,6 +1411,7 @@ static GVariant* filechooser_get_property(GDBusConnection* connection, const gch
 static const GDBusInterfaceVTable filechooser_vtable = { handle_filechooser, filechooser_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable screenshot_vtable = { handle_screenshot, simple_version_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable print_vtable = { handle_print, simple_version_get_property, NULL, { 0 } };
+static const GDBusInterfaceVTable remote_desktop_vtable = { portal_remote_desktop_method_call, portal_remote_desktop_get_property, NULL, { 0 } };
 
 static const GDBusInterfaceVTable realtime_vtable = { handle_realtime, simple_version_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable powerprofile_vtable = { NULL, powerprofile_get_property, NULL, { 0 } };
@@ -1435,6 +1437,7 @@ static InterfaceRegistration const interfaces[] = {
     { filechooser_introspection, &filechooser_vtable },
     { screenshot_introspection, &screenshot_vtable },
     { print_introspection, &print_vtable },
+    { portal_remote_desktop_introspection, &remote_desktop_vtable },
 };
 
 static void register_interfaces(Portal* portal, GDBusConnection* connection)

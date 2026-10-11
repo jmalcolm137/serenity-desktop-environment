@@ -1084,3 +1084,28 @@ int portal_screencast_capture_png(char const* path)
     wl_display_disconnect(display);
     return result;
 }
+
+int portal_screencast_start_for_session(char const* session_handle, guint32* node_id, int* width, int* height, guint32* source_type)
+{
+    struct session* session = find_session(session_handle);
+    if (!session)
+        return -1;
+    session->capture = begin_capture(&g_state, session);
+    if (!session->capture)
+        return -1;
+    for (int i = 0; i < 100 && g_state.stream_node_id <= 0; ++i) {
+        wl_display_flush(g_state.display);
+        usleep(10000);
+    }
+    if (g_state.stream_node_id <= 0)
+        return -1;
+    if (node_id)
+        *node_id = (guint32)g_state.stream_node_id;
+    if (width)
+        *width = g_state.stream_width;
+    if (height)
+        *height = g_state.stream_height;
+    if (source_type)
+        *source_type = session->capture->source_type;
+    return 0;
+}

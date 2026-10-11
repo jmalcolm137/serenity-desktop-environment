@@ -113,6 +113,20 @@ else
     echo "  note: native-app-test not built; skipping the window-source check"
 fi
 
+echo "=== RemoteDesktop portal ==="
+RD="org.freedesktop.impl.portal.RemoteDesktop"
+check "uint32 0" "$(call "$RD.CreateSession" /h /org/freedesktop/portal/desktop/session/rd app "{}")"
+check "uint32 0" "$(call "$RD.SelectDevices" /h /org/freedesktop/portal/desktop/session/rd app "{'types': <uint32 3>}")"
+rd_start="$(call "$RD.Start" /h /org/freedesktop/portal/desktop/session/rd app "" "{}")"
+check "uint32 0" "$rd_start"
+check "'devices'" "$rd_start"
+call "$RD.NotifyKeyboardKeycode" /org/freedesktop/portal/desktop/session/rd "{}" 30 1 >/dev/null
+call "$RD.NotifyKeyboardKeycode" /org/freedesktop/portal/desktop/session/rd "{}" 30 0 >/dev/null
+call "$RD.NotifyPointerMotion" /org/freedesktop/portal/desktop/session/rd "{}" 5.0 5.0 >/dev/null
+sleep 0.3
+check "virtual keyboard connected" "$(cat "$RUNTIME/comp.log")"
+check "virtual pointer connected" "$(cat "$RUNTIME/comp.log")"
+
 echo "=== Screenshot portal ==="
 shot="$(call org.freedesktop.impl.portal.Screenshot.Screenshot /h app "" "{}")"
 check "uint32 0" "$shot"

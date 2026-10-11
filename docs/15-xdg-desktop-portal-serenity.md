@@ -47,6 +47,7 @@ This supersedes the earlier single-interface `tools/sde-settings-portal.c` (R4.4
 | `FileChooser` (v2) | `OpenFile`/`SaveFile` (directory mode via the `directory` option) through the LibGUI **FileChooserDialog** app (`SDE_PORTAL_FILE_CHOOSER`); returns the chosen `uris`. |
 | `Screenshot` (v1) | `Screenshot` captures the primary output (via the ScreenCast capture pipeline, on its own Wayland connection) into a PNG and returns its `uri`. |
 | `Print` (v1) | `PreparePrint` via the LibGUI **PrintDialog** app (`SDE_PORTAL_PRINT_DIALOG`; printers from `lpstat`); `Print` feeds the document fd to `SDE_PORTAL_PRINT_CMD` (e.g. `lp`). |
+| `RemoteDesktop` (v2) | `CreateSession`/`SelectDevices`/`Start` (devices + the paired ScreenCast stream) and the `Notify*` input methods — pointer motion/absolute/button/axis and keyboard keycodes — injected via `wlr-virtual-pointer` / `virtual-keyboard`. `ConnectToEIS` (libei) is not supported, so apps use the `Notify*` methods. |
 
 ### ScreenCast pipeline (niri-inspired)
 
@@ -113,10 +114,10 @@ org.freedesktop.appearance color-scheme` is served by this backend.
 
 To reach and surpass `xdg-desktop-portal-kde`:
 
-- **ScreenCast / RemoteDesktop / InputCapture** — ScreenCast (monitor) landed
-  (see above); DMA-BUF + cursor modes + window sources, then RemoteDesktop /
-  InputCapture (`ext-image-copy-capture-v1` + PipeWire + compositor input
-  injection).
+- **ScreenCast / RemoteDesktop / InputCapture** — ScreenCast (monitor + window,
+  hidden/embedded cursor) and **RemoteDesktop** (input injection via the virtual
+  pointer/keyboard) landed. Remaining: **InputCapture** (needs compositor input
+  routing or libei), DMA-BUF + the metadata cursor mode, `pipewire-serial` (v6).
 - **GlobalShortcuts** — compositor global-shortcut registration.
 - **DynamicLauncher**, **USB**, **Device**, **Camera** (v2).
 - A **permission store** integration and the `Request`/`Response` choreography for

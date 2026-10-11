@@ -23,3 +23,8 @@ GVariant* portal_screencast_get_property(GDBusConnection* connection, gchar cons
 // One-shot capture of the primary output into a PNG at `path`; returns 0 on
 // success. Used by the Screenshot portal.
 int portal_screencast_capture_png(char const* path);
+
+// Start the capture for an existing ScreenCast session (identified by its object
+// path) and report the resulting PipeWire stream. Used by the RemoteDesktop
+// portal, which pairs input with the ScreenCast video. Returns 0 on success.
+int portal_screencast_start_for_session(char const* session_handle, guint32* node_id, int* width, int* height, guint32* source_type);
