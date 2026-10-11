@@ -165,6 +165,20 @@ shortcuts_ini="$(cat "$RUNTIME/global-shortcuts.ini" 2>/dev/null || echo '(no in
 check "Trigger=Ctrl+Alt+t" "$shortcuts_ini"
 check "Session=/org/freedesktop/portal/desktop/session/gs" "$shortcuts_ini"
 
+# The compositor reports activations over the session FIFO; the backend emits
+# Activated. Observe it with gdbus monitor.
+timeout 4 gdbus monitor --session --dest "$DEST" --object-path "$OBJ" > "$RUNTIME/gs-monitor.log" 2>&1 &
+GS_MONITOR_PID=$!
+sleep 0.6
+printf '%s\tshortcut1\n' "/org/freedesktop/portal/desktop/session/gs" > "$RUNTIME/sde-global-shortcuts.fifo"
+for _ in $(seq 1 20); do
+    grep -qF "Activated" "$RUNTIME/gs-monitor.log" 2>/dev/null && break
+    sleep 0.1
+done
+kill "$GS_MONITOR_PID" 2>/dev/null || true
+check "Activated" "$(cat "$RUNTIME/gs-monitor.log" 2>/dev/null || echo '(no activation)')"
+check "shortcut1" "$(cat "$RUNTIME/gs-monitor.log" 2>/dev/null || echo '(no activation)')"
+
 echo "=== Wallpaper ==="
 wallpaper_png="$SERENITY/Base/res/icons/16x16/app-mouse.png"
 wp="$(call org.freedesktop.impl.portal.Wallpaper.SetWallpaper /h app "" "file://$wallpaper_png" "{}")"
