@@ -151,6 +151,18 @@ else
     echo "  ok: no restart on SIGTERM"
 fi
 
+echo "== (G) degraded environment: capability probe =="
+mkdir -p "$RUNTIME/caps"
+env SDE_SEAT_BACKEND=builtin \
+    SDE_LOGINCTL_CMD=/bin/false \
+    XDG_RUNTIME_DIR="$RUNTIME/caps" \
+    DBUS_SESSION_BUS_ADDRESS= \
+    "$SDE_ROOT/scripts/sde-capabilities" > "$RUNTIME/caps.log" 2>&1 || true
+cat "$RUNTIME/caps.log"
+check "logind=absent" "$RUNTIME/caps.log"
+check "dbus_session_bus=absent" "$RUNTIME/caps.log"
+check "seat=builtin" "$RUNTIME/caps.log"
+
 if [ "$fail" -ne 0 ]; then
     echo "==> session test FAILED"
     exit 1

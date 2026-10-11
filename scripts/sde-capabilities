@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# SDE capability probe (R4.3, docs/12-r4.3-portable-session-integration.md).
+#
+# Reports what the session can do so the supervisor, settings and UI can adapt.
+# logind/systemd/D-Bus/portals are *detected*, never assumed.
+#
+# Usage: sde-capabilities [--json]
+set -eu
+
+SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+logind_present() {
+    local loginctl="${SDE_LOGINCTL_CMD:-loginctl}"
+    command -v "${loginctl%% *}" >/dev/null 2>&1 || return 1
+    "$loginctl" list-sessions >/dev/null 2>&1
+}
+
+seat_backend() {
+    if [ -n "${SDE_SEAT_BACKEND:-}" ]; then
+        echo "$SDE_SEAT_BACKEND"
+        return
+    fi
+    if [ -n "${LIBSEAT_BACKEND:-}" ]; then
+        echo "$LIBSEAT_BACKEND"
+        return
+    fi
+    if logind_present; then
+        echo logind
+        return
+    fi
+    if [ -S "${SEATD_SOCK:-/run/seatd.sock}" ]; then
+        echo seatd
+        return
+    fi
+    echo builtin
+}
+
+seatd_sock() { echo "${SEATD_SOCK:-/run/seatd.sock}"; }
+
+dbus_present() {
+    [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] && return 0
+    [ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus" ] && return 0
+    return 1
+}
+
+portal_status() {
+    if command -v xdg-desktop-portal >/dev/null 2>&1; then
+        echo present
+    else
+        echo absent
+    fi
+}
+
+logind_status() { if logind_present; then echo present; else echo absent; fi; }
+dbus_status() { if dbus_present; then echo present; else echo absent; fi; }
+
+seat="$(seat_backend)"
+seatd_sock_value="$(seatd_sock)"
+logind="$(logind_status)"
+dbus="$(dbus_status)"
+portal="$(portal_status)"
+
+case "${1:-}" in
+    --json)
+        printf '{\n'
+        printf '  "seat": "%s",\n' "$seat"
+        printf '  "seatd_sock": "%s",\n' "$seatd_sock_value"
+        printf '  "logind": "%s",\n' "$logind"
+        printf '  "dbus_session_bus": "%s",\n' "$dbus"
+        printf '  "portal": "%s",\n' "$portal"
+        printf '  "power": {\n'
+        first=1
+        for line in $("$SDE_ROOT/scripts/sde-power.sh" --list); do
+            key="${line%%=*}"
+            value="${line#*=}"
+            [ "$first" -eq 1 ] || printf ',\n'
+            first=0
+            printf '    "%s": "%s"' "${key#power.}" "$value"
+        done
+        printf '\n  }\n}\n'
+        ;;
+    --help)
+        echo "usage: sde-capabilities [--json]" >&2
+        exit 0
+        ;;
+    "")
+        printf 'seat=%s\n' "$seat"
+        printf 'seatd_sock=%s\n' "$seatd_sock_value"
+        printf 'logind=%s\n' "$logind"
+        printf 'dbus_session_bus=%s\n' "$dbus"
+        printf 'portal=%s\n' "$portal"
+        "$SDE_ROOT/scripts/sde-power.sh" --list
+        ;;
+    *)
+        echo "usage: sde-capabilities [--json]" >&2
+        exit 2
+        ;;
+esac

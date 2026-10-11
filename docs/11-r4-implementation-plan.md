@@ -273,6 +273,19 @@ power off with **no logind/systemd at all**, degrading gracefully. In summary:
   `builtin`) and nested. Details in
   [`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md) §5.
 
+**Landed.** `scripts/sde-session.sh` sets the standard session environment
+(forcing SDE identity even when nested) and best-effort pushes it to the D-Bus
+activation environment (`SDE_DBUS_ENV_CMD` seam; never required). `scripts/sde-power.sh`
+is now an **ordered provider chain** (`SDE_POWER_CMD` → logind → portable
+fallbacks → *unavailable*) with `--check`/`--list`; the logout fallback stops the
+supervisor via its pid file. `scripts/sde-capabilities` probes seat
+(`logind`/`seatd`/`builtin`)/logind/D-Bus/portal and reports `power.*`
+availability (`key=value` or `--json`). Verified by
+`scripts/run-session-env-test.sh`, `scripts/run-power-providers-test.sh`,
+`scripts/run-capabilities-test.sh`, and a degraded phase in
+`scripts/run-session-test.sh`. Manual real-hardware seatd/builtin verification
+remains.
+
 ### R4.4 — Compositor configuration & live reload
 
 Extend the R3 `WindowServer.ini` (`[Workspaces]`, `[Applet]`) into a documented

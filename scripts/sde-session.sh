@@ -37,13 +37,37 @@ IDLE_BIN="${SDE_SESSION_IDLE_BIN:-$SDE_ROOT/build/tools/sde-idle}"
 LOCK_CMD="${SDE_LOCK_CMD:-swaylock}"
 IDLE_PID=""
 
-# Session environment (expanded in R4.3). Keep it explicit so portals/apps can
-# find the session.
-export XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-wayland}"
-export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-SDE}"
+# Session environment (R4.3, docs/12). Set the standard variables so apps and
+# portals can find the session; the supervisor owns ordering (no systemd target).
+SESSION_DISPLAY="${SDE_SESSION_DISPLAY:-sde}"
+# Force the session identity: even when nested inside another desktop, the
+# session IS SDE (the host's XDG_CURRENT_DESKTOP/DESKTOP_SESSION must not leak).
+export XDG_SESSION_TYPE="wayland"
+export XDG_SESSION_CLASS="user"
+export XDG_CURRENT_DESKTOP="SDE"
+export XDG_SESSION_DESKTOP="SDE"
+export DESKTOP_SESSION="sde"
 if [ -z "${WAYLAND_DISPLAY:-}" ]; then
-    export WAYLAND_DISPLAY="sde"
+    export WAYLAND_DISPLAY="$SESSION_DISPLAY"
 fi
+
+# A pid file so the power helper's portable logout fallback can stop us even
+# without logind.
+export SDE_SESSION_PID_FILE="${SDE_SESSION_PID_FILE:-${XDG_RUNTIME_DIR:-/tmp}/sde-session.pid}"
+echo $$ > "$SDE_SESSION_PID_FILE"
+trap 'rm -f "$SDE_SESSION_PID_FILE"' EXIT
+
+# Best-effort: publish the session environment to the D-Bus activation
+# environment so D-Bus-activated services (portals) see a Wayland session. This
+# needs neither systemd nor the helper to be present; failure is ignored.
+push_dbus_activation_env() {
+    [ -n "${SDE_DBUS_ENV_CMD:-}" ] || command -v dbus-update-activation-environment >/dev/null 2>&1 || return 0
+    local cmd="${SDE_DBUS_ENV_CMD:-dbus-update-activation-environment}"
+    WAYLAND_DISPLAY="$SESSION_DISPLAY" "$cmd" \
+        XDG_SESSION_TYPE XDG_SESSION_CLASS XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION WAYLAND_DISPLAY \
+        >/dev/null 2>&1 || true
+}
+push_dbus_activation_env
 
 run_desktop_entry() {
     local entry="$1" line="" exec_line="" hidden="" enabled=""
