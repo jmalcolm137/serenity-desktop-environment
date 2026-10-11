@@ -800,7 +800,7 @@ static gchar* screencast_state_path(char const* name)
     return path;
 }
 
-static void store_restore_token(char const* token, uint32_t types, uint32_t cursor_mode, char const* source_id)
+void portal_restore_token_store(char const* token, uint32_t types, uint32_t cursor_mode, char const* source_id)
 {
     gchar* path = screencast_state_path("screencast-tokens");
     FILE* file = fopen(path, "a");
@@ -811,7 +811,7 @@ static void store_restore_token(char const* token, uint32_t types, uint32_t curs
     fclose(file);
 }
 
-static gboolean load_restore_token(char const* token, uint32_t* types, uint32_t* cursor_mode, char** source_id)
+gboolean portal_restore_token_load(char const* token, uint32_t* types, uint32_t* cursor_mode, char** source_id)
 {
     gchar* path = screencast_state_path("screencast-tokens");
     gchar* contents = NULL;
@@ -897,7 +897,7 @@ void portal_screencast_method_call(GDBusConnection* connection, gchar const* sen
                 uint32_t types = session->types;
                 uint32_t cursor_mode = session->cursor_mode;
                 char* source_id = NULL;
-                if (load_restore_token(restore, &types, &cursor_mode, &source_id)) {
+                if (portal_restore_token_load(restore, &types, &cursor_mode, &source_id)) {
                     session->types = types;
                     session->cursor_mode = cursor_mode;
                     free(session->restore_token);
@@ -955,7 +955,7 @@ void portal_screencast_method_call(GDBusConnection* connection, gchar const* sen
             char const* source_id = NULL;
             if (session->chosen_toplevel_index >= 0 && (size_t)session->chosen_toplevel_index < g_state.toplevel_count)
                 source_id = g_state.toplevels[session->chosen_toplevel_index].identifier;
-            store_restore_token(token, session->types, session->cursor_mode, source_id);
+            portal_restore_token_store(token, session->types, session->cursor_mode, source_id);
             session->restore_token = strdup(token);
         }
         if (options)

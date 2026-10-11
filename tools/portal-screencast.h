@@ -28,3 +28,8 @@ int portal_screencast_capture_png(char const* path);
 // path) and report the resulting PipeWire stream. Used by the RemoteDesktop
 // portal, which pairs input with the ScreenCast video. Returns 0 on success.
 int portal_screencast_start_for_session(char const* session_handle, guint32* node_id, int* width, int* height, guint32* source_type);
+
+// Restore-token persistence (screencast-tokens in the state directory), shared
+// with the RemoteDesktop portal.
+void portal_restore_token_store(char const* token, guint32 types, guint32 cursor_mode, char const* source_id);
+gboolean portal_restore_token_load(char const* token, guint32* types, guint32* cursor_mode, char** source_id);

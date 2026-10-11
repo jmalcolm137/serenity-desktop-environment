@@ -153,6 +153,13 @@ sleep 0.3
 check "virtual keyboard connected" "$(cat "$RUNTIME/comp.log")"
 check "virtual pointer connected" "$(cat "$RUNTIME/comp.log")"
 
+echo "=== RemoteDesktop restore tokens ==="
+call "$RD.CreateSession" /h /org/freedesktop/portal/desktop/session/rdt app "{}" >/dev/null
+rdsel="$(call "$RD.SelectDevices" /h /org/freedesktop/portal/desktop/session/rdt app "{'types': <uint32 3>, 'persist_mode': <uint32 2>}")"
+check "uint32 0" "$rdsel"
+rd_start="$(call "$RD.Start" /h /org/freedesktop/portal/desktop/session/rdt app "" "{}")"
+check "restore_token" "$rd_start"
+
 echo "=== GlobalShortcuts reaches the compositor config ==="
 GS="org.freedesktop.impl.portal.GlobalShortcuts"
 call "$GS.CreateSession" /h /org/freedesktop/portal/desktop/session/gs app "{}" >/dev/null

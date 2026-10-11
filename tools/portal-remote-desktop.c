@@ -50,6 +50,7 @@ struct rd_state {
 };
 
 static struct rd_state g_rd = { 0 };
+static char* g_rd_restore_token = NULL;
 
 static guint32 now_ms(void)
 {
@@ -232,7 +233,41 @@ void portal_remote_desktop_method_call(GDBusConnection* connection, gchar const*
 
     GVariantBuilder results;
 
-    if (g_strcmp0(method_name, "CreateSession") == 0 || g_strcmp0(method_name, "SelectDevices") == 0) {
+    if (g_strcmp0(method_name, "CreateSession") == 0) {
+        g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
+        return_response(invocation, 0, &results);
+        return;
+    }
+
+    if (g_strcmp0(method_name, "SelectDevices") == 0) {
+        char const* session_handle = NULL;
+        GVariant* options = NULL;
+        g_variant_get(parameters, "(o&o&s@a{sv})", NULL, &session_handle, NULL, &options);
+        if (options) {
+            // Restore-token round trip (same store as ScreenCast).
+            char const* restore = NULL;
+            if (g_variant_lookup(options, "restore_token", "&s", &restore) && restore && *restore) {
+                guint32 types = 0;
+                guint32 cursor_mode = 0;
+                char* source_id = NULL;
+                if (portal_restore_token_load(restore, &types, &cursor_mode, &source_id)) {
+                    free(g_rd_restore_token);
+                    g_rd_restore_token = strdup(restore);
+                }
+                free(source_id);
+            }
+            guint32 persist_mode = 0;
+            if (g_variant_lookup(options, "persist_mode", "u", &persist_mode) && persist_mode != 0 && !g_rd_restore_token) {
+                char token[33];
+                for (int i = 0; i < 32; ++i)
+                    token[i] = "0123456789abcdef"[g_random_int_range(0, 16)];
+                token[32] = '\0';
+                portal_restore_token_store(token, RD_DEVICE_POINTER | RD_DEVICE_KEYBOARD, 0, NULL);
+                g_rd_restore_token = strdup(token);
+            }
+        }
+        if (options)
+            g_variant_unref(options);
         g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
         return_response(invocation, 0, &results);
         return;
@@ -274,6 +309,8 @@ void portal_remote_desktop_method_call(GDBusConnection* connection, gchar const*
             g_variant_builder_add(&streams, "(ua{sv})", node, &props);
             g_variant_builder_add(&results, "{sv}", "streams", g_variant_builder_end(&streams));
         }
+        if (g_rd_restore_token)
+            g_variant_builder_add(&results, "{sv}", "restore_token", g_variant_new_string(g_rd_restore_token));
         if (options)
             g_variant_unref(options);
         fprintf(stderr, "xdg-desktop-portal-serenity: remote desktop started (devices %u, stream %u)\n", devices, have_stream ? node : 0);
