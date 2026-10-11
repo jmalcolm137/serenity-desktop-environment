@@ -52,6 +52,7 @@ cc -O2 -I "$TOOLS_BUILD" \
     -o "$TOOLS_BUILD/output-mode-test"
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-lock.XXXXXX")"
+export SDE_STATE_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
 trap 'rm -rf "$RUNTIME"' EXIT
 

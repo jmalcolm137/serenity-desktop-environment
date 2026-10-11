@@ -140,7 +140,7 @@ R4 is delivered as **R4.1–R4.9**. Order is dependency-driven (see §4).
 | **R4.2** | **Session lifecycle & supervisor** | Session start/autostart, logout/reboot/shutdown, compositor restart + shell relaunch, save/restore *(supervisor/autostart/power + `xdg-session-management-v1` restore landed)* | R4.1 |
 | **R4.3** | **Portable session integration** | logind/systemd **optional** (detected, never required): standard env, seat/VT via `libseat` (`seatd`/`builtin`), power provider chain, optional D-Bus/portals — [`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md) | R4.2 |
 | **R4.4** | **Compositor config & live reload** | `WindowServer.ini` schema + validated live reload; Settings-portal exposure | — |
-| **R4.5** | **Display / output settings** | Mode/scale/rotation/arrangement backend (Monitor tab) + fractional scale | R4.4 |
+| **R4.5** | **Display / output settings** (landed; fractional scale deferred) | Mode/scale/rotation/arrangement backend (Monitor tab) + fractional scale | R4.4 |
 | **R4.6** | **Input settings & keymaps** | libinput device config + keyboard layouts/keymap + MouseSettings | R4.4 |
 | **R4.7** | **Appearance, effects & fonts** | Scrollable fonts/zoom, Effects, cursor; exposed via Settings portal | R4.4 |
 | **R4.8** | **Workspaces & toplevels** | Workspaces tab drives the grid; expose `ext-workspace-v1` + `ext-foreign-toplevel-list-v1` | R4.4 |
@@ -319,6 +319,22 @@ the host supports it.
 
 - **Exit test:** `scripts/run-output-test.sh` — a scripted layout change
   reconfigures the (headless) output; manual on DRM.
+
+> **Landed (R4.5).** The compositor persists the live layout to
+> `screenlayout.ini` in the state directory (in the Serenity WindowServer
+> ScreenLayout format) whenever outputs are created or a
+> `zwlr_output_management_v1` configuration is applied, and it applies a saved
+> entry's resolution/scale/position when an output is created. Edits to the file
+> are watched and re-applied live. The port's
+> `get_screen_layout`/`set_screen_layout` read/write that same file, so
+> DisplaySettings ▸ **Monitor** now shows the real output (device name,
+> resolution, display scale) and drives the compositor. Verified by
+> `scripts/run-output-test.sh` and a Monitor screenshot against a headless
+> session on `HEADLESS-1`.
+>
+> **Deferred:** `wp-fractional-scale-v1` + `wp_viewporter` fractional scale, and
+> rotation/primary persistence — the Serenity ScreenLayout model has no rotation
+> field, so those land with the LibWindowServer backing-store scale work (R6).
 
 ### R4.6 — Input settings & keymaps
 

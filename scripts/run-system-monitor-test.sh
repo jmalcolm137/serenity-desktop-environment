@@ -25,6 +25,7 @@ if [[ ! -x "$SYSTEM_MONITOR" ]]; then
 fi
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-sysmon.XXXXXX")"
+export SDE_STATE_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
 trap 'rm -rf "$RUNTIME"' EXIT
 

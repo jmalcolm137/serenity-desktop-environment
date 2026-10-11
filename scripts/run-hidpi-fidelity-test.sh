@@ -23,6 +23,7 @@ MAX_DIFF="${SDE_HIDPI_MAX_DIFF:-0.02}"
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-hidpi.XXXXXX")"
+export SDE_STATE_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
 trap 'rm -rf "$RUNTIME"' EXIT
 

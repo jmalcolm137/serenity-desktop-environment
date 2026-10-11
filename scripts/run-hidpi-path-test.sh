@@ -23,6 +23,7 @@ if [[ ! -x "$APP" ]]; then
 fi
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-hidpi-path.XXXXXX")"
+export SDE_STATE_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
 trap 'rm -rf "$RUNTIME"' EXIT
 

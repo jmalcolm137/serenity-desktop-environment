@@ -19,6 +19,7 @@ echo "== building prerequisites =="
 ninja -C "$BUILD" libwm-combo-test >/dev/null
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-combo.XXXXXX")"
+export SDE_STATE_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
 trap 'rm -rf "$RUNTIME"' EXIT
 

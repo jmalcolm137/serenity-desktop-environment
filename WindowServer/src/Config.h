@@ -73,6 +73,21 @@ struct Output {
     int default_scale { 0 }; // 0 = auto (integer HiDPI)
 };
 
+// A persisted screen entry (screenlayout.ini in the state directory). This is
+// the Serenity WindowServer ScreenLayout format ([Screens] MainScreen, then
+// [Screen0] Mode/Device/Left/Top/Width/Height/ScaleFactor) so the port's
+// ScreenLayout::load_config/save_config and DisplaySettings' Monitor tab read
+// and write the same file the compositor watches (R4.5).
+struct OutputSettings {
+    ByteString mode { "Device"sv }; // "Device" or "Virtual"
+    ByteString device;              // output name (Mode == Device)
+    int left { 0 };
+    int top { 0 };
+    int width { 0 };
+    int height { 0 };
+    int scale { 1 };
+};
+
 // Load the effective configuration: the SerenityOS defaults
 // ($SERENITY_RES_ROOT/../etc/WindowServer.ini) overlaid by the user's file in the
 // state directory. Invalid values are rejected and recorded in diagnostics().
@@ -91,6 +106,17 @@ Tiling const& tiling();
 Focus const& focus();
 Effects const& effects();
 Output const& output();
+
+// The persisted screen layout (R4.5), in the Serenity ScreenLayout format
+// (screenlayout.ini). outputs() is the desired layout; set_outputs() replaces it
+// and writes the file; load_outputs() reads it back.
+Vector<OutputSettings> const& outputs();
+unsigned main_screen_index();
+void set_outputs(Vector<OutputSettings> outputs, unsigned main_screen_index = 0);
+void load_outputs();
+
+// Watch screenlayout.ini and call on_change after it is re-loaded.
+void watch_outputs(Function<void()> on_change);
 
 // Warnings from the last load() (invalid values, etc.), one per issue. Empty when
 // the config is clean. `sde-config validate` prints these.

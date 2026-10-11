@@ -128,6 +128,7 @@ static bool window_menu_handle_key(Server&, xkb_keysym_t);
 static void arrange_layers(Server&, wlr_output*);
 static Output* output_for(Server&, wlr_output*);
 static void output_manager_send_configuration(Server&);
+static void persist_screen_layout(Server&);
 static i32 g_next_wm_id { 1 };
 static u64 g_focus_order_counter { 0 };
 static Gfx::Palette* g_palette { nullptr };
@@ -1197,17 +1198,52 @@ static void server_new_output(wl_listener* listener, void* data)
 
     wlr_output_init_render(wlr_output, server->allocator, server->renderer);
 
+    // R4.5: honor a saved screen entry (mode/scale) for this output.
+    Config::OutputSettings const* saved = nullptr;
+    if (wlr_output->name) {
+        for (auto const& settings : Config::outputs()) {
+            if (settings.mode == "Device"sv && settings.device == wlr_output->name) {
+                saved = &settings;
+                break;
+            }
+        }
+    }
+
     wlr_output_state state;
     wlr_output_state_init(&state);
     wlr_output_state_set_enabled(&state, true);
-    auto* mode = wlr_output_preferred_mode(wlr_output);
+    struct wlr_output_mode* mode = nullptr;
+    if (saved && saved->width > 0 && saved->height > 0) {
+        struct wlr_output_mode* candidate;
+        wl_list_for_each(candidate, &wlr_output->modes, link)
+        {
+            if (candidate->width == saved->width && candidate->height == saved->height) {
+                mode = candidate;
+                break;
+            }
+        }
+    }
+    if (!mode)
+        mode = wlr_output_preferred_mode(wlr_output);
     if (mode)
         wlr_output_state_set_mode(&state, mode);
-    // HiDPI stopgap: integer-scale high-DPI panels (see auto_output_scale).
-    if (float const scale = auto_output_scale(wlr_output, mode); scale != 1.0f) {
+    // HiDPI stopgap: integer-scale high-DPI panels (see auto_output_scale),
+    // unless a saved screen layout specifies a scale.
+    float scale = (saved && saved->scale > 0) ? static_cast<float>(saved->scale) : auto_output_scale(wlr_output, mode);
+    // An explicit test/debug override (SDE_OUTPUT_SCALE) always wins over a
+    // persisted layout.
+    if (auto const* env = getenv("SDE_OUTPUT_SCALE"); env && *env) {
+        char* end = nullptr;
+        double const value = strtod(env, &end);
+        if (end != env && value >= 1.0)
+            scale = static_cast<float>(value);
+    }
+    if (scale != 1.0f) {
         wlr_output_state_set_scale(&state, scale);
-        dbgln("WindowServer: output '{}' is high-DPI — scaling {}x",
-            wlr_output->name ? wlr_output->name : "?", static_cast<int>(scale));
+        dbgln("WindowServer: output '{}' scaling {}x ({})",
+            wlr_output->name ? wlr_output->name : "?", static_cast<int>(scale), saved ? "saved layout" : "high-DPI");
+    } else if (saved) {
+        dbgln("WindowServer: output '{}' scale 1x (saved layout)", wlr_output->name ? wlr_output->name : "?");
     }
     wlr_output_commit_state(wlr_output, &state);
     wlr_output_state_finish(&state);
@@ -1224,7 +1260,9 @@ static void server_new_output(wl_listener* listener, void* data)
     output->commit.notify = output_commit;
     wl_signal_add(&wlr_output->events.commit, &output->commit);
 
-    auto* layout_output = wlr_output_layout_add_auto(server->output_layout, wlr_output);
+    auto* layout_output = saved
+        ? wlr_output_layout_add(server->output_layout, wlr_output, saved->left, saved->top)
+        : wlr_output_layout_add_auto(server->output_layout, wlr_output);
     auto* scene_output = wlr_scene_output_create(server->scene, wlr_output);
     wlr_scene_output_layout_add_output(server->scene_layout, layout_output, scene_output);
 
@@ -1237,6 +1275,8 @@ static void server_new_output(wl_listener* listener, void* data)
     update_desktop_background(*server, *server->outputs.last());
     arrange_layers(*server, wlr_output);
     output_manager_send_configuration(*server);
+    // R4.5: keep screenlayout.ini in sync with the live layout.
+    persist_screen_layout(*server);
 }
 
 // --- xdg toplevels / popups ----------------------------------------------
@@ -2424,6 +2464,82 @@ static void server_new_toplevel_decoration(wl_listener* listener, void* data)
 
 // --- output management ----------------------------------------------------
 
+// R4.5: persist the live output layout to screenlayout.ini so it survives a
+// restart and is visible to DisplaySettings (via the port's get_screen_layout).
+static void persist_screen_layout(Server& server)
+{
+    Vector<Config::OutputSettings> settings;
+    unsigned main_index = 0;
+    for (size_t index = 0; index < server.outputs.size(); ++index) {
+        auto& output = *server.outputs[index];
+        wlr_box box { };
+        wlr_output_layout_get_box(server.output_layout, output.output, &box);
+        Config::OutputSettings entry;
+        entry.mode = "Device"sv;
+        entry.device = output.output->name ? output.output->name : "sde-0";
+        entry.left = box.x;
+        entry.top = box.y;
+        entry.width = output.output->width;
+        entry.height = output.output->height;
+        entry.scale = static_cast<int>(output.output->scale);
+        settings.append(move(entry));
+        if (output.output == server.primary_output)
+            main_index = index;
+    }
+    Config::set_outputs(move(settings), main_index);
+}
+
+// R4.5: apply a saved screen entry (mode/scale/position) to a live output.
+static void apply_saved_settings_to_output(Server& server, struct wlr_output* output, Config::OutputSettings const& settings)
+{
+    wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_state_set_enabled(&state, true);
+
+    struct wlr_output_mode* mode = nullptr;
+    if (settings.width > 0 && settings.height > 0) {
+        struct wlr_output_mode* candidate;
+        wl_list_for_each(candidate, &output->modes, link)
+        {
+            if (candidate->width == settings.width && candidate->height == settings.height) {
+                mode = candidate;
+                break;
+            }
+        }
+    }
+    if (!mode)
+        mode = wlr_output_preferred_mode(output);
+    if (mode)
+        wlr_output_state_set_mode(&state, mode);
+    if (settings.scale > 0)
+        wlr_output_state_set_scale(&state, static_cast<float>(settings.scale));
+    wlr_output_commit_state(output, &state);
+    wlr_output_state_finish(&state);
+
+    wlr_output_layout_add(server.output_layout, output, settings.left, settings.top);
+    dbgln("WindowServer: applied screen layout to '{}': {}x{} @{}x at {},{}",
+        output->name ? output->name : "?", settings.width, settings.height, settings.scale, settings.left, settings.top);
+}
+
+// R4.5: re-apply the on-disk layout to the live outputs (screenlayout.ini watch).
+static void apply_loaded_screen_layout(Server& server)
+{
+    bool changed = false;
+    for (auto const& settings : Config::outputs()) {
+        if (settings.mode != "Device"sv || settings.device.is_empty())
+            continue;
+        for (auto& output : server.outputs) {
+            if (output->output->name && settings.device == output->output->name) {
+                apply_saved_settings_to_output(server, output->output, settings);
+                changed = true;
+                break;
+            }
+        }
+    }
+    if (changed)
+        output_manager_send_configuration(server);
+}
+
 static void output_manager_send_configuration(Server& server)
 {
     if (!server.output_manager)
@@ -2467,8 +2583,11 @@ static void output_manager_apply_or_test(Server& server, wlr_output_configuratio
     wlr_output_configuration_v1_send_succeeded(config);
     wlr_output_configuration_v1_destroy(config);
 
-    if (!test)
+    if (!test) {
         output_manager_send_configuration(server);
+        // R4.5: a monitor-layout change via zwlr_output_management_v1 is persisted.
+        persist_screen_layout(server);
+    }
 }
 
 static void output_manager_apply(wl_listener* listener, void* data)
@@ -3021,6 +3140,9 @@ static ErrorOr<void> initialize_gfx()
     // The compositor's own configuration (WindowServer.ini) lives beside the
     // wallpaper/theme state; load it now and reload on change.
     Config::load();
+    // R4.5: the persisted output layout (screenlayout.ini) is applied as outputs
+    // are created (server_new_output).
+    Config::load_outputs();
 
     dbgln("WindowServer: loaded the Serenity theme from {}", resource_root);
     return { };
@@ -3176,6 +3298,8 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     // Bring the workspace grid up from the config, and follow later edits.
     WindowManager::load_workspaces(*server);
     Config::watch([&] { WindowManager::load_workspaces(*server); });
+    // R4.5: apply monitor-layout edits (screenlayout.ini) to the live outputs.
+    Config::watch_outputs([&] { apply_loaded_screen_layout(*server); });
     wm_server->on_accept = [&](NonnullOwnPtr<Core::LocalSocket> socket) {
         WindowManager::accept_connection(*server, move(socket));
     };

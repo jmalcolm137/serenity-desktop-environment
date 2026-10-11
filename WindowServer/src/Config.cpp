@@ -25,6 +25,8 @@ static Tiling g_tiling;
 static Focus g_focus;
 static Effects g_effects;
 static Output g_output;
+static Vector<OutputSettings> g_outputs;
+static unsigned g_main_screen { 0 };
 static Vector<ByteString> g_applet_order;
 static Vector<ByteString> g_diagnostics;
 
@@ -302,6 +304,99 @@ void watch(Function<void()> on_reload)
 Workspaces const& workspaces()
 {
     return g_workspaces;
+}
+
+// --- screen layout (R4.5) ---------------------------------------------------
+//
+// The persisted layout uses the Serenity WindowServer ScreenLayout format, so
+// the port (LibGUI ScreenLayout::load_config/save_config) and DisplaySettings'
+// Monitor tab read and write the same screenlayout.ini the compositor watches.
+
+static ByteString outputs_file()
+{
+    return state_file("screenlayout.ini"sv);
+}
+
+void load_outputs()
+{
+    g_outputs.clear();
+    auto config = open_config(outputs_file());
+    if (!config)
+        return;
+    g_main_screen = config->read_num_entry<unsigned>("Screens"sv, "MainScreen"sv, 0);
+    for (size_t index = 0;; ++index) {
+        auto group = ByteString::formatted("Screen{}", index);
+        if (!config->has_group(group))
+            break;
+        OutputSettings settings;
+        settings.mode = config->read_entry(group, "Mode"sv, "Device"sv);
+        settings.device = config->read_entry(group, "Device"sv);
+        settings.left = config->read_num_entry<int>(group, "Left"sv, 0);
+        settings.top = config->read_num_entry<int>(group, "Top"sv, 0);
+        settings.width = config->read_num_entry<int>(group, "Width"sv, 0);
+        settings.height = config->read_num_entry<int>(group, "Height"sv, 0);
+        settings.scale = config->read_num_entry<int>(group, "ScaleFactor"sv, 1);
+        g_outputs.append(move(settings));
+    }
+    dbgln("WindowServer: config: {} screen(s) in screenlayout.ini (main {})", g_outputs.size(), g_main_screen);
+}
+
+void set_outputs(Vector<OutputSettings> outputs, unsigned main_screen_index)
+{
+    g_outputs = move(outputs);
+    g_main_screen = main_screen_index;
+    (void)Core::Directory::create(state_directory(), Core::Directory::CreateDirectories::Yes);
+    auto config = Core::ConfigFile::open(outputs_file(), Core::ConfigFile::AllowWriting::Yes).release_value_but_fixme_should_propagate_errors();
+    config->write_num_entry("Screens"sv, "MainScreen"sv, g_main_screen);
+    for (size_t index = 0; index < g_outputs.size(); ++index) {
+        auto group = ByteString::formatted("Screen{}", index);
+        auto const& settings = g_outputs[index];
+        config->write_entry(group, "Mode"sv, settings.mode);
+        if (settings.mode == "Device"sv)
+            config->write_entry(group, "Device"sv, settings.device);
+        config->write_num_entry(group, "Left"sv, settings.left);
+        config->write_num_entry(group, "Top"sv, settings.top);
+        config->write_num_entry(group, "Width"sv, settings.width);
+        config->write_num_entry(group, "Height"sv, settings.height);
+        config->write_num_entry(group, "ScaleFactor"sv, settings.scale);
+    }
+    // Prune screens past the end of the layout.
+    for (size_t index = g_outputs.size();; ++index) {
+        auto group = ByteString::formatted("Screen{}", index);
+        if (!config->has_group(group))
+            break;
+        config->remove_group(group);
+    }
+    (void)config->sync();
+}
+
+void watch_outputs(Function<void()> on_change)
+{
+    static RefPtr<Core::FileWatcher> watcher;
+    static RefPtr<Core::Timer> coalesce;
+    coalesce = Core::Timer::create_single_shot(30, [on_change = move(on_change)] {
+        load_outputs();
+        on_change();
+    });
+    watcher = Core::FileWatcher::create().release_value_but_fixme_should_propagate_errors();
+    auto directory = state_directory();
+    watcher->on_change = [directory](Core::FileWatcherEvent const& event) {
+        if (!event.event_path.starts_with(directory))
+            return;
+        coalesce->restart();
+    };
+    (void)watcher->add_watch(directory, Core::FileWatcherEvent::Type::ChildCreated);
+    (void)watcher->add_watch(outputs_file(), Core::FileWatcherEvent::Type::ContentModified | Core::FileWatcherEvent::Type::MetadataModified | Core::FileWatcherEvent::Type::Deleted);
+}
+
+Vector<OutputSettings> const& outputs()
+{
+    return g_outputs;
+}
+
+unsigned main_screen_index()
+{
+    return g_main_screen;
 }
 
 Tiling const& tiling()
