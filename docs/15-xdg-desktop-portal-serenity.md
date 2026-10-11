@@ -101,13 +101,21 @@ via `SDE_PORTAL_FILE_CHOOSER`. The **Print** dialog is `PrintDialog/`
 
 ## 3. SDE integration seams
 
-Two environment variables let the session point the backend at SDE components
-without hard-coding them (the backend stays portable):
+Environment variables let the session point the backend at SDE components without
+hard-coding them (the backend stays portable, with fallbacks):
 
 - `SDE_PORTAL_OPENER <uri>` — launch a URI (set to the SDE launcher / `xdg-open`
-  replacement).
-- `SDE_PORTAL_NOTIFIER <title> <body>` — show a notification (set to the Serenity
-  `notify` tool).
+  replacement). Also used for `Activate`.
+- `SDE_PORTAL_NOTIFIER <id> <title> <body> <icon>` — show a notification (set to
+  the Serenity `notify` tool).
+- `SDE_PORTAL_FILE_CHOOSER` — the LibGUI FileChooserDialog app.
+- `SDE_PORTAL_PRINT_DIALOG` / `SDE_PORTAL_PRINT_CMD` — the Print dialog and the
+  command that receives the document fd.
+- `SDE_PORTAL_CHOOSER` — the ScreenCast source picker.
+- `SDE_PORTAL_ACCESS_DIALOG` — the permission prompt.
+- `SDE_PORTAL_APP_CHOOSER` — the application chooser.
+- `SDE_PORTAL_COLOR_PICKER` — the color picker.
+- `SDE_STATE_DIR` — where wallpaper/shortcut/secret/restore-token state lives.
 
 ## 4. Install & enable
 
@@ -156,3 +164,7 @@ returned stream node id, that the PipeWire node `sde-screencast` is published, a
 that frames are captured (a consumer pull is best-effort). It also checks the
 Screenshot portal writes a PNG and that PickColor returns a color (with a stub
 picker).
+
+`scripts/run-portal-ui-test.sh` launches each LibGUI dialog under a headless
+compositor, screenshots it and asserts the client area rendered (a blank-dialog
+regression guard).
