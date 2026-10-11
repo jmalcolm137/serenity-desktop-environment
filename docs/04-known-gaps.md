@@ -23,6 +23,11 @@ Done: Taskbar (system menu, quick-launch, window list, clock), WindowManagerServ
   `LaunchServer.ini` `[FileType]`/`[Protocol]` plus the editor as a generic
   alternate. There is no `.af` `AppFile` database, so an app-declared handler set
   (and any real "Open with" chooser beyond the editor) is not available.
+- **Calculator (and apps registering launch handlers) crash at startup.** Some
+  apps call `Desktop::Launcher::add_allowed_handler_with_only_specific_urls`,
+  which `VERIFY`s (`!is_error()`) because the handler DB can't be resolved. This
+  happens at **both 1x and 2x**, so it is *not* a scaling bug — fix once the HiDPI
+  scaling work is done (tracked here so it is not forgotten).
 
 ## R2 follow-up — shell v1 loose ends
 
