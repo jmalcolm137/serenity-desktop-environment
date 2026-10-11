@@ -88,6 +88,7 @@ check_dialog PrintDialog -t "Print" -p "HP LaserJet, Print to File"
 check_dialog AppChooserDialog -t "Open with" -c "org.serenity.Browser
 org.serenity.TextEditor"
 check_dialog ColorPicker -i "$RUNTIME/gradient.png"
+check_dialog ScreenshotOverlay -i "$RUNTIME/gradient.png"
 check_dialog ScreenCastChooser -t "Share your screen" "Entire screen" "Window: TextEditor"
 check_dialog FileChooserDialog -m open -t "Open File" -f "$SERENITY/Base/res"
 

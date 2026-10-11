@@ -52,7 +52,14 @@ echo "7 9"
 EOF
 chmod +x "$RUNTIME/colorpicker.sh"
 
-SDE_PORTAL_CHOOSER="$RUNTIME/chooser.sh" SDE_PORTAL_COLOR_PICKER="$RUNTIME/colorpicker.sh" SDE_STATE_DIR="$RUNTIME" WAYLAND_DISPLAY="$SOCK" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
+# A stub area-selection overlay: select the rectangle (10, 20) 40x30.
+cat > "$RUNTIME/overlay.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "10 20 40 30"
+EOF
+chmod +x "$RUNTIME/overlay.sh"
+
+SDE_PORTAL_CHOOSER="$RUNTIME/chooser.sh" SDE_PORTAL_COLOR_PICKER="$RUNTIME/colorpicker.sh" SDE_PORTAL_SCREENSHOT_OVERLAY="$RUNTIME/overlay.sh" SDE_STATE_DIR="$RUNTIME" WAYLAND_DISPLAY="$SOCK" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
 PORTAL_PID=$!
 trap 'kill "$PORTAL_PID" "$COMP_PID" 2>/dev/null || true' EXIT
 
@@ -187,6 +194,29 @@ echo "=== PickColor portal ==="
 pick="$(call org.freedesktop.impl.portal.Screenshot.PickColor /h app "" "{}")"
 check "uint32 0" "$pick"
 check "color" "$pick"
+
+echo "=== interactive area screenshot ==="
+area="$(call org.freedesktop.impl.portal.Screenshot.Screenshot /h app "" "{'interactive': <true>}")"
+check "uint32 0" "$area"
+check "uri" "$area"
+area_uri="$(grep -oE "file://[^' ]+" <<<"$area" | head -1)"
+area_path="${area_uri#file://}"
+if [ -n "$area_uri" ] && [ -f "$area_path" ]; then
+    if command -v identify >/dev/null 2>&1; then
+        dims="$(identify -format "%wx%h" "$area_path" 2>/dev/null || echo unknown)"
+        if [ "$dims" = "40x30" ]; then
+            echo "  ok: area screenshot cropped to $dims"
+        else
+            echo "  FAIL: area screenshot not cropped ($dims)"
+            fail=1
+        fi
+    else
+        echo "  ok: area screenshot written (identify unavailable to check size)"
+    fi
+else
+    echo "  FAIL: no area screenshot PNG ($area)"
+    fail=1
+fi
 
 echo "=== the PipeWire stream node exists ==="
 if command -v pw-cli >/dev/null 2>&1; then

@@ -46,7 +46,7 @@ This supersedes the earlier single-interface `tools/sde-settings-portal.c` (R4.4
 | `GameMode` (v1) | `RegisterGame`/`UnregisterGame`/`QueryStatus` (reports not active). |
 | `MemoryMonitor` (v1) | `LowMemoryWarning` signal; `version` only. |
 | `FileChooser` (v3) | `OpenFile`/`SaveFile`/`SaveFiles` (directory mode via the `directory` option) through the LibGUI **FileChooserDialog** app (`SDE_PORTAL_FILE_CHOOSER`); returns the chosen `uris`. |
-| `Screenshot` (v2) | `Screenshot` captures the primary output (via the ScreenCast capture pipeline, on its own Wayland connection) into a PNG and returns its `uri`. `PickColor` freezes the frame and opens the LibGUI **ColorPicker** app (`SDE_PORTAL_COLOR_PICKER`); the clicked pixel is sampled and returned as a `(ddd)` color. |
+| `Screenshot` (v2) | `Screenshot` captures the primary output (via the ScreenCast capture pipeline, on its own Wayland connection) into a PNG and returns its `uri`; with `interactive` the LibGUI **ScreenshotOverlay** app (`SDE_PORTAL_SCREENSHOT_OVERLAY`) lets the user drag an area, which is cropped out. `PickColor` freezes the frame and opens the LibGUI **ColorPicker** app (`SDE_PORTAL_COLOR_PICKER`); the clicked pixel is sampled and returned as a `(ddd)` color. |
 | `Print` (v1) | `PreparePrint` via the LibGUI **PrintDialog** app (`SDE_PORTAL_PRINT_DIALOG`; printers from `lpstat`); `Print` feeds the document fd to `SDE_PORTAL_PRINT_CMD` (e.g. `lp`). |
 | `RemoteDesktop` (v2) | `CreateSession`/`SelectDevices`/`Start` (devices + the paired ScreenCast stream) and the `Notify*` input methods — pointer motion/absolute/button/axis and keyboard keycodes — injected via `wlr-virtual-pointer` / `virtual-keyboard`. `ConnectToEIS` (libei) is not supported, so apps use the `Notify*` methods. Restore tokens are persisted and returned from `Start`. |
 | `GlobalShortcuts` (v1) | `CreateSession`/`BindShortcuts`/`ListShortcuts`. Shortcuts are stored in the SDE **config system** (`global-shortcuts.ini`, `[ShortcutN] Session/Id/Trigger`) for the compositor to bind like any other keybinding; activations are reported over a session FIFO (`sde-global-shortcuts.fifo`) and emitted as the `Activated` signal. |
@@ -92,7 +92,9 @@ via `SDE_PORTAL_FILE_CHOOSER`. The **Print** dialog is `PrintDialog/`
 (`scripts/build-print-dialog.sh`), and the permission prompt is `AccessDialog/`
 (`scripts/build-access-dialog.sh`). The color picker is `ColorPicker/`
 (`scripts/build-color-picker.sh`), and the application chooser is
-`AppChooserDialog/` (`scripts/build-app-chooser-dialog.sh`).
+`AppChooserDialog/` (`scripts/build-app-chooser-dialog.sh`). The interactive
+screenshot area selector is `ScreenshotOverlay/`
+(`scripts/build-screenshot-overlay.sh`).
 
 > Note: programmatic widgets that draw text (such as `GUI::Label`) are only
 > visible when the root widget paints the window background, so the dialogs call
@@ -116,6 +118,7 @@ hard-coding them (the backend stays portable, with fallbacks):
 - `SDE_PORTAL_ACCESS_DIALOG` — the permission prompt.
 - `SDE_PORTAL_APP_CHOOSER` — the application chooser.
 - `SDE_PORTAL_COLOR_PICKER` — the color picker.
+- `SDE_PORTAL_SCREENSHOT_OVERLAY` — the interactive area selector.
 - `SDE_STATE_DIR` — where wallpaper/shortcut/secret/restore-token state lives.
 
 ## 4. Install & enable

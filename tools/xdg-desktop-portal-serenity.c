@@ -1359,6 +1359,38 @@ static gboolean sample_png_color(char const* path, int x, int y, double* out_r, 
     return TRUE;
 }
 
+// Crop the PNG at `src` to (x, y, w, h) and save it to `dst`.
+static gboolean crop_png(char const* src, char const* dst, int x, int y, int w, int h)
+{
+    GError* error = NULL;
+    GdkPixbuf* full = gdk_pixbuf_new_from_file(src, &error);
+    if (!full) {
+        if (error)
+            g_error_free(error);
+        return FALSE;
+    }
+    int width = gdk_pixbuf_get_width(full);
+    int height = gdk_pixbuf_get_height(full);
+    if (x < 0)
+        x = 0;
+    if (y < 0)
+        y = 0;
+    if (x + w > width)
+        w = width - x;
+    if (y + h > height)
+        h = height - y;
+    if (w <= 0 || h <= 0) {
+        g_object_unref(full);
+        return FALSE;
+    }
+    GdkPixbuf* sub = gdk_pixbuf_new_subpixbuf(full, x, y, w, h);
+    gboolean ok = sub && gdk_pixbuf_save(sub, dst, "png", NULL, NULL);
+    if (sub)
+        g_object_unref(sub);
+    g_object_unref(full);
+    return ok;
+}
+
 // Capture the screen (reusing the ScreenCast capture) into a PNG and return its
 // file:// URI. For PickColor, launch the LibGUI ColorPicker on the frozen frame
 // (SDE_PORTAL_COLOR_PICKER), sample the clicked pixel and return it as (ddd).
@@ -1370,7 +1402,6 @@ static void handle_screenshot(GDBusConnection* connection, const gchar* sender, 
     (void)sender;
     (void)object_path;
     (void)interface_name;
-    (void)parameters;
     (void)user_data;
 
     GVariantBuilder results;
@@ -1380,6 +1411,16 @@ static void handle_screenshot(GDBusConnection* connection, const gchar* sender, 
     if (!is_pick_color && g_strcmp0(method_name, "Screenshot") != 0) {
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "unknown method %s", method_name);
         return;
+    }
+
+    gboolean interactive = FALSE;
+    if (!is_pick_color) {
+        GVariant* options = NULL;
+        g_variant_get(parameters, "(o&s&s@a{sv})", NULL, NULL, NULL, &options);
+        if (options) {
+            g_variant_lookup(options, "interactive", "b", &interactive);
+            g_variant_unref(options);
+        }
     }
 
     char const* runtime = g_get_user_runtime_dir();
@@ -1393,6 +1434,48 @@ static void handle_screenshot(GDBusConnection* connection, const gchar* sender, 
     }
 
     if (!is_pick_color) {
+        // Interactive: the user drags an area on the frozen frame (LibGUI
+        // ScreenshotOverlay); crop the capture to it.
+        if (interactive) {
+            char const* overlay = getenv("SDE_PORTAL_SCREENSHOT_OVERLAY");
+            int x = 0;
+            int y = 0;
+            int w = 0;
+            int h = 0;
+            gboolean selected = FALSE;
+            if (overlay && *overlay) {
+                char const* argv[] = { overlay, "-i", path, NULL };
+                char* out = NULL;
+                gint wait_status = 0;
+                GError* error = NULL;
+                if (g_spawn_sync(NULL, (char**)argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, &out, NULL, &wait_status, &error)
+                    && out && g_spawn_check_wait_status(wait_status, NULL)
+                    && sscanf(g_strstrip(out), "%d %d %d %d", &x, &y, &w, &h) == 4 && w > 0 && h > 0)
+                    selected = TRUE;
+                if (out)
+                    g_free(out);
+                if (error)
+                    g_error_free(error);
+            }
+            if (selected) {
+                gchar* cropped = g_strdup_printf("%s/sde-screenshot-area-%d.png", runtime ? runtime : "/tmp", (int)getpid());
+                gboolean cropped_ok = crop_png(path, cropped, x, y, w, h);
+                gchar* uri = cropped_ok ? g_filename_to_uri(cropped, NULL, NULL) : NULL;
+                g_free(cropped);
+                if (uri) {
+                    g_variant_builder_add(&results, "{sv}", "uri", g_variant_new_string(uri));
+                    g_free(uri);
+                    g_free(path);
+                    return_response(invocation, RESPONSE_SUCCESS, &results);
+                    return;
+                }
+            } else if (overlay && *overlay) {
+                // The overlay ran but the user cancelled: report cancellation.
+                g_free(path);
+                return_response(invocation, RESPONSE_CANCELLED, &results);
+                return;
+            }
+        }
         if (gchar* uri = g_filename_to_uri(path, NULL, NULL)) {
             g_variant_builder_add(&results, "{sv}", "uri", g_variant_new_string(uri));
             g_free(uri);
