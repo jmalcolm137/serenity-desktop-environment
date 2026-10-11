@@ -46,6 +46,7 @@ This supersedes the earlier single-interface `tools/sde-settings-portal.c` (R4.4
 | `MemoryMonitor` (v1) | `LowMemoryWarning` signal; `version` only. |
 | `FileChooser` (v2) | `OpenFile`/`SaveFile` (directory mode via the `directory` option) through the LibGUI **FileChooserDialog** app (`SDE_PORTAL_FILE_CHOOSER`); returns the chosen `uris`. |
 | `Screenshot` (v1) | `Screenshot` captures the primary output (via the ScreenCast capture pipeline, on its own Wayland connection) into a PNG and returns its `uri`. |
+| `Print` (v1) | `PreparePrint` via the LibGUI **PrintDialog** app (`SDE_PORTAL_PRINT_DIALOG`; printers from `lpstat`); `Print` feeds the document fd to `SDE_PORTAL_PRINT_CMD` (e.g. `lp`). |
 
 ### ScreenCast pipeline (niri-inspired)
 
@@ -76,7 +77,8 @@ mode uses the capture session's `PAINT_CURSORS` option.
 
 The **FileChooser** portal is likewise a LibGUI app — `FileChooserDialog/`
 (`scripts/build-file-chooser-dialog.sh`), wrapping `GUI::FilePicker` — launched
-via `SDE_PORTAL_FILE_CHOOSER`.
+via `SDE_PORTAL_FILE_CHOOSER`. The **Print** dialog is `PrintDialog/`
+(`scripts/build-print-dialog.sh`).
 
 ## 3. SDE integration seams
 
@@ -116,7 +118,7 @@ To reach and surpass `xdg-desktop-portal-kde`:
   InputCapture (`ext-image-copy-capture-v1` + PipeWire + compositor input
   injection).
 - **GlobalShortcuts** — compositor global-shortcut registration.
-- **DynamicLauncher**, **Print** (LibGUI), **USB**, **Device**, **Camera** (v2).
+- **DynamicLauncher**, **USB**, **Device**, **Camera** (v2).
 - A **permission store** integration and the `Request`/`Response` choreography for
   the interfaces that return a `handle`.
 

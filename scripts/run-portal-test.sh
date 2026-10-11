@@ -46,10 +46,17 @@ echo "$RUNTIME/picked.txt"
 EOF
 chmod +x "$FILECHOOSER"
 
+PRINTDIALOG="$RUNTIME/printdialog.sh"
+cat > "$PRINTDIALOG" <<'EOF'
+#!/usr/bin/env bash
+printf "Print to File\t2\n"
+EOF
+chmod +x "$PRINTDIALOG"
+
 # Settings reads the theme broker for color-scheme / accent.
 printf '%s\n' "$SERENITY/Base/res/themes/Redmond 2000.ini" > "$RUNTIME/sde-theme"
 
-SDE_PORTAL_OPENER="$OPENER" SDE_PORTAL_NOTIFIER="$NOTIFIER" SDE_PORTAL_FILE_CHOOSER="$FILECHOOSER" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
+SDE_PORTAL_OPENER="$OPENER" SDE_PORTAL_NOTIFIER="$NOTIFIER" SDE_PORTAL_FILE_CHOOSER="$FILECHOOSER" SDE_PORTAL_PRINT_DIALOG="$PRINTDIALOG" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
 PORTAL_PID=$!
 trap 'kill "$PORTAL_PID" 2>/dev/null || true' EXIT
 
@@ -103,6 +110,13 @@ filechooser="$(call org.freedesktop.impl.portal.FileChooser.OpenFile /h app "" "
 check "uint32 0" "$filechooser"
 check "uris" "$filechooser"
 check "picked.txt" "$filechooser"
+
+echo "=== Print ==="
+print_result="$(call org.freedesktop.impl.portal.Print.PreparePrint /h app "" "Doc" "{}" "{}" "{}")"
+check "uint32 0" "$print_result"
+check "printer" "$print_result"
+check "Print to File" "$print_result"
+check "copies" "$print_result"
 
 echo "=== OpenURI ==="
 check "uint32 0" "$(call org.freedesktop.impl.portal.OpenURI.OpenURI /x "" https://example.com "{}")"

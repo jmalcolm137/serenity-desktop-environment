@@ -21,6 +21,7 @@
 // Phase 2.
 
 #include <gio/gio.h>
+#include <gio/gunixfdlist.h>
 #include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1147,6 +1148,201 @@ static void handle_screenshot(GDBusConnection* connection, const gchar* sender, 
     return_response(invocation, RESPONSE_OTHER_ERROR, &results);
 }
 
+// --- Print ------------------------------------------------------------------
+
+static const char print_introspection[] =
+    "<node>"
+    "  <interface name='org.freedesktop.impl.portal.Print'>"
+    "    <property name='version' type='u' access='read'/>"
+    "    <method name='Print'>"
+    "      <arg type='o' name='handle' direction='in'/>"
+    "      <arg type='s' name='app_id' direction='in'/>"
+    "      <arg type='s' name='parent_window' direction='in'/>"
+    "      <arg type='s' name='title' direction='in'/>"
+    "      <arg type='h' name='fd' direction='in'/>"
+    "      <arg type='a{sv}' name='options' direction='in'/>"
+    "      <arg type='u' name='response' direction='out'/>"
+    "      <arg type='a{sv}' name='results' direction='out'/>"
+    "    </method>"
+    "    <method name='PreparePrint'>"
+    "      <arg type='o' name='handle' direction='in'/>"
+    "      <arg type='s' name='app_id' direction='in'/>"
+    "      <arg type='s' name='parent_window' direction='in'/>"
+    "      <arg type='s' name='title' direction='in'/>"
+    "      <arg type='a{sv}' name='settings' direction='in'/>"
+    "      <arg type='a{sv}' name='page_setup' direction='in'/>"
+    "      <arg type='a{sv}' name='options' direction='in'/>"
+    "      <arg type='u' name='response' direction='out'/>"
+    "      <arg type='a{sv}' name='results' direction='out'/>"
+    "    </method>"
+    "  </interface>"
+    "</node>";
+
+// Collect printer names from CUPS (lpstat), else a single "Print to File".
+static gchar* collect_printers(void)
+{
+    gchar* printers = NULL;
+    FILE* pipe = popen("lpstat -p 2>/dev/null", "r");
+    if (pipe) {
+        char line[512];
+        GString* list = g_string_new(NULL);
+        while (fgets(line, sizeof(line), pipe)) {
+            char* space = strchr(line, ' ');
+            if (!space)
+                continue;
+            char* name = space + 1;
+            char* end = name;
+            while (*end && *end != ' ' && *end != '\n')
+                ++end;
+            *end = '\0';
+            if (*name) {
+                if (list->len)
+                    g_string_append_c(list, ',');
+                g_string_append(list, name);
+            }
+        }
+        pclose(pipe);
+        if (list->len)
+            printers = g_string_free(list, FALSE);
+        else
+            g_string_free(list, TRUE);
+    }
+    if (!printers)
+        printers = g_strdup("Print to File");
+    return printers;
+}
+
+static void handle_print(GDBusConnection* connection, const gchar* sender, const gchar* object_path,
+    const gchar* interface_name, const gchar* method_name, GVariant* parameters,
+    GDBusMethodInvocation* invocation, gpointer user_data)
+{
+    (void)connection;
+    (void)sender;
+    (void)object_path;
+    (void)interface_name;
+    (void)user_data;
+
+    GVariantBuilder results;
+    g_variant_builder_init(&results, G_VARIANT_TYPE("a{sv}"));
+
+    if (g_strcmp0(method_name, "PreparePrint") == 0) {
+        char const* handle = NULL;
+        char const* app_id = NULL;
+        char const* parent_window = NULL;
+        char const* title = NULL;
+        GVariant* settings = NULL;
+        GVariant* page_setup = NULL;
+        GVariant* options = NULL;
+        g_variant_get(parameters, "(o&s&s&s@a{sv}@a{sv}@a{sv})", &handle, &app_id, &parent_window, &title, &settings, &page_setup, &options);
+
+        char const* dialog = getenv("SDE_PORTAL_PRINT_DIALOG");
+        gchar* printers = collect_printers();
+        gchar* chosen_printer = g_strdup("");
+        guint32 copies = 1;
+        guint32 response = RESPONSE_CANCELLED;
+
+        if (dialog && *dialog) {
+            char const* argv[8];
+            int argc = 0;
+            argv[argc++] = dialog;
+            argv[argc++] = "-t";
+            argv[argc++] = title && *title ? title : "Print";
+            argv[argc++] = "-p";
+            argv[argc++] = printers;
+            argv[argc] = NULL;
+            char* out = NULL;
+            gint wait_status = 0;
+            GError* error = NULL;
+            if (g_spawn_sync(NULL, (char**)argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, &out, NULL, &wait_status, &error)
+                && out && g_spawn_check_wait_status(wait_status, NULL)) {
+                gchar** tokens = g_strsplit(g_strstrip(out), "\t", 2);
+                if (tokens[0] && *tokens[0]) {
+                    g_free(chosen_printer);
+                    chosen_printer = g_strdup(tokens[0]);
+                    if (tokens[1])
+                        copies = (guint32)MAX(1, atoi(tokens[1]));
+                    response = RESPONSE_SUCCESS;
+                }
+                g_strfreev(tokens);
+            }
+            if (out)
+                g_free(out);
+            if (error)
+                g_error_free(error);
+        }
+        g_free(printers);
+
+        GVariantBuilder out_settings;
+        g_variant_builder_init(&out_settings, G_VARIANT_TYPE("a{sv}"));
+        g_variant_builder_add(&out_settings, "{sv}", "printer", g_variant_new_string(chosen_printer));
+        g_variant_builder_add(&out_settings, "{sv}", "copies", g_variant_new_uint32(copies));
+        g_variant_builder_add(&results, "{sv}", "settings", g_variant_builder_end(&out_settings));
+        GVariantBuilder out_page_setup;
+        g_variant_builder_init(&out_page_setup, G_VARIANT_TYPE("a{sv}"));
+        g_variant_builder_add(&results, "{sv}", "page_setup", g_variant_builder_end(&out_page_setup));
+        g_free(chosen_printer);
+        if (settings)
+            g_variant_unref(settings);
+        if (page_setup)
+            g_variant_unref(page_setup);
+        if (options)
+            g_variant_unref(options);
+        return_response(invocation, response, &results);
+        return;
+    }
+
+    if (g_strcmp0(method_name, "Print") == 0) {
+        char const* handle = NULL;
+        char const* app_id = NULL;
+        char const* parent_window = NULL;
+        char const* title = NULL;
+        gint32 fd_index = 0;
+        GVariant* options = NULL;
+        g_variant_get(parameters, "(o&s&s&sh@a{sv})", &handle, &app_id, &parent_window, &title, &fd_index, &options);
+
+        int fd = -1;
+        GDBusMessage* message = g_dbus_method_invocation_get_message(invocation);
+        GUnixFDList* fd_list = message ? g_dbus_message_get_unix_fd_list(message) : NULL;
+        if (fd_list)
+            fd = g_unix_fd_list_get(fd_list, fd_index, NULL);
+
+        guint32 response = RESPONSE_OTHER_ERROR;
+        char const* command = getenv("SDE_PORTAL_PRINT_CMD");
+        if (fd >= 0 && command && *command) {
+            // Feed the document to the configured print command (e.g. "lp -d x").
+            GError* error = NULL;
+            gchar* argv[] = { (gchar*)"/bin/sh", (gchar*)"-c", (gchar*)command, NULL };
+            gint child_stdin = -1;
+            gboolean spawned = g_spawn_async_with_pipes(NULL, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, &child_stdin, NULL, NULL, &error);
+            if (spawned && child_stdin >= 0) {
+                char buffer[4096];
+                ssize_t n;
+                while ((n = read(fd, buffer, sizeof(buffer))) > 0) {
+                    ssize_t written = 0;
+                    while (written < n) {
+                        ssize_t w = write(child_stdin, buffer + written, (size_t)(n - written));
+                        if (w <= 0)
+                            break;
+                        written += w;
+                    }
+                }
+                close(child_stdin);
+                response = RESPONSE_SUCCESS;
+            }
+            if (error)
+                g_error_free(error);
+        }
+        if (fd >= 0)
+            close(fd);
+        if (options)
+            g_variant_unref(options);
+        return_response(invocation, response, &results);
+        return;
+    }
+
+    g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "unknown method %s", method_name);
+}
+
 // --- Settings introspection -------------------------------------------------
 
 static const char settings_introspection[] =
@@ -1213,6 +1409,7 @@ static GVariant* filechooser_get_property(GDBusConnection* connection, const gch
 
 static const GDBusInterfaceVTable filechooser_vtable = { handle_filechooser, filechooser_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable screenshot_vtable = { handle_screenshot, simple_version_get_property, NULL, { 0 } };
+static const GDBusInterfaceVTable print_vtable = { handle_print, simple_version_get_property, NULL, { 0 } };
 
 static const GDBusInterfaceVTable realtime_vtable = { handle_realtime, simple_version_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable powerprofile_vtable = { NULL, powerprofile_get_property, NULL, { 0 } };
@@ -1237,6 +1434,7 @@ static InterfaceRegistration const interfaces[] = {
     { memorymonitor_introspection, &memorymonitor_vtable },
     { filechooser_introspection, &filechooser_vtable },
     { screenshot_introspection, &screenshot_vtable },
+    { print_introspection, &print_vtable },
 };
 
 static void register_interfaces(Portal* portal, GDBusConnection* connection)
