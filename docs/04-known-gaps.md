@@ -202,8 +202,14 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
 - **ComboBox dropdowns (W6, host).** Resolved — see "Recently resolved".
 - **Wallpaper thumbnails (W6/W7, host).** Resolved — see "Recently resolved"
   (`ImageDecoder` is served in-process).
-- **Application enablement (W7).** `SystemMonitor` (needs `/proc`), `MouseSettings`,
-  `Debugger`, `CrashReporter` feasibility not yet addressed. `Terminal` runs.
+- **Application enablement (W7).** `SystemMonitor` now runs as a **Linux-native**
+  app: it reads `/proc` directly (process list, CPU/memory graphs) and unwinds
+  thread stacks with **libunwind + elfutils** — no Serenity `/sys/kernel` shim —
+  and no longer links the kernel-specific LibSymbolication/LibDebug. Verified by
+  `scripts/run-system-monitor-test.sh`. Still reading Serenity `/sys/kernel`
+  paths (so empty on Linux): the per-process open-files / memory-map / unveiled-
+  paths views and the Storage / Network tabs. `MouseSettings`, `Debugger`,
+  `CrashReporter` feasibility not yet addressed. `Terminal` runs.
 - **Web engine / `WebContent` + `RequestServer` + `SQLServer` (W7, host).** Done —
   see "Recently resolved". **Help** (Taskbar system menu ▸ Help) renders the man
   pages; **Browser** loads pages (local `file://` and the WebContent pipeline).
