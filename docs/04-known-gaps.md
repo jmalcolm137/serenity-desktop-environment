@@ -23,11 +23,6 @@ Done: Taskbar (system menu, quick-launch, window list, clock), WindowManagerServ
   `LaunchServer.ini` `[FileType]`/`[Protocol]` plus the editor as a generic
   alternate. There is no `.af` `AppFile` database, so an app-declared handler set
   (and any real "Open with" chooser beyond the editor) is not available.
-- **Calculator (and apps registering launch handlers) crash at startup.** Some
-  apps call `Desktop::Launcher::add_allowed_handler_with_only_specific_urls`,
-  which `VERIFY`s (`!is_error()`) because the handler DB can't be resolved. This
-  happens at **both 1x and 2x**, so it is *not* a scaling bug — fix once the HiDPI
-  scaling work is done (tracked here so it is not forgotten).
 
 ## R2 follow-up — shell v1 loose ends
 
@@ -262,6 +257,14 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   performed. Headless is covered by `scripts/run-headless-test.sh`.
 
 ## Recently resolved (kept so we don't re-chase them)
+
+- **Calculator (and apps registering launch handlers) crashed at startup.** A
+  *stale* `/tmp/session/<sid>/portal/launch` socket made the port "defer to the
+  session service", which was gone; `Desktop::Launcher`'s `connection()` then
+  `VERIFY`d and the app aborted. The port now **probes** the portal socket and, if
+  nothing is listening, unlinks it and serves the launch portal **in-process**
+  (`src/LibWM.cpp`); a live session `LaunchServer` is still preferred. Calculator
+  runs and renders correctly at both 1x and 2x.
 
 - **Apps launched by the session LaunchServer opened on the wrong compositor.** When nested, the session `LaunchServer` was started with the *host* `WAYLAND_DISPLAY`, so the applications it spawns (e.g. the desktop's "Display Settings") connected to the host (their window was created at the `-5000,-5000` sentinel) instead of joining the SDE session. Session services that spawn apps now run with the **session** display (`scripts/start-sde-nested.sh`, `scripts/start-sde-session.sh`); the compositor already sets `WAYLAND_DISPLAY` for its own children.
 - **The session supervisor restarted on SIGTERM** instead of stopping, so the session could not be shut down (e.g. logout). It now treats SIGTERM/SIGINT as "stop": it kills the compositor and exits the loop. Covered by `scripts/run-session-test.sh` phase (F).
