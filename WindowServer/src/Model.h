@@ -54,6 +54,8 @@ struct wlr_output_layout;
 struct wlr_output_manager_v1;
 struct wlr_output_power_manager_v1;
 struct wlr_renderer;
+struct wlr_relative_pointer_manager_v1;
+struct wlr_keyboard_shortcuts_inhibit_manager_v1;
 struct wlr_scene;
 struct wlr_scene_buffer;
 struct wlr_scene_layer_surface_v1;
@@ -335,6 +337,10 @@ struct Server {
     wlr_xdg_activation_v1* xdg_activation { nullptr };
     wlr_cursor_shape_manager_v1* cursor_shape_manager { nullptr };
     wlr_output_manager_v1* output_manager { nullptr };
+    // R5: native-app compatibility protocols (mostly wlroots-implemented; these
+    // need a little compositor glue — relative motion and shortcut inhibition).
+    wlr_relative_pointer_manager_v1* relative_pointer_manager { nullptr };
+    wlr_keyboard_shortcuts_inhibit_manager_v1* keyboard_shortcuts_inhibit { nullptr };
     // Virtual input (wlr virtual-keyboard / virtual-pointer), so headless tests
     // can script keyboard and pointer events. See docs/09 §2.4.
     wlr_virtual_keyboard_manager_v1* virtual_keyboard_manager { nullptr };

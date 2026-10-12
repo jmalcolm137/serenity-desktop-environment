@@ -73,6 +73,15 @@ extern "C" {
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_data_device.h>
+#include <wlr/types/wlr_primary_selection_v1.h>
+#include <wlr/types/wlr_viewporter.h>
+#include <wlr/types/wlr_content_type_v1.h>
+#include <wlr/types/wlr_tearing_control_v1.h>
+#include <wlr/types/wlr_relative_pointer_v1.h>
+#include <wlr/types/wlr_keyboard_shortcuts_inhibit_v1.h>
+#include <wlr/types/wlr_xdg_foreign_registry.h>
+#include <wlr/types/wlr_xdg_foreign_v1.h>
+#include <wlr/types/wlr_xdg_foreign_v2.h>
 #include <wlr/types/wlr_foreign_toplevel_management_v1.h>
 #include <wlr/types/wlr_ext_workspace_v1.h>
 #include <wlr/types/wlr_ext_foreign_toplevel_list_v1.h>
@@ -462,6 +471,21 @@ static void start_key_repeat(Keyboard& keyboard, uint32_t keycode)
     s_key_repeat_timer->restart(max(settings.repeat_delay, 1));
 }
 
+// A client (a game, a VM viewer) can inhibit the compositor's keybindings for its
+// focused surface (zwp_keyboard_shortcuts_inhibit_v1). While active, keys are
+// forwarded to the client without triggering compositor actions.
+static bool keyboard_shortcuts_inhibited(Server& server, wlr_surface* surface)
+{
+    if (!server.keyboard_shortcuts_inhibit || !surface)
+        return false;
+    wlr_keyboard_shortcuts_inhibitor_v1* inhibitor = nullptr;
+    wl_list_for_each(inhibitor, &server.keyboard_shortcuts_inhibit->inhibitors, link) {
+        if (inhibitor->active && inhibitor->surface == surface)
+            return true;
+    }
+    return false;
+}
+
 static void keyboard_key(wl_listener* listener, void* data)
 {
     Keyboard* keyboard = nullptr;
@@ -520,7 +544,8 @@ static void keyboard_key(wl_listener* listener, void* data)
         }
         return;
     }
-    if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+    bool inhibited = keyboard_shortcuts_inhibited(server, server.seat->keyboard_state.focused_surface);
+    if (!inhibited && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
         // R4.4: configured keybindings (defaults match the historical bindings).
         u32 const config_mods = config_modifiers(modifiers);
         for (int i = 0; i < syms_count; ++i) {
@@ -538,19 +563,19 @@ static void keyboard_key(wl_listener* listener, void* data)
             }
         }
     }
-    {
+    if (!inhibited) {
         // The window switcher (Alt+Tab / Super+Tab) grabs the keyboard while open.
         bool switcher_handled = false;
         for (int i = 0; i < syms_count; ++i)
             switcher_handled |= WindowSwitcher::handle_key(server, syms[i], modifiers, event->state == WL_KEYBOARD_KEY_STATE_PRESSED);
         if (switcher_handled)
             return;
-    }
-    for (int i = 0; i < syms_count; ++i)
-        handled |= WindowManager::handle_super_key(server, syms[i], modifiers, event->state == WL_KEYBOARD_KEY_STATE_PRESSED);
-    if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
         for (int i = 0; i < syms_count; ++i)
-            handled |= handle_keybinding(server, syms[i], modifiers);
+            handled |= WindowManager::handle_super_key(server, syms[i], modifiers, event->state == WL_KEYBOARD_KEY_STATE_PRESSED);
+        if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+            for (int i = 0; i < syms_count; ++i)
+                handled |= handle_keybinding(server, syms[i], modifiers);
+        }
     }
 
     if (!handled) {
@@ -917,6 +942,11 @@ static void cursor_motion(wl_listener* listener, void* data)
     server = wl_container_of(listener, server, cursor_motion);
     auto* event = static_cast<wlr_pointer_motion_event*>(data);
     wlr_cursor_move(server->cursor, &event->pointer->base, event->delta_x, event->delta_y);
+    // R5: relative-pointer clients (games) get the raw relative motion. The time
+    // is in microseconds (wl_pointer uses milliseconds).
+    if (server->relative_pointer_manager)
+        wlr_relative_pointer_manager_v1_send_relative_motion(server->relative_pointer_manager, server->seat,
+            static_cast<uint64_t>(event->time_msec) * 1000, event->delta_x, event->delta_y, event->unaccel_dx, event->unaccel_dy);
     move_cursor_highlight(*server);
     // The switcher grabs the pointer while it is open.
     if (WindowSwitcher::handle_pointer_motion(*server, server->cursor->x, server->cursor->y)) {
@@ -3637,6 +3667,20 @@ static ErrorOr<void> initialize(Server& server)
     wl_signal_add(&server.seat->pointer_state.events.focus_change, &server.seat_pointer_focus_change);
     server.seat_request_set_selection.notify = seat_request_set_selection;
     wl_signal_add(&server.seat->events.request_set_selection, &server.seat_request_set_selection);
+
+    // R5: the native-app compatibility surface. Most of these protocols are fully
+    // implemented by wlroots, so the compositor only advertises them; relative
+    // pointer and keyboard-shortcuts-inhibit also need a little glue (below and
+    // in keyboard_key()).
+    wlr_primary_selection_v1_device_manager_create(server.display);
+    wlr_viewporter_create(server.display);
+    wlr_content_type_manager_v1_create(server.display, 1);
+    wlr_tearing_control_manager_v1_create(server.display, 1);
+    server.relative_pointer_manager = wlr_relative_pointer_manager_v1_create(server.display);
+    server.keyboard_shortcuts_inhibit = wlr_keyboard_shortcuts_inhibit_v1_create(server.display);
+    auto* foreign_registry = wlr_xdg_foreign_registry_create(server.display);
+    wlr_xdg_foreign_v1_create(server.display, foreign_registry);
+    wlr_xdg_foreign_v2_create(server.display, foreign_registry);
 
     return { };
 }
