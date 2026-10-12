@@ -236,10 +236,18 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
   **LibDebug**, **LibELF** (core notes), **LibCoredump** and **LibSymbolication**
   to be ported to **native Linux** (patch 0036: Linux ptrace, `struct
   user_regs_struct`, `/proc/<pid>/maps`, except that Linux exposes no readable
-  pagemap) rather than a SerenityOS kernel-ABI shim. **Profiler** is not built
-  yet: it needs a native `perf_event_open` sampler (SerenityOS's
-  `profiling_enable` + `/proc/<pid>/perf_events`) — a follow-up in SDE's
-  `LibSerenitySystem`.
+  pagemap) rather than a SerenityOS kernel-ABI shim. **`Profiler` is deferred
+  (parked).** It is the one `Userland/DevTools` app not built: it depends on
+  SerenityOS's kernel profiling interface (`profiling_enable(pid, mask)` +
+  `/proc/<pid>/perf_events`, whose perfcore JSON carries a `stack` array per
+  event). A Linux port means writing a native `perf_event_open` sampler with user
+  stack unwinding (`PERF_SAMPLE_CALLCHAIN`) that emits the same perfcore JSON —
+  a sizable feature, and one that needs `perf_event_paranoid <= 1` (or
+  `CAP_PERFMON`) to sample other processes. When resumed it belongs in SDE's
+  `LibSerenitySystem` (the home for native Serenity system-call implementations),
+  with `Profiler` wired to it under `SDE_ROOT` (the Terminal precedent). Until
+  then `/bin/Profiler` does not resolve, so it is absent from the Development
+  menu.
 - **Web engine / `WebContent` + `RequestServer` + `SQLServer` (W7, host).** Done —
   see "Recently resolved". **Help** (Taskbar system menu ▸ Help) renders the man
   pages; **Browser** loads pages (local `file://` and the WebContent pipeline).

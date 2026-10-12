@@ -280,7 +280,10 @@ risks are:
   Serenity" is mostly in window management and shell semantics, not rendering.
 - **Deferred applications** — `Terminal`, `SystemMonitor`, `Debugger`,
   `CrashReporter`, `MouseSettings` need service shims or Linux equivalents whose
-  feasibility varies.
+  feasibility varies. `Profiler` is **deferred (parked)**: porting it means a
+  native `perf_event_open` sampler (with stack unwinding) in `LibSerenitySystem`
+  replacing SerenityOS's `profiling_enable` + `/proc/<pid>/perf_events` — see
+  `04-known-gaps.md`.
 - **Small-team sustainability** — mitigated by owning only the differentiated
   layers and renting the rest, and by keeping the shell protocol-portable.
 - **HiDPI and multi-output** — the known soft-fractional-scaling issue in LibWindowServer
