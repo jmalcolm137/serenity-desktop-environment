@@ -231,6 +231,12 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
   Solitaire, Spider, plus ChessEngine) are built by the port (patch 0035) and so
   appear under the Taskbar's **Games** menu (which it generates from the
   `Base/res/apps/*.af` files); verified by `scripts/run-games-test.sh`. The
+  **demos** (CatDog, Eyes, LibGfx Demo, LibGfx Scale Demo, Mandelbrot, Model
+  Gallery, Screensaver, Widget Gallery) and **Magnifier** are built too (the
+  Demos and Utilities menus; `scripts/run-demos-test.sh`), so the Taskbar's menu
+  matches SerenityOS's. `scripts/run-desktop-scene.sh` brings up the desktop
+  "scene" (Terminal + File Manager + Firefox + System Monitor on the blue-grid
+  wallpaper, headless at the output's size or nested on the host). The
   **DevTools** — GMLPlayground, SQLStudio and HackStudio — are built too and
   appear under **Development** (`scripts/run-devtools-test.sh`). This needed
   **LibDebug**, **LibELF** (core notes), **LibCoredump** and **LibSymbolication**
