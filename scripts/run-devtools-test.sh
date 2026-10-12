@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Headless test for the SerenityOS developer tools (the Taskbar's Development
-# menu): GMLPlayground, SQLStudio and HackStudio, built by libgui-wayland
-# (patch 0035). Like the games test, it asserts each tool's .af declares
+# menu): GMLPlayground, SQLStudio, HackStudio and Profiler, built by
+# libgui-wayland (patches 0035/0040). Like the games test, it asserts each tool's .af declares
 # Category=Development (which is what the Taskbar's generated menu lists, with
 # /bin/X resolving to the binary next to the Taskbar), that the binary exists,
 # and that the tool launches into the compositor without faulting.
@@ -18,7 +18,7 @@ SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
 BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
 COMP="$SDE_ROOT/build/WindowServer/WindowServer"
 
-TOOLS=(GMLPlayground SQLStudio HackStudio)
+TOOLS=(GMLPlayground SQLStudio HackStudio Profiler)
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 

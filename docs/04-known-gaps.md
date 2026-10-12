@@ -237,23 +237,24 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
   matches SerenityOS's. `scripts/run-desktop-scene.sh` brings up the desktop
   "scene" (Terminal + File Manager + Firefox + System Monitor on the blue-grid
   wallpaper, headless at the output's size or nested on the host). The
-  **DevTools** — GMLPlayground, SQLStudio and HackStudio — are built too and
-  appear under **Development** (`scripts/run-devtools-test.sh`). This needed
+  **DevTools** — GMLPlayground, SQLStudio, HackStudio and **Profiler** — are
+  built too and appear under **Development** (`scripts/run-devtools-test.sh`).
+  This needed
   **LibDebug**, **LibELF** (core notes), **LibCoredump** and **LibSymbolication**
   to be ported to **native Linux** (patch 0036: Linux ptrace, `struct
   user_regs_struct`, `/proc/<pid>/maps`, except that Linux exposes no readable
-  pagemap) rather than a SerenityOS kernel-ABI shim. **`Profiler` is deferred
-  (parked).** It is the one `Userland/DevTools` app not built: it depends on
-  SerenityOS's kernel profiling interface (`profiling_enable(pid, mask)` +
-  `/proc/<pid>/perf_events`, whose perfcore JSON carries a `stack` array per
-  event). A Linux port means writing a native `perf_event_open` sampler with user
-  stack unwinding (`PERF_SAMPLE_CALLCHAIN`) that emits the same perfcore JSON —
-  a sizable feature, and one that needs `perf_event_paranoid <= 1` (or
-  `CAP_PERFMON`) to sample other processes. When resumed it belongs in SDE's
-  `LibSerenitySystem` (the home for native Serenity system-call implementations),
-  with `Profiler` wired to it under `SDE_ROOT` (the Terminal precedent). Until
-  then `/bin/Profiler` does not resolve, so it is absent from the Development
-  menu.
+  pagemap) rather than a SerenityOS kernel-ABI shim. **`Profiler` runs** on
+  native Linux: `LibSerenitySystem::Profiling` (`src/LibSerenitySystem/
+  Profiling.{h,cpp}`) samples with `perf_event_open` (`PERF_SAMPLE_IP|TID|TIME|
+  CALLCHAIN`, plus mmap/comm/fork/exit records), seeds the current `/proc/<pid>/
+  maps` mappings, and writes the same perfcore JSON that `Profiler` parses —
+  replacing SerenityOS's `profiling_enable(pid, mask)` + `/proc/<pid>/
+  perf_events`. Timestamps are milliseconds, matching `Profile::length_in_ms()`.
+  `Profiler` itself is wired to it under `SDE_ROOT` (the Terminal precedent;
+  patch 0040) and is built by the port. Verified by `scripts/run-profiler-
+  test.sh`. (Sampling *other* users' processes still needs `CAP_PERFMON`; with
+  `perf_event_paranoid=2` a user's own processes profile fine because we exclude
+  kernel samples.)
 - **Web engine / `WebContent` + `RequestServer` + `SQLServer` (W7, host).** Done —
   see "Recently resolved". **Help** (Taskbar system menu ▸ Help) renders the man
   pages; **Browser** loads pages (local `file://` and the WebContent pipeline).
@@ -312,6 +313,15 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   on this path ([`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md) §6).
 
 ## Recently resolved (kept so we don't re-chase them)
+
+- **Profiler (Development ▸ Profiler).** SerenityOS's kernel profiling interface
+  (`profiling_enable(pid, mask)` + `/proc/<pid>/perf_events`) has no Linux
+  equivalent, so `LibSerenitySystem::Profiling` samples with `perf_event_open`
+  (user callchains, mmap/comm/fork/exit records, `/proc/<pid>/maps` seeding) and
+  writes the same perfcore JSON that `Profiler` parses. Wired under `SDE_ROOT`
+  (patch 0040); covered by `scripts/run-profiler-test.sh`. Timestamps must be
+  **milliseconds** (`Profile::length_in_ms()` is a raw difference used as a
+  bucket count) — nanoseconds ballooned RSS to several GiB.
 
 - **Taskbar crash on an invalid window icon.** The compositor sent
   `window_icon_bitmap_changed` with an *invalid* bitmap when a window had no
