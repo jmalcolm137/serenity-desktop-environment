@@ -257,12 +257,14 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 - **Packaging** of `WindowServer` and the session; **headless CI matrix**;
   **sanitizers/fuzzing**; **compositor design doc** and observability.
 
-## R1 — Compositor bring-up (done, one leg unexercised)
+## R1 — Compositor bring-up (done)
 
-- **Real-hardware leg.** The DRM/KMS + libinput path is implemented
-  (`wlr_backend_autocreate` + `scripts/start-sde-session.sh`) but has only been
-  exercised **nested** on a host Wayland session; a real TTY/DRM run has not been
-  performed. Headless is covered by `scripts/run-headless-test.sh`.
+- **Real-hardware leg — exercised.** The DRM/KMS + libinput path
+  (`wlr_backend_autocreate` + `scripts/start-sde-session.sh`, with `libseat`
+  granting DRM master and handling VT switching) runs on a real TTY, alongside the
+  headless (`scripts/run-headless-test.sh`) and nested
+  (`scripts/start-sde-nested.sh`) paths. The live-TTY ScreenCast legs were verified
+  on this path ([`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md) §6).
 
 ## Recently resolved (kept so we don't re-chase them)
 
