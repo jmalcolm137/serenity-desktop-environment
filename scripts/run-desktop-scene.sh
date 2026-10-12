@@ -76,7 +76,7 @@ write_wallpaper() {
     local dims
     dims="$(magick identify -format '%w %h' "$png")"
     local w="${dims%% *}" h="${dims##* }"
-    magick "$png" -depth 8 "rgba:$RUNTIME/wallpaper.bgra"
+    magick "$png" -depth 8 "bgra:$RUNTIME/wallpaper.bgra"
     python3 - "$RUNTIME/wallpaper.bgra" "$RUNTIME/wallpaper.raw" "$w" "$h" <<'PY'
 import struct, sys
 src, dst, w, h = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
@@ -99,6 +99,8 @@ write_placement() {
     cat > "$RUNTIME/WindowServer.ini" <<EOF
 [Placement]
 Windows=Terminal:0,0,${right},${top};File Manager:${right},0,$((WIDTH - right)),${top};Browser:0,${top},${right},${bottom};System Monitor:${right},${top},$((WIDTH - right)),${bottom}
+[Applet]
+Order=WorkspacePicker,CPUGraph,MemoryGraph,NetworkGraph,Network,ClipboardHistory,Audio,Keymap,Battery
 EOF
 }
 write_placement
@@ -132,9 +134,9 @@ else
     echo "note: no browser; the scene will have no browser window" >&2
 fi
 
-# Terminal (top-left, like the screenshot), running `uname -a` in a shell that
-# then stays interactive (the host shell has no SerenityOS --keep-open).
-STARTUP="$STARTUP & $BUILD/bin/Terminal -e 'uname -a; exec sh'"
+# Terminal (top-left, like the screenshot), running `uname -a` and `df -h` in a
+# shell that then stays interactive (the host shell has no SerenityOS --keep-open).
+STARTUP="$STARTUP & $BUILD/bin/Terminal -e 'uname -a; df -Th; exec sh'"
 
 # Battery applet (SDE's) + the SerenityOS taskbar applets.
 BATTERY_APPLET="$SDE_ROOT/build/BatteryApplet/BatteryApplet"
@@ -209,6 +211,14 @@ EOF
     if [[ -n "$SCREENSHOT" ]]; then
         echo "==> letting the scene settle (browser startup can be slow)..."
         sleep "${SDE_SCENE_SETTLE:-12}"
+        # Open the Taskbar's system menu and the Development submenu, like the
+        # reference screenshot. (The menu needs a mouse-down on the Taskbar, so
+        # click the start button rather than using the Super key.)
+        VI="$("$SDE_ROOT/scripts/build-virtual-input.sh")"
+        env WAYLAND_DISPLAY="$SOCK" "$VI" --extent "$WIDTH" "$HEIGHT" \
+            --move 20 $((HEIGHT - 14)) --button 0x110 press --sleep 80 --button 0x110 release --sleep 400 \
+            --move 60 $((HEIGHT - 302)) --sleep 700 >/dev/null 2>&1 || true
+        sleep 0.5
         if [[ ! -x "$SDE_ROOT/build/tools/sde-screenshot" ]]; then
             "$SDE_ROOT/scripts/build-tools.sh" >/dev/null 2>&1 || true
         fi

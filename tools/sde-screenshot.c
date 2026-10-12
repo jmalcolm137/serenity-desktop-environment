@@ -58,14 +58,25 @@ static void buffer_handle_ready(void*, struct zwlr_screencopy_frame_v1* frame, u
     (void)tv_sec_hi; (void)tv_sec_lo; (void)tv_nsec;
     FILE* f = fopen(s_out_path, "wb");
     if (f) {
+        // wl_shm formats differ in channel order: *RGB8888 is B,G,R,X in memory
+        // (little-endian), *BGR8888 is R,G,B,X. wlroots' screencopy commonly
+        // hands back ABGR/XBGR, so honour the advertised format rather than
+        // assuming XRGB (a mismatch swaps red and blue).
+        bool const bgr = (s_format == WL_SHM_FORMAT_XRGB8888 || s_format == WL_SHM_FORMAT_ARGB8888);
         fprintf(f, "P6\n%d %d\n255\n", s_width, s_height);
         for (int y = 0; y < s_height; ++y) {
             uint8_t* row = (uint8_t*)s_data + (size_t)y * s_width * 4;
             for (int x = 0; x < s_width; ++x) {
-                // XRGB8888 in memory (little-endian): B, G, R, X.
-                fputc(row[x * 4 + 2], f);
-                fputc(row[x * 4 + 1], f);
-                fputc(row[x * 4 + 0], f);
+                uint8_t const* p = &row[x * 4];
+                if (bgr) {
+                    fputc(p[2], f);
+                    fputc(p[1], f);
+                    fputc(p[0], f);
+                } else {
+                    fputc(p[0], f);
+                    fputc(p[1], f);
+                    fputc(p[2], f);
+                }
             }
         }
         fclose(f);
