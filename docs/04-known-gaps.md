@@ -226,7 +226,11 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
   **Memory map** windows read `/proc/<pid>/{fd,fdinfo,smaps}` too; the
   **Unveiled paths** tab is removed on Linux (unveil is a SerenityOS-only
   mechanism). `MouseSettings`, `Debugger`, `CrashReporter` feasibility not yet
-  addressed. `Terminal` runs.
+  addressed. `Terminal` runs. The **games** (2048, BrickGame, Chess, ColorLines,
+  FlappyBug, Flood, GameOfLife, Hearts, MasterWord, Minesweeper, Snake,
+  Solitaire, Spider, plus ChessEngine) are built by the port (patch 0035) and so
+  appear under the Taskbar's **Games** menu (which it generates from the
+  `Base/res/apps/*.af` files); verified by `scripts/run-games-test.sh`.
 - **Web engine / `WebContent` + `RequestServer` + `SQLServer` (W7, host).** Done —
   see "Recently resolved". **Help** (Taskbar system menu ▸ Help) renders the man
   pages; **Browser** loads pages (local `file://` and the WebContent pipeline).
