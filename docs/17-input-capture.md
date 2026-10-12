@@ -1,6 +1,6 @@
 # InputCapture Portal — Design (input capture + EIS)
 
-**Status:** Design decision recorded; **P1 (EIS fd handoff) + P2 (pointer zones/barriers/activation) landed** · v1 · **Date:** 2026-10-12
+**Status:** Design decision recorded; **P1 (EIS fd handoff) + P2 (pointer zones/barriers/activation) + P3 (keyboard) landed** · v1 · **Date:** 2026-10-12
 **Related:** [`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md) §5–6 ·
 [`08-compositor-gaps.md`](08-compositor-gaps.md) §3–4 ·
 [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §R5 ·
@@ -233,8 +233,10 @@ InputCapture is a **keylogger-class** capability, so:
    crossing emits `activated` and feeds pointer motion/buttons over EIS until
    release. Covered by `scripts/run-input-capture-test.sh`. (A libei receiver
    context only receives — there is no app→compositor injection to wire.)
-3. **P3 — keyboard.** Grant/`Enable` the keyboard capability and feed key events
-   (and XKB modifiers) over EIS.
+3. **P3 — keyboard (landed).** The EIS seat advertises KEYBOARD and a virtual
+   keyboard device is created with the configured XKB keymap
+   (`eis_device_new_keymap`); while a keyboard-capturing session is active, key
+   events and the XKB modifier state are fed over EIS. Covered by the same test.
 4. **P4 — D-Bus end-to-end.** Backend methods/signals + the `AccessDialog`
    prompt; flip `contrib/xdg-desktop-portal/portals.conf`
    `InputCapture=serenity;gtk` and add the interface to `serenity.portal`.
@@ -249,14 +251,14 @@ GPU), so CI stays green.
 
 ## 8. Exit tests
 
-- `scripts/run-input-capture-test.sh` (headless; **P1 + P2 landed**): starts the
+- `scripts/run-input-capture-test.sh` (headless; **P1–P3 landed**): starts the
   compositor with `SDE_INPUT_CAPTURE=1`; `tools/input-capture-test.c` creates a
   session, connects the libei receiver, requests zones, installs a valid and an
-  invalid barrier, arms capture, and the test moves a virtual pointer across the
-  barrier. Asserts: a seat/device are negotiated; the zones are the output
-  (1280x720 at 0,0); the diagonal barrier is rejected; crossing emits `activated`
-  (with the barrier id and activation_id) and pointer motion arrives over EIS.
-  (P3 extends it with keyboard.)
+  invalid barrier, arms capture (keyboard + pointer), and the test moves a virtual
+  pointer across the barrier and types a key. Asserts: a seat and both devices are
+  negotiated; the zones are the output (1280x720 at 0,0); the diagonal barrier is
+  rejected; crossing emits `activated` (with the barrier id and activation_id) and
+  pointer motion arrives over EIS; and a key press/release arrives over EIS.
 - `scripts/run-portal-test.sh` (extended): query `SupportedCapabilities`; drive
   `CreateSession2 → Start → GetZones → SetPointerBarriers → Enable`; assert
   `ConnectToEIS` returns an fd a **passive libei context** accepts (the same

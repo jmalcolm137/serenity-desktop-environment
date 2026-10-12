@@ -80,9 +80,9 @@
     <request name="enable">
       <description summary="arm input capture">
         Arm capturing. Once armed, crossing a pointer barrier activates capture
-        (the activated event) and pointer events are then delivered over EIS
-        until release/disable. capabilities is a bitmask (1 = keyboard,
-        2 = pointer); only pointer is supported for now.
+        (the activated event) and events for the granted capabilities are then
+        delivered over EIS until release/disable. capabilities is a bitmask
+        (1 = keyboard, 2 = pointer).
       </description>
       <arg name="capabilities" type="uint"/>
     </request>

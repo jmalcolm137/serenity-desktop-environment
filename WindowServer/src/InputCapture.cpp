@@ -6,6 +6,10 @@
 
 #include "InputCapture.h"
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include <AK/ByteString.h>
 #include <AK/Format.h>
 #include <AK/NonnullOwnPtr.h>
@@ -18,11 +22,14 @@
 #include <LibCore/EventLoop.h>
 #include <LibCore/Notifier.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
 
+#include "Config.h"
 #include "Model.h"
 
 extern "C" {
@@ -31,8 +38,13 @@ extern "C" {
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
+#include <xkbcommon/xkbcommon.h>
 #include "serenity-input-capture-server-protocol.h"
 }
+
+// InputCapture capability bits (match the portal's SupportedCapabilities).
+#define IC_CAP_KEYBOARD 1u
+#define IC_CAP_POINTER 2u
 
 namespace InputCapture {
 
@@ -67,6 +79,7 @@ struct Session {
     Vector<Barrier> barriers;
     bool enabled { false };
     bool active { false };
+    uint32_t capabilities { 0 };
     uint32_t zone_set_seen { 0 };
     uint32_t activation_id { 0 };
 };
@@ -79,6 +92,7 @@ static RefPtr<Core::Notifier> s_eis_notifier;
 static Vector<NonnullOwnPtr<Session>> s_sessions;
 static struct eis_seat* s_eis_seat { nullptr };
 static struct eis_device* s_eis_pointer { nullptr };
+static struct eis_device* s_eis_keyboard { nullptr };
 static Session* s_active_session { nullptr };
 static uint32_t s_next_activation_id { 0 };
 static uint32_t s_zone_set { 1 };
@@ -124,6 +138,8 @@ static void deactivate(Session& session, double cursor_x, double cursor_y)
         return;
     if (s_eis_pointer)
         eis_device_stop_emulating(s_eis_pointer);
+    if (s_eis_keyboard)
+        eis_device_stop_emulating(s_eis_keyboard);
     session.active = false;
     if (s_active_session == &session)
         s_active_session = nullptr;
@@ -139,12 +155,14 @@ static void activate(Session& session, uint32_t barrier_id, double cursor_x, dou
     session.activation_id = ++s_next_activation_id;
     session.active = true;
     s_active_session = &session;
-    if (s_eis_pointer)
+    if ((session.capabilities & IC_CAP_POINTER) && s_eis_pointer)
         eis_device_start_emulating(s_eis_pointer, session.activation_id);
+    if ((session.capabilities & IC_CAP_KEYBOARD) && s_eis_keyboard)
+        eis_device_start_emulating(s_eis_keyboard, session.activation_id);
     serenity_input_capture_session_v1_send_activated(session.resource, session.activation_id,
         wl_fixed_from_double(cursor_x), wl_fixed_from_double(cursor_y), barrier_id);
-    dbgln("WindowServer: InputCapture: activated (session '{}', barrier {}, activation_id {})",
-        session.app_id, barrier_id, session.activation_id);
+    dbgln("WindowServer: InputCapture: activated (session '{}', barrier {}, activation_id {}, caps {})",
+        session.app_id, barrier_id, session.activation_id, session.capabilities);
 }
 
 // Does the segment (px,py)->(cx,cy) cross this axis-aligned barrier?
@@ -190,6 +208,90 @@ static void ensure_pointer_device(struct eis_seat* seat)
     dbgln("WindowServer: InputCapture: EIS pointer device ready");
 }
 
+// Build an XKB keymap (the configured layout) into a memfd for the EIS keyboard
+// device. Returns -1 on failure.
+static int make_keymap_fd(size_t* size_out)
+{
+    auto const& settings = Config::input().keyboard;
+    auto model = settings.model;
+    auto layout = settings.layouts;
+    auto variant = settings.variant;
+    auto options = settings.options;
+    xkb_rule_names names {
+        .rules = nullptr,
+        .model = model.is_empty() ? nullptr : model.characters(),
+        .layout = layout.is_empty() ? nullptr : layout.characters(),
+        .variant = variant.is_empty() ? nullptr : variant.characters(),
+        .options = options.is_empty() ? nullptr : options.characters(),
+    };
+    auto* context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+    auto* keymap = xkb_keymap_new_from_names(context, &names, XKB_KEYMAP_COMPILE_NO_FLAGS);
+    if (!keymap)
+        keymap = xkb_keymap_new_from_names(context, nullptr, XKB_KEYMAP_COMPILE_NO_FLAGS);
+    if (!keymap) {
+        xkb_context_unref(context);
+        return -1;
+    }
+    char* text = xkb_keymap_get_as_string(keymap, XKB_KEYMAP_FORMAT_TEXT_V1);
+    xkb_keymap_unref(keymap);
+    xkb_context_unref(context);
+    if (!text)
+        return -1;
+
+    size_t const length = strlen(text) + 1;
+    int fd = memfd_create("sde-eis-keymap", MFD_CLOEXEC);
+    if (fd < 0 || ftruncate(fd, (off_t)length) < 0) {
+        if (fd >= 0)
+            close(fd);
+        free(text);
+        return -1;
+    }
+    void* mapping = mmap(nullptr, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (mapping == MAP_FAILED) {
+        close(fd);
+        free(text);
+        return -1;
+    }
+    memcpy(mapping, text, length);
+    munmap(mapping, length);
+    free(text);
+    *size_out = length;
+    return fd;
+}
+
+static void ensure_keyboard_device(struct eis_seat* seat)
+{
+    if (s_eis_keyboard || !seat)
+        return;
+    auto* device = eis_seat_new_device(seat);
+    if (!device) {
+        warnln("WindowServer: InputCapture: could not create the EIS keyboard device");
+        return;
+    }
+    eis_device_configure_type(device, EIS_DEVICE_TYPE_VIRTUAL);
+    eis_device_configure_name(device, "SDE input capture keyboard");
+    eis_device_configure_capability(device, EIS_DEVICE_CAP_KEYBOARD);
+
+    size_t keymap_size = 0;
+    int fd = make_keymap_fd(&keymap_size);
+    if (fd >= 0) {
+        if (auto* keymap = eis_device_new_keymap(device, EIS_KEYMAP_TYPE_XKB, fd, keymap_size)) {
+            eis_keymap_add(keymap);
+            eis_keymap_unref(keymap);
+        } else {
+            warnln("WindowServer: InputCapture: could not attach the EIS keyboard keymap");
+        }
+        close(fd);
+    } else {
+        warnln("WindowServer: InputCapture: no keymap for the EIS keyboard (client must guess)");
+    }
+
+    eis_device_add(device);
+    eis_device_resume(device);
+    s_eis_keyboard = device;
+    dbgln("WindowServer: InputCapture: EIS keyboard device ready");
+}
+
 static void pump_eis()
 {
     if (!s_eis)
@@ -206,6 +308,7 @@ static void pump_eis()
             auto* seat = eis_client_new_seat(client, "SDE input capture");
             eis_seat_configure_capability(seat, EIS_DEVICE_CAP_POINTER);
             eis_seat_configure_capability(seat, EIS_DEVICE_CAP_BUTTON);
+            eis_seat_configure_capability(seat, EIS_DEVICE_CAP_KEYBOARD);
             eis_seat_add(seat);
             s_eis_seat = seat;
             dbgln("WindowServer: InputCapture: EIS client connected");
@@ -216,6 +319,8 @@ static void pump_eis()
             auto* seat = eis_event_get_seat(event);
             if (eis_event_seat_has_capability(event, EIS_DEVICE_CAP_POINTER))
                 ensure_pointer_device(seat);
+            if (eis_event_seat_has_capability(event, EIS_DEVICE_CAP_KEYBOARD))
+                ensure_keyboard_device(seat);
             break;
         }
         case EIS_EVENT_CLIENT_DISCONNECT: {
@@ -224,6 +329,10 @@ static void pump_eis()
             if (s_eis_pointer) {
                 eis_device_unref(s_eis_pointer);
                 s_eis_pointer = nullptr;
+            }
+            if (s_eis_keyboard) {
+                eis_device_unref(s_eis_keyboard);
+                s_eis_keyboard = nullptr;
             }
             if (s_eis_seat) {
                 eis_seat_unref(s_eis_seat);
@@ -282,14 +391,15 @@ bool handle_pointer_motion(Server& server, uint32_t)
     double const y = server.cursor->y;
 
     if (s_active_session) {
-        if (s_eis_pointer && s_have_last) {
+        bool const captured = (s_active_session->capabilities & IC_CAP_POINTER) != 0;
+        if (s_eis_pointer && captured && s_have_last) {
             eis_device_pointer_motion(s_eis_pointer, x - s_last_x, y - s_last_y);
             eis_device_frame(s_eis_pointer, now_usec());
         }
         s_last_x = x;
         s_last_y = y;
         s_have_last = true;
-        return true;
+        return captured;
     }
 
     if (auto* session = enabled_session(); session && s_have_last) {
@@ -297,13 +407,14 @@ bool handle_pointer_motion(Server& server, uint32_t)
             if (!crosses(barrier, s_last_x, s_last_y, x, y))
                 continue;
             activate(*session, barrier.id, x, y);
-            if (s_eis_pointer) {
+            bool const captured = (session->capabilities & IC_CAP_POINTER) != 0;
+            if (s_eis_pointer && captured) {
                 eis_device_pointer_motion(s_eis_pointer, x - s_last_x, y - s_last_y);
                 eis_device_frame(s_eis_pointer, now_usec());
             }
             s_last_x = x;
             s_last_y = y;
-            return true;
+            return captured;
         }
     }
 
@@ -316,10 +427,23 @@ bool handle_pointer_motion(Server& server, uint32_t)
 bool handle_pointer_button(Server& server, uint32_t button, uint32_t state, uint32_t)
 {
     (void)server;
-    if (!s_active_session || !s_eis_pointer)
+    if (!s_active_session || !(s_active_session->capabilities & IC_CAP_POINTER) || !s_eis_pointer)
         return false;
     eis_device_button_button(s_eis_pointer, button, state == WL_POINTER_BUTTON_STATE_PRESSED);
     eis_device_frame(s_eis_pointer, now_usec());
+    return true;
+}
+
+bool handle_keyboard_key(Server& server, uint32_t keycode, bool is_press,
+    uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group)
+{
+    (void)server;
+    if (!s_active_session || !(s_active_session->capabilities & IC_CAP_KEYBOARD) || !s_eis_keyboard)
+        return false;
+    eis_device_keyboard_key(s_eis_keyboard, keycode, is_press);
+    eis_device_frame(s_eis_keyboard, now_usec());
+    // Per libeis, send the modifier state right after the frame for a receiver.
+    eis_device_keyboard_send_xkb_modifiers(s_eis_keyboard, depressed, latched, locked, group);
     return true;
 }
 
@@ -413,11 +537,10 @@ static void session_enable(wl_client*, wl_resource* resource, uint32_t capabilit
     auto* session = static_cast<Session*>(wl_resource_get_user_data(resource));
     if (!session)
         return;
-    // Only the pointer is supported for now (keyboard is P3).
-    (void)capabilities;
+    session->capabilities = capabilities & (IC_CAP_KEYBOARD | IC_CAP_POINTER);
     session->enabled = true;
     s_have_last = false; // seed from the next motion to avoid a spurious crossing
-    dbgln("WindowServer: InputCapture: session '{}' armed", session->app_id);
+    dbgln("WindowServer: InputCapture: session '{}' armed (caps {})", session->app_id, session->capabilities);
 }
 
 static void session_disable(wl_client*, wl_resource* resource)
@@ -518,6 +641,11 @@ bool handle_pointer_motion(Server&, uint32_t)
 }
 
 bool handle_pointer_button(Server&, uint32_t, uint32_t, uint32_t)
+{
+    return false;
+}
+
+bool handle_keyboard_key(Server&, uint32_t, bool, uint32_t, uint32_t, uint32_t, uint32_t)
 {
     return false;
 }

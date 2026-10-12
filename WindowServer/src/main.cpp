@@ -453,6 +453,12 @@ static void keyboard_key(wl_listener* listener, void* data)
     keyboard->keyboard->modifiers.group = xkb_state_serialize_layout(xkb_state, XKB_STATE_LAYOUT_EFFECTIVE);
     wlr_seat_keyboard_notify_modifiers(server.seat, &keyboard->keyboard->modifiers);
 
+    // R5: InputCapture — while keyboard capture is active, keys go to the EIS client.
+    if (InputCapture::handle_keyboard_key(server, event->keycode, event->state == WL_KEYBOARD_KEY_STATE_PRESSED,
+            keyboard->keyboard->modifiers.depressed, keyboard->keyboard->modifiers.latched,
+            keyboard->keyboard->modifiers.locked, keyboard->keyboard->modifiers.group))
+        return;
+
     // While the session is locked, keys go to the lock surface, not the shell.
     if (server.locked) {
         if (auto* lock = lock_surface_at_cursor(server)) {

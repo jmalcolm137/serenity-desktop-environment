@@ -59,6 +59,7 @@ static int zones_seen = 0;
 static int failed_barriers = -1;
 static int got_activated = 0;
 static int got_motion = 0;
+static int got_key = 0;
 
 static void registry_global(void* data, struct wl_registry* registry, uint32_t name, char const* interface, uint32_t version)
 {
@@ -91,7 +92,7 @@ static void arm(struct zone const* z)
     printf("input-capture-test: barrier at x=%d y=%d..%d\n", x, valid.y1, valid.y2);
     serenity_input_capture_session_v1_set_pointer_barriers(session, &barriers, 1);
     wl_array_release(&barriers);
-    serenity_input_capture_session_v1_enable(session, 2 /* POINTER */);
+    serenity_input_capture_session_v1_enable(session, 3 /* KEYBOARD | POINTER */);
     armed = 1;
 }
 
@@ -189,7 +190,7 @@ static void handle_ei_events(void)
             break;
         case EI_EVENT_SEAT_ADDED: {
             struct ei_seat* seat = ei_event_get_seat(event);
-            ei_seat_bind_capabilities(seat, EI_DEVICE_CAP_POINTER, EI_DEVICE_CAP_BUTTON, NULL);
+            ei_seat_bind_capabilities(seat, EI_DEVICE_CAP_POINTER, EI_DEVICE_CAP_BUTTON, EI_DEVICE_CAP_KEYBOARD, NULL);
             got_seat = 1;
             break;
         }
@@ -205,6 +206,13 @@ static void handle_ei_events(void)
             double const dy = ei_event_pointer_get_dy(event);
             printf("input-capture-test: motion dx=%.1f dy=%.1f\n", dx, dy);
             got_motion = 1;
+            break;
+        }
+        case EI_EVENT_KEYBOARD_KEY: {
+            uint32_t const key = ei_event_keyboard_get_key(event);
+            int const press = ei_event_keyboard_get_key_is_press(event);
+            printf("input-capture-test: keyboard key code=%u %s\n", key, press ? "press" : "release");
+            got_key = 1;
             break;
         }
         default:
@@ -254,7 +262,7 @@ int main(void)
         { .fd = wl_display_get_fd(display), .events = POLLIN },
         { .fd = ei_get_fd(ei), .events = POLLIN },
     };
-    for (int i = 0; i < 80 && !(got_activated && got_motion); i++) {
+    for (int i = 0; i < 80 && !(got_activated && got_motion && got_key); i++) {
         wl_display_dispatch_pending(display);
         wl_display_flush(display);
         if (poll(fds, 2, 100) <= 0)
@@ -265,11 +273,11 @@ int main(void)
             handle_ei_events();
     }
 
-    printf("input-capture-test: summary seat=%d zones=%d failed_barriers=%d activated=%d motion=%d\n",
-        got_seat, zones_seen, failed_barriers, got_activated, got_motion);
+    printf("input-capture-test: summary seat=%d zones=%d failed_barriers=%d activated=%d motion=%d key=%d\n",
+        got_seat, zones_seen, failed_barriers, got_activated, got_motion, got_key);
     fflush(stdout);
 
     // Pass when the full chain worked: a seat, zones, the invalid barrier
-    // rejected, activation triggered and pointer motion delivered.
-    return (got_seat && zones_seen && failed_barriers == 1 && got_activated && got_motion) ? 0 : 1;
+    // rejected, activation triggered, pointer motion and a keyboard key delivered.
+    return (got_seat && zones_seen && failed_barriers == 1 && got_activated && got_motion && got_key) ? 0 : 1;
 }

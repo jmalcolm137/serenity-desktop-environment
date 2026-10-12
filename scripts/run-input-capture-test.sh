@@ -80,10 +80,17 @@ CLIENT_PID=$!
 sleep 2
 
 # Move the pointer across the barrier (the client places it at the zone's
-# horizontal midpoint, x=640): 500 -> 800 crosses it.
+# horizontal midpoint, x=640): 500 -> 800 crosses it. This activates capture.
 env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
     --extent 1280 720 --move 500 360 --move 800 360 \
     > "$RUNTIME/input.log" 2>&1 || true
+sleep 0.4
+
+# Type a key (evdev 30 = KEY_A); with keyboard capture active it must reach the
+# EIS client rather than being delivered normally.
+env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
+    --extent 1280 720 --key 30 press --key 30 release \
+    > "$RUNTIME/key.log" 2>&1 || true
 
 wait "$CLIENT_PID" 2>/dev/null || true
 CLIENT_PID=""
@@ -127,7 +134,10 @@ check_client "1 barrier(s) rejected 2"
 check_comp "has 1 barrier(s), 1 rejected"
 check_client "activated activation_id="
 check_client "motion dx="
-check_client "summary seat=1 zones=1 failed_barriers=1 activated=1 motion=1"
+# P3
+check_comp "InputCapture: EIS keyboard device ready"
+check_client "keyboard key code=30 press"
+check_client "summary seat=1 zones=1 failed_barriers=1 activated=1 motion=1 key=1"
 
 if [[ "$fail" -ne 0 ]]; then
     echo "==> InputCapture test FAILED"
