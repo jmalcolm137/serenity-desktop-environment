@@ -591,7 +591,8 @@ Documented so they are not lost; none blocks R4.
   **Settings** (R4) and then **GlobalShortcuts / RemoteDesktop / InputCapture /
   ScreenCast / Screenshot** (R5), composed with `-wlr`/`-gtk` for the rest via
   `portals.conf`. This can land **after** R4; it is the missing half of "portal
-  parity" (§11).
+  parity" (§11). InputCapture's architecture is decided in
+  [`17-input-capture.md`](17-input-capture.md).
 - **A native SDE lock client.** SDE uses **swaylock** (or any conformant locker)
   today: the compositor is a standard `ext-session-lock-v1` server. A native
   client is future work and **must be a plain Wayland `ext-session-lock-v1`

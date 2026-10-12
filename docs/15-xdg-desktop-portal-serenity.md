@@ -1,6 +1,6 @@
 # xdg-desktop-portal-serenity (R5)
 
-**Status:** Phase 1 + Phase 2 landed. Metadata cursor mode and zero-copy DMA-BUF are in place and verified on a live TTY; Camera works via the frontend (§6). Remaining: InputCapture and a real USB broker ·
+**Status:** Phase 1 + Phase 2 landed. Metadata cursor mode and zero-copy DMA-BUF are in place and verified on a live TTY; Camera works via the frontend (§6). Remaining: InputCapture (design recorded, [`17-input-capture.md`](17-input-capture.md)) and a real USB broker ·
 **Related:** [`08-compositor-gaps.md`](08-compositor-gaps.md) §3,
 [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §R5,
 `contrib/xdg-desktop-portal/`
@@ -49,6 +49,7 @@ This supersedes the earlier single-interface `tools/sde-settings-portal.c` (R4.4
 | `Screenshot` (v2) | `Screenshot` captures the primary output (via the ScreenCast capture pipeline, on its own Wayland connection) into a PNG and returns its `uri`; with `interactive` the LibGUI **ScreenshotOverlay** app (`SDE_PORTAL_SCREENSHOT_OVERLAY`) lets the user drag an area, which is cropped out. `PickColor` freezes the frame and opens the LibGUI **ColorPicker** app (`SDE_PORTAL_COLOR_PICKER`); the clicked pixel is sampled and returned as a `(ddd)` color. |
 | `Print` (v1) | `PreparePrint` via the LibGUI **PrintDialog** app (`SDE_PORTAL_PRINT_DIALOG`; printers from `lpstat`); `Print` feeds the document fd to `SDE_PORTAL_PRINT_CMD` (e.g. `lp`). |
 | `RemoteDesktop` (v2) | `CreateSession`/`SelectDevices`/`Start` (devices + the paired ScreenCast stream) and the `Notify*` input methods — pointer motion/absolute/button/axis and keyboard keycodes — injected via `wlr-virtual-pointer` / `virtual-keyboard`. `ConnectToEIS` (libei) is not supported, so apps use the `Notify*` methods. Restore tokens are persisted and returned from `Start`. |
+| `InputCapture` (v2) | **Designed, not implemented** ([`17-input-capture.md`](17-input-capture.md)). Will return a session EIS fd (`ConnectToEIS`) from the compositor (which runs the `libeis` implementation) and route zones/barriers/enable over a private protocol; until then `portals.conf` keeps `InputCapture=gtk`. |
 | `GlobalShortcuts` (v1) | `CreateSession`/`BindShortcuts`/`ListShortcuts`. Shortcuts are stored in the SDE **config system** (`global-shortcuts.ini`, `[ShortcutN] Session/Id/Trigger`) for the compositor to bind like any other keybinding; activations are reported over a session FIFO (`sde-global-shortcuts.fifo`) and emitted as the `Activated` signal. |
 | `Wallpaper` (v1) | `SetWallpaper` decodes the image and writes the compositor's wallpaper state (`wallpaper.raw`/`.mode`), so a sandboxed app can set the desktop background. |
 | `Secret` (v1) | `RetrieveSecret` returns a stable per-app 64-byte secret, generated once and kept under `secrets/` in the state directory. |
@@ -154,8 +155,10 @@ To reach and surpass `xdg-desktop-portal-kde`:
 - **ScreenCast / RemoteDesktop** — monitor + window sources, hidden/embedded/metadata
   cursor, zero-copy DMA-BUF (memfd fallback), `pipewire-serial` (v6), restore
   tokens and virtual-pointer/keyboard input injection all landed (§6).
-- **InputCapture** — needs compositor input routing or libei; still the `gtk`
-  fallback.
+- **InputCapture** — architecture decided ([`17-input-capture.md`](17-input-capture.md)):
+  the compositor runs the EIS implementation (`libeis`) and the backend relays the
+  session EIS fd and control over a private protocol; still the `gtk` fallback
+  until it is implemented.
 - **Device / Camera** — no device broker to install: **Device** was superseded
   by the **USB** portal (our backend lists no devices); **Camera** is served by
   the frontend from PipeWire camera nodes, with our Access/Lockdown backends
@@ -175,7 +178,7 @@ session (`scripts/run-screencast-live-test.sh`,
 |---|---|
 | ScreenCast **metadata cursor** | **Landed** — `AvailableCursorModes = hidden\|embedded\|metadata`; a pointer-cursor session supplies position/hotspot/enter/leave and the cursor bitmap, published as `SPA_META_Cursor` (+ Header, VideoDamage). Verified live: the consumer receives `SPA_META_Cursor` with a real 64×64 bitmap. |
 | ScreenCast **DMA-BUF** (zero-copy) | **Landed** — the stream offers a pre-fixated DMA-BUF `EnumFormat`, allocates a GBM BO per buffer and imports it via `zwp_linux_dmabuf_v1`; the compositor renders into it. Verified live: the consumer receives `SPA_DATA_DmaBuf` (memfd fallback if the consumer does not accept the modifier). |
-| **InputCapture** | compositor input routing or libei/EIS; design first (`08-compositor-gaps.md` §4). |
+| **InputCapture** | **Designed** — compositor-hosted EIS (`libeis`) + a private protocol ([`17-input-capture.md`](17-input-capture.md)); implementation not started. |
 | **Device** | superseded by the **USB** portal (`org.freedesktop.portal.Usb`); there is no device broker to install. Our USB backend answers an empty list; a real broker is backend code we would write. |
 | **Camera** | implemented by the **frontend**; needs a PipeWire camera producer (the built-in `v4l2` plugin, or `pipewire-libcamera`) plus our Access/Lockdown backends. Present and verified here. |
 
@@ -231,8 +234,11 @@ session (`scripts/run-screencast-live-test.sh`,
 - The frontend still routes `org.freedesktop.portal.InputCapture` to `gtk`. A
   backend can only implement it if the compositor can deliver input events to it
   — via libei/EIS or a `WindowServer` input-capture path.
-- **Needs a design decision first** (`08-compositor-gaps.md` §4); no backend code
-  can land before that.
+- **Design decided** ([`17-input-capture.md`](17-input-capture.md)): the
+  compositor hosts the EIS implementation (`libeis`) and the portal backend is the
+  D-Bus adapter, returning the session EIS fd from `ConnectToEIS`; zones, barriers
+  and enable/disable travel over a private `serenity_input_capture` protocol.
+  Implementation is not started.
 
 ### 6.5 Device / Camera
 
