@@ -14,6 +14,8 @@
 //   --button BTN press|release   (BTN is numeric: 0x110 left, 0x111 right, ...)
 //   --key CODE press|release     (raw evdev keycode)
 //   --sleep MS
+//   --linger MS                   keep the connection open for MS after the ops
+//                                 (e.g. to keep a virtual keyboard present)
 //
 // A virtual pointer is always created; a virtual keyboard when the compositor
 // offers one.
@@ -79,6 +81,7 @@ static uint32_t now_ms()
 int main(int argc, char** argv)
 {
     struct state s = { .x_extent = 1280, .y_extent = 720 };
+    int linger_ms = 200;
 
     s.display = wl_display_connect(NULL);
     if (!s.display) {
@@ -149,6 +152,9 @@ int main(int argc, char** argv)
         } else if (!strcmp(argv[i], "--sleep") && i + 1 < argc) {
             usleep((useconds_t)atoi(argv[i + 1]) * 1000);
             i += 2;
+        } else if (!strcmp(argv[i], "--linger") && i + 1 < argc) {
+            linger_ms = atoi(argv[i + 1]);
+            i += 2;
         } else {
             fprintf(stderr, "virtual-input-test: unknown argument '%s'\n", argv[i]);
             i++;
@@ -157,7 +163,8 @@ int main(int argc, char** argv)
     }
 
     wl_display_flush(s.display);
-    // Give the compositor time to process the injected events.
-    usleep(200 * 1000);
+    // Give the compositor time to process the injected events, then optionally
+    // linger so the virtual devices stay present for the caller to observe.
+    usleep((useconds_t)linger_ms * 1000);
     return 0;
 }

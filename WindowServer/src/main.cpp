@@ -522,16 +522,32 @@ static void keyboard_key(wl_listener* listener, void* data)
     }
 }
 
+// Advertise the seat's current capabilities to clients. Kept in one place so a
+// hotplug adds the keyboard capability and an unplug removes it again; otherwise
+// the seat keeps advertising a keyboard that is no longer there.
+static void update_seat_capabilities(Server& server)
+{
+    uint32_t capabilities = WL_SEAT_CAPABILITY_POINTER;
+    if (!server.keyboards.is_empty())
+        capabilities |= WL_SEAT_CAPABILITY_KEYBOARD;
+    wlr_seat_set_capabilities(server.seat, capabilities);
+}
+
 static void keyboard_destroy(wl_listener* listener, void*)
 {
     Keyboard* keyboard = nullptr;
     keyboard = wl_container_of(listener, keyboard, destroy);
+    auto& server = *keyboard->server;
     wl_list_remove(&keyboard->modifiers.link);
     wl_list_remove(&keyboard->key.link);
     wl_list_remove(&keyboard->destroy.link);
     if (s_key_repeat_keyboard == keyboard)
         stop_key_repeat();
-    remove_owned(keyboard->server->keyboards, keyboard);
+    remove_owned(server.keyboards, keyboard);
+    // Drop the keyboard capability once the last keyboard is gone, so clients do
+    // not keep a stale wl_keyboard (a later client would otherwise get one with
+    // no keymap). Symmetric with server_new_input().
+    update_seat_capabilities(server);
 }
 
 // --- cursor / pointer -----------------------------------------------------
@@ -1176,10 +1192,7 @@ static void server_new_input(wl_listener* listener, void* data)
         break;
     }
 
-    uint32_t capabilities = WL_SEAT_CAPABILITY_POINTER;
-    if (!server->keyboards.is_empty())
-        capabilities |= WL_SEAT_CAPABILITY_KEYBOARD;
-    wlr_seat_set_capabilities(server->seat, capabilities);
+    update_seat_capabilities(*server);
 }
 
 // Virtual input (wlr virtual-keyboard / virtual-pointer). Both embed a real

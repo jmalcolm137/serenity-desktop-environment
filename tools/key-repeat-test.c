@@ -206,6 +206,10 @@ static struct wl_keyboard_listener const keyboard_listener = { keyboard_keymap, 
 static void seat_capabilities(void* d, struct wl_seat* s, uint32_t capabilities)
 {
     (void)d;
+    fprintf(stderr, "key-repeat-test: capabilities pointer=%d keyboard=%d\n",
+        (capabilities & WL_SEAT_CAPABILITY_POINTER) != 0,
+        (capabilities & WL_SEAT_CAPABILITY_KEYBOARD) != 0);
+    fflush(stderr);
     if ((capabilities & WL_SEAT_CAPABILITY_KEYBOARD) && !keyboard) {
         keyboard = wl_seat_get_keyboard(s);
         wl_keyboard_add_listener(keyboard, &keyboard_listener, NULL);

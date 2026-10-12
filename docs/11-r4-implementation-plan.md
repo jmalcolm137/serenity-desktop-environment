@@ -364,7 +364,11 @@ shortcut inhibition (`zwp_keyboard_shortcuts_inhibit_manager_v1`) and IME
 > advertises rate/delay to clients), the compositor owns key repeat: it re-sends
 > a held key after `RepeatDelay`, then every `1000/RepeatRate` ms, for keys it
 > forwards to the focused client (keybindings and non-repeating keys do not
-> repeat). Covered by `scripts/run-key-repeat-test.sh`.
+> repeat). Covered by `scripts/run-key-repeat-test.sh`. The seat's
+> `wl_seat.capabilities` are recomputed on every input-device add *and* removal,
+> so a hotplugged keyboard appears to clients and an unplugged one disappears
+> instead of leaving a stale capability (which would hand a later client a
+> keymap-less `wl_keyboard`); `scripts/run-keyboard-hotplug-test.sh` covers it.
 >
 > MouseSettings is built as part of SDE (alongside DisplaySettings) and wired
 > through the WindowServer protocol: `get/set_mouse_acceleration`,
