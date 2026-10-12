@@ -2,6 +2,8 @@
 
 A project to recreate the **SerenityOS desktop experience** on Linux, built on **Wayland**.
 
+![The SDE desktop: the SerenityOS Taskbar with its system menu (Development) open, a Terminal running `uname -a` / `df -Th`, a File Manager, the Browser on serenityos.org, and the System Monitor's Performance tab, on the blue-grid wallpaper.](docs/images/sde-desktop.png)
+
 The stack is split across a small family of repositories:
 
 | Repository | Role |
