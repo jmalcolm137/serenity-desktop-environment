@@ -99,10 +99,16 @@ wayland-scanner client-header "$VPOINTER_XML" "$TOOLS_BUILD/wlr-virtual-pointer-
 wayland-scanner private-code  "$VPOINTER_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c"
 wayland-scanner client-header "$VKEYBOARD_XML" "$TOOLS_BUILD/virtual-keyboard-unstable-v1-client-protocol.h"
 wayland-scanner private-code  "$VKEYBOARD_XML" "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c"
+# serenity-input-capture: the private protocol for the InputCapture portal
+# (docs/17-input-capture.md): session control + the compositor's EIS fd.
+IC_XML="$SDE_ROOT/WindowServer/protocol/serenity-input-capture.xml"
+wayland-scanner client-header "$IC_XML" "$TOOLS_BUILD/serenity-input-capture-client-protocol.h"
+wayland-scanner private-code  "$IC_XML" "$TOOLS_BUILD/serenity-input-capture-protocol.c"
 cc -O2 -Wall -I "$TOOLS_BUILD" -I "$SDE_ROOT/tools" \
     "$SDE_ROOT/tools/xdg-desktop-portal-serenity.c" \
     "$SDE_ROOT/tools/portal-screencast.c" \
     "$SDE_ROOT/tools/portal-remote-desktop.c" \
+    "$SDE_ROOT/tools/portal-input-capture.c" \
     "$SDE_ROOT/tools/portal-global-shortcuts.c" \
     "$TOOLS_BUILD/ext-image-copy-capture-v1-protocol.c" \
     "$TOOLS_BUILD/ext-image-capture-source-v1-protocol.c" \
@@ -110,6 +116,7 @@ cc -O2 -Wall -I "$TOOLS_BUILD" -I "$SDE_ROOT/tools" \
     "$TOOLS_BUILD/linux-dmabuf-v1-protocol.c" \
     "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c" \
     "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c" \
+    "$TOOLS_BUILD/serenity-input-capture-protocol.c" \
     $(pkg-config --cflags --libs gio-2.0 wayland-client libpipewire-0.3 gdk-pixbuf-2.0 xkbcommon gbm libdrm) \
     -lpthread \
     -o "$TOOLS_BUILD/xdg-desktop-portal-serenity"

@@ -98,9 +98,9 @@ table.
   ([`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md)); its
   TTY-only work (DMA-BUF capture, metadata cursor, InputCapture, Device/Camera)
   is enumerated in that doc's §6 — zero-copy DMA-BUF and the metadata cursor are
-  landed and verified on a live TTY; InputCapture is designed (compositor-hosted
-  EIS, [`17-input-capture.md`](17-input-capture.md)); Device was superseded by USB
-  and Camera works via the frontend.
+  landed and verified on a live TTY; InputCapture is landed (compositor-hosted
+  EIS + the D-Bus backend, [`17-input-capture.md`](17-input-capture.md)); Device
+  was superseded by USB and Camera works via the frontend.
 - **XWayland (G7).** A single R5 bullet today; rootless XWayland, scaling,
   clipboard/DnD integration and rootful fallback is a large feature that needs
   its own plan.

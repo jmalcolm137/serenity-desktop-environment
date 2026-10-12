@@ -237,7 +237,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   [`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md) §6:
   the **metadata cursor** mode and **zero-copy DMA-BUF** are landed and verified
   on a live TTY; **Camera** works via the frontend (PipeWire + our Access/Lockdown)
-  and `Device` was superseded by USB; **InputCapture** is designed
+  and `Device` was superseded by USB; **InputCapture** is landed
   ([`17-input-capture.md`](17-input-capture.md)), and a real USB broker remains.
 - **Text input / IME (G5) and accessibility (G1).** `text-input-v3` /
   `input-method-v2`, AT-SPI, sticky keys, magnifier and high contrast are absent.

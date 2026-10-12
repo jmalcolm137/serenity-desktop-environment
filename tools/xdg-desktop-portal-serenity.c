@@ -31,6 +31,7 @@
 
 #include "portal-screencast.h"
 #include "portal-remote-desktop.h"
+#include "portal-input-capture.h"
 #include "portal-global-shortcuts.h"
 
 #define BUS_NAME "org.freedesktop.impl.portal.desktop.serenity"
@@ -46,7 +47,7 @@ enum {
 
 typedef struct {
     GDBusConnection* connection;
-    guint registration_ids[16];
+    guint registration_ids[64];
     guint registration_count;
 } Portal;
 
@@ -2212,6 +2213,7 @@ static const GDBusInterfaceVTable usb_vtable = { handle_usb, simple_version_get_
 static const GDBusInterfaceVTable dynamic_launcher_vtable = { handle_dynamic_launcher, simple_version_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable access_vtable = { handle_access, simple_version_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable remote_desktop_vtable = { portal_remote_desktop_method_call, portal_remote_desktop_get_property, NULL, { 0 } };
+static const GDBusInterfaceVTable input_capture_vtable = { portal_input_capture_method_call, portal_input_capture_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable global_shortcuts_vtable = { portal_global_shortcuts_method_call, portal_global_shortcuts_get_property, NULL, { 0 } };
 
 static const GDBusInterfaceVTable realtime_vtable = { handle_realtime, simple_version_get_property, NULL, { 0 } };
@@ -2244,6 +2246,7 @@ static InterfaceRegistration const interfaces[] = {
     { dynamiclauncher_introspection, &dynamic_launcher_vtable },
     { access_introspection, &access_vtable },
     { portal_remote_desktop_introspection, &remote_desktop_vtable },
+    { portal_input_capture_introspection, &input_capture_vtable },
     { portal_global_shortcuts_introspection, &global_shortcuts_vtable },
 };
 
