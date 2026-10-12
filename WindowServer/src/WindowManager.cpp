@@ -70,6 +70,10 @@ public:
             emit_window_state(*toplevel);
             emit_window_icon(*toplevel);
         }
+        // If the applets already mapped, this WM missed the area-size-changed
+        // events; tell it the current size so it reports the area position (and
+        // the applets are placed on the Taskbar rather than at the fallback).
+        async_applet_area_size_changed(window_id, AppletManager::area_size());
     }
 
     virtual void set_active_window(i32, i32 window_id) override

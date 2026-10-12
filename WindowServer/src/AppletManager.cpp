@@ -156,4 +156,9 @@ void set_position(Server& server, Gfx::IntPoint position)
     apply(server);
 }
 
+Gfx::IntSize area_size()
+{
+    return s_area_size;
+}
+
 }

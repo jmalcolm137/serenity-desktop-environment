@@ -36,6 +36,11 @@ void set_host_hooks(HostHooks);
 // The Taskbar reports the applet area's on-screen origin (its top-left).
 void set_position(Server&, Gfx::IntPoint);
 
+// The current applet-area size (0x0 before any applet has mapped). A WM that
+// registers after the applets have already mapped asks for this, so it can
+// report the area position even though it missed the size-changed events.
+Gfx::IntSize area_size();
+
 // Recompute the layout (order, sizes) and, if the total size changed, tell the
 // Taskbar. Repositions the applet surfaces. The layer-shell arrange pass resets
 // the nodes' positions, so this runs at the end of every arrange.

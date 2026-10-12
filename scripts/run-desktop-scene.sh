@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Reproduce the SerenityOS desktop "scene" on SDE: the Taskbar with the applet
-# area, a Terminal, a File Manager, a browser (Firefox, standing in for
-# Ladybird) and the System Monitor (Performance tab), on the SerenityOS
+# area, a Terminal, a File Manager, a Browser (Ladybird) and the System
+# Monitor (Performance tab), on the SerenityOS
 # blue-grid wallpaper. Handy for a screenshot comparable to
 # Meta/Screenshots/screenshot-c03b788.png.
 #
@@ -16,7 +16,7 @@
 #                       (via tools/sde-screenshot + wlr-screencopy).
 #
 # Env: HOST_DISPLAY (default wayland-0), SDE_SESSION_DISPLAY (default sde),
-#      SDE_SCENE_FIREFOX (default: the firefox binary), SDE_SCENE_NO_FIREFOX=1
+#      SDE_SCENE_BROWSER (default: the built-in Browser), SDE_SCENE_NO_BROWSER=1
 #      to omit the browser.
 set -euo pipefail
 
@@ -98,7 +98,7 @@ write_placement() {
     local bottom=$((HEIGHT * 47 / 100))
     cat > "$RUNTIME/WindowServer.ini" <<EOF
 [Placement]
-Windows=Terminal:0,0,${right},${top};File Manager:${right},0,$((WIDTH - right)),${top};Firefox:0,${top},${right},${bottom};System Monitor:${right},${top},$((WIDTH - right)),${bottom}
+Windows=Terminal:0,0,${right},${top};File Manager:${right},0,$((WIDTH - right)),${top};Browser:0,${top},${right},${bottom};System Monitor:${right},${top},$((WIDTH - right)),${bottom}
 EOF
 }
 write_placement
@@ -120,18 +120,16 @@ STARTUP="$BUILD/bin/Taskbar"
 STARTUP="$STARTUP & $BUILD/bin/FileManager"
 STARTUP="$STARTUP & $BUILD/bin/SystemMonitor -t graphs"
 
-FIREFOX="${SDE_SCENE_FIREFOX:-}"
-if [[ -z "$FIREFOX" ]]; then
-    for candidate in firefox firefox-esr; do
-        if command -v "$candidate" >/dev/null; then FIREFOX="$(command -v "$candidate")"; break; fi
-    done
-fi
-if [[ -n "$FIREFOX" && "${SDE_SCENE_NO_FIREFOX:-0}" != "1" ]]; then
-    # A private profile so the scene never disturbs a running browser.
-    mkdir -p "$RUNTIME/firefox"
-    STARTUP="$STARTUP & MOZ_ENABLE_WAYLAND=1 $FIREFOX --no-remote --profile $RUNTIME/firefox https://serenityos.org"
+# Browser (SerenityOS's, i.e. Ladybird) - the reference app. SDE_SCENE_BROWSER
+# overrides the binary; SDE_SCENE_NO_BROWSER=1 omits it.
+BROWSER="${SDE_SCENE_BROWSER:-$BUILD/bin/Browser}"
+if [[ "${SDE_SCENE_NO_BROWSER:-0}" != "1" && -x "$BROWSER" ]]; then
+    # A stale Ladybird single-instance socket/pid makes Browser defer to a
+    # session service and never map a window.
+    rm -f "${XDG_RUNTIME_DIR}/Ladybird.socket" "${XDG_RUNTIME_DIR}/Ladybird.pid"
+    STARTUP="$STARTUP & $BROWSER https://serenityos.org"
 else
-    echo "note: no browser found; the scene will have no browser window" >&2
+    echo "note: no browser; the scene will have no browser window" >&2
 fi
 
 # Terminal (top-left, like the screenshot), running `uname -a` in a shell that
