@@ -695,9 +695,11 @@ void emit_window_state(Toplevel& toplevel)
 // window-list buttons can draw it (SerenityOS WindowManager::tell_wms_window_icon_changed).
 void emit_window_icon(Toplevel& toplevel)
 {
-    Gfx::ShareableBitmap bitmap;
-    if (toplevel.icon)
-        bitmap = toplevel.icon->to_shareable_bitmap();
+    // Never send an invalid bitmap: the Taskbar dereferences it (SerenityOS
+    // always has at least the default window icon).
+    if (!toplevel.icon)
+        return;
+    auto bitmap = toplevel.icon->to_shareable_bitmap();
     bool sent = false;
     for (auto& connection : g_connections) {
         if (connection->manager_window_id() < 0)

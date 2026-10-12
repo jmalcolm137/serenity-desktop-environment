@@ -280,6 +280,13 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 
 ## Recently resolved (kept so we don't re-chase them)
 
+- **Taskbar crash on an invalid window icon.** The compositor sent
+  `window_icon_bitmap_changed` with an *invalid* bitmap when a window had no
+  icon, and `TaskbarWindow::wm_event` dereferences it (SerenityOS windows always
+  have at least the default icon). Every toplevel now gets the default window
+  icon (`window.png`) at creation (the client's `set_icon` overrides it, and
+  clearing resets to the default), so the message is always valid.
+
 - **Scrollback in the Terminal (mouse wheel / trackpad).** Wayland axis deltas
   are frequently fractional (trackpads, high-resolution wheels); the port
   truncated each one with `wl_fixed_to_int`, so sub-1 deltas became 0 and

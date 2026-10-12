@@ -154,6 +154,11 @@ struct FrameIcons {
 };
 static FrameIcons g_frame_icons;
 
+// The default window icon (SerenityOS WindowServer's default: window.png), used
+// for toplevels whose client has not supplied one, so every window has an icon
+// (titlebar, switcher, Taskbar) and the Taskbar never receives an invalid icon.
+static RefPtr<Gfx::Bitmap> g_default_window_icon;
+
 // Desktop background: a wallpaper image (optional) drawn over the theme's
 // background colour. The Display Settings app writes the choice (image, mode and
 // colour) to a shared state directory; we load it at startup and watch it.
@@ -2476,6 +2481,9 @@ static void server_new_xdg_toplevel(wl_listener* listener, void* data)
     auto toplevel = make<Toplevel>();
     toplevel->server = server;
     toplevel->xdg_toplevel = xdg_toplevel;
+    // Every window has an icon (SerenityOS behaviour): the client's, else the
+    // default, so the titlebar, switcher and Taskbar always have one to draw.
+    toplevel->icon = g_default_window_icon;
     toplevel->scene_tree = wlr_scene_tree_create(server->windows_tree);
     toplevel->scene_tree->node.data = toplevel.ptr();
     toplevel->content_tree = wlr_scene_xdg_surface_create(toplevel->scene_tree, xdg_toplevel->base);
@@ -3016,11 +3024,9 @@ static void serenity_toplevel_set_icon(wl_client*, wl_resource* resource, int32_
     if (width <= 0 || height <= 0 || stride <= 0 || fd < 0) {
         if (fd >= 0)
             close(fd);
-        if (toplevel->icon) {
-            toplevel->icon = nullptr;
-            WindowManager::emit_window_icon(*toplevel);
-            toplevel_update_frame(*toplevel);
-        }
+        toplevel->icon = g_default_window_icon;
+        WindowManager::emit_window_icon(*toplevel);
+        toplevel_update_frame(*toplevel);
         return;
     }
     if (format != 0) { // WL_SHM_FORMAT_ARGB8888
@@ -3676,6 +3682,7 @@ static ErrorOr<void> initialize_gfx()
     g_frame_icons.restore = load_icon(resource_root, "window-restore"sv, "upward-triangle"sv);
     g_frame_icons.move = load_icon(resource_root, "move"sv, ""sv);
     g_frame_icons.pin = load_icon(resource_root, "window-pin"sv, ""sv);
+    g_default_window_icon = load_icon(resource_root, "window"sv, "window"sv);
 
     // Wallpaper/background: load the persisted state, seeding from
     // SDE_WALLPAPER / SDE_WALLPAPER_MODE on the first run.
