@@ -353,8 +353,17 @@ bool handle_key(Server& server, u32 keysym, u32 modifiers, bool pressed)
     }
 
     // Releasing the modifier that opened it activates the selection.
-    if (s_visible && (keysym == XKB_KEY_Alt_L || keysym == XKB_KEY_Alt_R || keysym == XKB_KEY_Super_L || keysym == XKB_KEY_Super_R)) {
+    if (s_visible && (keysym == XKB_KEY_Alt_L || keysym == XKB_KEY_Alt_R)) {
         activate(server);
+        // The client received the Alt *press* (it may have activated its menu
+        // bar), so the release must reach it too or the client's keyboard state is
+        // left unbalanced and its menu bar keeps keyboard focus.
+        return false;
+    }
+    if (s_visible && (keysym == XKB_KEY_Super_L || keysym == XKB_KEY_Super_R)) {
+        activate(server);
+        // The Super press was consumed (WindowManager::handle_super_key), so the
+        // release is consumed too, keeping the client balanced.
         return true;
     }
     return false;
