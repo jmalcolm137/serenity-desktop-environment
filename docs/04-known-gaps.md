@@ -69,8 +69,10 @@ click was already handled and returned earlier).
   theme's overlay rect shadow, 64x64 thumbnails, the window title font with a 1px
   drop shadow, the frame rect (`[x,y wxh]`, plus `on row:col` across workspaces)
   right-aligned, mouse hover/click, and the selected window drawn in the theme's
-  `Highlighted` window state. (Window icons are not shown: no window-icon source
-  for Wayland clients yet.)
+  `Highlighted` window state. In all-workspaces mode the visible workspace follows
+  the selection (as SerenityOS switches the window stack while cycling), and any
+  key other than Tab/Shift cancels. (Window icons are not shown: no window-icon
+  source for Wayland clients yet.)
 - **Snapping** — done (WS2). `WindowTileType` + Super+arrows
   (maximize/minimize/tile, Super+Alt horizontal/vertical maximize), drag-to-edge
   snapping with a LibGfx tile preview, `xdg_toplevel` tiled/maximized state, a

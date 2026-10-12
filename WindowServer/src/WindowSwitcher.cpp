@@ -156,6 +156,18 @@ static void step(int delta)
     s_selected = ((s_selected + delta) % count + count) % count;
 }
 
+// Select an index: in all-workspaces mode switch to the window's workspace live
+// (SerenityOS switches the window stack as you cycle), then update the highlight.
+static void select_index(Server& server, int index)
+{
+    s_selected = index;
+    if (s_mode == Mode::AllWorkspaces && g_hooks.switch_workspace) {
+        if (auto* toplevel = selected_toplevel())
+            g_hooks.switch_workspace(server, toplevel->workspace_row, toplevel->workspace_column, false);
+    }
+    update_highlight(selected_toplevel());
+}
+
 static void render(Server& server)
 {
     if (s_windows.is_empty() || !server.overlay_tree)
@@ -280,7 +292,7 @@ static void show(Server& server, Mode mode, bool reverse)
     } else {
         step(reverse ? -1 : 1);
     }
-    update_highlight(selected_toplevel());
+    select_index(server, s_selected);
     render(server);
 }
 
@@ -314,8 +326,7 @@ bool handle_pointer_button(Server& server, u32 button, u32 state)
     if (state == WL_POINTER_BUTTON_STATE_PRESSED) {
         int const index = index_at(server.cursor->x, server.cursor->y);
         if (index >= 0) {
-            s_selected = index;
-            update_highlight(selected_toplevel());
+            select_index(server, index);
             render(server);
             activate(server);
         }
@@ -332,8 +343,9 @@ bool handle_key(Server& server, u32 keysym, u32 modifiers, bool pressed)
             return true;
         }
         if (s_visible) {
-            // The switcher grabs the keyboard while visible.
-            if (keysym == XKB_KEY_Escape)
+            // The switcher grabs the keyboard while visible. Shift is ignored;
+            // any other key (Escape included) cancels, like SerenityOS.
+            if (keysym != XKB_KEY_Shift_L && keysym != XKB_KEY_Shift_R)
                 hide();
             return true;
         }
@@ -368,7 +380,7 @@ void refresh(Server& server)
         }
     }
     s_selected = min(s_selected, static_cast<int>(s_windows.size()) - 1);
-    update_highlight(selected_toplevel());
+    select_index(server, s_selected);
     render(server);
 }
 
