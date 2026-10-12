@@ -1,6 +1,6 @@
 # xdg-desktop-portal-serenity (R5)
 
-**Status:** Phase 1 + Phase 2 landed; Phase 2b landed except **InputCapture**/Device/Camera. Metadata cursor mode and zero-copy DMA-BUF are in place and verified on a live TTY (§6) ·
+**Status:** Phase 1 + Phase 2 landed. Metadata cursor mode and zero-copy DMA-BUF are in place and verified on a live TTY; Camera works via the frontend (§6). Remaining: InputCapture and a real USB broker ·
 **Related:** [`08-compositor-gaps.md`](08-compositor-gaps.md) §3,
 [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §R5,
 `contrib/xdg-desktop-portal/`
@@ -156,8 +156,11 @@ To reach and surpass `xdg-desktop-portal-kde`:
   tokens and virtual-pointer/keyboard input injection all landed (§6).
 - **InputCapture** — needs compositor input routing or libei; still the `gtk`
   fallback.
-- **Device**/**Camera** (v2) — device brokers and the camera PipeWire path
-  (USB listing is in place; Camera needs a PipeWire camera producer).
+- **Device / Camera** — no device broker to install: **Device** was superseded
+  by the **USB** portal (our backend lists no devices); **Camera** is served by
+  the frontend from PipeWire camera nodes, with our Access/Lockdown backends
+  providing the prompt and the `disable-camera` lockdown. `IsCameraPresent` is
+  already true here.
 - A **permission store** integration and the `Request`/`Response`
   choreography.
 
@@ -173,8 +176,8 @@ session (`scripts/run-screencast-live-test.sh`,
 | ScreenCast **metadata cursor** | **Landed** — `AvailableCursorModes = hidden\|embedded\|metadata`; a pointer-cursor session supplies position/hotspot/enter/leave and the cursor bitmap, published as `SPA_META_Cursor` (+ Header, VideoDamage). Verified live: the consumer receives `SPA_META_Cursor` with a real 64×64 bitmap. |
 | ScreenCast **DMA-BUF** (zero-copy) | **Landed** — the stream offers a pre-fixated DMA-BUF `EnumFormat`, allocates a GBM BO per buffer and imports it via `zwp_linux_dmabuf_v1`; the compositor renders into it. Verified live: the consumer receives `SPA_DATA_DmaBuf` (memfd fallback if the consumer does not accept the modifier). |
 | **InputCapture** | compositor input routing or libei/EIS; design first (`08-compositor-gaps.md` §4). |
-| **Device (v2)** | a device broker. |
-| **Camera (v2)** | a PipeWire camera producer. |
+| **Device** | superseded by the **USB** portal (`org.freedesktop.portal.Usb`); there is no device broker to install. Our USB backend answers an empty list; a real broker is backend code we would write. |
+| **Camera** | implemented by the **frontend**; needs a PipeWire camera producer (the built-in `v4l2` plugin, or `pipewire-libcamera`) plus our Access/Lockdown backends. Present and verified here. |
 
 ### 6.1 Environment and tooling
 
@@ -231,12 +234,26 @@ session (`scripts/run-screencast-live-test.sh`,
 - **Needs a design decision first** (`08-compositor-gaps.md` §4); no backend code
   can land before that.
 
-### 6.5 Device (v2) / Camera (v2)
+### 6.5 Device / Camera
 
-- `Device`: no device broker exists anywhere in the session; `USB` already
-  returns a standards-compliant empty list.
-- `Camera`: needs a PipeWire camera producer (`IsCameraPresent` +
-  `OpenPipeWireRemote`); none exists on the SDE side.
+Neither needs a "device broker" installed, and neither is (or can be) backend
+code in the usual sense:
+
+- **Device** no longer exists as a portal: it was superseded by
+  `org.freedesktop.portal.Usb` (the frontend has no `Device` interface at all).
+  The USB portal is the frontend plus a backend implementing
+  `org.freedesktop.impl.portal.Usb` (`AcquireDevices`); there is no external
+  daemon. Our backend already answers with a standards-compliant empty device
+  list; a *real* USB broker (enumerate devices, prompt via Access, grant/revoke)
+  is backend code we would write here.
+- **Camera** is implemented **inside the frontend** (`desktop-portal/camera.c`):
+  it tracks the camera nodes PipeWire exposes, and for access it uses the
+  **Access** backend (`org.freedesktop.impl.portal.Access`) and the **Lockdown**
+  backend's `disable-camera` — both of which `xdg-desktop-portal-serenity`
+  already provides. The only host dependency is a PipeWire camera producer: the
+  built-in `v4l2` SPA plugin for UVC webcams (already present here), or
+  `pipewire-libcamera` for libcamera-only cameras. `IsCameraPresent` is already
+  `true` on this machine; `scripts/run-camera-test.sh` checks it live.
 
 ### 6.6 Not blocked (code-only — safe without a live session)
 
@@ -273,5 +290,8 @@ drives `tools/capture-probe` to prove the compositor offers DMA-BUF capture and
 a pointer-cursor session, and captures real DMA-BUF and cursor-bitmap frames.
 `scripts/run-screencast-dmabuf-test.sh` (also a real session) runs a private
 PipeWire + WirePlumber and asserts the consumer receives `SPA_DATA_DmaBuf`.
+`scripts/run-camera-test.sh` (a real session) checks the frontend's
+`org.freedesktop.portal.Camera` (`IsCameraPresent`). The live tests skip (pass)
+without a session so CI stays green.
 `tools/screencast-consumer.c` is a libpipewire consumer that reports the
 delivered buffer type and `SPA_META_Cursor`.
