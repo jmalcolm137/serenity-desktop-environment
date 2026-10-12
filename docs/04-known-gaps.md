@@ -230,7 +230,16 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
   FlappyBug, Flood, GameOfLife, Hearts, MasterWord, Minesweeper, Snake,
   Solitaire, Spider, plus ChessEngine) are built by the port (patch 0035) and so
   appear under the Taskbar's **Games** menu (which it generates from the
-  `Base/res/apps/*.af` files); verified by `scripts/run-games-test.sh`.
+  `Base/res/apps/*.af` files); verified by `scripts/run-games-test.sh`. The
+  **DevTools** — GMLPlayground, SQLStudio and HackStudio — are built too and
+  appear under **Development** (`scripts/run-devtools-test.sh`). This needed
+  **LibDebug**, **LibELF** (core notes), **LibCoredump** and **LibSymbolication**
+  to be ported to **native Linux** (patch 0036: Linux ptrace, `struct
+  user_regs_struct`, `/proc/<pid>/maps`, except that Linux exposes no readable
+  pagemap) rather than a SerenityOS kernel-ABI shim. **Profiler** is not built
+  yet: it needs a native `perf_event_open` sampler (SerenityOS's
+  `profiling_enable` + `/proc/<pid>/perf_events`) — a follow-up in SDE's
+  `LibSerenitySystem`.
 - **Web engine / `WebContent` + `RequestServer` + `SQLServer` (W7, host).** Done —
   see "Recently resolved". **Help** (Taskbar system menu ▸ Help) renders the man
   pages; **Browser** loads pages (local `file://` and the WebContent pipeline).
