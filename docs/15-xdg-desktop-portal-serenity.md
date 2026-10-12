@@ -49,7 +49,7 @@ This supersedes the earlier single-interface `tools/sde-settings-portal.c` (R4.4
 | `Screenshot` (v2) | `Screenshot` captures the primary output (via the ScreenCast capture pipeline, on its own Wayland connection) into a PNG and returns its `uri`; with `interactive` the LibGUI **ScreenshotOverlay** app (`SDE_PORTAL_SCREENSHOT_OVERLAY`) lets the user drag an area, which is cropped out. `PickColor` freezes the frame and opens the LibGUI **ColorPicker** app (`SDE_PORTAL_COLOR_PICKER`); the clicked pixel is sampled and returned as a `(ddd)` color. |
 | `Print` (v1) | `PreparePrint` via the LibGUI **PrintDialog** app (`SDE_PORTAL_PRINT_DIALOG`; printers from `lpstat`); `Print` feeds the document fd to `SDE_PORTAL_PRINT_CMD` (e.g. `lp`). |
 | `RemoteDesktop` (v2) | `CreateSession`/`SelectDevices`/`Start` (devices + the paired ScreenCast stream) and the `Notify*` input methods — pointer motion/absolute/button/axis and keyboard keycodes — injected via `wlr-virtual-pointer` / `virtual-keyboard`. `ConnectToEIS` (libei) is not supported, so apps use the `Notify*` methods. Restore tokens are persisted and returned from `Start`. |
-| `InputCapture` (v2) | **P1 landed; D-Bus interface pending** ([`17-input-capture.md`](17-input-capture.md)). The compositor runs the `libeis` implementation and hands out a session EIS fd over the private `serenity_input_capture` protocol (`scripts/run-input-capture-test.sh`); the `org.freedesktop.impl.portal.InputCapture` D-Bus interface, zones/barriers (P2–P3) and the `portals.conf` flip (P4) remain, so it still routes to `gtk`. |
+| `InputCapture` (v2) | **P1+P2 landed; D-Bus interface pending** ([`17-input-capture.md`](17-input-capture.md)). The compositor runs the `libeis` implementation over the private `serenity_input_capture` protocol: session + EIS fd, zones, pointer barriers, enable/activation and pointer capture (`scripts/run-input-capture-test.sh`). Keyboard capture (P3) and the `org.freedesktop.impl.portal.InputCapture` D-Bus interface + `portals.conf` flip (P4) remain, so it still routes to `gtk`. |
 | `GlobalShortcuts` (v1) | `CreateSession`/`BindShortcuts`/`ListShortcuts`. Shortcuts are stored in the SDE **config system** (`global-shortcuts.ini`, `[ShortcutN] Session/Id/Trigger`) for the compositor to bind like any other keybinding; activations are reported over a session FIFO (`sde-global-shortcuts.fifo`) and emitted as the `Activated` signal. |
 | `Wallpaper` (v1) | `SetWallpaper` decodes the image and writes the compositor's wallpaper state (`wallpaper.raw`/`.mode`), so a sandboxed app can set the desktop background. |
 | `Secret` (v1) | `RetrieveSecret` returns a stable per-app 64-byte secret, generated once and kept under `secrets/` in the state directory. |
@@ -238,10 +238,11 @@ session (`scripts/run-screencast-live-test.sh`,
   compositor hosts the EIS implementation (`libeis`) and the portal backend is the
   D-Bus adapter, returning the session EIS fd from `ConnectToEIS`; zones, barriers
   and enable/disable travel over a private `serenity_input_capture` protocol.
-  **P1 (fd handoff) is landed** — the compositor offers the global with
-  `SDE_INPUT_CAPTURE=1` and hands out a working EIS fd
-  (`scripts/run-input-capture-test.sh`); zones/barriers/enable (P2–P3) and the
-  backend D-Bus interface (P4) remain.
+  **P1 (fd handoff) and P2 (pointer zones/barriers/activation) are landed** — the
+  compositor offers the global with `SDE_INPUT_CAPTURE=1`, hands out a working EIS
+  fd, reports zones, accepts pointer barriers and feeds captured pointer input
+  (`scripts/run-input-capture-test.sh`); keyboard capture (P3) and the backend
+  D-Bus interface (P4) remain.
 
 ### 6.5 Device / Camera
 

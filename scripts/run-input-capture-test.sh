@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Headless InputCapture P1 test (docs/17-input-capture.md): the private
-# serenity_input_capture protocol hands a session's EIS file descriptor to a
-# client, and a libei *receiver* context connects to it.
+# Headless InputCapture test (docs/17-input-capture.md).
 #
-# Covers: the global is only offered with SDE_INPUT_CAPTURE=1; connect_to_eis
-# returns a working fd; the compositor accepts the resulting EIS client
-# (EI_EVENT_CONNECT). No input is captured yet (P2/P3 add zones/barriers/enable).
+# P1: the private serenity_input_capture protocol hands a session's EIS file
+#     descriptor to a client, and a libei receiver context connects to it.
+# P2: the compositor reports zones (the outputs), accepts pointer barriers
+#     (rejecting invalid ones), arms capture, and — when the pointer crosses a
+#     barrier — emits `activated` and delivers pointer motion over EIS.
 #
 # Runs entirely headless (no host compositor, no DRM), so it is CI-friendly.
 set -euo pipefail
@@ -14,6 +14,7 @@ SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
 SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
 BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
+WLROOTS_SRC="${WLROOTS_SRC:-$SDE_ROOT/third_party/wlroots}"
 COMP="$SDE_ROOT/build/WindowServer/WindowServer"
 TOOLS_BUILD="$SDE_ROOT/build/input-capture-test"
 XML="$SDE_ROOT/WindowServer/protocol/serenity-input-capture.xml"
@@ -29,12 +30,27 @@ cc -O2 -I "$TOOLS_BUILD" \
     $(pkg-config --cflags --libs wayland-client libei-1.0) \
     -o "$TOOLS_BUILD/input-capture-test"
 
+VK_XML="$WLROOTS_SRC/protocol/virtual-keyboard-unstable-v1.xml"
+VP_XML="$WLROOTS_SRC/protocol/wlr-virtual-pointer-unstable-v1.xml"
+wayland-scanner client-header "$VK_XML" "$TOOLS_BUILD/virtual-keyboard-unstable-v1-client-protocol.h"
+wayland-scanner private-code  "$VK_XML" "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c"
+wayland-scanner client-header "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-client-protocol.h"
+wayland-scanner private-code  "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c"
+cc -O2 -I "$TOOLS_BUILD" \
+    "$SDE_ROOT/tools/virtual-input-test.c" \
+    "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c" \
+    "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c" \
+    $(pkg-config --cflags --libs wayland-client xkbcommon) \
+    -o "$TOOLS_BUILD/virtual-input-test"
+
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-inputcapture.XXXXXX")"
 chmod 700 "$RUNTIME"
 export SDE_STATE_DIR="$RUNTIME"
 
 COMP_PID=""
+CLIENT_PID=""
 cleanup() {
+    [[ -n "$CLIENT_PID" ]] && kill "$CLIENT_PID" 2>/dev/null || true
     [[ -n "$COMP_PID" ]] && kill "$COMP_PID" 2>/dev/null || true
     [[ -n "$COMP_PID" ]] && wait "$COMP_PID" 2>/dev/null || true
     rm -rf "$RUNTIME"
@@ -57,8 +73,20 @@ for _ in $(seq 1 80); do
 done
 sleep 0.3
 
-env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/input-capture-test" > "$RUNTIME/test.log" 2>&1 || true
+# The client sets up a session, connects the libei receiver, requests zones,
+# installs a barrier (plus a deliberately invalid one) and arms capture.
+env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/input-capture-test" > "$RUNTIME/test.log" 2>&1 &
+CLIENT_PID=$!
+sleep 2
 
+# Move the pointer across the barrier (the client places it at the zone's
+# horizontal midpoint, x=640): 500 -> 800 crosses it.
+env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
+    --extent 1280 720 --move 500 360 --move 800 360 \
+    > "$RUNTIME/input.log" 2>&1 || true
+
+wait "$CLIENT_PID" 2>/dev/null || true
+CLIENT_PID=""
 kill "$COMP_PID" 2>/dev/null || true
 wait "$COMP_PID" 2>/dev/null || true
 COMP_PID=""
@@ -86,13 +114,20 @@ check_client() {
     fi
 }
 
-echo "=== InputCapture P1 (EIS fd handoff) ==="
-check_comp "InputCapture: enabled"
+echo "=== InputCapture (EIS fd handoff + pointer activation) ==="
+# P1
 check_comp "InputCapture: EIS implementation ready"
 check_comp "InputCapture: handed an EIS fd to app 'input-capture-test'"
-check_comp "InputCapture: EIS client connected"
 check_client "received EIS fd"
 check_client "EIS connected"
+# P2
+check_comp "InputCapture: EIS pointer device ready"
+check_client "zone 0: 1280x720 at 0,0"
+check_client "1 barrier(s) rejected 2"
+check_comp "has 1 barrier(s), 1 rejected"
+check_client "activated activation_id="
+check_client "motion dx="
+check_client "summary seat=1 zones=1 failed_barriers=1 activated=1 motion=1"
 
 if [[ "$fail" -ne 0 ]]; then
     echo "==> InputCapture test FAILED"

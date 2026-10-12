@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <stdint.h>
+
 struct Server;
 
 // InputCapture portal support (R5, docs/17-input-capture.md).
@@ -17,5 +19,13 @@ struct Server;
 namespace InputCapture {
 
 void initialize(Server& server);
+
+// P2: called from the compositor's pointer path. Return true if an active
+// capture consumed the event (so the normal delivery must be skipped).
+bool handle_pointer_motion(Server& server, uint32_t time_msec);
+bool handle_pointer_button(Server& server, uint32_t button, uint32_t state, uint32_t time_msec);
+
+// P2: the output set changed, so the session zones did.
+void on_outputs_changed(Server& server);
 
 }

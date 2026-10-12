@@ -877,7 +877,8 @@ static void cursor_motion(wl_listener* listener, void* data)
     auto* event = static_cast<wlr_pointer_motion_event*>(data);
     wlr_cursor_move(server->cursor, &event->pointer->base, event->delta_x, event->delta_y);
     move_cursor_highlight(*server);
-    process_cursor_motion(*server, event->time_msec);
+    if (!InputCapture::handle_pointer_motion(*server, event->time_msec))
+        process_cursor_motion(*server, event->time_msec);
     notify_activity(*server);
 }
 
@@ -888,7 +889,8 @@ static void cursor_motion_absolute(wl_listener* listener, void* data)
     auto* event = static_cast<wlr_pointer_motion_absolute_event*>(data);
     wlr_cursor_warp_absolute(server->cursor, &event->pointer->base, event->x, event->y);
     move_cursor_highlight(*server);
-    process_cursor_motion(*server, event->time_msec);
+    if (!InputCapture::handle_pointer_motion(*server, event->time_msec))
+        process_cursor_motion(*server, event->time_msec);
     notify_activity(*server);
 }
 
@@ -938,6 +940,10 @@ static void cursor_button(wl_listener* listener, void* data)
     }
 
     notify_activity(*server);
+
+    // R5: InputCapture — while a capture is active, buttons go to the EIS client.
+    if (InputCapture::handle_pointer_button(*server, event->button, event->state, event->time_msec))
+        return;
 
     if (server->locked) {
         if (auto* lock = lock_surface_at_cursor(*server)) {
@@ -1412,13 +1418,16 @@ static void output_destroy(wl_listener* listener, void*)
 {
     Output* output = nullptr;
     output = wl_container_of(listener, output, destroy);
+    auto& server = *output->server;
     wl_list_remove(&output->frame.link);
     wl_list_remove(&output->request_state.link);
     wl_list_remove(&output->destroy.link);
     wl_list_remove(&output->commit.link);
     if (output->background)
         wlr_scene_node_destroy(&output->background->node);
-    remove_owned(output->server->outputs, output);
+    remove_owned(server.outputs, output);
+    // R5: the InputCapture zones are the outputs.
+    InputCapture::on_outputs_changed(server);
 }
 
 static void output_commit(wl_listener* listener, void*)
@@ -1550,6 +1559,8 @@ static void server_new_output(wl_listener* listener, void* data)
     output_manager_send_configuration(*server);
     // R4.5: keep screenlayout.ini in sync with the live layout.
     persist_screen_layout(*server);
+    // R5: the InputCapture zones are the outputs.
+    InputCapture::on_outputs_changed(*server);
 }
 
 // --- xdg toplevels / popups ----------------------------------------------

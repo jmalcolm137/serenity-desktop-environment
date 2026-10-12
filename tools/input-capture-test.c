@@ -5,11 +5,16 @@
  */
 
 // A minimal client for the private `serenity_input_capture` protocol
-// (docs/17-input-capture.md, P1 — fd handoff). It creates a session, asks the
-// compositor for the session's EIS file descriptor, connects a *libei receiver*
-// context to it, and asserts the EIS connection is established
-// (EI_EVENT_CONNECT). No input capture is enabled yet — P1 only proves the fd
-// handoff works.
+// (docs/17-input-capture.md). It walks the whole P2 flow:
+//
+//   create_session -> connect_to_eis -> libei receiver -> seat/device
+//   -> get_zones -> set_pointer_barriers -> enable
+//   -> (pointer crosses the barrier) -> activated + EI pointer motion
+//
+// It installs one valid vertical barrier and one deliberately diagonal
+// (invalid) barrier, and asserts the invalid one is rejected. When the pointer
+// crosses the valid barrier the compositor activates capture; the client then
+// receives the `activated` event and EI pointer motion.
 //
 // Not part of the desktop: a test tool.
 
@@ -26,9 +31,34 @@
 
 #include "serenity-input-capture-client-protocol.h"
 
+struct zone {
+    uint32_t width;
+    uint32_t height;
+    int32_t x;
+    int32_t y;
+};
+
+struct barrier {
+    uint32_t id;
+    int32_t x1;
+    int32_t y1;
+    int32_t x2;
+    int32_t y2;
+};
+
 static struct wl_display* display;
 static struct serenity_input_capture_manager_v1* manager;
+static struct serenity_input_capture_session_v1* session;
+static struct ei* ei;
+
 static int eis_fd = -1;
+static int got_seat = 0;
+static int zones_requested = 0;
+static int armed = 0;
+static int zones_seen = 0;
+static int failed_barriers = -1;
+static int got_activated = 0;
+static int got_motion = 0;
 
 static void registry_global(void* data, struct wl_registry* registry, uint32_t name, char const* interface, uint32_t version)
 {
@@ -47,16 +77,143 @@ static void registry_global_remove(void* data, struct wl_registry* registry, uin
 
 static struct wl_registry_listener const registry_listener = { registry_global, registry_global_remove };
 
-static void session_eis_fd(void* data, struct serenity_input_capture_session_v1* session, int32_t fd)
+static void arm(struct zone const* z)
+{
+    struct wl_array barriers;
+    wl_array_init(&barriers);
+
+    int32_t const x = z->x + (int32_t)z->width / 2;
+    struct barrier valid = { .id = 1, .x1 = x, .y1 = z->y, .x2 = x, .y2 = z->y + (int32_t)z->height - 1 };
+    struct barrier diagonal = { .id = 2, .x1 = z->x, .y1 = z->y, .x2 = z->x + 100, .y2 = z->y + 100 };
+    memcpy(wl_array_add(&barriers, sizeof(valid)), &valid, sizeof(valid));
+    memcpy(wl_array_add(&barriers, sizeof(diagonal)), &diagonal, sizeof(diagonal));
+
+    printf("input-capture-test: barrier at x=%d y=%d..%d\n", x, valid.y1, valid.y2);
+    serenity_input_capture_session_v1_set_pointer_barriers(session, &barriers, 1);
+    wl_array_release(&barriers);
+    serenity_input_capture_session_v1_enable(session, 2 /* POINTER */);
+    armed = 1;
+}
+
+static void session_eis_fd(void* data, struct serenity_input_capture_session_v1* s, int32_t fd)
 {
     (void)data;
-    (void)session;
+    (void)s;
     eis_fd = fd;
     printf("input-capture-test: received EIS fd %d\n", fd);
     fflush(stdout);
 }
 
-static struct serenity_input_capture_session_v1_listener const session_listener = { session_eis_fd };
+static void session_zones(void* data, struct serenity_input_capture_session_v1* s, struct wl_array* zones, uint32_t zone_set)
+{
+    (void)data;
+    (void)s;
+    size_t const count = zones->size / sizeof(struct zone);
+    printf("input-capture-test: %zu zone(s), zone_set=%u\n", count, zone_set);
+    for (size_t i = 0; i < count; i++) {
+        struct zone z;
+        memcpy(&z, (char*)zones->data + i * sizeof(struct zone), sizeof(z));
+        printf("  zone %zu: %ux%u at %d,%d\n", i, z.width, z.height, z.x, z.y);
+    }
+    zones_seen = 1;
+    if (count > 0 && !armed) {
+        struct zone first;
+        memcpy(&first, zones->data, sizeof(first));
+        arm(&first);
+    }
+    fflush(stdout);
+}
+
+static void session_zones_changed(void* data, struct serenity_input_capture_session_v1* s)
+{
+    (void)data;
+    (void)s;
+    printf("input-capture-test: zones changed\n");
+}
+
+static void session_barriers_result(void* data, struct serenity_input_capture_session_v1* s, struct wl_array* failed)
+{
+    (void)data;
+    (void)s;
+    failed_barriers = (int)(failed->size / sizeof(uint32_t));
+    printf("input-capture-test: %d barrier(s) rejected", failed_barriers);
+    for (size_t i = 0; i < failed->size / sizeof(uint32_t); i++)
+        printf(" %u", ((uint32_t*)failed->data)[i]);
+    printf("\n");
+    fflush(stdout);
+}
+
+static void session_activated(void* data, struct serenity_input_capture_session_v1* s, uint32_t activation_id, wl_fixed_t cursor_x, wl_fixed_t cursor_y, uint32_t barrier_id)
+{
+    (void)data;
+    (void)s;
+    got_activated = 1;
+    printf("input-capture-test: activated activation_id=%u barrier=%u at %.1f,%.1f\n",
+        activation_id, barrier_id, wl_fixed_to_double(cursor_x), wl_fixed_to_double(cursor_y));
+    fflush(stdout);
+}
+
+static void session_deactivated(void* data, struct serenity_input_capture_session_v1* s, uint32_t activation_id, wl_fixed_t cursor_x, wl_fixed_t cursor_y)
+{
+    (void)data;
+    (void)s;
+    printf("input-capture-test: deactivated activation_id=%u at %.1f,%.1f\n", activation_id, wl_fixed_to_double(cursor_x), wl_fixed_to_double(cursor_y));
+    fflush(stdout);
+}
+
+static void session_disabled(void* data, struct serenity_input_capture_session_v1* s)
+{
+    (void)data;
+    (void)s;
+    printf("input-capture-test: disabled\n");
+}
+
+static struct serenity_input_capture_session_v1_listener const session_listener = {
+    .eis_fd = session_eis_fd,
+    .zones = session_zones,
+    .zones_changed = session_zones_changed,
+    .pointer_barriers_result = session_barriers_result,
+    .activated = session_activated,
+    .deactivated = session_deactivated,
+    .disabled = session_disabled,
+};
+
+static void handle_ei_events(void)
+{
+    ei_dispatch(ei);
+    struct ei_event* event;
+    while ((event = ei_get_event(ei))) {
+        switch (ei_event_get_type(event)) {
+        case EI_EVENT_CONNECT:
+            printf("input-capture-test: EIS connected\n");
+            break;
+        case EI_EVENT_SEAT_ADDED: {
+            struct ei_seat* seat = ei_event_get_seat(event);
+            ei_seat_bind_capabilities(seat, EI_DEVICE_CAP_POINTER, EI_DEVICE_CAP_BUTTON, NULL);
+            got_seat = 1;
+            break;
+        }
+        case EI_EVENT_DEVICE_ADDED:
+            printf("input-capture-test: EIS device added\n");
+            if (!zones_requested) {
+                serenity_input_capture_session_v1_get_zones(session);
+                zones_requested = 1;
+            }
+            break;
+        case EI_EVENT_POINTER_MOTION: {
+            double const dx = ei_event_pointer_get_dx(event);
+            double const dy = ei_event_pointer_get_dy(event);
+            printf("input-capture-test: motion dx=%.1f dy=%.1f\n", dx, dy);
+            got_motion = 1;
+            break;
+        }
+        default:
+            break;
+        }
+        ei_event_unref(event);
+    }
+    fflush(stdout);
+}
 
 int main(void)
 {
@@ -75,64 +232,44 @@ int main(void)
         return 2;
     }
 
-    struct serenity_input_capture_session_v1* session =
-        serenity_input_capture_manager_v1_create_session(manager, "input-capture-test");
+    session = serenity_input_capture_manager_v1_create_session(manager, "input-capture-test");
     serenity_input_capture_session_v1_add_listener(session, &session_listener, NULL);
     serenity_input_capture_session_v1_connect_to_eis(session);
 
-    // Wait for the compositor to hand back the EIS fd.
     while (eis_fd < 0) {
         if (wl_display_dispatch(display) < 0) {
-            fprintf(stderr, "input-capture-test: Wayland connection closed before the EIS fd arrived\n");
+            fprintf(stderr, "input-capture-test: connection closed before the EIS fd arrived\n");
             return 1;
         }
     }
 
-    // A receiver (passive) libei context — the InputCapture role.
-    struct ei* ei = ei_new_receiver(NULL);
-    if (!ei) {
-        fprintf(stderr, "input-capture-test: ei_new_receiver failed\n");
-        return 1;
-    }
+    ei = ei_new_receiver(NULL);
     ei_configure_name(ei, "input-capture-test");
-    if (ei_setup_backend_fd(ei, eis_fd) < 0) {
-        fprintf(stderr, "input-capture-test: ei_setup_backend_fd failed\n");
+    if (!ei || ei_setup_backend_fd(ei, eis_fd) < 0) {
+        fprintf(stderr, "input-capture-test: could not set up the libei receiver\n");
         return 1;
     }
 
-    int connected = 0;
-    int disconnected = 0;
     struct pollfd fds[2] = {
         { .fd = wl_display_get_fd(display), .events = POLLIN },
         { .fd = ei_get_fd(ei), .events = POLLIN },
     };
-    for (int i = 0; i < 100 && !connected && !disconnected; i++) {
+    for (int i = 0; i < 80 && !(got_activated && got_motion); i++) {
         wl_display_dispatch_pending(display);
         wl_display_flush(display);
         if (poll(fds, 2, 100) <= 0)
             continue;
-
         if (fds[0].revents & POLLIN)
             wl_display_dispatch(display);
-
-        if (fds[1].revents & POLLIN) {
-            ei_dispatch(ei);
-            struct ei_event* event;
-            while ((event = ei_get_event(ei))) {
-                enum ei_event_type type = ei_event_get_type(event);
-                if (type == EI_EVENT_CONNECT) {
-                    printf("input-capture-test: EIS connected\n");
-                    fflush(stdout);
-                    connected = 1;
-                } else if (type == EI_EVENT_DISCONNECT) {
-                    disconnected = 1;
-                }
-                ei_event_unref(event);
-            }
-        }
+        if (fds[1].revents & POLLIN)
+            handle_ei_events();
     }
 
-    if (!connected)
-        fprintf(stderr, "input-capture-test: did not reach EI_EVENT_CONNECT\n");
-    return connected ? 0 : 1;
+    printf("input-capture-test: summary seat=%d zones=%d failed_barriers=%d activated=%d motion=%d\n",
+        got_seat, zones_seen, failed_barriers, got_activated, got_motion);
+    fflush(stdout);
+
+    // Pass when the full chain worked: a seat, zones, the invalid barrier
+    // rejected, activation triggered and pointer motion delivered.
+    return (got_seat && zones_seen && failed_barriers == 1 && got_activated && got_motion) ? 0 : 1;
 }

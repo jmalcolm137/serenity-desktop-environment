@@ -1,6 +1,6 @@
 # InputCapture Portal — Design (input capture + EIS)
 
-**Status:** Design decision recorded; **P1 (EIS fd handoff) landed** · v1 · **Date:** 2026-10-12
+**Status:** Design decision recorded; **P1 (EIS fd handoff) + P2 (pointer zones/barriers/activation) landed** · v1 · **Date:** 2026-10-12
 **Related:** [`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md) §5–6 ·
 [`08-compositor-gaps.md`](08-compositor-gaps.md) §3–4 ·
 [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §R5 ·
@@ -187,9 +187,9 @@ Compositor behaviour:
   pointer/keyboard devices **before** the first event — the spec requires the
   EIS `sequence` to equal `activation_id`.
 - **While active**, physical pointer (and, if granted, keyboard) events are fed to
-  the EIS devices and are **not** delivered to the focused Wayland client; the
-  cursor stops tracking screen space. Emulated events from the app are injected
-  into the compositor's seat.
+  the EIS devices and are **not** delivered to the focused Wayland client. (A
+  libei *receiver* context only receives events; the app does not inject. Its only
+  feedback is `Release(cursor_position)`.)
 - **Disable/Release/Deactivate** stops feeding, calls
   `eis_device_stop_emulating()`, honours the suggested `cursor_position`, and
   resumes normal input routing.
@@ -227,11 +227,14 @@ InputCapture is a **keylogger-class** capability, so:
    (`eis_setup_backend_fd`, pumped from the compositor event loop) and return a
    per-session fd. Covered by `scripts/run-input-capture-test.sh`. The D-Bus
    `ConnectToEIS` *relay* lands with the backend interface in P4.
-2. **P2 — pointer zones, barriers, activation.** `get_zones` from the output
-   layout; `set_pointer_barriers`; barrier crossing emits `activated` and feeds
-   pointer motion/buttons over EIS; emulated pointer events are injected back.
-3. **P3 — keyboard.** Grant/`Enable` the keyboard capability; feed key events;
-   inject emulated keys. (Pointer-only first, keyboard second.)
+2. **P2 — pointer zones, barriers, activation (landed).** `get_zones` from the
+   output layout (with `zones_changed` on output changes); `set_pointer_barriers`
+   (axis-aligned; invalid ones rejected); `enable`/`disable`/`release`; a barrier
+   crossing emits `activated` and feeds pointer motion/buttons over EIS until
+   release. Covered by `scripts/run-input-capture-test.sh`. (A libei receiver
+   context only receives — there is no app→compositor injection to wire.)
+3. **P3 — keyboard.** Grant/`Enable` the keyboard capability and feed key events
+   (and XKB modifiers) over EIS.
 4. **P4 — D-Bus end-to-end.** Backend methods/signals + the `AccessDialog`
    prompt; flip `contrib/xdg-desktop-portal/portals.conf`
    `InputCapture=serenity;gtk` and add the interface to `serenity.portal`.
@@ -246,13 +249,14 @@ GPU), so CI stays green.
 
 ## 8. Exit tests
 
-- `scripts/run-input-capture-test.sh` (headless; **P1 landed**): starts the
+- `scripts/run-input-capture-test.sh` (headless; **P1 + P2 landed**): starts the
   compositor with `SDE_INPUT_CAPTURE=1`; `tools/input-capture-test.c` creates a
-  session, obtains the EIS fd and connects a libei **receiver**, and the test
-  asserts the compositor accepted the EIS client. (P2/P3 extend it: zones match
-  the output; an invalid barrier is rejected; crossing a barrier emits
-  `activated` with the right `barrier_id`/`activation_id`; pointer motion arrives
-  on the EIS connection; an emulated event from the client moves the cursor.)
+  session, connects the libei receiver, requests zones, installs a valid and an
+  invalid barrier, arms capture, and the test moves a virtual pointer across the
+  barrier. Asserts: a seat/device are negotiated; the zones are the output
+  (1280x720 at 0,0); the diagonal barrier is rejected; crossing emits `activated`
+  (with the barrier id and activation_id) and pointer motion arrives over EIS.
+  (P3 extends it with keyboard.)
 - `scripts/run-portal-test.sh` (extended): query `SupportedCapabilities`; drive
   `CreateSession2 → Start → GetZones → SetPointerBarriers → Enable`; assert
   `ConnectToEIS` returns an fd a **passive libei context** accepts (the same

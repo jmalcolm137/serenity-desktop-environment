@@ -21,8 +21,9 @@
     This is a privileged, SDE-private protocol: the compositor only advertises it
     when the session opts in (SDE_INPUT_CAPTURE=1). It is not a public surface.
 
-    P1 (fd handoff) implements create_session + connect_to_eis only; zones,
-    pointer barriers, enable/disable/release and their events are P2/P3.
+    P1 (fd handoff) implemented create_session + connect_to_eis. P2 adds zones,
+    pointer barriers, enable/disable/release and the activation events; keyboard
+    capture is P3.
   -->
 
   <interface name="serenity_input_capture_manager_v1" version="1">
@@ -44,7 +45,7 @@
   <interface name="serenity_input_capture_session_v1" version="1">
     <description summary="an input-capture session">
       Per-application input-capture session. May be destroyed at any time; the
-      compositor tears down any associated EIS client.
+      compositor tears down any associated EIS client and stops any capture.
     </description>
 
     <request name="connect_to_eis">
@@ -55,6 +56,55 @@
       </description>
     </request>
 
+    <request name="get_zones">
+      <description summary="request the session's zones">
+        Ask for the current zones (logical outputs). The compositor replies with
+        the zones event. A zone is a rectangle (width, height, x, y).
+      </description>
+    </request>
+
+    <request name="set_pointer_barriers">
+      <description summary="set the pointer barriers">
+        Replace this session's pointer barriers. The barriers array is a packed
+        array of barriers, each 20 bytes: { uint32 id; int32 x1, y1, x2, y2 }.
+        A barrier is axis-aligned: horizontal if y1 == y2, vertical if x1 == x2;
+        diagonal barriers are rejected. zone_set must equal the last zone_set
+        from get_zones. The compositor replies with pointer_barriers_result
+        listing any rejected barrier ids. Setting barriers disarms capture until
+        enable is called again.
+      </description>
+      <arg name="barriers" type="array"/>
+      <arg name="zone_set" type="uint"/>
+    </request>
+
+    <request name="enable">
+      <description summary="arm input capture">
+        Arm capturing. Once armed, crossing a pointer barrier activates capture
+        (the activated event) and pointer events are then delivered over EIS
+        until release/disable. capabilities is a bitmask (1 = keyboard,
+        2 = pointer); only pointer is supported for now.
+      </description>
+      <arg name="capabilities" type="uint"/>
+    </request>
+
+    <request name="disable">
+      <description summary="disarm input capture">
+        Disarm capturing. If capture is active it is deactivated first; the
+        disabled event follows.
+      </description>
+    </request>
+
+    <request name="release">
+      <description summary="release an active capture">
+        End an ongoing capture. activation_id must match the currently active
+        capture (a stale id is ignored). cursor_x/cursor_y suggest where the
+        pointer should be placed when capture ends.
+      </description>
+      <arg name="activation_id" type="uint"/>
+      <arg name="cursor_x" type="fixed"/>
+      <arg name="cursor_y" type="fixed"/>
+    </request>
+
     <request name="destroy" type="destructor">
       <description summary="destroy the session"/>
     </request>
@@ -62,6 +112,54 @@
     <event name="eis_fd">
       <description summary="the session's EIS file descriptor"/>
       <arg name="fd" type="fd" summary="fd to pass to ei_setup_backend_fd()"/>
+    </event>
+
+    <event name="zones">
+      <description summary="the session's zones">
+        The zones array is a packed array of zones, each 16 bytes:
+        { uint32 width; uint32 height; int32 x; int32 y }.
+      </description>
+      <arg name="zones" type="array"/>
+      <arg name="zone_set" type="uint"/>
+    </event>
+
+    <event name="zones_changed">
+      <description summary="the zones changed; re-request them"/>
+    </event>
+
+    <event name="pointer_barriers_result">
+      <description summary="rejected pointer barriers">
+        The failed array is a packed array of uint32 barrier ids that were
+        rejected.
+      </description>
+      <arg name="failed" type="array"/>
+    </event>
+
+    <event name="activated">
+      <description summary="capture activated">
+        Capture has been triggered (by crossing pointer barrier barrier_id; 0 if
+        unknown). Input events are now delivered over the EIS connection, after
+        an EIS start_emulating with sequence == activation_id.
+      </description>
+      <arg name="activation_id" type="uint"/>
+      <arg name="cursor_x" type="fixed"/>
+      <arg name="cursor_y" type="fixed"/>
+      <arg name="barrier_id" type="uint"/>
+    </event>
+
+    <event name="deactivated">
+      <description summary="capture deactivated">
+        Capture ended; input events are no longer delivered.
+      </description>
+      <arg name="activation_id" type="uint"/>
+      <arg name="cursor_x" type="fixed"/>
+      <arg name="cursor_y" type="fixed"/>
+    </event>
+
+    <event name="disabled">
+      <description summary="capturing disabled">
+        The session is no longer armed; enable must be called again to rearm.
+      </description>
     </event>
   </interface>
 
