@@ -10,6 +10,7 @@
 //
 // Usage: virtual-input-test [--extent W H] <op>...
 //   --move X Y            absolute pointer motion
+//   --axis DX DY          scroll (axis) delta; fractional values are allowed
 //   --button BTN press|release   (BTN is numeric: 0x110 left, 0x111 right, ...)
 //   --key CODE press|release     (raw evdev keycode)
 //   --sleep MS
@@ -122,6 +123,15 @@ int main(int argc, char** argv)
             i += 3;
         } else if (!strcmp(argv[i], "--move") && i + 2 < argc) {
             zwlr_virtual_pointer_v1_motion_absolute(s.pointer, now_ms(), (uint32_t)atoi(argv[i + 1]), (uint32_t)atoi(argv[i + 2]), s.x_extent, s.y_extent);
+            zwlr_virtual_pointer_v1_frame(s.pointer);
+            i += 3;
+        } else if (!strcmp(argv[i], "--axis") && i + 2 < argc) {
+            double dx = strtod(argv[i + 1], NULL);
+            double dy = strtod(argv[i + 2], NULL);
+            if (dx != 0)
+                zwlr_virtual_pointer_v1_axis(s.pointer, now_ms(), WL_POINTER_AXIS_HORIZONTAL_SCROLL, wl_fixed_from_double(dx));
+            if (dy != 0)
+                zwlr_virtual_pointer_v1_axis(s.pointer, now_ms(), WL_POINTER_AXIS_VERTICAL_SCROLL, wl_fixed_from_double(dy));
             zwlr_virtual_pointer_v1_frame(s.pointer);
             i += 3;
         } else if (!strcmp(argv[i], "--button") && i + 2 < argc) {
