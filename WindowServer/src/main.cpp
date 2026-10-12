@@ -58,6 +58,7 @@
 #include <linux/input-event-codes.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -1714,7 +1715,14 @@ static void toplevel_update_frame(Toplevel& toplevel)
     Gfx::Painter painter(*bitmap);
     painter.fill_rect(Gfx::IntRect { { }, frame_size }, g_palette->window());
 
-    static auto const icon = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { 16, 16 }).release_value_but_fixme_should_propagate_errors();
+    // Titlebar icon: the window's icon (set_icon), scaled to 16x16, else blank.
+    static auto const blank_icon = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { 16, 16 }).release_value_but_fixme_should_propagate_errors();
+    RefPtr<Gfx::Bitmap> scaled_icon;
+    if (toplevel.icon && toplevel.icon->width() > 0 && toplevel.icon->height() > 0) {
+        if (auto scaled = toplevel.icon->scaled(16.0f / toplevel.icon->width(), 16.0f / toplevel.icon->height()); !scaled.is_error())
+            scaled_icon = scaled.release_value();
+    }
+    Gfx::Bitmap const& icon = scaled_icon ? *scaled_icon : *blank_icon;
     auto buttons = theme.layout_buttons(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette, 3, false);
     toplevel.titlebar_icon_rect = theme.titlebar_icon_rect(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette);
     Gfx::IntRect leftmost_button = buttons.is_empty() ? Gfx::IntRect { } : buttons.last();
@@ -1726,7 +1734,7 @@ static void toplevel_update_frame(Toplevel& toplevel)
     StringView title;
     if (xdg_toplevel->title)
         title = StringView { xdg_toplevel->title, strlen(xdg_toplevel->title) };
-    theme.paint_normal_frame(painter, state, Gfx::WindowTheme::WindowMode::Other, content_rect, title, *icon, *g_palette, leftmost_button, 0, false);
+    theme.paint_normal_frame(painter, state, Gfx::WindowTheme::WindowMode::Other, content_rect, title, icon, *g_palette, leftmost_button, 0, false);
 
     toplevel.button_rects.clear_with_capacity();
     float icon_opacity = toplevel.frame_active ? 1.0f : (g_palette->window_title_button_inactive_alpha() / 255.0f);
@@ -2991,7 +2999,53 @@ static void serenity_toplevel_request_destroy(wl_client*, wl_resource* resource)
     wl_resource_destroy(resource);
 }
 
+// set_icon: the client supplies its window icon as memory-mappable pixels
+// (SerenityOS Window::icon()). wl_shm ARGB8888 is little-endian B,G,R,A, which
+// matches Gfx::BitmapFormat::BGRA8888.
+static void serenity_toplevel_set_icon(wl_client*, wl_resource* resource, int32_t width, int32_t height, int32_t stride, uint32_t format, int32_t fd)
+{
+    auto* chrome = static_cast<SerenityChrome*>(wl_resource_get_user_data(resource));
+    Toplevel* toplevel = chrome ? chrome->toplevel : nullptr;
+    if (!toplevel) {
+        if (fd >= 0)
+            close(fd);
+        return;
+    }
+
+    // width 0 (or an unusable descriptor) clears the icon.
+    if (width <= 0 || height <= 0 || stride <= 0 || fd < 0) {
+        if (fd >= 0)
+            close(fd);
+        if (toplevel->icon) {
+            toplevel->icon = nullptr;
+            toplevel_update_frame(*toplevel);
+        }
+        return;
+    }
+    if (format != 0) { // WL_SHM_FORMAT_ARGB8888
+        warnln("WindowServer: unsupported window icon format {}", format);
+        close(fd);
+        return;
+    }
+
+    size_t const size = static_cast<size_t>(stride) * static_cast<size_t>(height);
+    void* mapping = mmap(nullptr, size, PROT_READ, MAP_SHARED, fd, 0);
+    if (mapping != MAP_FAILED) {
+        if (auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { width, height }); !bitmap.is_error()) {
+            auto& created = *bitmap.value();
+            for (int y = 0; y < height; ++y)
+                memcpy(created.scanline(y), static_cast<u8 const*>(mapping) + static_cast<size_t>(y) * stride, min(static_cast<size_t>(stride), static_cast<size_t>(created.pitch())));
+            toplevel->icon = bitmap.release_value();
+            dbgln("WindowServer: composed window icon {}x{} for wm_id={}", width, height, toplevel->wm_id);
+        }
+        munmap(mapping, size);
+    }
+    close(fd);
+    toplevel_update_frame(*toplevel);
+}
+
 static struct serenity_toplevel_interface const s_serenity_toplevel_implementation = {
+    .set_icon = serenity_toplevel_set_icon,
     .destroy = serenity_toplevel_request_destroy,
 };
 

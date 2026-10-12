@@ -15,6 +15,7 @@
 #include <wayland-client.h>
 
 #include "xdg-shell-client-protocol.h"
+#include "serenity-window-client-protocol.h"
 
 static struct wl_display* display;
 static struct wl_compositor* compositor;
@@ -108,6 +109,10 @@ static struct xdg_toplevel_listener const toplevel_listener = { toplevel_configu
 static struct wl_seat* seat;
 static struct wl_keyboard* keyboard;
 
+// The serenity-window chrome handle, so we can send the compositor our icon.
+static struct serenity_window_manager* window_manager;
+static struct serenity_toplevel* serenity_toplevel_handle;
+
 static void keyboard_keymap(void* d, struct wl_keyboard* k, uint32_t format, int32_t fd, uint32_t size) { (void)d; (void)k; (void)format; (void)size; close(fd); }
 static void keyboard_enter(void* d, struct wl_keyboard* k, uint32_t serial, struct wl_surface* s, struct wl_array* keys) { (void)d; (void)k; (void)serial; (void)s; (void)keys; }
 static void keyboard_leave(void* d, struct wl_keyboard* k, uint32_t serial, struct wl_surface* s) { (void)d; (void)k; (void)serial; (void)s; }
@@ -140,6 +145,8 @@ static void registry_global(void* data, struct wl_registry* registry, uint32_t n
     else if (strcmp(interface, wl_seat_interface.name) == 0) {
         seat = wl_registry_bind(registry, name, &wl_seat_interface, 1);
         wl_seat_add_listener(seat, &seat_listener, NULL);
+    } else if (strcmp(interface, serenity_window_manager_interface.name) == 0) {
+        window_manager = wl_registry_bind(registry, name, &serenity_window_manager_interface, 1);
     }
 }
 
@@ -182,6 +189,25 @@ int main(void)
 
     wl_display_roundtrip(display);
     wl_display_roundtrip(display);
+
+    // Send our window icon over serenity-window so the compositor can show it in
+    // the titlebar and the Alt+Tab switcher (a 16x16 ARGB8888 green square).
+    if (window_manager) {
+        serenity_toplevel_handle = serenity_window_manager_get_toplevel(window_manager, surface);
+        int const iw = 16, ih = 16, istride = iw * 4;
+        int ifd = memfd_create("native-app-icon", 0);
+        if (ifd >= 0 && ftruncate(ifd, istride * ih) == 0) {
+            void* pixels = mmap(NULL, istride * ih, PROT_READ | PROT_WRITE, MAP_SHARED, ifd, 0);
+            if (pixels != MAP_FAILED) {
+                for (int i = 0; i < iw * ih; i++)
+                    ((uint32_t*)pixels)[i] = 0xFF00C000; // ARGB: opaque green
+                munmap(pixels, istride * ih);
+            }
+            serenity_toplevel_set_icon(serenity_toplevel_handle, iw, ih, istride, 0, ifd);
+            close(ifd);
+            wl_display_flush(display);
+        }
+    }
 
     fprintf(stderr, "native-app-test: mapped %dx%d\n", width, height);
 

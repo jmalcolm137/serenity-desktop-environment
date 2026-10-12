@@ -71,8 +71,10 @@ click was already handled and returned earlier).
   right-aligned, mouse hover/click, and the selected window drawn in the theme's
   `Highlighted` window state. In all-workspaces mode the visible workspace follows
   the selection (as SerenityOS switches the window stack while cycling), and any
-  key other than Tab/Shift cancels. (Window icons are not shown: no window-icon
-  source for Wayland clients yet.)
+  key other than Tab/Shift cancels. The window icon is supplied by the client over
+  the `serenity-window` protocol (`serenity_toplevel.set_icon`) and shown in both
+  the titlebar and the switcher (SerenityOS: `Window::icon()`); clients that do
+  not send one show none.
 - **Snapping** — done (WS2). `WindowTileType` + Super+arrows
   (maximize/minimize/tile, Super+Alt horizontal/vertical maximize), drag-to-edge
   snapping with a LibGfx tile preview, `xdg_toplevel` tiled/maximized state, a

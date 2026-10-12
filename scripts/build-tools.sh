@@ -51,9 +51,13 @@ cc -O2 -I "$TOOLS_BUILD" \
 XDG_XML="$(pkg-config --variable=pkgdatadir wayland-protocols)/stable/xdg-shell/xdg-shell.xml"
 wayland-scanner client-header "$XDG_XML" "$TOOLS_BUILD/xdg-shell-client-protocol.h"
 wayland-scanner private-code  "$XDG_XML" "$TOOLS_BUILD/xdg-shell-protocol.c"
+SW_XML="$SDE_ROOT/WindowServer/protocol/serenity-window.xml"
+wayland-scanner client-header "$SW_XML" "$TOOLS_BUILD/serenity-window-client-protocol.h"
+wayland-scanner private-code  "$SW_XML" "$TOOLS_BUILD/serenity-window-protocol.c"
 cc -O2 -I "$TOOLS_BUILD" \
     "$SDE_ROOT/tools/native-app-test.c" \
     "$TOOLS_BUILD/xdg-shell-protocol.c" \
+    "$TOOLS_BUILD/serenity-window-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/native-app-test"
 

@@ -26,6 +26,9 @@ wayland-scanner client-header "$LAYER_XML" "$TOOLS_BUILD/wlr-layer-shell-unstabl
 wayland-scanner private-code  "$LAYER_XML" "$TOOLS_BUILD/wlr-layer-shell-unstable-v1-protocol.c"
 wayland-scanner client-header "$XDG_XML"   "$TOOLS_BUILD/xdg-shell-client-protocol.h"
 wayland-scanner private-code  "$XDG_XML"   "$TOOLS_BUILD/xdg-shell-protocol.c"
+SW_XML="$SDE_ROOT/WindowServer/protocol/serenity-window.xml"
+wayland-scanner client-header "$SW_XML"    "$TOOLS_BUILD/serenity-window-client-protocol.h"
+wayland-scanner private-code  "$SW_XML"    "$TOOLS_BUILD/serenity-window-protocol.c"
 cc -O2 -I "$TOOLS_BUILD" \
     "$SDE_ROOT/tools/layer-shell-test.c" \
     "$TOOLS_BUILD/wlr-layer-shell-unstable-v1-protocol.c" \
@@ -35,6 +38,7 @@ cc -O2 -I "$TOOLS_BUILD" \
 cc -O2 -I "$TOOLS_BUILD" \
     "$SDE_ROOT/tools/native-app-test.c" \
     "$TOOLS_BUILD/xdg-shell-protocol.c" \
+    "$TOOLS_BUILD/serenity-window-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/native-app-test"
 

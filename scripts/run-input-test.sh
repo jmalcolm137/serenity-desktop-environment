@@ -24,6 +24,10 @@ VP_XML="$WLROOTS_SRC/protocol/wlr-virtual-pointer-unstable-v1.xml"
 
 wayland-scanner client-header "$XDG_XML" "$TOOLS_BUILD/xdg-shell-client-protocol.h"
 wayland-scanner private-code  "$XDG_XML" "$TOOLS_BUILD/xdg-shell-protocol.c"
+# serenity-window: the private chrome protocol, so native-app-test can send an icon.
+SW_XML="$SDE_ROOT/WindowServer/protocol/serenity-window.xml"
+wayland-scanner client-header "$SW_XML" "$TOOLS_BUILD/serenity-window-client-protocol.h"
+wayland-scanner private-code  "$SW_XML" "$TOOLS_BUILD/serenity-window-protocol.c"
 wayland-scanner client-header "$VK_XML" "$TOOLS_BUILD/virtual-keyboard-unstable-v1-client-protocol.h"
 wayland-scanner private-code  "$VK_XML" "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c"
 wayland-scanner client-header "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-client-protocol.h"
@@ -32,6 +36,7 @@ wayland-scanner private-code  "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstab
 cc -O2 -I "$TOOLS_BUILD" \
     "$SDE_ROOT/tools/native-app-test.c" \
     "$TOOLS_BUILD/xdg-shell-protocol.c" \
+    "$TOOLS_BUILD/serenity-window-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/native-app-test"
 cc -O2 -I "$TOOLS_BUILD" \
@@ -144,6 +149,7 @@ check() {
 echo "=== virtual-input test ==="
 check "virtual pointer connected"
 check "toplevel mapped title='SDE Native Test'"
+check "composed window icon 16x16"
 check "window menu opened for wm_id="
 # WS1: Ctrl+Alt+Right switched to the next workspace stack.
 check "switched to workspace 0,1"
