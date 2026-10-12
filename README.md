@@ -109,3 +109,8 @@ and `SDE_WALLPAPER_MODE` to `center` (default), `tile`, `stretch` or `fill` to
 use a wallpaper image. (The settings work, R4/G5, will drive this through the
 WindowServer protocol instead of the environment.)
 
+## License
+
+SDE is distributed under the **BSD 2-Clause License** (see [`LICENSE`](LICENSE)),
+the same license as SerenityOS, whose unmodified sources it builds on.
+
