@@ -222,9 +222,10 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
   `scripts/run-system-monitor-test.sh`. The **Storage** and **Network** tabs now
   read the host too — `/proc/mounts` + `statvfs()` and `getifaddrs()` + sysfs +
   `/proc/net/{tcp,udp,tcp6,udp6}` (`SystemMonitorLinux.cpp`) — instead of
-  `/sys/kernel/df` and `/sys/kernel/net/*`. Still reading Serenity `/sys/kernel`
-  paths (so empty on Linux): the per-process open-files / memory-map / unveiled-
-  paths views. `MouseSettings`, `Debugger`, `CrashReporter` feasibility not yet
+  `/sys/kernel/df` and `/sys/kernel/net/*`. The per-process **Open files** and
+  **Memory map** windows read `/proc/<pid>/{fd,fdinfo,smaps}` too; the
+  **Unveiled paths** tab is removed on Linux (unveil is a SerenityOS-only
+  mechanism). `MouseSettings`, `Debugger`, `CrashReporter` feasibility not yet
   addressed. `Terminal` runs.
 - **Web engine / `WebContent` + `RequestServer` + `SQLServer` (W7, host).** Done —
   see "Recently resolved". **Help** (Taskbar system menu ▸ Help) renders the man
