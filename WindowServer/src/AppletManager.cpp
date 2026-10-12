@@ -129,6 +129,10 @@ static void apply(Server& server)
         int x = origin.x() + applet.rect.x();
         int y = origin.y() + applet.rect.y();
         wlr_scene_node_set_position(&applet.surface->scene->tree->node, x, y);
+        // The Taskbar is a top-layer surface too; keep the applets above it so
+        // they draw on top of the applet-area frame (as they do in SerenityOS,
+        // where they are children of the Taskbar).
+        wlr_scene_node_raise_to_top(&applet.surface->scene->tree->node);
         if (g_hooks.report_position)
             g_hooks.report_position(*applet.surface);
         signature = ByteString::formatted("{}'{}' {}x{}+{},{}; ", signature, applet.surface->applet_name,

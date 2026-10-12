@@ -49,6 +49,11 @@ HEIGHT="${SIZE#*x}"
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 
+# Keep the Taskbar current: it drives the applet-area position over the
+# WindowManagerServer connection, so a Taskbar binary that is out of sync with
+# LibGUI leaves the applets at the usable-area fallback (above the taskbar).
+ninja -C "$BUILD" Taskbar >/dev/null 2>&1 || true
+
 # A dedicated session state dir: the wallpaper and (headless) the output layout.
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-scene.XXXXXX")"
 chmod 700 "$RUNTIME"
@@ -81,8 +86,22 @@ with open(dst, "wb") as f:
     f.write(struct.pack("<IIIII", 0x53445750, 2, w, h, pitch))
     f.write(pixels[: pitch * h])
 PY
-    printf 'center' > "$RUNTIME/wallpaper.mode"
+    printf 'fill' > "$RUNTIME/wallpaper.mode"
 }
+
+# --- Window placement rules ([Placement] in WindowServer.ini) ---------------
+# Roughly the reference layout (Terminal top-left, File Manager top-right,
+# browser bottom-left, System Monitor bottom-right) scaled to WIDTHxHEIGHT.
+write_placement() {
+    local right=$((WIDTH / 2))
+    local top=$((HEIGHT * 45 / 100))
+    local bottom=$((HEIGHT * 47 / 100))
+    cat > "$RUNTIME/WindowServer.ini" <<EOF
+[Placement]
+Windows=Terminal:0,0,${right},${top};File Manager:${right},0,$((WIDTH - right)),${top};Firefox:0,${top},${right},${bottom};System Monitor:${right},${top},$((WIDTH - right)),${bottom}
+EOF
+}
+write_placement
 write_wallpaper "$WALLPAPER"
 
 # --- Seed the skeleton user config so apps find their defaults ---------------
@@ -115,8 +134,9 @@ else
     echo "note: no browser found; the scene will have no browser window" >&2
 fi
 
-# Terminal (cascades near the top-left, like the screenshot).
-STARTUP="$STARTUP & $BUILD/bin/Terminal"
+# Terminal (top-left, like the screenshot), running `uname -a` in a shell that
+# then stays interactive (the host shell has no SerenityOS --keep-open).
+STARTUP="$STARTUP & $BUILD/bin/Terminal -e 'uname -a; exec sh'"
 
 # Battery applet (SDE's) + the SerenityOS taskbar applets.
 BATTERY_APPLET="$SDE_ROOT/build/BatteryApplet/BatteryApplet"

@@ -1842,6 +1842,16 @@ static void toplevel_map(wl_listener* listener, void*)
     WindowManager::on_toplevel_mapped(*toplevel);
     // Apply a restored session position (R4.2), then report the final position.
     SessionManager::on_toplevel_mapped(*toplevel);
+    // [Placement] window rules: set the new window's geometry (overrides the
+    // session restore), so a script can reproduce a specific desktop layout.
+    if (toplevel->xdg_toplevel->title) {
+        if (auto placement = Config::window_placement_for(StringView { toplevel->xdg_toplevel->title, strlen(toplevel->xdg_toplevel->title) }); placement.has_value()) {
+            auto* geometry = &toplevel->xdg_toplevel->base->geometry;
+            wlr_scene_node_set_position(&toplevel->scene_tree->node, placement->x() - geometry->x, placement->y() - geometry->y);
+            wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, placement->width(), placement->height());
+            toplevel->restore_position = placement->location();
+        }
+    }
     toplevel_report_position(*toplevel);
     if (toplevel->foreign_handle && toplevel->server->primary_output)
         wlr_foreign_toplevel_handle_v1_output_enter(toplevel->foreign_handle, toplevel->server->primary_output);

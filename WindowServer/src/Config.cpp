@@ -36,6 +36,14 @@ static Vector<GlobalShortcut> g_global_shortcuts;
 static Vector<ByteString> g_applet_order;
 static Vector<ByteString> g_diagnostics;
 
+namespace {
+struct PlacementRule {
+    ByteString title;
+    Gfx::IntRect rect;
+};
+}
+static Vector<PlacementRule> g_placement_rules;
+
 // --- keybindings (R4.4) ------------------------------------------------------
 
 struct Binding {
@@ -261,6 +269,26 @@ void load()
         auto trimmed = entry.trim_whitespace();
         if (!trimmed.is_empty())
             g_applet_order.append(trimmed);
+    }
+
+    // [Placement] Windows - initial window geometry rules (see Config.h).
+    g_placement_rules.clear();
+    for (auto& item : read_entry(user, defaults, "Placement"sv, "Windows"sv).split(';')) {
+        auto trimmed = item.trim_whitespace();
+        if (trimmed.is_empty())
+            continue;
+        auto colon = trimmed.find(':');
+        if (!colon.has_value())
+            continue;
+        auto title = trimmed.substring(0, *colon).trim_whitespace();
+        auto parts = trimmed.substring(*colon + 1).split(',');
+        if (parts.size() != 4)
+            continue;
+        int x = parts[0].trim_whitespace().to_number<int>().value_or(0);
+        int y = parts[1].trim_whitespace().to_number<int>().value_or(0);
+        int width = parts[2].trim_whitespace().to_number<int>().value_or(0);
+        int height = parts[3].trim_whitespace().to_number<int>().value_or(0);
+        g_placement_rules.append({ title, Gfx::IntRect { x, y, width, height } });
     }
 
     g_bindings.clear();
@@ -642,6 +670,15 @@ Output const& output()
 Vector<ByteString> const& applet_order()
 {
     return g_applet_order;
+}
+
+Optional<Gfx::IntRect> window_placement_for(StringView title)
+{
+    for (auto const& rule : g_placement_rules) {
+        if (title.contains(rule.title.view()))
+            return rule.rect;
+    }
+    return {};
 }
 
 Vector<ByteString> const& diagnostics()

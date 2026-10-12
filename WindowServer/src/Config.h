@@ -11,7 +11,9 @@
 #include <AK/Function.h>
 #include <AK/Optional.h>
 #include <AK/Span.h>
+#include <AK/StringView.h>
 #include <AK/Vector.h>
+#include <LibGfx/Rect.h>
 
 // The session's persisted configuration and state, rooted at
 // $XDG_CONFIG_HOME/sde (SDE_STATE_DIR overrides). The wallpaper/theme state the
@@ -105,6 +107,13 @@ Workspaces const& workspaces();
 
 // [Applet] Order - the configured applet order (comma-separated). WS4 reads this.
 Vector<ByteString> const& applet_order();
+
+// [Placement] Windows - initial window geometry rules (window rules):
+//   Windows=<title>:X,Y,W,H;<title>:X,Y,W,H;...
+// The first rule whose title is a substring of a new window's title wins, so
+// e.g. "File Manager" matches "<dir> - File Manager". Used to reproduce a
+// specific desktop layout (e.g. scripts/run-desktop-scene.sh).
+Optional<Gfx::IntRect> window_placement_for(StringView title);
 
 Tiling const& tiling();
 Focus const& focus();
