@@ -1,6 +1,6 @@
 # InputCapture Portal — Design (input capture + EIS)
 
-**Status:** Design decision recorded · v1 · **Date:** 2026-10-12
+**Status:** Design decision recorded; **P1 (EIS fd handoff) landed** · v1 · **Date:** 2026-10-12
 **Related:** [`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md) §5–6 ·
 [`08-compositor-gaps.md`](08-compositor-gaps.md) §3–4 ·
 [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §R5 ·
@@ -221,9 +221,12 @@ InputCapture is a **keylogger-class** capability, so:
 
 ## 7. Bring-up order
 
-1. **P1 — fd handoff.** Link `libeis` in `WindowServer`; add the private
-   protocol; `connect_to_eis` returns a working fd; the backend's `ConnectToEIS`
-   relays it. Exit: a passive libei test client connects (no events yet).
+1. **P1 — fd handoff (landed).** `WindowServer` links `libeis` (optional) and
+   offers the `serenity_input_capture` global when `SDE_INPUT_CAPTURE=1`;
+   `create_session` + `connect_to_eis` create the EIS implementation
+   (`eis_setup_backend_fd`, pumped from the compositor event loop) and return a
+   per-session fd. Covered by `scripts/run-input-capture-test.sh`. The D-Bus
+   `ConnectToEIS` *relay* lands with the backend interface in P4.
 2. **P2 — pointer zones, barriers, activation.** `get_zones` from the output
    layout; `set_pointer_barriers`; barrier crossing emits `activated` and feeds
    pointer motion/buttons over EIS; emulated pointer events are injected back.
@@ -243,12 +246,13 @@ GPU), so CI stays green.
 
 ## 8. Exit tests
 
-- `scripts/run-input-capture-test.sh` (headless): compositor + a private-protocol
-  client + `virtual-input-test`. Asserts: zones match the output; an invalid
-  barrier is rejected; moving the virtual pointer across a barrier emits
-  `activated` with the right `barrier_id` and `activation_id`; subsequent pointer
-  motion arrives on the EIS connection; an emulated pointer event from the EIS
-  client moves the compositor cursor.
+- `scripts/run-input-capture-test.sh` (headless; **P1 landed**): starts the
+  compositor with `SDE_INPUT_CAPTURE=1`; `tools/input-capture-test.c` creates a
+  session, obtains the EIS fd and connects a libei **receiver**, and the test
+  asserts the compositor accepted the EIS client. (P2/P3 extend it: zones match
+  the output; an invalid barrier is rejected; crossing a barrier emits
+  `activated` with the right `barrier_id`/`activation_id`; pointer motion arrives
+  on the EIS connection; an emulated event from the client moves the cursor.)
 - `scripts/run-portal-test.sh` (extended): query `SupportedCapabilities`; drive
   `CreateSession2 → Start → GetZones → SetPointerBarriers → Enable`; assert
   `ConnectToEIS` returns an fd a **passive libei context** accepts (the same

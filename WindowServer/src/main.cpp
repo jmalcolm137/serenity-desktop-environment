@@ -21,6 +21,7 @@
 #include <AK/Vector.h>
 
 #include "Config.h"
+#include "InputCapture.h"
 #include "Model.h"
 #include "Overlays.h"
 #include "AppletManager.h"
@@ -3423,6 +3424,8 @@ static ErrorOr<void> initialize(Server& server)
     server.foreign_toplevel_manager = wlr_foreign_toplevel_manager_v1_create(server.display);
     wl_global_create(server.display, &serenity_window_manager_interface, 1, &server, serenity_window_manager_bind);
     SessionManager::initialize(server);
+    // R5: InputCapture portal support (compositor-hosted EIS; docs/17).
+    InputCapture::initialize(server);
 
     // R4.8: the standard interop surface. ext-workspace-v1 maps the SDE grid;
     // ext-foreign-toplevel-list-v1 maps the window list; xdg-activation-v1 lets a

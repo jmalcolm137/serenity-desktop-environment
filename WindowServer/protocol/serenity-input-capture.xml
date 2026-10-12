@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="serenity_input_capture">
+
+  <copyright>
+    Copyright (c) 2026, Serenity Desktop Environment contributors.
+
+    SPDX-License-Identifier: BSD-2-Clause
+  </copyright>
+
+  <!--
+    serenity_input_capture: the private compositor <-> portal-backend protocol
+    behind org.freedesktop.impl.portal.InputCapture (see docs/17-input-capture.md).
+
+    InputCapture needs live physical input, which no standard Wayland protocol
+    exposes; the transport is libei/EIS. The compositor owns the EIS
+    implementation (it has the input, cursor, outputs and pointer barriers); this
+    protocol lets the trusted portal backend start a capture session and obtain
+    the session's EIS file descriptor, which it relays to the application over
+    D-Bus (ConnectToEIS).
+
+    This is a privileged, SDE-private protocol: the compositor only advertises it
+    when the session opts in (SDE_INPUT_CAPTURE=1). It is not a public surface.
+
+    P1 (fd handoff) implements create_session + connect_to_eis only; zones,
+    pointer barriers, enable/disable/release and their events are P2/P3.
+  -->
+
+  <interface name="serenity_input_capture_manager_v1" version="1">
+    <description summary="input-capture session factory">
+      The manager global. One per compositor; only offered when input capture is
+      enabled for the session.
+    </description>
+
+    <request name="create_session">
+      <description summary="create an input-capture session">
+        Create a session for the application identified by app_id. The session is
+        inert until further requests are made on it.
+      </description>
+      <arg name="app_id" type="string" summary="the requesting application's id"/>
+      <arg name="session" type="new_id" interface="serenity_input_capture_session_v1"/>
+    </request>
+  </interface>
+
+  <interface name="serenity_input_capture_session_v1" version="1">
+    <description summary="an input-capture session">
+      Per-application input-capture session. May be destroyed at any time; the
+      compositor tears down any associated EIS client.
+    </description>
+
+    <request name="connect_to_eis">
+      <description summary="request the EIS file descriptor">
+        Ask the compositor for the session's EIS implementation file descriptor.
+        The compositor replies with the eis_fd event; the fd is passed to a
+        libei receiver context (ei_setup_backend_fd). May be called once.
+      </description>
+    </request>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the session"/>
+    </request>
+
+    <event name="eis_fd">
+      <description summary="the session's EIS file descriptor"/>
+      <arg name="fd" type="fd" summary="fd to pass to ei_setup_backend_fd()"/>
+    </event>
+  </interface>
+
+</protocol>

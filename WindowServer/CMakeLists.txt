@@ -22,6 +22,10 @@ pkg_check_modules(XKBCOMMON REQUIRED xkbcommon)
 pkg_check_modules(DRM REQUIRED libdrm)
 # R4.6: input device configuration (accel, tap-to-click, natural scroll, ...).
 pkg_check_modules(LIBINPUT REQUIRED libinput)
+# R5 InputCapture (docs/17-input-capture.md): the compositor owns the EIS
+# implementation via libeis. Optional: a build without libeis simply does not
+# offer the serenity_input_capture protocol.
+pkg_check_modules(LIBEIS libeis-1.0)
 
 # Serenity userland libraries from the libgui-wayland build.
 foreach(_lib ak coreminimal corebasic core gfx unicode ipc compress crypto riff textcodec filesystem url threading main)
@@ -40,6 +44,19 @@ add_custom_command(
     COMMAND "${WAYLAND_SCANNER}" server-header "${SERENITY_WINDOW_XML}" "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-window-server-protocol.h"
     COMMAND "${WAYLAND_SCANNER}" private-code "${SERENITY_WINDOW_XML}" "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-window-protocol.c"
     DEPENDS "${SERENITY_WINDOW_XML}"
+    VERBATIM
+)
+
+# serenity-input-capture: the private compositor <-> portal-backend protocol
+# behind org.freedesktop.impl.portal.InputCapture (docs/17-input-capture.md).
+set(SERENITY_INPUT_CAPTURE_XML "${CMAKE_CURRENT_SOURCE_DIR}/protocol/serenity-input-capture.xml")
+add_custom_command(
+    OUTPUT
+        "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-input-capture-server-protocol.h"
+        "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-input-capture-protocol.c"
+    COMMAND "${WAYLAND_SCANNER}" server-header "${SERENITY_INPUT_CAPTURE_XML}" "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-input-capture-server-protocol.h"
+    COMMAND "${WAYLAND_SCANNER}" private-code "${SERENITY_INPUT_CAPTURE_XML}" "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-input-capture-protocol.c"
+    DEPENDS "${SERENITY_INPUT_CAPTURE_XML}"
     VERBATIM
 )
 
@@ -71,11 +88,13 @@ add_executable(WindowServer
     src/main.cpp
     src/AppletManager.cpp
     src/Config.cpp
+    src/InputCapture.cpp
     src/Overlays.cpp
     src/SessionManager.cpp
     src/WindowManager.cpp
     src/WindowSwitcher.cpp
     "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-window-protocol.c"
+    "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-input-capture-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-shell-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-session-management-v1-protocol.c")
 
@@ -128,6 +147,14 @@ target_link_libraries(WindowServer PRIVATE
     ${LAGOM_url}
     ${LAGOM_threading}
     ${LAGOM_main})
+
+# R5 InputCapture: link libeis when present (see src/InputCapture.cpp).
+if (LIBEIS_FOUND)
+    target_compile_definitions(WindowServer PRIVATE SDE_HAVE_LIBEIS)
+    target_include_directories(WindowServer PRIVATE ${LIBEIS_INCLUDE_DIRS})
+    target_link_directories(WindowServer PRIVATE ${LIBEIS_LIBRARY_DIRS})
+    target_link_libraries(WindowServer PRIVATE ${LIBEIS_LIBRARIES})
+endif()
 
 set_target_properties(WindowServer PROPERTIES
     BUILD_RPATH "${SERENITY_BUILD_DIR}/lib"
