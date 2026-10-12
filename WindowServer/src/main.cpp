@@ -225,6 +225,35 @@ static RefPtr<Gfx::Bitmap> load_icon(ByteString const& resource_root, StringView
     return nullptr;
 }
 
+// The theme's overlay rect shadow (a 9-slice bitmap) behind the window switcher,
+// like SerenityOS WindowManager::overlay_rect_shadow().
+static ByteString g_resource_root;
+static RefPtr<Gfx::Bitmap> g_overlay_shadow;
+
+static void load_overlay_shadow()
+{
+    g_overlay_shadow = nullptr;
+    if (!g_palette)
+        return;
+    auto path = g_palette->overlay_rect_shadow_path();
+    if (path.is_empty())
+        return;
+    ByteString resolved = path;
+    if (path.starts_with("/res"sv))
+        resolved = ByteString::formatted("{}{}", g_resource_root, path.substring_view(4));
+    if (auto bitmap = Gfx::Bitmap::load_from_file(resolved); !bitmap.is_error()) {
+        g_overlay_shadow = bitmap.release_value();
+        dbgln("WindowServer: loaded overlay rect shadow '{}' ({}x{})", resolved, g_overlay_shadow->width(), g_overlay_shadow->height());
+    } else {
+        warnln("WindowServer: could not load the overlay rect shadow '{}': {}", resolved, bitmap.error());
+    }
+}
+
+static Gfx::Bitmap const* overlay_shadow_hook()
+{
+    return g_overlay_shadow.ptr();
+}
+
 
 template<typename T>
 static void remove_owned(Vector<NonnullOwnPtr<T>>& list, T* object)
@@ -883,6 +912,11 @@ static void cursor_motion(wl_listener* listener, void* data)
     auto* event = static_cast<wlr_pointer_motion_event*>(data);
     wlr_cursor_move(server->cursor, &event->pointer->base, event->delta_x, event->delta_y);
     move_cursor_highlight(*server);
+    // The switcher grabs the pointer while it is open.
+    if (WindowSwitcher::handle_pointer_motion(*server, server->cursor->x, server->cursor->y)) {
+        notify_activity(*server);
+        return;
+    }
     if (!InputCapture::handle_pointer_motion(*server, event->time_msec))
         process_cursor_motion(*server, event->time_msec);
     notify_activity(*server);
@@ -895,6 +929,11 @@ static void cursor_motion_absolute(wl_listener* listener, void* data)
     auto* event = static_cast<wlr_pointer_motion_absolute_event*>(data);
     wlr_cursor_warp_absolute(server->cursor, &event->pointer->base, event->x, event->y);
     move_cursor_highlight(*server);
+    // The switcher grabs the pointer while it is open.
+    if (WindowSwitcher::handle_pointer_motion(*server, server->cursor->x, server->cursor->y)) {
+        notify_activity(*server);
+        return;
+    }
     if (!InputCapture::handle_pointer_motion(*server, event->time_msec))
         process_cursor_motion(*server, event->time_msec);
     notify_activity(*server);
@@ -946,6 +985,10 @@ static void cursor_button(wl_listener* listener, void* data)
     }
 
     notify_activity(*server);
+
+    // The Alt+Tab switcher grabs the pointer while it is open.
+    if (WindowSwitcher::handle_pointer_button(*server, event->button, event->state))
+        return;
 
     // R5: InputCapture — while a capture is active, buttons go to the EIS client.
     if (InputCapture::handle_pointer_button(*server, event->button, event->state, event->time_msec))
@@ -1676,6 +1719,10 @@ static void toplevel_update_frame(Toplevel& toplevel)
     toplevel.titlebar_icon_rect = theme.titlebar_icon_rect(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette);
     Gfx::IntRect leftmost_button = buttons.is_empty() ? Gfx::IntRect { } : buttons.last();
     auto state = toplevel.frame_active ? Gfx::WindowTheme::WindowState::Active : Gfx::WindowTheme::WindowState::Inactive;
+    // While the Alt+Tab switcher is open, draw the selected window in the theme's
+    // highlighted state (SerenityOS WindowManager::set_highlight_window).
+    if (&toplevel == WindowSwitcher::highlighted())
+        state = Gfx::WindowTheme::WindowState::Highlighted;
     StringView title;
     if (xdg_toplevel->title)
         title = StringView { xdg_toplevel->title, strlen(xdg_toplevel->title) };
@@ -3564,6 +3611,8 @@ static ErrorOr<void> initialize_gfx()
     auto theme = TRY(Gfx::load_system_theme(ByteString::formatted("{}/themes/Default.ini", resource_root)));
     Gfx::set_system_theme(theme);
     g_palette = new Gfx::Palette(Gfx::PaletteImpl::create_with_anonymous_buffer(theme));
+    g_resource_root = resource_root;
+    load_overlay_shadow();
 
     g_frame_icons.close = load_icon(resource_root, "window-close"sv, "window-close"sv);
     g_frame_icons.minimize = load_icon(resource_root, "window-minimize"sv, "downward-triangle"sv);
@@ -3619,6 +3668,7 @@ static void apply_theme_path(Server& server, ByteString const& theme_path)
     Gfx::set_system_theme(theme.value());
     delete g_palette;
     g_palette = new Gfx::Palette(Gfx::PaletteImpl::create_with_anonymous_buffer(theme.value()));
+    load_overlay_shadow();
     for (auto& toplevel : server.toplevels)
         toplevel_update_frame(*toplevel);
     for (auto& output : server.outputs) {
@@ -3885,7 +3935,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
         warnln("WindowServer: could not listen on {}", wm_portal);
     // Let the window manager call back into the compositor's focus/menu code.
     WindowManager::set_host_hooks({ focus_toplevel, open_window_menu, primary_usable_area, toplevel_report_position, toplevel_begin_interactive, current_palette, update_ext_workspace_active });
-    WindowSwitcher::set_host_hooks({ current_palette, focus_toplevel, WindowManager::switch_workspace });
+    WindowSwitcher::set_host_hooks({ current_palette, focus_toplevel, WindowManager::switch_workspace, overlay_shadow_hook, toplevel_update_frame });
     AppletManager::set_host_hooks({ WindowManager::tell_wms_applet_area_size_changed, primary_usable_area, layer_report_position });
     // Bring the workspace grid up from the config, and follow later edits.
     WindowManager::load_workspaces(*server);

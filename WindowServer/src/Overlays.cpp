@@ -123,10 +123,10 @@ RefPtr<Gfx::Bitmap> snapshot_toplevel(wlr_scene_node& toplevel_node)
     wlr_buffer* client_buffer = nullptr;
     wlr_scene_node_for_each_buffer(&toplevel_node, [](wlr_scene_buffer* scene_buffer, int, int, void* data) {
         auto** out = static_cast<wlr_buffer**>(data);
-        if (*out)
+        if (*out || !scene_buffer->buffer)
             return;
-        if (auto* scene_surface = wlr_scene_surface_try_from_buffer(scene_buffer))
-            *out = scene_surface->surface->current.buffer;
+        if (wlr_scene_surface_try_from_buffer(scene_buffer))
+            *out = scene_buffer->buffer;
     }, &client_buffer);
 
     if (!client_buffer)

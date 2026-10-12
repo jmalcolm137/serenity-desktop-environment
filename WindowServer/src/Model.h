@@ -163,6 +163,10 @@ struct Toplevel {
     int frame_right { 0 };
     int frame_bottom { 0 };
     Gfx::IntSize frame_size;
+    // The window icon, shown by the window switcher (bottom-right of the
+    // thumbnail) and by frame/taskbar chrome. Unset for plain Wayland clients
+    // (SerenityOS clients supply one over the WindowServer protocol).
+    RefPtr<Gfx::Bitmap> icon;
     Vector<Gfx::IntRect> button_rects;
     Gfx::IntSize restore_size;
     Gfx::IntPoint restore_position;
