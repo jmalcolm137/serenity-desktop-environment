@@ -1,6 +1,6 @@
 # xdg-desktop-portal-serenity (R5)
 
-**Status:** Phase 1 + Phase 2 landed. Metadata cursor mode and zero-copy DMA-BUF are in place and verified on a live TTY; Camera works via the frontend (§6). InputCapture is landed (P1–P4, [`17-input-capture.md`](17-input-capture.md)). Remaining: a real USB broker ·
+**Status:** Phase 1 + Phase 2 landed. Metadata cursor mode and zero-copy DMA-BUF are in place and verified on a live TTY; Camera works via the frontend (§6). InputCapture is landed (P1–P5, [`17-input-capture.md`](17-input-capture.md)). Remaining: a real USB broker ·
 **Related:** [`08-compositor-gaps.md`](08-compositor-gaps.md) §3,
 [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §R5,
 `contrib/xdg-desktop-portal/`
@@ -234,13 +234,13 @@ session (`scripts/run-screencast-live-test.sh`,
 - The frontend still routes `org.freedesktop.portal.InputCapture` to `gtk`. A
   backend can only implement it if the compositor can deliver input events to it
   — via libei/EIS or a `WindowServer` input-capture path.
-- **Landed (P1–P4)** ([`17-input-capture.md`](17-input-capture.md)): the compositor
+- **Landed (P1–P5)** ([`17-input-capture.md`](17-input-capture.md)): the compositor
   hosts the EIS implementation (`libeis`) and the portal backend
   (`tools/portal-input-capture.c`) is the D-Bus adapter, returning the session EIS
   fd from `ConnectToEIS`; zones, barriers and enable/disable travel over the
-  private `serenity_input_capture` protocol, and the compositor's
+  private `serenity_input_capture` protocol, the compositor's
   Activated/Deactivated/Disabled/ZonesChanged events are forwarded as D-Bus
-  signals.
+  signals, and `persist_mode`/`restore_data` restore tokens persist permissions.
 
 ### 6.5 Device / Camera
 

@@ -1,6 +1,6 @@
 # InputCapture Portal — Design (input capture + EIS)
 
-**Status:** **Implemented (P1–P4)** — compositor EIS implementation + private protocol + the `xdg-desktop-portal-serenity` backend · v1 · **Date:** 2026-10-12
+**Status:** **Implemented (P1–P5)** — compositor EIS implementation + private protocol + the `xdg-desktop-portal-serenity` backend · v1 · **Date:** 2026-10-12
 **Related:** [`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md) §5–6 ·
 [`08-compositor-gaps.md`](08-compositor-gaps.md) §3–4 ·
 [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §R5 ·
@@ -244,8 +244,11 @@ InputCapture is a **keylogger-class** capability, so:
    signals, the `AccessDialog` prompt, and `portals.conf` now prefers `serenity`
    (also added to `serenity.portal`). Covered by
    `scripts/run-input-capture-portal-test.sh`.
-5. **P5 — persistence.** `persist_mode`/`restore_data` and `ZonesChanged`
-   re-arming (reuse the ScreenCast restore-token store).
+5. **P5 — persistence (landed).** `Start` mints a restore token when
+   `persist_mode != 0` and accepts it back as `restore_data` (the `(suv)` vendor
+   blob, reusing the ScreenCast restore-token store); a restored session skips the
+   permission prompt. On `ZonesChanged` the compositor stops and disarms capture
+   and the app re-requests zones and re-arms. Covered by the portal test.
 
 Each phase is independently testable; P1–P3 are headless (the compositor's
 `wlr-virtual-pointer`/`virtual-keyboard` can script a barrier crossing without a
@@ -263,13 +266,14 @@ GPU), so CI stays green.
   negotiated; the zones are the output (1280x720 at 0,0); the diagonal barrier is
   rejected; crossing emits `activated` (with the barrier id and activation_id) and
   pointer motion arrives over EIS; and a key press/release arrives over EIS.
-- `scripts/run-input-capture-portal-test.sh` (headless; **P4 landed**): starts the
-  compositor (`SDE_INPUT_CAPTURE=1`) and the `xdg-desktop-portal-serenity` backend
-  on a private session bus, then drives the D-Bus impl interface end to end —
-  `SupportedCapabilities`/`version`, `CreateSession2`, `Start` (with the
+- `scripts/run-input-capture-portal-test.sh` (headless; **P4 + P5 landed**): starts
+  the compositor (`SDE_INPUT_CAPTURE=1`) and the `xdg-desktop-portal-serenity`
+  backend on a private session bus, then drives the D-Bus impl interface end to
+  end — `SupportedCapabilities`/`version`, `CreateSession2`, `Start` (with the
   `AccessDialog` prompt), `GetZones`, `SetPointerBarriers` (diagonal rejected),
   `ConnectToEIS`, `Enable`, the `Activated` signal after a scripted barrier
-  crossing, and `Disable`.
+  crossing, `Disable`, and persistence (`persist_mode` mints a `restore_data`
+  token that suppresses the prompt on the next `Start`).
 - `tools/input-capture-test.c` (new): a small libei passive client, mirroring
   `tools/screencast-consumer.c` for the capture side; reports
   `device_start_emulating seq=N`, received motion/keys, and can inject emulated

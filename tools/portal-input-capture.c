@@ -28,6 +28,7 @@
 
 #include <wayland-client.h>
 
+#include "portal-screencast.h"
 #include "serenity-input-capture-client-protocol.h"
 
 #define IC_OBJECT_PATH "/org/freedesktop/portal/desktop"
@@ -51,6 +52,7 @@ static guint g_ic_source_id;
 static struct ic_session* g_ic_sessions;
 static GDBusConnection* g_ic_connection;
 static guint32 g_ic_activation_id;
+static char* g_ic_restore_token;
 
 // --- Wayland connection -----------------------------------------------------
 
@@ -419,11 +421,45 @@ void portal_input_capture_method_call(GDBusConnection* connection, gchar const* 
             g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "unknown session");
             return;
         }
+
         guint32 requested = 0;
-        if (options)
+        guint32 persist_mode = 0;
+        gboolean restored = FALSE;
+        if (options) {
             g_variant_lookup(options, "capabilities", "u", &requested);
+            g_variant_lookup(options, "persist_mode", "u", &persist_mode);
+
+            // restore_data is (suv): vendor, version, and an implementation-private
+            // variant (our restore-token string, shared with ScreenCast).
+            GVariant* restore_data = NULL;
+            if (g_variant_lookup(options, "restore_data", "@(suv)", &restore_data)) {
+                char const* vendor = NULL;
+                guint32 version = 0;
+                GVariant* data = NULL;
+                g_variant_get(restore_data, "(&su@v)", &vendor, &version, &data);
+                char const* token = NULL;
+                GVariant* inner = g_variant_get_variant(data);
+                if (g_variant_is_of_type(inner, G_VARIANT_TYPE_STRING))
+                    token = g_variant_get_string(inner, NULL);
+                if (token && *token) {
+                    guint32 types = 0, cursor = 0;
+                    char* source = NULL;
+                    if (portal_restore_token_load(token, &types, &cursor, &source)) {
+                        g_free(g_ic_restore_token);
+                        g_ic_restore_token = g_strdup(token);
+                        restored = TRUE;
+                    }
+                    free(source);
+                }
+                g_variant_unref(inner);
+                g_variant_unref(data);
+                g_variant_unref(restore_data);
+            }
+        }
+
         guint32 granted = requested & (IC_CAP_KEYBOARD | IC_CAP_POINTER);
-        guint32 const response = ic_prompt();
+        // A restored (persisted) session skips the prompt.
+        guint32 const response = restored ? 0 : ic_prompt();
         if (response != 0) {
             if (options)
                 g_variant_unref(options);
@@ -431,10 +467,29 @@ void portal_input_capture_method_call(GDBusConnection* connection, gchar const* 
             return;
         }
         s->capabilities = granted;
+
+        if (persist_mode != 0 && !g_ic_restore_token) {
+            char token[33];
+            for (int i = 0; i < 32; ++i)
+                token[i] = "0123456789abcdef"[g_random_int_range(0, 16)];
+            token[32] = '\0';
+            portal_restore_token_store(token, granted, 0, NULL);
+            g_ic_restore_token = g_strdup(token);
+        }
+
         g_variant_builder_add(&results, "{sv}", "capabilities", g_variant_new_uint32(granted));
+        g_variant_builder_add(&results, "{sv}", "clipboard_enabled", g_variant_new_boolean(FALSE));
+        if (g_ic_restore_token) {
+            GVariantBuilder restore;
+            g_variant_builder_init(&restore, G_VARIANT_TYPE("(suv)"));
+            g_variant_builder_add(&restore, "s", "SDE");
+            g_variant_builder_add(&restore, "u", 1);
+            g_variant_builder_add(&restore, "v", g_variant_new_string(g_ic_restore_token));
+            g_variant_builder_add(&results, "{sv}", "restore_data", g_variant_builder_end(&restore));
+        }
         if (options)
             g_variant_unref(options);
-        fprintf(stderr, "xdg-desktop-portal-serenity: input capture session started (caps %u)\n", granted);
+        fprintf(stderr, "xdg-desktop-portal-serenity: input capture session started (caps %u, restored %d)\n", granted, restored);
         ic_return_response(invocation, 0, &results);
         return;
     }

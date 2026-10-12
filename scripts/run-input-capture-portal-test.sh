@@ -51,7 +51,11 @@ SESH="/org/freedesktop/portal/desktop/session/1/t"
 REQ="/org/freedesktop/portal/desktop/request/1/t"
 
 ALLOW="$RUNTIME/allow.sh"
-printf '#!/usr/bin/env bash\necho 0\n' > "$ALLOW"
+cat > "$ALLOW" <<EOF
+#!/usr/bin/env bash
+echo invoke \$@ >> "$RUNTIME/prompts.log"
+echo 0
+EOF
 chmod +x "$ALLOW"
 
 SOCK="sde-icportal-$$"
@@ -145,6 +149,48 @@ check "barrier_id" "$(cat "$RUNTIME/monitor.log")"
 echo "=== disable ==="
 check "uint32 0" "$(call org.freedesktop.impl.portal.InputCapture.Disable "$SESH" "org.sde.Test" "{}")"
 check "InputCapture: session 'xdg-desktop-portal-serenity' disabled" "$(cat "$RUNTIME/comp.log")"
+
+echo "=== P5: persistence (persist_mode / restore_data) ==="
+SESH2="/org/freedesktop/portal/desktop/session/1/persist"
+REQ2="/org/freedesktop/portal/desktop/request/1/persist"
+call org.freedesktop.impl.portal.InputCapture.CreateSession2 "$SESH2" "org.sde.Test" "{}" >/dev/null
+before_persist="$(wc -l < "$RUNTIME/prompts.log" 2>/dev/null || echo 0)"
+persist="$(call org.freedesktop.impl.portal.InputCapture.Start "$REQ2" "$SESH2" "org.sde.Test" "" "{'capabilities': <uint32 3>, 'persist_mode': <uint32 2>}")"
+check "restore_data" "$persist"
+check "'SDE'" "$persist"
+token="$(grep -oE '[0-9a-f]{32}' <<<"$persist" | head -1)"
+if [[ -n "$token" ]]; then
+    echo "  ok: persist_mode returned a restore token"
+else
+    echo "  MISSING: restore token in '$persist'"
+    fail=1
+fi
+after_persist="$(wc -l < "$RUNTIME/prompts.log" 2>/dev/null || echo 0)"
+
+SESH3="/org/freedesktop/portal/desktop/session/1/restore"
+REQ3="/org/freedesktop/portal/desktop/request/1/restore"
+call org.freedesktop.impl.portal.InputCapture.CreateSession2 "$SESH3" "org.sde.Test" "{}" >/dev/null
+restore="$(call org.freedesktop.impl.portal.InputCapture.Start "$REQ3" "$SESH3" "org.sde.Test" "" "{'capabilities': <uint32 3>, 'restore_data': <('SDE', uint32 1, <'$token'>)>}")"
+check "restore_data" "$restore"
+after_restore="$(wc -l < "$RUNTIME/prompts.log" 2>/dev/null || echo 0)"
+if [[ "$after_persist" -gt "$before_persist" ]]; then
+    echo "  ok: persist_mode start prompted ($before_persist -> $after_persist)"
+else
+    echo "  MISSING: persist_mode start did not prompt"
+    fail=1
+fi
+if [[ "$after_restore" == "$after_persist" ]]; then
+    echo "  ok: restore_data suppressed the prompt ($after_restore)"
+else
+    echo "  MISSING: restore_data did not suppress the prompt ($after_persist -> $after_restore)"
+    fail=1
+fi
+if [[ -f "$RUNTIME/screencast-tokens" ]]; then
+    echo "  ok: restore token persisted to disk"
+else
+    echo "  MISSING: restore token file"
+    fail=1
+fi
 
 if [[ "$fail" -ne 0 ]]; then
     echo "==> InputCapture portal test FAILED"

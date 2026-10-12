@@ -449,6 +449,12 @@ bool handle_keyboard_key(Server& server, uint32_t keycode, bool is_press,
 
 void on_outputs_changed(Server&)
 {
+    // Zones changed: an active capture's zones/barriers are stale, so stop and
+    // disarm every session; the app re-requests zones and re-arms (docs/17 P5).
+    if (s_active_session)
+        deactivate(*s_active_session, s_last_x, s_last_y);
+    for (auto& session : s_sessions)
+        session->enabled = false;
     s_zone_set++;
     for (auto& session : s_sessions)
         serenity_input_capture_session_v1_send_zones_changed(session->resource);
