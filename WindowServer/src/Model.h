@@ -258,6 +258,12 @@ struct LayerSurface {
         bool valid { false };
         uint32_t desired_width { 0 };
         uint32_t desired_height { 0 };
+        // The committed (configured) size. The applet layout reads it, so a
+        // change must re-arrange even when the desired size did not change (a
+        // client can size itself between the first commit and the compositor's
+        // first arrange; e.g. the Audio applet resizes after show()).
+        uint32_t width { 0 };
+        uint32_t height { 0 };
         uint32_t anchor { 0 };
         int32_t exclusive_zone { 0 };
         int32_t margin_top { 0 };

@@ -51,18 +51,31 @@ export SDE_SESSION_IDLE_DPMS_SECONDS="${SDE_SESSION_IDLE_DPMS_SECONDS:-60}"
 # configuration at startup (e.g. Browser) find it.
 SERENITY="$SERENITY" "$SDE_ROOT/scripts/seed-serenity-home.sh"
 
-# Start the Taskbar and a TextEditor, plus the battery applet, unless the caller
-# supplies their own startup command.
+# Start the Taskbar and a TextEditor, plus the taskbar applets, unless the
+# caller supplies their own startup command.
 BATTERY_APPLET="$SDE_ROOT/build/BatteryApplet/BatteryApplet"
 if [[ ! -x "$BATTERY_APPLET" ]]; then
     "$SDE_ROOT/scripts/build-battery-applet.sh" >/dev/null 2>&1 \
         || echo "note: BatteryApplet not built; skipping the battery applet" >&2
 fi
 
+# The SerenityOS taskbar applets (WorkspacePicker, ResourceGraph, Network, ...)
+# are SDE's; build them on demand so a fresh checkout gets them too.
+if [[ ! -x "$SDE_ROOT/build/Applets/WorkspacePicker" ]]; then
+    "$SDE_ROOT/scripts/build-applets.sh" >/dev/null 2>&1 \
+        || echo "note: applets not built; skipping them" >&2
+fi
+# shellcheck source=scripts/sde-applets.sh
+. "$SDE_ROOT/scripts/sde-applets.sh"
+APPLET_CMDS="$(sde_applet_startup_commands "$SDE_ROOT")"
+
 if [[ -n "${1:-}" ]]; then
     STARTUP="$1"
 else
     STARTUP="$BUILD/bin/Taskbar & $BUILD/bin/TextEditor"
+    if [[ -n "$APPLET_CMDS" ]]; then
+        STARTUP="$STARTUP & $APPLET_CMDS"
+    fi
     if [[ -x "$BATTERY_APPLET" ]]; then
         STARTUP="$STARTUP & $BATTERY_APPLET"
     fi

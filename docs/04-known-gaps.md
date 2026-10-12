@@ -123,9 +123,11 @@ click was already handled and returned earlier).
   `serenity-applet:<name>` layer namespace.
 - **Layer-surface configure storm** — fixed. `layer_surface_commit` now
   re-arranges only when the committed state changes the layout (desired size,
-  anchor, margins, exclusive zone, layer), so a content-only commit no longer
-  re-configures every layer surface. (Previously `arrange_layers` ran on every
-  commit, spinning any client that commits in response to a configure.)
+  committed size, anchor, margins, exclusive zone, layer), so a content-only
+  commit no longer re-configures every layer surface. (Previously
+  `arrange_layers` ran on every commit, spinning any client that commits in
+  response to a configure.) The committed size is tracked so an applet that
+  sizes itself after `show()` (the Audio applet) is re-laid out; see docs/18.
 - **Font parity (WS7)** — decided: fixed to the bitmap Katica family, so
   size-based zoom is a no-op. This matches upstream SerenityOS (also Katica) and
   does not block R3; the evidence and the R4/G5 path are in

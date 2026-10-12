@@ -2696,9 +2696,13 @@ static void layer_surface_commit(wl_listener* listener, void*)
     // that commits in response to a configure (see docs/04-known-gaps.md).
     auto const& state = layer->layer_surface->current;
     auto const& previous = layer->arrange_state;
+    uint32_t const committed_width = layer->layer_surface->surface ? layer->layer_surface->surface->current.width : 0;
+    uint32_t const committed_height = layer->layer_surface->surface ? layer->layer_surface->surface->current.height : 0;
     bool const arrange_relevant = !previous.valid
         || previous.desired_width != state.desired_width
         || previous.desired_height != state.desired_height
+        || previous.width != committed_width
+        || previous.height != committed_height
         || previous.anchor != state.anchor
         || previous.exclusive_zone != state.exclusive_zone
         || previous.margin_top != state.margin.top
@@ -2712,6 +2716,8 @@ static void layer_surface_commit(wl_listener* listener, void*)
     layer->arrange_state.valid = true;
     layer->arrange_state.desired_width = state.desired_width;
     layer->arrange_state.desired_height = state.desired_height;
+    layer->arrange_state.width = committed_width;
+    layer->arrange_state.height = committed_height;
     layer->arrange_state.anchor = state.anchor;
     layer->arrange_state.exclusive_zone = state.exclusive_zone;
     layer->arrange_state.margin_top = state.margin.top;
@@ -4031,6 +4037,17 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
 
     setenv("WAYLAND_DISPLAY", socket.characters(), true);
     dbgln("WindowServer: running on WAYLAND_DISPLAY={}", socket);
+
+    // Publish the configured xkb layout to clients in the standard
+    // XKB_DEFAULT_* variables, so a client that wants the active layout (e.g. the
+    // Keymap applet, through LibKeyboard) can read it. The keymap itself still
+    // travels to clients over wl_keyboard.
+    auto const& keyboard = Config::input().keyboard;
+    if (!keyboard.layouts.is_empty())
+        setenv("XKB_DEFAULT_LAYOUT", keyboard.layouts.characters(), true);
+    if (!keyboard.variant.is_empty())
+        setenv("XKB_DEFAULT_VARIANT", keyboard.variant.characters(), true);
+
     spawn_startup_command(startup_command);
 
     // The WindowServer serves the WindowManagerServer protocol (the shell's

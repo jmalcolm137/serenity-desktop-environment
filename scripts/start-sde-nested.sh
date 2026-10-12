@@ -79,6 +79,19 @@ if [[ -x "$BATTERY_APPLET" ]]; then
     STARTUP="$STARTUP & $BATTERY_APPLET"
 fi
 
+# The SerenityOS taskbar applets are SDE's; build them on demand so a fresh
+# checkout gets them too (scripts/build-applets.sh).
+if [[ ! -x "$SDE_ROOT/build/Applets/WorkspacePicker" ]]; then
+    "$SDE_ROOT/scripts/build-applets.sh" >/dev/null 2>&1 \
+        || echo "note: applets not built; skipping them" >&2
+fi
+# shellcheck source=scripts/sde-applets.sh
+. "$SDE_ROOT/scripts/sde-applets.sh"
+APPLET_CMDS="$(sde_applet_startup_commands "$SDE_ROOT")"
+if [[ -n "$APPLET_CMDS" ]]; then
+    STARTUP="$STARTUP & $APPLET_CMDS"
+fi
+
 # The compositor nests on the host display; its children get the session display
 # (the compositor sets WAYLAND_DISPLAY for them).
 export WAYLAND_DISPLAY="$HOST_DISPLAY"
