@@ -45,21 +45,6 @@ for _ in $(seq 1 50); do
     sleep 0.1
 done
 
-env WAYLAND_DISPLAY="$SOCK" \
-    LD_LIBRARY_PATH="$BUILD/lib" \
-    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-    timeout 5 "$SYSTEM_MONITOR" > "$RUNTIME/sysmon.log" 2>&1 || true
-sleep 0.5
-
-pkill -P "$COMP_PID" 2>/dev/null || true
-kill "$COMP_PID" 2>/dev/null || true
-wait "$COMP_PID" 2>/dev/null || true
-
-echo "--- compositor log ---"
-grep -iE "toplevel mapped|System Monitor" "$RUNTIME/comp.log" || true
-echo "--- SystemMonitor log ---"
-tail -20 "$RUNTIME/sysmon.log"
-
 fail=0
 check() {
     if grep -qF "$1" "$2"; then
@@ -70,14 +55,45 @@ check() {
     fi
     return 0
 }
+check_absent() {
+    if grep -qF "$1" "$2"; then
+        echo "  UNEXPECTED ($2): $1"
+        fail=1
+    else
+        echo "  ok (absent): $1"
+    fi
+    return 0
+}
+
+# Exercise every tab that reads host facts. The Network and Storage tabs used to
+# read the SerenityOS /sys/kernel/{net/*,df} interfaces; on Linux they build the
+# same rows from getifaddrs()/sysfs, /proc/net/{tcp,udp} and /proc/mounts +
+# statvfs(). A failed source is logged by JsonArrayModel ("Unable to ...").
+for tab in processes network fs; do
+    TAB_LOG="$RUNTIME/sysmon-$tab.log"
+    env WAYLAND_DISPLAY="$SOCK" \
+        LD_LIBRARY_PATH="$BUILD/lib" \
+        SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
+        timeout 6 "$SYSTEM_MONITOR" -t "$tab" > "$TAB_LOG" 2>&1 || true
+    echo "--- SystemMonitor '-t $tab' ---"
+    tail -6 "$TAB_LOG"
+    check_absent "Unable to update" "$TAB_LOG"
+    check_absent "Unable to invalidate" "$TAB_LOG"
+    if grep -qiE "SIGSEGV|Segmentation fault|ASSERTION FAILED|VERIFICATION FAILED" "$TAB_LOG"; then
+        echo "  FAIL: SystemMonitor '-t $tab' reported a fault"
+        fail=1
+    fi
+done
+
+pkill -P "$COMP_PID" 2>/dev/null || true
+kill "$COMP_PID" 2>/dev/null || true
+wait "$COMP_PID" 2>/dev/null || true
+
+echo "--- compositor log ---"
+grep -iE "toplevel mapped|System Monitor" "$RUNTIME/comp.log" || true
 
 echo "=== SystemMonitor headless smoke test ==="
 check "toplevel mapped title='System Monitor'" "$RUNTIME/comp.log"
-
-if grep -qiE "SIGSEGV|Segmentation fault|ASSERTION FAILED|VERIFICATION FAILED" "$RUNTIME/sysmon.log"; then
-    echo "  FAIL: SystemMonitor reported a fault"
-    fail=1
-fi
 
 if [[ "$fail" -ne 0 ]]; then
     echo "==> SystemMonitor smoke test FAILED"
