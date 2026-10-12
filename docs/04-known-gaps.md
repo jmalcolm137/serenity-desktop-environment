@@ -266,6 +266,18 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 
 ## Recently resolved (kept so we don't re-chase them)
 
+- **Scrollback in the Terminal (mouse wheel / trackpad).** Wayland axis deltas
+  are frequently fractional (trackpads, high-resolution wheels); the port
+  truncated each one with `wl_fixed_to_int`, so sub-1 deltas became 0 and
+  nothing scrolled (libgui-wayland, `WaylandClient`). Now accumulated into whole
+  steps; covered by `scripts/run-scroll-test.sh`.
+- **TUI scrolling (opencode, vim, tmux).** Full-screen apps use the alternate
+  screen (no scrollback by design) and enable mouse reporting so they scroll
+  themselves; LibVT ignored `DECSET 1000/1002/1003/1006`, so they received no
+  wheel events. LibVT now implements mouse reporting and forwards SGR/legacy
+  events (libgui-wayland patch `0032`); covered by
+  `scripts/run-terminal-mouse-test.sh`.
+
 - **Calculator (and apps registering launch handlers) crashed at startup.** A
   *stale* `/tmp/session/<sid>/portal/launch` socket made the port "defer to the
   session service", which was gone; `Desktop::Launcher`'s `connection()` then
