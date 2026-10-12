@@ -21,7 +21,12 @@ ninja -C "$BUILD" libwm-combo-test >/dev/null
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-combo.XXXXXX")"
 export SDE_STATE_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
-trap 'rm -rf "$RUNTIME"' EXIT
+COMP_PID=""
+cleanup() {
+    [[ -n "$COMP_PID" ]] && kill "$COMP_PID" 2>/dev/null || true
+    rm -rf "$RUNTIME"
+}
+trap cleanup EXIT
 
 SOCK="sde-combo-$$"
 
