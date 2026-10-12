@@ -359,7 +359,12 @@ shortcut inhibition (`zwp_keyboard_shortcuts_inhibit_manager_v1`) and IME
 > them to libinput devices (`wlr_libinput_get_device_handle`, gated by
 > `wlr_input_device_is_libinput`) and to the seat/event path (natural scroll,
 > scroll step, buttons-switched, double-click speed); it builds the xkb keymap
-> from the layouts and re-applies everything on change.
+> from the layouts and re-applies everything on change. Because wlroots 0.20 no
+> longer runs a repeat timer of its own (`wlr_keyboard_set_repeat_info` only
+> advertises rate/delay to clients), the compositor owns key repeat: it re-sends
+> a held key after `RepeatDelay`, then every `1000/RepeatRate` ms, for keys it
+> forwards to the focused client (keybindings and non-repeating keys do not
+> repeat). Covered by `scripts/run-key-repeat-test.sh`.
 >
 > MouseSettings is built as part of SDE (alongside DisplaySettings) and wired
 > through the WindowServer protocol: `get/set_mouse_acceleration`,

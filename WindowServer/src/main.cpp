@@ -131,6 +131,9 @@ static void update_window_menu_hover(Server&, double, double);
 static void window_menu_handle_press(Server&, uint32_t button);
 static void window_menu_handle_release(Server&, uint32_t button);
 static bool window_menu_handle_key(Server&, xkb_keysym_t);
+// Key repeat is compositor-owned (wlroots 0.20 removed its timer); see the
+// repeat helpers below the keybinding code.
+static void stop_key_repeat();
 static void arrange_layers(Server&, wlr_output*);
 static Output* output_for(Server&, wlr_output*);
 static void output_manager_send_configuration(Server&);
@@ -250,6 +253,9 @@ void focus_toplevel(Server& server, Toplevel* toplevel)
     if (previous_surface == surface)
         return;
 
+    // A focus change retargets the keyboard; stop repeating into the old client.
+    stop_key_repeat();
+
     if (previous_surface) {
         if (auto* previous = wlr_xdg_toplevel_try_from_wlr_surface(previous_surface)) {
             wlr_xdg_toplevel_set_activated(previous, false);
@@ -351,6 +357,75 @@ static bool handle_keybinding(Server& server, xkb_keysym_t sym, uint32_t modifie
     return false;
 }
 
+// --- key repeat -----------------------------------------------------------
+//
+// wlroots 0.20 no longer runs a key-repeat timer for the compositor:
+// wlr_keyboard_set_repeat_info() only advertises the rate/delay to clients
+// (wl_keyboard.repeat_info) and does not synthesise repeats. So the compositor
+// owns repeat: after [Keyboard] RepeatDelay it re-sends the held key to the
+// focused surface, then again every 1000/RepeatRate ms, until the key is
+// released. A fresh forwarded press becomes the repeating key; keys the
+// compositor consumes as keybindings, and keys the keymap marks non-repeating
+// (modifiers), never repeat.
+static RefPtr<Core::Timer> s_key_repeat_timer;
+static Keyboard* s_key_repeat_keyboard { nullptr };
+static uint32_t s_key_repeat_keycode { 0 };
+
+static u32 monotonic_time_msec()
+{
+    timespec now { };
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return static_cast<u32>(static_cast<u64>(now.tv_sec) * 1000 + static_cast<u64>(now.tv_nsec) / 1000000);
+}
+
+static void stop_key_repeat()
+{
+    if (s_key_repeat_timer)
+        s_key_repeat_timer->stop();
+    s_key_repeat_keyboard = nullptr;
+}
+
+// A single-shot timer: it first fires after the delay, then re-arms itself at
+// the steady repeat rate.
+static void key_repeat_timer_fired()
+{
+    if (!s_key_repeat_keyboard) {
+        stop_key_repeat();
+        return;
+    }
+    auto& server = *s_key_repeat_keyboard->server;
+    // A held key is input activity: keep the seat from going idle mid-key.
+    notify_activity(server);
+    wlr_seat_set_keyboard(server.seat, s_key_repeat_keyboard->keyboard);
+    wlr_seat_keyboard_notify_key(server.seat, monotonic_time_msec(), s_key_repeat_keycode, WL_KEYBOARD_KEY_STATE_PRESSED);
+    // Repeat is generated outside the Wayland event dispatch, so flush the
+    // queued key event to the client now instead of waiting for the next
+    // unrelated Wayland event (which would deliver repeats in bursts).
+    wl_display_flush_clients(server.display);
+
+    auto rate = Config::input().keyboard.repeat_rate;
+    if (rate <= 0) {
+        stop_key_repeat();
+        return;
+    }
+    s_key_repeat_timer->start(max(1000 / rate, 1));
+}
+
+static void start_key_repeat(Keyboard& keyboard, uint32_t keycode)
+{
+    auto const& settings = Config::input().keyboard;
+    auto* keymap = keyboard.keyboard->keymap;
+    if (settings.repeat_rate <= 0 || !keymap || !xkb_keymap_key_repeats(keymap, keycode + 8)) {
+        stop_key_repeat();
+        return;
+    }
+    if (!s_key_repeat_timer)
+        s_key_repeat_timer = Core::Timer::create_single_shot(max(settings.repeat_delay, 1), key_repeat_timer_fired);
+    s_key_repeat_keyboard = &keyboard;
+    s_key_repeat_keycode = keycode;
+    s_key_repeat_timer->restart(max(settings.repeat_delay, 1));
+}
+
 static void keyboard_key(wl_listener* listener, void* data)
 {
     Keyboard* keyboard = nullptr;
@@ -360,6 +435,10 @@ static void keyboard_key(wl_listener* listener, void* data)
 
     notify_activity(server);
     uint32_t keycode = event->keycode + 8;
+
+    // Releasing the held key ends its repeat; unrelated releases are ignored.
+    if (event->state == WL_KEYBOARD_KEY_STATE_RELEASED && s_key_repeat_keyboard && event->keycode == s_key_repeat_keycode)
+        stop_key_repeat();
 
     // Update the keyboard's xkb state ourselves (we handle keys before the seat
     // does), so the modifier mask is correct for keybindings and for the client's
@@ -379,6 +458,8 @@ static void keyboard_key(wl_listener* listener, void* data)
             wlr_seat_set_keyboard(server.seat, keyboard->keyboard);
             wlr_seat_keyboard_notify_enter(server.seat, lock->lock_surface->surface, keyboard->keyboard->keycodes, keyboard->keyboard->num_keycodes, &keyboard->keyboard->modifiers);
             wlr_seat_keyboard_notify_key(server.seat, event->time_msec, event->keycode, event->state);
+            if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
+                start_key_repeat(*keyboard, event->keycode);
         }
         return;
     }
@@ -391,6 +472,7 @@ static void keyboard_key(wl_listener* listener, void* data)
     if (server.window_menu.open) {
         // The open window menu grabs the keyboard.
         if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+            stop_key_repeat();
             for (int i = 0; i < syms_count; ++i)
                 window_menu_handle_key(server, syms[i]);
         }
@@ -432,6 +514,11 @@ static void keyboard_key(wl_listener* listener, void* data)
     if (!handled) {
         wlr_seat_set_keyboard(server.seat, keyboard->keyboard);
         wlr_seat_keyboard_notify_key(server.seat, event->time_msec, event->keycode, event->state);
+        if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
+            start_key_repeat(*keyboard, event->keycode);
+    } else if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+        // A key the compositor consumed (a keybinding) does not repeat.
+        stop_key_repeat();
     }
 }
 
@@ -442,6 +529,8 @@ static void keyboard_destroy(wl_listener* listener, void*)
     wl_list_remove(&keyboard->modifiers.link);
     wl_list_remove(&keyboard->key.link);
     wl_list_remove(&keyboard->destroy.link);
+    if (s_key_repeat_keyboard == keyboard)
+        stop_key_repeat();
     remove_owned(keyboard->server->keyboards, keyboard);
 }
 
@@ -997,6 +1086,10 @@ static void apply_keyboard_input(Server& server)
     xkb_context_unref(context);
     for (auto& keyboard : server.keyboards)
         wlr_keyboard_set_repeat_info(keyboard->keyboard, settings.repeat_rate, settings.repeat_delay);
+    // Repeat is compositor-owned (wlroots 0.20 removed the timer); drop any
+    // in-flight repeat if the rate was turned off.
+    if (settings.repeat_rate <= 0)
+        stop_key_repeat();
 }
 
 // Apply the mouse settings to every libinput pointer: acceleration profile and
@@ -3060,6 +3153,7 @@ static void lock_surface_commit(wl_listener* listener, void*)
             if (auto* keyboard = wlr_seat_get_keyboard(server.seat))
                 wlr_seat_keyboard_notify_enter(server.seat, lock->lock_surface->surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
         }
+        stop_key_repeat();
         dbgln("WindowServer: session locked");
     }
 }
@@ -3116,6 +3210,7 @@ static void session_lock_unlock(wl_listener* listener, void*)
     // wlroots destroys the lock surfaces (and our per-surface handlers clean them
     // up) as the client destroys the lock right after this signal.
     server->locked = false;
+    stop_key_repeat();
 }
 
 static void session_lock_destroy(wl_listener* listener, void*)
@@ -3129,6 +3224,7 @@ static void session_lock_destroy(wl_listener* listener, void*)
     wl_list_remove(&server->session_lock_destroy.link);
     server->session_lock = nullptr;
     server->locked = false;
+    stop_key_repeat();
 }
 
 static void session_lock_new_lock(wl_listener* listener, void* data)
