@@ -45,7 +45,7 @@ cc -O2 -I "$TOOLS_BUILD" \
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-headless.XXXXXX")"
 export SDE_STATE_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
-trap 'rm -rf "$RUNTIME"' EXIT
+trap 'rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$ "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$.lock 2>/dev/null || true' EXIT
 
 SOCK="sde-headless-$$"
 

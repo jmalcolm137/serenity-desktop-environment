@@ -39,7 +39,7 @@ cc -O2 -I "$TOOLS_BUILD" \
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-tmouse.XXXXXX")"
 chmod 700 "$RUNTIME"
 export SDE_STATE_DIR="$RUNTIME"
-trap 'rm -rf "$RUNTIME"' EXIT
+trap 'rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$ "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$.lock 2>/dev/null || true' EXIT
 
 # A mouse-reporting "app": enable press/release + any-motion + SGR, then capture
 # everything the terminal sends on stdin. (The Terminal only forwards a few env

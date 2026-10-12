@@ -49,7 +49,7 @@ cc -O2 -I "$TOOLS_BUILD" \
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-input.XXXXXX")"
 export SDE_STATE_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
-trap 'rm -rf "$RUNTIME"' EXIT
+trap 'rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$ "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$.lock 2>/dev/null || true' EXIT
 
 SOCK="sde-input-$$"
 
@@ -162,6 +162,15 @@ check "tiled wm_id=1 as 2"
 check "WindowSwitcher: showing 1 windows (mode=0)"
 check "WindowSwitcher: showing 1 windows (mode=1)"
 check "WindowSwitcher: activating wm_id=1"
+# Alt+Tab must not leave the client's Alt key stuck down: the client received the
+# Alt press (it may have opened its menu bar), so it must receive the release too
+# (keycode 56 = KEY_LEFTALT), or typing stops reaching the text area.
+if grep -qF "key 56 release" "$RUNTIME/native.log"; then
+    echo "  ok: the Alt release reached the focused client after Alt+Tab"
+else
+    echo "  MISSING: Alt release after Alt+Tab (client saw $(grep -c 'native-app-test: key ' "$RUNTIME/native.log" 2>/dev/null) key events)"
+    fail=1
+fi
 # The thumbnail-capture spike (docs/09 §3): the toplevel's pixels were read back
 # into a bitmap of the client's size.
 check "thumbnail for wm_id=1 is 320x200"

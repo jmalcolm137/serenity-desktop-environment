@@ -124,3 +124,26 @@ images. This is the gold standard and the default way we test the UI.
   capture an output — not a bespoke env var invented to chase one bug.
 - Make the shot reproducible with scripted input
   (`tools/virtual-input-test` can snap/move/focus) rather than manual steps.
+
+## D8 — Scripts clean up after themselves
+
+Every script that starts background processes, allocates a temp dir, or binds a
+resource **must** undo all of it in an `EXIT` trap, so the cleanup also runs when
+the script fails part-way:
+
+- `kill` every background process it started (compositor, services, clients);
+- `rm -rf` its temp dir;
+- **unlink any Wayland/compositor socket it created.** Wayland does not remove a
+  compositor's socket on shutdown, and a compositor that is `kill`ed (SIGTERM)
+  never runs its own cleanup, so a socket left in `$XDG_RUNTIME_DIR` survives the
+  run forever. A script that starts `WindowServer -n "$SOCK"` must include, in its
+  trap, something like
+  `rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$${,.lock}` (the run's own
+  `$$`-suffixed sockets and their lock files).
+
+Leaked sockets accumulate silently — dozens of dead `sde-*` sockets from the test
+harness were once found in `$XDG_RUNTIME_DIR`. Sockets inside the script's own
+temp dir (when the script points `XDG_RUNTIME_DIR` at it) are covered by
+`rm -rf "$RUNTIME"`; when the compositor uses the real runtime dir, remove them
+explicitly.
+

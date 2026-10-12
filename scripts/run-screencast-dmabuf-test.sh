@@ -57,7 +57,7 @@ chmod +x "$RUNTIME/chooser.sh"
 WAYLAND_DISPLAY="$WAYLAND_SOCK" SDE_PORTAL_CHOOSER="$RUNTIME/chooser.sh" SDE_STATE_DIR="$RUNTIME" \
     "$SDE_ROOT/build/tools/xdg-desktop-portal-serenity" > "$RUNTIME/portal.log" 2>&1 &
 PORTAL=$!
-trap 'kill "$PORTAL" "$WP" "$PW" 2>/dev/null || true; rm -rf "$RUNTIME" 2>/dev/null || true' EXIT
+trap 'kill "$PORTAL" "$WP" "$PW" 2>/dev/null || true; rm -rf "$RUNTIME" 2>/dev/null || true; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$ "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$.lock 2>/dev/null || true' EXIT
 
 DEST="org.freedesktop.impl.portal.desktop.serenity"
 OBJ="/org/freedesktop/portal/desktop"

@@ -116,7 +116,7 @@ static struct serenity_toplevel* serenity_toplevel_handle;
 static void keyboard_keymap(void* d, struct wl_keyboard* k, uint32_t format, int32_t fd, uint32_t size) { (void)d; (void)k; (void)format; (void)size; close(fd); }
 static void keyboard_enter(void* d, struct wl_keyboard* k, uint32_t serial, struct wl_surface* s, struct wl_array* keys) { (void)d; (void)k; (void)serial; (void)s; (void)keys; }
 static void keyboard_leave(void* d, struct wl_keyboard* k, uint32_t serial, struct wl_surface* s) { (void)d; (void)k; (void)serial; (void)s; }
-static void keyboard_key(void* d, struct wl_keyboard* k, uint32_t serial, uint32_t time, uint32_t key, uint32_t state) { (void)d; (void)k; (void)serial; (void)time; (void)key; (void)state; }
+static void keyboard_key(void* d, struct wl_keyboard* k, uint32_t serial, uint32_t time, uint32_t key, uint32_t state) { (void)d; (void)k; (void)serial; (void)time; fprintf(stderr, "native-app-test: key %u %s\n", key, state == WL_KEYBOARD_KEY_STATE_PRESSED ? "press" : "release"); }
 static void keyboard_modifiers(void* d, struct wl_keyboard* k, uint32_t serial, uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group) { (void)d; (void)k; (void)serial; (void)depressed; (void)latched; (void)locked; (void)group; }
 static void keyboard_repeat_info(void* d, struct wl_keyboard* k, int32_t rate, int32_t delay) { (void)d; (void)k; (void)rate; (void)delay; }
 static struct wl_keyboard_listener const keyboard_listener = { keyboard_keymap, keyboard_enter, keyboard_leave, keyboard_key, keyboard_modifiers, keyboard_repeat_info };
@@ -127,6 +127,11 @@ static void seat_capabilities(void* d, struct wl_seat* s, uint32_t capabilities)
     if ((capabilities & WL_SEAT_CAPABILITY_KEYBOARD) && !keyboard) {
         keyboard = wl_seat_get_keyboard(s);
         wl_keyboard_add_listener(keyboard, &keyboard_listener, NULL);
+    } else if (!(capabilities & WL_SEAT_CAPABILITY_KEYBOARD) && keyboard) {
+        // The seat's keyboard went away (e.g. a virtual keyboard disconnected);
+        // release ours so we get a fresh, live one when it comes back.
+        wl_keyboard_destroy(keyboard);
+        keyboard = NULL;
     }
 }
 static void seat_name(void* d, struct wl_seat* s, char const* name) { (void)d; (void)s; (void)name; }

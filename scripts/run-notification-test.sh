@@ -23,7 +23,7 @@ ninja -C "$BUILD" libwm-notify-test >/dev/null
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-notify.XXXXXX")"
 export SDE_STATE_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
-trap 'rm -rf "$RUNTIME"' EXIT
+trap 'rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$ "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$.lock 2>/dev/null || true' EXIT
 
 # A private per-session runtime directory (the SDE_SESSION_DIR seam), so the
 # notify portal sockets of a live session are left alone.

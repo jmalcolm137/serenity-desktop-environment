@@ -15,7 +15,7 @@ CONFIG="$SDE_ROOT/scripts/sde-config"
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-config.XXXXXX")"
 chmod 700 "$RUNTIME"
-trap 'rm -rf "$RUNTIME"' EXIT
+trap 'rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$ "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$.lock 2>/dev/null || true' EXIT
 export SDE_STATE_DIR="$RUNTIME"
 sde_config() { SDE_STATE_DIR="$RUNTIME" "$CONFIG" "$@"; }
 

@@ -9,7 +9,7 @@ SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CAP="$SDE_ROOT/scripts/sde-capabilities"
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-caps.XXXXXX")"
-trap 'rm -rf "$RUNTIME"' EXIT
+trap 'rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$ "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$.lock 2>/dev/null || true' EXIT
 
 fail=0
 check() {
