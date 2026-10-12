@@ -3018,6 +3018,7 @@ static void serenity_toplevel_set_icon(wl_client*, wl_resource* resource, int32_
             close(fd);
         if (toplevel->icon) {
             toplevel->icon = nullptr;
+            WindowManager::emit_window_icon(*toplevel);
             toplevel_update_frame(*toplevel);
         }
         return;
@@ -3041,6 +3042,7 @@ static void serenity_toplevel_set_icon(wl_client*, wl_resource* resource, int32_
         munmap(mapping, size);
     }
     close(fd);
+    WindowManager::emit_window_icon(*toplevel);
     toplevel_update_frame(*toplevel);
 }
 

@@ -15,6 +15,7 @@
 #include <LibGfx/Palette.h>
 #include <LibGfx/Point.h>
 #include <LibGfx/Rect.h>
+#include <LibGfx/ShareableBitmap.h>
 #include <LibIPC/Connection.h>
 #include <WindowServer/WindowManagerClientEndpoint.h>
 #include <WindowServer/WindowManagerServerEndpoint.h>
@@ -65,8 +66,10 @@ public:
     virtual void set_manager_window(i32 window_id) override
     {
         m_manager_window_id = window_id;
-        for (auto& toplevel : m_server.toplevels)
+        for (auto& toplevel : m_server.toplevels) {
             emit_window_state(*toplevel);
+            emit_window_icon(*toplevel);
+        }
     }
 
     virtual void set_active_window(i32, i32 window_id) override
@@ -686,6 +689,25 @@ void emit_window_state(Toplevel& toplevel)
             static_cast<i32>(WindowServer::WindowType::Normal), ByteString { title },
             Gfx::IntRect { 0, 0, 0, 0 }, Optional<i32> { });
     }
+}
+
+// Tell the WindowManagerServer listeners (the Taskbar) about a window's icon, so
+// window-list buttons can draw it (SerenityOS WindowManager::tell_wms_window_icon_changed).
+void emit_window_icon(Toplevel& toplevel)
+{
+    Gfx::ShareableBitmap bitmap;
+    if (toplevel.icon)
+        bitmap = toplevel.icon->to_shareable_bitmap();
+    bool sent = false;
+    for (auto& connection : g_connections) {
+        if (connection->manager_window_id() < 0)
+            continue;
+        connection->async_window_icon_bitmap_changed(connection->manager_window_id(), 0, toplevel.wm_id, bitmap);
+        sent = true;
+    }
+    if (sent)
+        dbgln("WindowServer: WM: window {} icon {}x{}", toplevel.wm_id,
+            toplevel.icon ? toplevel.icon->width() : 0, toplevel.icon ? toplevel.icon->height() : 0);
 }
 
 void emit_window_removed(Toplevel& toplevel)

@@ -72,9 +72,11 @@ click was already handled and returned earlier).
   `Highlighted` window state. In all-workspaces mode the visible workspace follows
   the selection (as SerenityOS switches the window stack while cycling), and any
   key other than Tab/Shift cancels. The window icon is supplied by the client over
-  the `serenity-window` protocol (`serenity_toplevel.set_icon`) and shown in both
-  the titlebar and the switcher (SerenityOS: `Window::icon()`); clients that do
-  not send one show none.
+  the `serenity-window` protocol (`serenity_toplevel.set_icon`) and shown in the
+  titlebar, the Alt+Tab switcher, and the Taskbar window list (forwarded to the
+  Taskbar over the WindowManagerServer as `window_icon_bitmap_changed`); clients
+  that do not send one show none. The `libgui-wayland` port sends it from
+  `GUI::Window::set_icon` via the WindowServer `set_window_icon_bitmap` API.
 - **Snapping** — done (WS2). `WindowTileType` + Super+arrows
   (maximize/minimize/tile, Super+Alt horizontal/vertical maximize), drag-to-edge
   snapping with a LibGfx tile preview, `xdg_toplevel` tiled/maximized state, a

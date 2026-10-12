@@ -49,6 +49,8 @@ void accept_connection(Server&, NonnullOwnPtr<Core::LocalSocket>);
 // Report a window's state change / removal to every connected Taskbar.
 void emit_window_state(Toplevel&);
 void emit_window_removed(Toplevel&);
+// Tell the Taskbar (WindowManagerServer listeners) this window's icon changed.
+void emit_window_icon(Toplevel&);
 
 // Tell every Taskbar the applet-area size changed (WS4).
 void tell_wms_applet_area_size_changed(Server&, Gfx::IntSize);
