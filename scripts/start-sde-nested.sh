@@ -67,6 +67,18 @@ cleanup() {
 trap cleanup EXIT
 
 STARTUP="$BUILD/bin/Taskbar & $BUILD/bin/FileManager -d & $BUILD/bin/TextEditor"
+
+# The battery status applet (a LibGUI app in this repo) runs in the Taskbar's
+# applet area. Build it on demand so a fresh checkout still gets it.
+BATTERY_APPLET="$SDE_ROOT/build/BatteryApplet/BatteryApplet"
+if [[ ! -x "$BATTERY_APPLET" ]]; then
+    "$SDE_ROOT/scripts/build-battery-applet.sh" >/dev/null 2>&1 \
+        || echo "note: BatteryApplet not built; skipping the battery applet" >&2
+fi
+if [[ -x "$BATTERY_APPLET" ]]; then
+    STARTUP="$STARTUP & $BATTERY_APPLET"
+fi
+
 # The compositor nests on the host display; its children get the session display
 # (the compositor sets WAYLAND_DISPLAY for them).
 export WAYLAND_DISPLAY="$HOST_DISPLAY"

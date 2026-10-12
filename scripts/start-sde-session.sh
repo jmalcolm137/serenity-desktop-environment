@@ -51,7 +51,22 @@ export SDE_SESSION_IDLE_DPMS_SECONDS="${SDE_SESSION_IDLE_DPMS_SECONDS:-60}"
 # configuration at startup (e.g. Browser) find it.
 SERENITY="$SERENITY" "$SDE_ROOT/scripts/seed-serenity-home.sh"
 
-STARTUP="${1:-$BUILD/bin/Taskbar & $BUILD/bin/TextEditor}"
+# Start the Taskbar and a TextEditor, plus the battery applet, unless the caller
+# supplies their own startup command.
+BATTERY_APPLET="$SDE_ROOT/build/BatteryApplet/BatteryApplet"
+if [[ ! -x "$BATTERY_APPLET" ]]; then
+    "$SDE_ROOT/scripts/build-battery-applet.sh" >/dev/null 2>&1 \
+        || echo "note: BatteryApplet not built; skipping the battery applet" >&2
+fi
+
+if [[ -n "${1:-}" ]]; then
+    STARTUP="$1"
+else
+    STARTUP="$BUILD/bin/Taskbar & $BUILD/bin/TextEditor"
+    if [[ -x "$BATTERY_APPLET" ]]; then
+        STARTUP="$STARTUP & $BATTERY_APPLET"
+    fi
+fi
 
 if [[ -n "${SDE_BACKENDS:-}" ]]; then
     export WLR_BACKENDS="$SDE_BACKENDS"

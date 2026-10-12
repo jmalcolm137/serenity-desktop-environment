@@ -25,6 +25,9 @@ The stack is split across a small family of repositories:
 - [`docs/11-r4-implementation-plan.md`](docs/11-r4-implementation-plan.md) — the R4 (Session & settings) execution plan, delivered as milestones R4.1–R4.9.
 - [`docs/12-r4.3-portable-session-integration.md`](docs/12-r4.3-portable-session-integration.md) — the R4.3 design: logind/systemd optional; portable session env, seat/DRM/VT via `libseat` backends, power provider chain, optional portals.
 - [`docs/13-native-session-and-aur-packaging.md`](docs/13-native-session-and-aur-packaging.md) — plan to run SDE natively (DRM/KMS) and package it for Arch/EndeavourOS (AUR) with an SDDM session entry.
+- [`docs/14-r4.4-config.md`](docs/14-r4.4-config.md) — the compositor configuration seam: a validated, live-reloading `WindowServer.ini` and `scripts/sde-config`.
+- [`docs/15-xdg-desktop-portal-serenity.md`](docs/15-xdg-desktop-portal-serenity.md) — the SDE xdg-desktop-portal backend and its LibGUI dialogs (R5).
+- [`docs/16-battery-applet.md`](docs/16-battery-applet.md) — the battery status applet for the Taskbar's applet area.
 
 ## Status
 
@@ -36,6 +39,9 @@ Implementation is underway. This repo contains:
   restore / move / roll up / menu bar / always on top / close), fullscreen, and
   the `serenity-window` menu-bar protocol.
 - **`src/LibSerenitySystem/`** — host integration helpers.
+- **`BatteryApplet/`** — the battery status applet for the Taskbar's applet area
+  (a LibGUI app modeled on KDE's battery applet; see
+  [`docs/16-battery-applet.md`](docs/16-battery-applet.md)).
 - **`patches/`**, **`scripts/`** — SerenityOS host-build patches and the
   build / run / test scripts.
 
