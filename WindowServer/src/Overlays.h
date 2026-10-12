@@ -64,3 +64,10 @@ private:
 // foundation spike (docs/09-r3-implementation-plan.md §3). Until it lands this
 // returns nullptr, and callers fall back to the application icon.
 RefPtr<Gfx::Bitmap> snapshot_toplevel(wlr_scene_node& toplevel_node);
+
+// The compositor's output scale (the integer HiDPI stopgap). Compositor-drawn
+// bitmaps (chrome nodes, window frames) are rendered at this scale - their
+// Painter draws in logical coordinates into a physical-resolution bitmap - so
+// they stay crisp on HiDPI panels instead of being upscaled. 1 disables it.
+void set_output_scale(int scale);
+int output_scale();

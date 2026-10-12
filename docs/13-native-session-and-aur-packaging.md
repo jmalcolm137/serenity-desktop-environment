@@ -258,6 +258,14 @@ the compositor now integer-scales high-DPI outputs:
   background, app surfaces, layer surfaces, popups, SSD frame, lock surface) are
   set to `WLR_SCALE_FILTER_NEAREST`, so an integer upscale is pixel-doubling, not
   bilinear-soft — and it is a no-op at 1x.
+- **Crisp compositor chrome:** the compositor-drawn chrome (window frames,
+  overlays, the Alt-Tab switcher, the geometry HUD, menus) is rendered *at* the
+  output scale, not upscaled: `Gfx::Painter` draws in logical coordinates into a
+  physical-resolution bitmap (`ChromeNode`, the frame buffer) that the scene
+  presents at the logical size (1:1 with physical pixels). So it is crisp at 2x.
+  Client content is still 1x and remains upscaled (the libgui-wayland
+  backing-store-scale M8 work), and the 64px switcher thumbnail / 16px app icon
+  stay source-limited.
 - **Logical sizing:** the compositor now sizes its own surfaces from
   `wlr_output_effective_resolution()` (logical), not `wlr_output->width/height`
   (physical); the desktop background and lock surface were fixed for 2x.

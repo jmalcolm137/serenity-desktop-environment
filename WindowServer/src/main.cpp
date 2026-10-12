@@ -1583,6 +1583,9 @@ static void server_new_output(wl_listener* listener, void* data)
         dbgln("WindowServer: output '{}' scale 1x (saved layout)", wlr_output->name ? wlr_output->name : "?");
     }
     wlr_output_commit_state(wlr_output, &state);
+    // Compositor-drawn chrome (frames, overlays, the switcher) is rendered at the
+    // output scale so it stays crisp on HiDPI panels.
+    set_output_scale(static_cast<int>(wlr_output->scale));
     wlr_output_state_finish(&state);
 
     auto output = make<Output>();
@@ -1716,7 +1719,8 @@ static void toplevel_update_frame(Toplevel& toplevel)
     toplevel.frame_bottom = frame_size.height() - frame_content_height - toplevel.frame_top;
     toplevel.frame_size = frame_size;
 
-    auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, frame_size).release_value_but_fixme_should_propagate_errors();
+    // Render the frame at the output scale so it stays crisp on HiDPI panels.
+    auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, frame_size, output_scale()).release_value_but_fixme_should_propagate_errors();
     Gfx::Painter painter(*bitmap);
     painter.fill_rect(Gfx::IntRect { { }, frame_size }, g_palette->window());
 
@@ -1787,6 +1791,8 @@ static void toplevel_update_frame(Toplevel& toplevel)
     } else {
         wlr_scene_buffer_set_buffer(toplevel.frame_buffer, buffer);
     }
+    // The frame bitmap is physical; present it at the logical frame size.
+    wlr_scene_buffer_set_dest_size(toplevel.frame_buffer, frame_size.width(), frame_size.height());
     use_nearest_filter(&toplevel.frame_buffer->node);
     wlr_buffer_drop(buffer);
 }

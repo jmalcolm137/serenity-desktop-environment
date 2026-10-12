@@ -19,6 +19,20 @@ extern "C" {
 #include <wlr/types/wlr_scene.h>
 }
 
+// --- output scale (HiDPI stopgap) -------------------------------------------
+
+static int s_output_scale { 1 };
+
+void set_output_scale(int scale)
+{
+    s_output_scale = scale < 1 ? 1 : scale;
+}
+
+int output_scale()
+{
+    return s_output_scale;
+}
+
 // --- bitmap buffers ---------------------------------------------------------
 
 struct BitmapBuffer {
@@ -63,7 +77,8 @@ static constexpr struct wlr_buffer_impl BITMAP_BUFFER_IMPL = {
 wlr_buffer* bitmap_buffer_create(NonnullRefPtr<Gfx::Bitmap> bitmap)
 {
     auto* buffer = new BitmapBuffer(move(bitmap));
-    wlr_buffer_init(&buffer->base, &BITMAP_BUFFER_IMPL, buffer->bitmap->width(), buffer->bitmap->height());
+    // A scaled bitmap's physical size is the buffer size the GPU sees.
+    wlr_buffer_init(&buffer->base, &BITMAP_BUFFER_IMPL, buffer->bitmap->physical_width(), buffer->bitmap->physical_height());
     return &buffer->base;
 }
 
@@ -106,12 +121,16 @@ void ChromeNode::render(Function<void(Gfx::Painter&)> const& callback)
     if (m_rect.is_empty())
         return;
 
-    auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, m_rect.size()).release_value_but_fixme_should_propagate_errors();
+    // Render at the output scale so the chrome stays crisp on HiDPI panels: the
+    // Painter draws in logical coordinates into a physical-resolution bitmap, and
+    // the scene presents it at the logical size (1:1 with physical pixels).
+    auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, m_rect.size(), s_output_scale).release_value_but_fixme_should_propagate_errors();
     Gfx::Painter painter(*bitmap);
     callback(painter);
 
     auto* buffer = bitmap_buffer_create(move(bitmap));
     wlr_scene_buffer_set_buffer(m_buffer, buffer);
+    wlr_scene_buffer_set_dest_size(m_buffer, m_rect.width(), m_rect.height());
     wlr_buffer_drop(buffer);
 }
 
