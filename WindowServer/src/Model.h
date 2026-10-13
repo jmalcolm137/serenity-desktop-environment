@@ -387,6 +387,12 @@ struct X11Toplevel {
     // The window icon, fetched from _NET_WM_ICON (shown by the Taskbar button and
     // the Alt-Tab switcher), like Toplevel::icon for xdg windows.
     RefPtr<Gfx::Bitmap> icon;
+    // _NET_WM_STATE hints and transiency (docs/20-xwayland-next-steps.md item 7).
+    bool skip_taskbar { false };
+    bool always_on_top { false };
+    bool demands_attention { false };
+    bool modal { false };
+    X11Toplevel* transient_parent { nullptr };
     // Monotonic focus sequence (like Toplevel::focus_order), so the Alt-Tab
     // switcher can list X11 and xdg windows together most-recently-focused first.
     u64 focus_order { 0 };
@@ -407,6 +413,8 @@ struct X11Toplevel {
     wl_listener set_title { };
     wl_listener set_class { };
     wl_listener set_icon { };
+    wl_listener request_skip_taskbar { };
+    wl_listener request_demands_attention { };
 };
 
 // A reference to a window: it is either an xdg toplevel or an X11 (Xwayland)

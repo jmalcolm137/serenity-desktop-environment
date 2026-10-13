@@ -49,6 +49,10 @@ int main(void)
         icon[2 + i] = 0xFFFF0000u; // opaque red
     xcb_change_property(connection, XCB_PROP_MODE_REPLACE, window, ewmh._NET_WM_ICON, XCB_ATOM_CARDINAL, 32, 2 + size * size, icon);
 
+    // _NET_WM_STATE: request always-on-top (an EWMH hint the compositor honours).
+    xcb_atom_t const wm_state[] = { ewmh._NET_WM_STATE_ABOVE };
+    xcb_change_property(connection, XCB_PROP_MODE_REPLACE, window, ewmh._NET_WM_STATE, XCB_ATOM_ATOM, 32, 1, wm_state);
+
     xcb_map_window(connection, window);
 
     // An override-redirect window (like a menu/tooltip): unmanaged, never listed,

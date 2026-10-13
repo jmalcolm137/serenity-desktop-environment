@@ -210,6 +210,7 @@ static void x11_begin_interactive(X11Toplevel& toplevel, CursorMode mode, uint32
 // docs/20-xwayland-next-steps.md item 3.
 static void x11_fetch_icon(X11Toplevel& toplevel);
 static void x11_update_class(X11Toplevel& toplevel);
+static void x11_update_hints(X11Toplevel& toplevel);
 // X11 server-side decoration frames (R5).
 static void x11_update_frame(X11Toplevel& toplevel);
 static bool handle_x11_frame_press(Server& server, uint32_t button);
@@ -2144,13 +2145,25 @@ static bool x11_surface_at(Server& server, double lx, double ly, wlr_surface** s
 // the parent is raised. docs/20-xwayland-next-steps.md item 4.
 static void x11_raise_overrides_above(X11Toplevel& parent)
 {
-    if (!parent.xsurface)
-        return;
     for (auto& child : parent.server->x11_toplevels) {
-        if (!child->override_redirect || !child->mapped || !child->xsurface)
+        if (!child->mapped || !child->xsurface)
             continue;
-        if (child->xsurface->parent == parent.xsurface)
+        // Override-redirect menus/tooltips follow X's parent; managed transients
+        // (dialogs) use the tracked transient_parent.
+        bool const is_child = child->override_redirect
+            ? (parent.xsurface && child->xsurface->parent == parent.xsurface)
+            : (child->transient_parent == &parent);
+        if (is_child)
             wlr_scene_node_raise_to_top(&child->scene_tree->node);
+    }
+}
+
+// Keep _NET_WM_STATE_ABOVE windows on top after another window is raised.
+static void x11_raise_above_windows(Server& server)
+{
+    for (auto& toplevel : server.x11_toplevels) {
+        if (toplevel->mapped && toplevel->always_on_top)
+            wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
     }
 }
 
@@ -2191,12 +2204,16 @@ static void focus_x11_toplevel(Server& server, X11Toplevel* toplevel)
     server.keyboard_focus_layer = nullptr;
     stop_key_repeat();
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
-    // Keep this window's override-redirect children (menus/tooltips) above it.
+    // Keep this window's override-redirect children (menus/tooltips) above it,
+    // and any always-on-top windows at the very top.
     x11_raise_overrides_above(*toplevel);
+    x11_raise_above_windows(server);
     toplevel->frame_active = true;
     wlr_xwayland_surface_activate(toplevel->xsurface, true);
     if (toplevel->frame_decorated)
         x11_update_frame(*toplevel);
+    // Focusing a window clears its demands-attention state.
+    toplevel->demands_attention = false;
     if (toplevel->wm_id != 0)
         WindowManager::emit_window_state(*toplevel);
     auto* keyboard = wlr_seat_get_keyboard(server.seat);
@@ -2243,17 +2260,23 @@ static void x11_surface_map(wl_listener* listener, void*)
     WindowManager::on_x11_toplevel_mapped(*toplevel);
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
     x11_update_frame(*toplevel);
-    // WM_CLASS / _NET_WM_ICON may have been set before we attached the listeners.
+    // WM_CLASS / _NET_WM_ICON / _NET_WM_STATE may have been set before the
+    // listeners were attached.
     x11_update_class(*toplevel);
     x11_fetch_icon(*toplevel);
+    x11_update_hints(*toplevel);
     dbgln("WindowServer: X11 window mapped '{}' at {},{}", toplevel->xsurface->title ? toplevel->xsurface->title : "", toplevel->xsurface->x, toplevel->xsurface->y);
     // Override-redirect windows (menus, tooltips) are unmanaged: no frame, no
     // focus, no Taskbar entry.
     if (!toplevel->override_redirect) {
-        if (toplevel->wm_id == 0)
+        // _NET_WM_STATE_SKIP_TASKBAR: a normal window, but no Taskbar entry.
+        if (!toplevel->skip_taskbar && toplevel->wm_id == 0)
             toplevel->wm_id = g_next_wm_id++;
         focus_x11_toplevel(server, toplevel);
-        WindowManager::emit_window_state(*toplevel);
+        if (toplevel->always_on_top)
+            x11_raise_above_windows(server);
+        if (toplevel->wm_id != 0)
+            WindowManager::emit_window_state(*toplevel);
     } else {
         // They are transient and never workspace-hid (docs/20 item 4).
         dbgln("WindowServer: X11 override-redirect window mapped '{}' at {},{}", toplevel->title, toplevel->xsurface->x, toplevel->xsurface->y);
@@ -2314,6 +2337,13 @@ static void x11_surface_destroy(wl_listener* listener, void*)
         wlr_scene_node_destroy(&toplevel->scene_tree->node);
         toplevel->scene_tree = nullptr;
     }
+    // Avoid dangling transient-parent pointers (and our surface back-reference).
+    for (auto& other : server.x11_toplevels) {
+        if (other->transient_parent == toplevel)
+            other->transient_parent = nullptr;
+    }
+    if (toplevel->xsurface)
+        toplevel->xsurface->data = nullptr;
     remove_owned(server.x11_toplevels, toplevel);
 }
 
@@ -2372,6 +2402,44 @@ static void x11_set_class(wl_listener* listener, void*)
     X11Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, set_class);
     x11_update_class(*toplevel);
+}
+
+// _NET_WM_STATE hints and transiency (docs/20 item 7). wlroots parses the
+// property into the surface fields; mirror the ones the WM acts on.
+static void x11_update_hints(X11Toplevel& toplevel)
+{
+    auto* xsurface = toplevel.xsurface;
+    if (!xsurface)
+        return;
+    toplevel.skip_taskbar = xsurface->skip_taskbar;
+    toplevel.always_on_top = xsurface->above;
+    toplevel.demands_attention = xsurface->demands_attention;
+    toplevel.modal = xsurface->modal;
+    toplevel.transient_parent = nullptr;
+    if (xsurface->parent && xsurface->parent->data)
+        toplevel.transient_parent = static_cast<X11Toplevel*>(xsurface->parent->data);
+    dbgln("WindowServer: X11 window {} hints: skip_taskbar={} above={} demands_attention={} modal={} transient={}",
+        toplevel.wm_id, toplevel.skip_taskbar, toplevel.always_on_top, toplevel.demands_attention, toplevel.modal,
+        toplevel.transient_parent ? toplevel.transient_parent->wm_id : 0);
+}
+
+static void x11_request_skip_taskbar(wl_listener* listener, void*)
+{
+    X11Toplevel* toplevel = nullptr;
+    toplevel = wl_container_of(listener, toplevel, request_skip_taskbar);
+    x11_update_hints(*toplevel);
+    // A window that now skips the Taskbar leaves the window list.
+    if (toplevel->skip_taskbar && toplevel->wm_id != 0)
+        WindowManager::emit_window_removed(*toplevel);
+}
+
+static void x11_request_demands_attention(wl_listener* listener, void*)
+{
+    X11Toplevel* toplevel = nullptr;
+    toplevel = wl_container_of(listener, toplevel, request_demands_attention);
+    x11_update_hints(*toplevel);
+    if (toplevel->wm_id != 0)
+        WindowManager::emit_window_state(*toplevel);
 }
 
 // _NET_WM_ICON: wlroots exposes the property (wlr_xwayland_surface_fetch_icon);
@@ -2463,6 +2531,10 @@ static void server_new_xwayland_surface(wl_listener* listener, void* data)
     wl_signal_add(&xsurface->events.set_class, &toplevel->set_class);
     toplevel->set_icon.notify = x11_set_icon;
     wl_signal_add(&xsurface->events.set_icon, &toplevel->set_icon);
+    toplevel->request_skip_taskbar.notify = x11_request_skip_taskbar;
+    wl_signal_add(&xsurface->events.request_skip_taskbar, &toplevel->request_skip_taskbar);
+    toplevel->request_demands_attention.notify = x11_request_demands_attention;
+    wl_signal_add(&xsurface->events.request_demands_attention, &toplevel->request_demands_attention);
 
     // WM_CLASS may already be set by the time we associate.
     x11_update_class(*toplevel);

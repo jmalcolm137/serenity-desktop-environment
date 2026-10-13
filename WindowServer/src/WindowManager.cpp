@@ -822,7 +822,7 @@ void emit_window_state(X11Toplevel& toplevel)
         if (connection->manager_window_id() < 0)
             continue;
         connection->async_window_state_changed(connection->manager_window_id(), 0, toplevel.wm_id, 0, 0,
-            toplevel.frame_active && !minimized, false, minimized, false,
+            toplevel.frame_active && !minimized, toplevel.demands_attention, minimized, false,
             static_cast<i32>(WindowServer::WindowType::Normal), toplevel.title,
             Gfx::IntRect { 0, 0, 0, 0 }, Optional<i32> { });
     }

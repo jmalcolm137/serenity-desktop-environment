@@ -127,6 +127,11 @@ if [[ -x "$XICON" && -n "$DISP" ]]; then
     else
         echo "  FAIL: the override-redirect window did not map"; fail=1
     fi
+    if grep -qE "X11 window [0-9]+ hints: skip_taskbar=false above=true" "$R/comp.log"; then
+        echo "  ok: _NET_WM_STATE (always-on-top) was read"
+    else
+        echo "  FAIL: the _NET_WM_STATE hints were not read"; fail=1
+    fi
 else
     echo "  note: x11-icon-test unavailable; skipping the icon/class check"
 fi
