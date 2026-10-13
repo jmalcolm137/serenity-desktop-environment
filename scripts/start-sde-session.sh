@@ -77,6 +77,10 @@ fi
 # Hardware session: no host compositor underneath us.
 unset WAYLAND_DISPLAY DISPLAY
 export SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}"
+# A default wallpaper for a fresh state directory: the compositor seeds from these
+# on first run, after which the state set via Display Settings is authoritative.
+export SDE_WALLPAPER="${SDE_WALLPAPER:-blue-grid.png}"
+export SDE_WALLPAPER_MODE="${SDE_WALLPAPER_MODE:-fill}"
 export LD_LIBRARY_PATH="$BUILD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 # The applications run from this build's bin directory; the session LaunchServer

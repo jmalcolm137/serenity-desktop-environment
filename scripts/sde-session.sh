@@ -288,10 +288,12 @@ while :; do
     echo "SDE session: starting compositor: $active_compositor"
     # Native (no captured host display): leave WAYLAND_DISPLAY unset so
     # wlr_backend_autocreate selects DRM+libinput. Nested: connect to the host.
+    # setsid puts the compositor (and the -s shell and apps it spawns) in their own
+    # process group, so a restart can sweep them (below) instead of orphaning them.
     if [ -n "$COMPOSITOR_DISPLAY" ]; then
-        WAYLAND_DISPLAY="$COMPOSITOR_DISPLAY" sh -c "$active_compositor" &
+        setsid env WAYLAND_DISPLAY="$COMPOSITOR_DISPLAY" sh -c "$active_compositor" &
     else
-        env -u WAYLAND_DISPLAY -u DISPLAY sh -c "$active_compositor" &
+        setsid env -u WAYLAND_DISPLAY -u DISPLAY sh -c "$active_compositor" &
     fi
     comp_pid=$!
 
@@ -344,6 +346,12 @@ while :; do
     wait "$comp_pid"
     status=$?
     trap - TERM INT
+    # Sweep the compositor's process group: the -s shell and the apps it spawned are
+    # in it, and when the compositor exits (crash or SIGTERM) they would otherwise
+    # be orphaned, so a restart left a duplicate Taskbar/Desktop/applets running.
+    kill -TERM -- "-$comp_pid" 2>/dev/null || true
+    sleep 0.2
+    kill -KILL -- "-$comp_pid" 2>/dev/null || true
     if [ -n "$watchdog_pid" ]; then
         kill "$watchdog_pid" 2>/dev/null || true
     fi
