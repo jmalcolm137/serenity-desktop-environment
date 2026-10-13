@@ -328,6 +328,27 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 
 ## Recently resolved (kept so we don't re-chase them)
 
+- **Every Settings dialog launches and its settings apply (R4).** The Settings
+  grid lists 13 `Category=Settings` apps. A launch + backend sweep
+  (`scripts/run-settings-test.sh`) found three that could not open at all and two
+  that opened with empty lists — all host-port gaps in `libgui-wayland` patches
+  `0044`–`0047`:
+
+  | Dialog | Problem | Fix |
+  | --- | --- | --- |
+  | Certificate Settings | binary absent from the Lagom app list, so the launcher could not exec it | build `CertificateSettings` (`0044`) |
+  | Network Settings | aborts reading SerenityOS's `/sys/kernel/net/adapters` | enumerate host interfaces with `getifaddrs()` (`0047`) |
+  | Browser Settings | aborts on a fresh profile: the content-filter / autoplay list file does not exist yet | treat a missing list as empty (`0046`) |
+  | Maps Settings | provider list empty: `/usr/share/Maps/TileProviders.json` was not relocated under `Base` | relocate `/etc` + `/usr/share` when the file exists beneath `Base` (`0045`) |
+  | Games Settings | card-back list empty and watch failed: `FileSystemModel`/`FileWatcher` bypass `Core::System` path relocation | relocate in both (`0045`) |
+
+  Phase A of the test launches every dialog (13 settings apps + the Settings
+  launcher + Theme Editor) and asserts each maps a window with no fault; Phase B
+  exercises the backends the dialogs drive (`run-input-settings-test.sh` for
+  mouse + keyboard, themes, fonts, output/monitor, workspaces, effects,
+  config/background, and the Settings portal). Clock, Calendar, Mail, Terminal,
+  Users, Display and Debug Settings launched cleanly already.
+
 - **Shell startup race (SDDM login: applets but no Taskbar/desktop).** The
   compositor spawned its `-s` startup command *before* it started listening on the
   WindowManagerServer socket. The Taskbar, WorkspacePicker and Keymap connect to
