@@ -53,10 +53,14 @@ not R5/R6.
   compositor falls back to the software (pixman) renderer instead of ending the
   session (the R4.2 supervisor's safe mode covers a bad shell). See
   [`04-known-gaps.md`](04-known-gaps.md) R6.
-- **Protocol-error & state-machine coverage (N4, N8).** xdg configure/commit,
-  the initial commit, decoration negotiation, popup/layer grabs, buffer release,
-  dmabuf import failure and `wl_resource` lifetimes have no conformance or fuzz
-  tests. One protocol error can currently take the whole display down.
+- **Protocol-error & state-machine coverage (N4, N8).** Error *isolation* is now
+  covered: `tools/protocol-error-test.c` deliberately violates a protocol rule (an
+  invalid surface scale, an invalid shm pool size) and `run-headless-test.sh`
+  asserts the error is delivered to that client, the compositor keeps serving, and
+  a fresh client still maps. Broader conformance/fuzz coverage of xdg
+  configure/commit, the initial commit, decoration negotiation, popup/layer grabs,
+  buffer release, dmabuf import failure and `wl_resource` lifetimes is still
+  missing.
 - **Compositor configuration system (G1, G3).** No schema for keybindings, focus
   policy, tile/snap behaviour, workspace grid, animations, or output defaults,
   and no live reload. SerenityOS reads `WindowServer.ini`; SDE has no equivalent

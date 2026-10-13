@@ -346,6 +346,12 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   `run-headless-test.sh` (a broken DRM render node forces the fallback; an
   explicit `SDE_RENDERER=pixman` selects it directly).
 
+- **Protocol-error isolation (R6/N4).** `tools/protocol-error-test.c` deliberately
+  violates a protocol rule (an invalid surface scale; an invalid shm pool size);
+  `run-headless-test.sh` checks each error is delivered to the offending client
+  (its connection is dropped) while the compositor keeps running and a fresh
+  client still maps its window.
+
 - **Profiler (Development ▸ Profiler).** SerenityOS's kernel profiling interface
   (`profiling_enable(pid, mask)` + `/proc/<pid>/perf_events`) has no Linux
   equivalent, so `LibSerenitySystem::Profiling` samples with `perf_event_open`

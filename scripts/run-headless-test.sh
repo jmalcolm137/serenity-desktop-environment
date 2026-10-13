@@ -7,8 +7,10 @@
 #   3. a native (non-Serenity) Wayland application-> an xdg toplevel
 #
 # It also checks the R6/N4 liveness heartbeat (SDE_HEARTBEAT_FILE) that the
-# session supervisor's watchdog watches, and the R6/N5 renderer fallback (a broken
-# GPU path falls back to the software renderer instead of ending the session).
+# session supervisor's watchdog watches, R6/N4 protocol-error isolation (a client
+# that violates a protocol rule is dropped; the compositor keeps serving), and the
+# R6/N5 renderer fallback (a broken GPU path falls back to the software renderer
+# instead of ending the session).
 #
 # Runs entirely headless (no host compositor, no DRM), so it is CI-friendly.
 set -euo pipefail
@@ -45,6 +47,10 @@ cc -O2 -I "$TOOLS_BUILD" \
     "$TOOLS_BUILD/serenity-window-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/native-app-test"
+cc -O2 -I "$TOOLS_BUILD" \
+    "$SDE_ROOT/tools/protocol-error-test.c" \
+    $(pkg-config --cflags --libs wayland-client) \
+    -o "$TOOLS_BUILD/protocol-error-test"
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-headless.XXXXXX")"
 export SDE_STATE_DIR="$RUNTIME"
@@ -76,6 +82,16 @@ env WAYLAND_DISPLAY="$SOCK" timeout 4 "$TOOLS_BUILD/native-app-test" > "$RUNTIME
 # Give the LibWindowServer app a moment to map its toplevel.
 sleep 1
 
+# R6/N4: a client protocol error must be isolated to that client; the compositor
+# keeps running and can still map a fresh client's window.
+PROTOCOL_SCALE_STATUS=0
+env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/protocol-error-test" scale0 > "$RUNTIME/protocol-scale.log" 2>&1 || PROTOCOL_SCALE_STATUS=$?
+PROTOCOL_SHM_STATUS=0
+env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/protocol-error-test" shm-size > "$RUNTIME/protocol-shm.log" 2>&1 || PROTOCOL_SHM_STATUS=$?
+env WAYLAND_DISPLAY="$SOCK" timeout 4 "$TOOLS_BUILD/native-app-test" > "$RUNTIME/native-after-error.log" 2>&1 || true
+sleep 1
+NATIVE_MAPPED_COUNT="$(grep -c "toplevel mapped title='SDE Native Test'" "$RUNTIME/comp.log" || true)"
+
 # R6/N4: the compositor writes a liveness heartbeat for the session watchdog.
 HEARTBEAT_VALUE="$(cat "$RUNTIME/heartbeat" 2>/dev/null || echo 0)"
 HEARTBEAT_NOW="$(date +%s)"
@@ -92,6 +108,10 @@ echo "--- layer-shell client ---"
 cat "$RUNTIME/layer.log"
 echo "--- native client ---"
 cat "$RUNTIME/native.log"
+echo "--- protocol-error client (scale0) ---"
+cat "$RUNTIME/protocol-scale.log"
+echo "--- protocol-error client (shm-size) ---"
+cat "$RUNTIME/protocol-shm.log"
 
 fail=0
 check() {
@@ -114,6 +134,27 @@ if [ "${HEARTBEAT_VALUE:-0}" -ge "$((HEARTBEAT_NOW - 5))" ] 2>/dev/null; then
     echo "  ok: compositor heartbeat is live (${HEARTBEAT_VALUE}s)"
 else
     echo "  MISSING: compositor heartbeat (got '${HEARTBEAT_VALUE}', now ${HEARTBEAT_NOW})"
+    fail=1
+fi
+
+# R6/N4: protocol errors are isolated to the offending client.
+echo "=== R6/N4 protocol-error isolation ==="
+if [ "${PROTOCOL_SCALE_STATUS:-1}" -eq 0 ]; then
+    echo "  ok: invalid surface scale delivered to the client"
+else
+    echo "  MISSING: invalid surface scale was not reported"
+    fail=1
+fi
+if [ "${PROTOCOL_SHM_STATUS:-1}" -eq 0 ]; then
+    echo "  ok: invalid shm pool size delivered to the client"
+else
+    echo "  MISSING: invalid shm pool size was not reported"
+    fail=1
+fi
+if [ "${NATIVE_MAPPED_COUNT:-0}" -ge 2 ]; then
+    echo "  ok: compositor survived the protocol errors (a client mapped after)"
+else
+    echo "  MISSING: no client mapped after the protocol errors"
     fail=1
 fi
 
