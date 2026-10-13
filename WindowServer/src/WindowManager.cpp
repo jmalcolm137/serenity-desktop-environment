@@ -647,12 +647,23 @@ static bool switch_direction(Server& server, int dx, int dy, bool carry)
     return true;
 }
 
+// Super is the Taskbar's "Windows key": tapping it alone opens the Taskbar
+// system menu, but holding it must still act as a modifier for Super+<key>
+// shortcuts. As in SerenityOS, the menu is opened on Super *keyup* only if Super
+// was pressed and released with no other key in between; any other key clears
+// the tap. Super+Space / Super+D / Super+<digit> are the exceptions SerenityOS
+// forwards to the Taskbar.
+static bool s_super_tapped { false };
+
+void clear_super_tap()
+{
+    s_super_tapped = false;
+}
+
 bool handle_super_key(Server& server, u32 keysym, u32 modifiers, bool pressed)
 {
-    if ((modifiers & WLR_MODIFIER_LOGO) == 0)
-        return false;
-    if (!pressed)
-        return true;
+    bool const super_held = (modifiers & WLR_MODIFIER_LOGO) != 0;
+    bool const is_super_key = keysym == XKB_KEY_Super_L || keysym == XKB_KEY_Super_R;
 
     auto emit = [&](auto&& call) {
         for (auto& connection : g_connections) {
@@ -661,28 +672,50 @@ bool handle_super_key(Server& server, u32 keysym, u32 modifiers, bool pressed)
         }
     };
 
-    switch (keysym) {
-    case XKB_KEY_Super_L:
-    case XKB_KEY_Super_R:
-        emit([](auto& connection, i32 wm_id) { connection.async_super_key_pressed(wm_id); });
-        return true;
-    case XKB_KEY_space:
-        emit([](auto& connection, i32 wm_id) { connection.async_super_space_key_pressed(wm_id); });
-        return true;
-    case XKB_KEY_d:
-    case XKB_KEY_D:
-        emit([](auto& connection, i32 wm_id) { connection.async_super_d_key_pressed(wm_id); });
-        return true;
-    default:
-        break;
+    if (!pressed) {
+        if (is_super_key) {
+            bool const tapped = s_super_tapped;
+            s_super_tapped = false;
+            // Tap Super alone -> open the Taskbar's system menu.
+            if (tapped) {
+                dbgln("WindowServer: Super tapped (Taskbar menu)");
+                emit([](auto& connection, i32 wm_id) { connection.async_super_key_pressed(wm_id); });
+            }
+            return true; // consume the Super release
+        }
+        return false;
     }
 
-    if (keysym >= XKB_KEY_1 && keysym <= XKB_KEY_9) {
-        auto digit = static_cast<u8>(keysym - XKB_KEY_1 + 1);
-        emit([digit](auto& connection, i32 wm_id) { connection.async_super_digit_key_pressed(wm_id, digit); });
-        return true;
+    // Press.
+    if (is_super_key) {
+        s_super_tapped = true;
+        return true; // consume the Super press (clients see the modifier state)
+    }
+    if (!super_held)
+        return false;
+
+    if (s_super_tapped) {
+        s_super_tapped = false;
+        switch (keysym) {
+        case XKB_KEY_space:
+            emit([](auto& connection, i32 wm_id) { connection.async_super_space_key_pressed(wm_id); });
+            return true;
+        case XKB_KEY_d:
+        case XKB_KEY_D:
+            emit([](auto& connection, i32 wm_id) { connection.async_super_d_key_pressed(wm_id); });
+            return true;
+        default:
+            if (keysym >= XKB_KEY_1 && keysym <= XKB_KEY_9) {
+                auto digit = static_cast<u8>(keysym - XKB_KEY_1 + 1);
+                emit([digit](auto& connection, i32 wm_id) { connection.async_super_digit_key_pressed(wm_id, digit); });
+                return true;
+            }
+            break;
+        }
     }
 
+    // Super + another key: Super is a modifier for a shortcut, not a tap.
+    s_super_tapped = false;
     return false;
 }
 

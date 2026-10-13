@@ -89,6 +89,9 @@ void set_toplevel_minimized(Server&, Toplevel&, bool minimized);
 // Super-key shortcuts the Taskbar expects (WindowManagerClient.ipc):
 // Super, Super+Space, Super+D and Super+digit.
 bool handle_super_key(Server&, u32 keysym, u32 modifiers, bool pressed);
+// Clear the "Super was tapped" state, so a Super+<key> shortcut (e.g. Super+Tab)
+// does not open the Taskbar menu when Super is released.
+void clear_super_tap();
 
 // R4.4: run a configured keybinding action (workspaces, tiling, maximize,
 // minimize) against the focused window/stack. Lock is handled by the compositor.

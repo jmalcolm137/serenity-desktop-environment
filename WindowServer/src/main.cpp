@@ -637,8 +637,11 @@ static void keyboard_key(wl_listener* listener, void* data)
         bool switcher_handled = false;
         for (int i = 0; i < syms_count; ++i)
             switcher_handled |= WindowSwitcher::handle_key(server, syms[i], modifiers, event->state == WL_KEYBOARD_KEY_STATE_PRESSED);
-        if (switcher_handled)
+        if (switcher_handled) {
+            // A Super+Tab/Super+Shift+Tab shortcut is not a Super tap.
+            WindowManager::clear_super_tap();
             return;
+        }
         for (int i = 0; i < syms_count; ++i)
             handled |= WindowManager::handle_super_key(server, syms[i], modifiers, event->state == WL_KEYBOARD_KEY_STATE_PRESSED);
         if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
@@ -1180,6 +1183,10 @@ static void cursor_button(wl_listener* listener, void* data)
     }
 
     if (event->state == WL_POINTER_BUTTON_STATE_PRESSED) {
+        // Using Super with the mouse (move/resize, or a click) is not a Super
+        // tap, so do not open the Taskbar menu when Super is released.
+        if (auto* keyboard = wlr_seat_get_keyboard(server->seat); keyboard && (wlr_keyboard_get_modifiers(keyboard) & WLR_MODIFIER_LOGO))
+            WindowManager::clear_super_tap();
         if (handle_frame_press(*server, event->button, event->time_msec)) {
             // Opening the window menu is not an interactive frame grab.
             if (!server->window_menu.open)
