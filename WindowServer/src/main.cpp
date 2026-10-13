@@ -46,6 +46,7 @@
 #include <LibGfx/ImageFormats/PNGWriter.h>
 #include <LibGfx/Painter.h>
 #include <LibGfx/Palette.h>
+#include <LibGfx/Path.h>
 #include <LibGfx/Rect.h>
 #include <LibGfx/StylePainter.h>
 #include <LibGfx/SystemTheme.h>
@@ -273,7 +274,7 @@ static RefPtr<Gfx::Bitmap> g_default_window_icon;
 // A distinct default icon for **X11 (Xwayland)** clients that supply none: a small
 // application window with an "X" on it, so an X11 window's titlebar is recognisable
 // at a glance (vs. the generic window icon). Drawn at 16x16 (the titlebar/switcher
-// size); pixels are written directly to avoid any font/format dependency.
+// size) with Gfx::Painter (anti-aliased), in the theme's window colours.
 static RefPtr<Gfx::Bitmap> g_x11_default_icon;
 
 static RefPtr<Gfx::Bitmap> make_x11_default_icon()
@@ -283,49 +284,39 @@ static RefPtr<Gfx::Bitmap> make_x11_default_icon()
     if (bitmap.is_error())
         return nullptr;
     auto bmp = bitmap.release_value();
-    // A window: grey body, light border, blue titlebar, and a dark "X".
-    constexpr u8 body_rgb[3] = { 0xd4, 0xd0, 0xc8 };
-    constexpr u8 border_rgb[3] = { 0x6a, 0x6a, 0x6a };
-    constexpr u8 title_rgb[3] = { 0x2a, 0x5d, 0xb0 };
-    constexpr u8 ink_rgb[3] = { 0x10, 0x10, 0x10 };
-    for (int y = 0; y < size; ++y) {
-        auto* row = bmp->scanline_u8(y);
-        for (int x = 0; x < size; ++x) {
-            u8 r = 0;
-            u8 g = 0;
-            u8 b = 0;
-            u8 a = 0;
-            if (x >= 1 && x <= 14 && y >= 1 && y <= 14) {
-                a = 255;
-                u8 const* rgb = body_rgb;
-                if (y >= 2 && y <= 4)
-                    rgb = title_rgb;
-                else if (x == 1 || x == 14 || y == 1 || y == 14)
-                    rgb = border_rgb;
-                r = rgb[0];
-                g = rgb[1];
-                b = rgb[2];
-                // The "X" (two diagonals) over the window body.
-                if (y >= 6 && y <= 13 && x >= 3 && x <= 12) {
-                    int const dx = x - 7;
-                    int const dy = y - 9;
-                    int d1 = dx - dy;
-                    int d2 = dx + dy;
-                    if (d1 < 0) d1 = -d1;
-                    if (d2 < 0) d2 = -d2;
-                    if (d1 <= 1 || d2 <= 1) {
-                        r = ink_rgb[0];
-                        g = ink_rgb[1];
-                        b = ink_rgb[2];
-                    }
-                }
-            }
-            row[x * 4 + 0] = b;
-            row[x * 4 + 1] = g;
-            row[x * 4 + 2] = r;
-            row[x * 4 + 3] = a;
-        }
-    }
+    Gfx::Painter painter(*bmp);
+    painter.clear_rect(bmp->rect(), Gfx::Color::Transparent);
+
+    auto const body = Gfx::Color::from_rgb(0xD7D3CB);
+    auto const edge = Gfx::Color::from_rgb(0x8F8A80);
+    auto const title = Gfx::Color::from_rgb(0x2F6FD0);
+    auto const button = Gfx::Color::from_rgb(0xE9EEF7);
+    auto const ink = Gfx::Color::from_rgb(0x20242B);
+
+    // A rounded light window body, a titlebar across the top and two buttons.
+    Gfx::IntRect const window { 1, 1, 14, 14 };
+    painter.fill_rect_with_rounded_corners(window, body, 2);
+    painter.fill_rect_with_rounded_corners({ 1, 1, 14, 5 }, title, 2, 2, 0, 0);
+    painter.fill_rect({ 8, 2, 3, 3 }, button);
+    painter.fill_rect({ 12, 2, 2, 3 }, button);
+    painter.draw_rect(window, edge);
+
+    // A crisp, anti-aliased "X" in the body.
+    Gfx::Path cross;
+    cross.move_to({ 3.5f, 6.5f });
+    cross.line_to({ 5.1f, 6.5f });
+    cross.line_to({ 8.0f, 9.5f });
+    cross.line_to({ 10.9f, 6.5f });
+    cross.line_to({ 12.5f, 6.5f });
+    cross.line_to({ 8.9f, 10.0f });
+    cross.line_to({ 12.5f, 13.5f });
+    cross.line_to({ 10.9f, 13.5f });
+    cross.line_to({ 8.0f, 10.5f });
+    cross.line_to({ 5.1f, 13.5f });
+    cross.line_to({ 3.5f, 13.5f });
+    cross.line_to({ 7.1f, 10.0f });
+    cross.close();
+    painter.fill_path(cross, ink);
     return bmp;
 }
 
