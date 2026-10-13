@@ -29,6 +29,7 @@ the compositor maps as a separate scene surface. Landed, in order:
 | `6c8e0c9` | **Selection bridge**. Forward `request_set_primary_selection` to the seat (`wlr_seat_set_primary_selection`); with the existing clipboard path, wlroots' XWM now bridges X11 `PRIMARY`/`CLIPBOARD` with the Wayland selection. |
 | `e20db92` | **LaunchServer DISPLAY**. The service adopts the session Xwayland `DISPLAY` (state file, with a wait + stale-file drop), so X11 apps it spawns (e.g. `xterm` from the Terminal) open in SDE, not on the host X server. |
 | `c69b1ae` | **`_NET_WM_STATE` + transients**. Read and honour `above` (always-on-top), `skip-taskbar`, `demands-attention`, `modal`, and the transient parent (a dialog stays above its parent). |
+| `47f794f` | **`_NET_WORKAREA`**. Report the outputs' usable areas to Xwayland (`wlr_xwayland_set_workareas`), so X11 panels/maximized windows respect SDE's panels/docks. |
 
 Where the code lives:
 
@@ -93,8 +94,8 @@ grid and icon paths) hoist into shared helpers as those land.
    `skip-taskbar`, `demands-attention` and `modal` are read and honoured, and a
    transient keeps above its parent. (Transient *centering* on the parent is left
    to the X client, which positions override-redirect/popups itself.)
-8. **`_NET_WM_STRUT` workarea** — reserve space for X11 panels/docks and report the
-   usable area (`wlr_xwayland_set_workareas`).
+8. ~~**`_NET_WM_STRUT` workarea**~~ — **done** (`47f794f`): the outputs' usable
+   areas are reported to Xwayland (`wlr_xwayland_set_workareas` / `_NET_WORKAREA`).
 9. **X11 ↔ Wayland drag-and-drop** — the XDND ↔ `wl_data_device` bridge, the X11
    counterpart of the compositor DnD already shipped.
 10. **Focus-stealing prevention / `_NET_ACTIVE_WINDOW`** — proper attention policy
