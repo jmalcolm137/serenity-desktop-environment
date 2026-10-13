@@ -835,6 +835,19 @@ void emit_window_removed(X11Toplevel& toplevel)
     }
 }
 
+void emit_window_icon(X11Toplevel& toplevel)
+{
+    if (!toplevel.icon)
+        return;
+    auto bitmap = toplevel.icon->to_shareable_bitmap();
+    for (auto& connection : g_connections) {
+        if (connection->manager_window_id() < 0)
+            continue;
+        connection->async_window_icon_bitmap_changed(connection->manager_window_id(), 0, toplevel.wm_id, bitmap);
+    }
+    dbgln("WindowServer: WM: X11 window {} icon {}x{}", toplevel.wm_id, toplevel.icon->width(), toplevel.icon->height());
+}
+
 X11Toplevel* find_x11_by_wm_id(Server& server, i32 wm_id)
 {
     for (auto& toplevel : server.x11_toplevels) {

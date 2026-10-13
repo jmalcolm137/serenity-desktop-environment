@@ -22,6 +22,10 @@ pkg_check_modules(XKBCOMMON REQUIRED xkbcommon)
 pkg_check_modules(DRM REQUIRED libdrm)
 # R4.6: input device configuration (accel, tap-to-click, natural scroll, ...).
 pkg_check_modules(LIBINPUT REQUIRED libinput)
+# XWayland (R5): _NET_WM_ICON reading (wlr_xwayland_surface_fetch_icon uses xcb-
+# ewmh) for X11 window icons; the wlroots xwayland header pulls in xcb too.
+pkg_check_modules(XCB REQUIRED xcb)
+pkg_check_modules(XCB_EWMH REQUIRED xcb-ewmh)
 # pixman: pointer-constraints region tests (zwp-pointer-constraints-v1).
 pkg_check_modules(PIXMAN REQUIRED pixman-1)
 # R5 InputCapture (docs/17-input-capture.md): the compositor owns the EIS
@@ -121,6 +125,8 @@ target_include_directories(WindowServer PRIVATE
     ${XKBCOMMON_INCLUDE_DIRS}
     ${DRM_INCLUDE_DIRS}
     ${LIBINPUT_INCLUDE_DIRS}
+    ${XCB_INCLUDE_DIRS}
+    ${XCB_EWMH_INCLUDE_DIRS}
     "${SERENITY_SRC}"
     "${SERENITY_SRC}/Userland/Libraries"
     "${SERENITY_SRC}/Userland/Services"
@@ -141,6 +147,8 @@ target_link_directories(WindowServer PRIVATE
     ${XKBCOMMON_LIBRARY_DIRS}
     ${DRM_LIBRARY_DIRS}
     ${LIBINPUT_LIBRARY_DIRS}
+    ${XCB_LIBRARY_DIRS}
+    ${XCB_EWMH_LIBRARY_DIRS}
     "${SERENITY_BUILD_DIR}/lib")
 
 target_link_libraries(WindowServer PRIVATE
@@ -149,6 +157,8 @@ target_link_libraries(WindowServer PRIVATE
     ${XKBCOMMON_LIBRARIES}
     ${DRM_LIBRARIES}
     ${LIBINPUT_LIBRARIES}
+    ${XCB_LIBRARIES}
+    ${XCB_EWMH_LIBRARIES}
     ${PIXMAN_LIBRARIES}
     ${LAGOM_ak}
     ${LAGOM_coreminimal}

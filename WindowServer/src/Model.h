@@ -381,6 +381,12 @@ struct X11Toplevel {
     i32 wm_id { 0 };
     // The window title (kept here so the WM module needs no wlroots types).
     ByteString title;
+    // WM_CLASS (res_name/instance) and res_class, for app identity/grouping.
+    ByteString wm_instance;
+    ByteString wm_class;
+    // The window icon, fetched from _NET_WM_ICON (shown by the Taskbar button and
+    // the Alt-Tab switcher), like Toplevel::icon for xdg windows.
+    RefPtr<Gfx::Bitmap> icon;
     // Monotonic focus sequence (like Toplevel::focus_order), so the Alt-Tab
     // switcher can list X11 and xdg windows together most-recently-focused first.
     u64 focus_order { 0 };
@@ -399,6 +405,8 @@ struct X11Toplevel {
     wl_listener request_close { };
     wl_listener request_activate { };
     wl_listener set_title { };
+    wl_listener set_class { };
+    wl_listener set_icon { };
 };
 
 // A reference to a window: it is either an xdg toplevel or an X11 (Xwayland)

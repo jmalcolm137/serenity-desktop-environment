@@ -60,6 +60,7 @@ void emit_window_icon(Toplevel&);
 // X11 (Xwayland) windows: the same, so they appear in the Taskbar window list.
 void emit_window_state(X11Toplevel&);
 void emit_window_removed(X11Toplevel&);
+void emit_window_icon(X11Toplevel&);
 
 // Tell every Taskbar the applet-area size changed (WS4).
 void tell_wms_applet_area_size_changed(Server&, Gfx::IntSize);

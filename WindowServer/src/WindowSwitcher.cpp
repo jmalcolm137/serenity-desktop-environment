@@ -109,7 +109,7 @@ static wlr_scene_node* window_thumbnail_node(WindowRef const& window)
 
 static Gfx::Bitmap const* window_icon(WindowRef const& window)
 {
-    return window.is_x11() ? nullptr : window.xdg->icon.ptr();
+    return window.is_x11() ? window.x11->icon.ptr() : window.xdg->icon.ptr();
 }
 
 static u64 window_focus_order(WindowRef const& window)

@@ -39,6 +39,13 @@ fi
 WS="$SDE_ROOT/build/tools/ext-workspace-test"
 [[ -x "$WS" ]] || "$SDE_ROOT/scripts/build-tools.sh" >/dev/null 2>&1 || true
 
+# An X11 client that sets _NET_WM_ICON (xterm/xmessage do not).
+XICON="$TOOLS_BUILD/x11-icon-test"
+if command -v cc >/dev/null && pkg-config --exists xcb xcb-ewmh; then
+    mkdir -p "$TOOLS_BUILD"
+    cc -O2 "$SDE_ROOT/tools/x11-icon-test.c" $(pkg-config --cflags --libs xcb xcb-ewmh) -o "$XICON" 2>/dev/null || true
+fi
+
 fail=0
 
 run_case() {
@@ -91,6 +98,28 @@ if [[ -x "$VIT" ]]; then
     fi
 else
     echo "  note: virtual-input harness unavailable; skipping the Alt-Tab check"
+fi
+# _NET_WM_ICON -> Gfx::Bitmap -> Taskbar/WM, and WM_CLASS.
+if [[ -x "$XICON" && -n "$DISP" ]]; then
+    env -u WAYLAND_DISPLAY DISPLAY="$DISP" "$XICON" >/dev/null 2>&1 &
+    for _ in $(seq 1 40); do grep -qE "X11 window '[^']*' icon 16x16" "$R/comp.log" && break; sleep 0.1; done
+    if grep -qE "X11 window '[^']*' icon 16x16" "$R/comp.log"; then
+        echo "  ok: the X11 _NET_WM_ICON was fetched (16x16)"
+    else
+        echo "  FAIL: the X11 window icon was not fetched"; fail=1
+    fi
+    if grep -qE "WM: X11 window [0-9]+ icon 16x16" "$R/comp.log"; then
+        echo "  ok: the X11 window icon was reported to the WindowManager"
+    else
+        echo "  FAIL: the X11 icon was not reported to the WM"; fail=1
+    fi
+    if grep -q "class='XIconTest'" "$R/comp.log"; then
+        echo "  ok: WM_CLASS was read ('XIconTest')"
+    else
+        echo "  FAIL: WM_CLASS was not read"; fail=1
+    fi
+else
+    echo "  note: x11-icon-test unavailable; skipping the icon/class check"
 fi
 # X11 windows join the workspace grid (docs/20 item 2): they map on the current
 # stack and hide/show with it.

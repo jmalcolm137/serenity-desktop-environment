@@ -88,6 +88,10 @@ extern "C" {
 // rename it for the duration of the include (we never read that field).
 #define class class_
 #include <wlr/xwayland/xwayland.h>
+
+// Read wlr_xwayland_surface::class (a C++ keyword) while the define is in scope.
+static char const* xwayland_surface_class(wlr_xwayland_surface* surface) { return surface->class; }
+
 #undef class
 #include <wlr/types/wlr_primary_selection_v1.h>
 #include <wlr/types/wlr_data_control_v1.h>
@@ -201,6 +205,10 @@ static X11Toplevel* x11_toplevel_for_wlr_surface(Server& server, wlr_surface* su
 static bool x11_surface_at(Server& server, double lx, double ly, wlr_surface** surface, double* sx, double* sy);
 static void focus_x11_toplevel(Server& server, X11Toplevel* toplevel);
 static void x11_begin_interactive(X11Toplevel& toplevel, CursorMode mode, uint32_t edges);
+// _NET_WM_ICON (fetch into a Gfx::Bitmap) and WM_CLASS (app identity); see
+// docs/20-xwayland-next-steps.md item 3.
+static void x11_fetch_icon(X11Toplevel& toplevel);
+static void x11_update_class(X11Toplevel& toplevel);
 // X11 server-side decoration frames (R5).
 static void x11_update_frame(X11Toplevel& toplevel);
 static bool handle_x11_frame_press(Server& server, uint32_t button);
@@ -2207,6 +2215,9 @@ static void x11_surface_map(wl_listener* listener, void*)
     WindowManager::on_x11_toplevel_mapped(*toplevel);
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
     x11_update_frame(*toplevel);
+    // WM_CLASS / _NET_WM_ICON may have been set before we attached the listeners.
+    x11_update_class(*toplevel);
+    x11_fetch_icon(*toplevel);
     dbgln("WindowServer: X11 window mapped '{}' at {},{}", toplevel->xsurface->title ? toplevel->xsurface->title : "", toplevel->xsurface->x, toplevel->xsurface->y);
     // Override-redirect windows (menus, tooltips) are unmanaged: no frame, no
     // focus, no Taskbar entry.
@@ -2313,6 +2324,82 @@ static void x11_set_title(wl_listener* listener, void*)
         WindowManager::emit_window_state(*toplevel);
 }
 
+// WM_CLASS (res_name/res_class): the app identity, used for grouping. Kept on the
+// toplevel so the WM layer needs no wlroots/xcb types.
+static void x11_update_class(X11Toplevel& toplevel)
+{
+    auto* xsurface = toplevel.xsurface;
+    char const* instance = xsurface->instance;
+    char const* cls = xwayland_surface_class(xsurface);
+    toplevel.wm_instance = ByteString { instance ? StringView { instance, strlen(instance) } : StringView { } };
+    toplevel.wm_class = ByteString { cls ? StringView { cls, strlen(cls) } : StringView { } };
+    dbgln("WindowServer: X11 window {} class='{}' instance='{}'", toplevel.wm_id, toplevel.wm_class, toplevel.wm_instance);
+}
+
+static void x11_set_class(wl_listener* listener, void*)
+{
+    X11Toplevel* toplevel = nullptr;
+    toplevel = wl_container_of(listener, toplevel, set_class);
+    x11_update_class(*toplevel);
+}
+
+// _NET_WM_ICON: wlroots exposes the property (wlr_xwayland_surface_fetch_icon);
+// pick a frame and wrap it in a Gfx::Bitmap so the Taskbar button and the Alt-Tab
+// switcher can draw it. _NET_WM_ICON pixels are 0xAARRGGBB, i.e. B,G,R,A in
+// memory (little-endian), which is exactly BitmapFormat::BGRA8888.
+static void x11_fetch_icon(X11Toplevel& toplevel)
+{
+    if (!toplevel.xsurface)
+        return;
+
+    xcb_ewmh_get_wm_icon_reply_t reply;
+    if (!wlr_xwayland_surface_fetch_icon(toplevel.xsurface, &reply))
+        return;
+
+    unsigned best_width = 0;
+    unsigned best_height = 0;
+    uint32_t const* best_pixels = nullptr;
+    int best_rank = -1;
+    auto it = xcb_ewmh_get_wm_icon_iterator(&reply);
+    while (it.rem > 0) {
+        unsigned const w = it.width;
+        unsigned const h = it.height;
+        int rank;
+        if (w == 16 && h == 16)
+            rank = 1 << 20; // the Taskbar/switcher size
+        else if (w <= 64 && h <= 64)
+            rank = static_cast<int>(w * h);
+        else
+            rank = 0;
+        if (it.data && rank > best_rank) {
+            best_rank = rank;
+            best_width = w;
+            best_height = h;
+            best_pixels = it.data;
+        }
+        xcb_ewmh_get_wm_icon_next(&it);
+    }
+
+    if (best_pixels && best_width > 0 && best_height > 0) {
+        if (auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { static_cast<int>(best_width), static_cast<int>(best_height) }); !bitmap.is_error()) {
+            auto& created = *bitmap.value();
+            for (unsigned y = 0; y < best_height; ++y)
+                memcpy(created.scanline(static_cast<int>(y)), best_pixels + static_cast<size_t>(y) * best_width, static_cast<size_t>(best_width) * 4);
+            toplevel.icon = bitmap.release_value();
+            dbgln("WindowServer: X11 window '{}' icon {}x{} (wm_id={})", toplevel.title, best_width, best_height, toplevel.wm_id);
+            WindowManager::emit_window_icon(toplevel);
+        }
+    }
+    xcb_ewmh_get_wm_icon_reply_wipe(&reply);
+}
+
+static void x11_set_icon(wl_listener* listener, void*)
+{
+    X11Toplevel* toplevel = nullptr;
+    toplevel = wl_container_of(listener, toplevel, set_icon);
+    x11_fetch_icon(*toplevel);
+}
+
 static void server_new_xwayland_surface(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
@@ -2341,6 +2428,13 @@ static void server_new_xwayland_surface(wl_listener* listener, void* data)
     wl_signal_add(&xsurface->events.request_activate, &toplevel->request_activate);
     toplevel->set_title.notify = x11_set_title;
     wl_signal_add(&xsurface->events.set_title, &toplevel->set_title);
+    toplevel->set_class.notify = x11_set_class;
+    wl_signal_add(&xsurface->events.set_class, &toplevel->set_class);
+    toplevel->set_icon.notify = x11_set_icon;
+    wl_signal_add(&xsurface->events.set_icon, &toplevel->set_icon);
+
+    // WM_CLASS may already be set by the time we associate.
+    x11_update_class(*toplevel);
 
     server->x11_toplevels.append(move(toplevel));
 }
