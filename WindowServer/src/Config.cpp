@@ -26,6 +26,7 @@ static Tiling g_tiling;
 static Focus g_focus;
 static Effects g_effects;
 static Output g_output;
+static Log g_log;
 static Vector<OutputSettings> g_outputs;
 static unsigned g_main_screen { 0 };
 static Input g_input;
@@ -269,6 +270,15 @@ void load()
         if (g_output.renderer != "auto" && g_output.renderer != "gles2" && g_output.renderer != "vulkan" && g_output.renderer != "pixman") {
             g_diagnostics.append(ByteString::formatted("[Output] Renderer='{}' invalid (expected auto|gles2|vulkan|pixman)", g_output.renderer));
             g_output.renderer = {};
+        }
+    }
+
+    g_log.level = read_entry(user, defaults, "Log"sv, "Level"sv);
+    if (!g_log.level.is_empty()) {
+        // R6/N8: the compositor's verbosity (see main.cpp).
+        if (g_log.level != "error" && g_log.level != "warn" && g_log.level != "info" && g_log.level != "debug") {
+            g_diagnostics.append(ByteString::formatted("[Log] Level='{}' invalid (expected error|warn|info|debug)", g_log.level));
+            g_log.level = {};
         }
     }
 
@@ -673,6 +683,11 @@ Effects const& effects()
 Output const& output()
 {
     return g_output;
+}
+
+Log const& log()
+{
+    return g_log;
 }
 
 Vector<ByteString> const& applet_order()

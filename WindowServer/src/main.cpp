@@ -124,6 +124,48 @@ extern "C" {
 
 namespace {
 
+// R6/N8: the compositor's verbosity ([Log] Level in WindowServer.ini, overridden
+// by SDE_LOG_LEVEL). It sets wlroots' log level and gates our own messages.
+enum class LogLevel { Error = 0, Warn = 1, Info = 2, Debug = 3 };
+static LogLevel g_log_level { LogLevel::Error };
+
+static wlr_log_importance wlr_importance_for(LogLevel level)
+{
+    switch (level) {
+    case LogLevel::Error:
+    case LogLevel::Warn: // wlroots has no separate warn level
+        return WLR_ERROR;
+    case LogLevel::Info:
+        return WLR_INFO;
+    case LogLevel::Debug:
+        return WLR_DEBUG;
+    }
+    return WLR_ERROR;
+}
+
+static Optional<LogLevel> log_level_from_string(StringView name)
+{
+    if (name == "error"sv)
+        return LogLevel::Error;
+    if (name == "warn"sv)
+        return LogLevel::Warn;
+    if (name == "info"sv)
+        return LogLevel::Info;
+    if (name == "debug"sv)
+        return LogLevel::Debug;
+    return {};
+}
+
+static bool should_log(LogLevel level) { return static_cast<int>(level) <= static_cast<int>(g_log_level); }
+
+static void apply_log_level(LogLevel level, StringView name)
+{
+    g_log_level = level;
+    wlr_log_init(wlr_importance_for(level), nullptr);
+    if (should_log(LogLevel::Info))
+        dbgln("WindowServer: log level '{}'", name);
+}
+
 // Tell the client where its window actually is (the compositor places it).
 static void toplevel_report_position(Toplevel& toplevel);
 
@@ -3788,6 +3830,11 @@ static ErrorOr<void> initialize_gfx()
     // The compositor's own configuration (WindowServer.ini) lives beside the
     // wallpaper/theme state; load it now and reload on change.
     Config::load();
+    // R6/N8: apply [Log] Level unless SDE_LOG_LEVEL already overrode it.
+    if (!getenv("SDE_LOG_LEVEL") && !Config::log().level.is_empty()) {
+        if (auto level = log_level_from_string(Config::log().level.view()); level.has_value())
+            apply_log_level(*level, Config::log().level.view());
+    }
     // R4.5: the persisted output layout (screenlayout.ini) is applied as outputs
     // are created (server_new_output).
     Config::load_outputs();
@@ -4063,6 +4110,13 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
 {
     wlr_log_init(WLR_ERROR, nullptr);
     install_crash_report_handler();
+    // R6/N8: SDE_LOG_LEVEL overrides [Log] Level (which is applied once the
+    // config loads).
+    if (auto const* env_level = getenv("SDE_LOG_LEVEL"); env_level && *env_level) {
+        StringView env_level_view { env_level, strlen(env_level) };
+        if (auto level = log_level_from_string(env_level_view); level.has_value())
+            apply_log_level(*level, env_level_view);
+    }
 
     StringView startup_command;
     StringView socket_name;
@@ -4090,6 +4144,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
             outln("WindowGeometry={}", Config::effects().window_geometry);
             outln("[Output]");
             outln("DefaultScale={}", Config::output().default_scale);
+            outln("Renderer={}", Config::output().renderer.is_empty() ? "auto"sv : Config::output().renderer.view());
             outln("[Input]");
             outln("AccelMin={}", Config::input_ranges().accel_min);
             outln("AccelMax={}", Config::input_ranges().accel_max);
@@ -4114,6 +4169,8 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
             outln("[Keybindings]");
             for (size_t i = 0; i < Config::action_names().size(); ++i)
                 outln("{}={}", Config::action_names()[i], Config::binding_text(static_cast<Config::Action>(i)));
+            outln("[Log]");
+            outln("Level={}", Config::log().level.is_empty() ? "error"sv : Config::log().level.view());
         }
         for (auto const& diagnostic : Config::diagnostics())
             warnln("sde-config: {}", diagnostic);

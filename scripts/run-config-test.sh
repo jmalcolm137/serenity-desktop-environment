@@ -36,6 +36,8 @@ check "EdgeThreshold=48" "$defaults"
 check "FollowsMouse=false" "$defaults"
 check "WindowGeometry=true" "$defaults"
 check "DefaultScale=0" "$defaults"
+check "Renderer=auto" "$defaults"
+check "Level=error" "$defaults"
 check "SwitchWorkspaceRight=Ctrl+Alt+Right" "$defaults"
 check "Lock=Super+L" "$defaults"
 
@@ -84,6 +86,26 @@ else
 fi
 sde_config set Keybindings SwitchWorkspaceRight Ctrl+Alt+Right >/dev/null
 
+# R6/N5, R6/N8: the renderer and log level are validated too.
+sde_config set Output Renderer bogus >/dev/null
+if sde_config validate >"$RUNTIME/invalid-renderer.log" 2>&1; then
+    echo "  FAIL: invalid renderer accepted"
+    fail=1
+else
+    echo "  ok: invalid renderer rejected"
+    check "Renderer='bogus' invalid (expected auto|gles2|vulkan|pixman)" "$(cat "$RUNTIME/invalid-renderer.log")"
+fi
+sde_config set Output Renderer auto >/dev/null
+sde_config set Log Level bogus >/dev/null
+if sde_config validate >"$RUNTIME/invalid-loglevel.log" 2>&1; then
+    echo "  FAIL: invalid log level accepted"
+    fail=1
+else
+    echo "  ok: invalid log level rejected"
+    check "Level='bogus' invalid (expected error|warn|info|debug)" "$(cat "$RUNTIME/invalid-loglevel.log")"
+fi
+sde_config set Log Level error >/dev/null
+
 echo "=== (D) live reload ==="
 sock="sde-config-$$"
 env -u WAYLAND_DISPLAY -u DISPLAY \
@@ -111,6 +133,26 @@ check "workspaces 4x2" "$(cat "$RUNTIME/comp.log")"
 pkill -P "$COMP_PID" 2>/dev/null || true
 kill "$COMP_PID" 2>/dev/null || true
 wait "$COMP_PID" 2>/dev/null || true
+
+echo "=== (E) log level: SDE_LOG_LEVEL overrides the config (R6/N8) ==="
+sock_log="sde-config-log-$$"
+env -u WAYLAND_DISPLAY -u DISPLAY \
+    WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
+    SDE_LOG_LEVEL=info \
+    SDE_STATE_DIR="$RUNTIME" \
+    SDE_WM_PORTAL_PATH="$RUNTIME/wm-log" \
+    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
+    LD_LIBRARY_PATH="$BUILD/lib" \
+    "$COMP" -n "$sock_log" > "$RUNTIME/log-level.log" 2>&1 &
+LOG_PID=$!
+for _ in $(seq 1 80); do
+    [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$sock_log" ]] && break
+    sleep 0.1
+done
+pkill -P "$LOG_PID" 2>/dev/null || true
+kill "$LOG_PID" 2>/dev/null || true
+wait "$LOG_PID" 2>/dev/null || true
+check "log level 'info'" "$(cat "$RUNTIME/log-level.log")"
 
 if [[ "$fail" -ne 0 ]]; then
     echo "==> config test FAILED"

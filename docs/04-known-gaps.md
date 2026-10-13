@@ -352,11 +352,14 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   (its connection is dropped) while the compositor keeps running and a fresh
   client still maps its window.
 
-- **Crash report (R6/N8).** A fatal signal (SIGSEGV/SIGABRT/SIGBUS/SIGILL/SIGFPE)
-  appends the signal name and a backtrace to `$SDE_CRASH_LOG` (default
-  `$XDG_CONFIG_HOME/sde/WindowServer-crash.log`) and then re-raises, so the crash
-  is diagnosable and the supervisor still restarts the session. Covered by
-  `run-headless-test.sh` (SIGABRT writes the report; the process still exits 134).
+- **Crash report & configurable log level (R6/N8).** A fatal signal
+  (SIGSEGV/SIGABRT/SIGBUS/SIGILL/SIGFPE) appends the signal name and a backtrace to
+  `$SDE_CRASH_LOG` (default `$XDG_CONFIG_HOME/sde/WindowServer-crash.log`) and then
+  re-raises, so the crash is diagnosable and the supervisor still restarts the
+  session. Verbosity is configurable via `[Log] Level` (`error`/`warn`/`info`/
+  `debug`; `SDE_LOG_LEVEL` overrides), which sets wlroots' log level. Covered by
+  `run-headless-test.sh` (SIGABRT writes the report; exit 134) and
+  `run-config-test.sh` (validation + `SDE_LOG_LEVEL`).
 
 - **Profiler (Development ▸ Profiler).** SerenityOS's kernel profiling interface
   (`profiling_enable(pid, mask)` + `/proc/<pid>/perf_events`) has no Linux
