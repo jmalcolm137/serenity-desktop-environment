@@ -547,6 +547,7 @@ struct Server {
     wl_listener seat_request_cursor { };
     wl_listener seat_pointer_focus_change { };
     wl_listener seat_request_set_selection { };
+    wl_listener seat_request_set_primary_selection { };
     wl_listener new_virtual_keyboard { };
     wl_listener new_virtual_pointer { };
     wl_listener ext_workspace_commit { };

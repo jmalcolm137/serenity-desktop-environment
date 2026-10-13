@@ -93,6 +93,7 @@ extern "C" {
 static char const* xwayland_surface_class(wlr_xwayland_surface* surface) { return surface->class; }
 
 #undef class
+#include <wlr/types/wlr_primary_selection.h>
 #include <wlr/types/wlr_primary_selection_v1.h>
 #include <wlr/types/wlr_data_control_v1.h>
 #include <wlr/types/wlr_ext_data_control_v1.h>
@@ -1667,6 +1668,16 @@ static void seat_request_set_selection(wl_listener* listener, void* data)
     server = wl_container_of(listener, server, seat_request_set_selection);
     auto* event = static_cast<wlr_seat_request_set_selection_event*>(data);
     wlr_seat_set_selection(server->seat, event->source, event->serial);
+}
+
+// PRIMARY selection (zwp_primary_selection_v1 / gtk): forward it to the seat so
+// wlroots' XWM can bridge it to X11 PRIMARY and vice-versa (docs/20 item 5).
+static void seat_request_set_primary_selection(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, seat_request_set_primary_selection);
+    auto* event = static_cast<wlr_seat_request_set_primary_selection_event*>(data);
+    wlr_seat_set_primary_selection(server->seat, event->source, event->serial);
 }
 
 // --- input device configuration (R4.6) ------------------------------------
@@ -5886,6 +5897,8 @@ static ErrorOr<void> initialize(Server& server)
     wl_signal_add(&server.seat->pointer_state.events.focus_change, &server.seat_pointer_focus_change);
     server.seat_request_set_selection.notify = seat_request_set_selection;
     wl_signal_add(&server.seat->events.request_set_selection, &server.seat_request_set_selection);
+    server.seat_request_set_primary_selection.notify = seat_request_set_primary_selection;
+    wl_signal_add(&server.seat->events.request_set_primary_selection, &server.seat_request_set_primary_selection);
     // R5: explicit drag-and-drop (data-device DnD between windows).
     server.seat_request_start_drag.notify = seat_request_start_drag;
     wl_signal_add(&server.seat->events.request_start_drag, &server.seat_request_start_drag);
