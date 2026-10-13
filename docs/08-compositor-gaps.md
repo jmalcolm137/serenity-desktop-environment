@@ -92,8 +92,12 @@ table.
 - **Clipboard completeness (G4).** `set_selection`, **primary selection**
   (`zwp_primary_selection_device_manager_v1`) and both **data-control** variants
   (`zwlr_data_control_manager_v1`, `ext_data_control_manager_v1` — for clipboard
-  managers such as the ClipboardHistory applet) are served; full **drag-and-drop**
-  (gestures, drag icon, enter/leave choreography) remains.
+  managers such as the ClipboardHistory applet) are served. **Explicit
+  drag-and-drop** (data-device DnD between windows) is served too: the compositor
+  accepts a client's drag, draws its icon above every layer, and routes
+  enter/motion/drop to the surface under the cursor. The port bridges LibGUI's
+  `DragOperation` onto it (source and target), so Serenity apps interoperate with
+  standard Wayland clients. Remaining: touch-drag polish and pointer-gestures.
 - **Input protocols (G3, G7).** `keyboard-shortcuts-inhibit`, `relative-pointer`
   and `pointer-constraints` (lock/confine, enforced in the cursor-motion path) are
   served; `pointer-gestures` remains — needed for touchpad gestures and remote

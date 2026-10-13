@@ -982,6 +982,82 @@ static bool surface_global_origin(Server& server, wlr_surface* surface, double* 
     return false;
 }
 
+// Explicit drag-and-drop (data-device DnD between windows). A client asks the
+// seat to start a drag; we validate and accept it, wlroots installs the pointer
+// grab that turns our normal pointer notifications into wl_data_device
+// enter/motion/drop, and we draw the drag icon above everything, following the
+// cursor.
+static void destroy_drag_icon_node(Server& server)
+{
+    if (server.drag_icon_node) {
+        wlr_scene_node_destroy(server.drag_icon_node);
+        server.drag_icon_node = nullptr;
+    }
+}
+
+static void drag_icon_destroyed(wl_listener* listener, void*)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, drag_icon_destroy);
+    destroy_drag_icon_node(*server);
+    wl_list_remove(&listener->link);
+}
+
+static void drag_destroyed(wl_listener* listener, void*)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, drag_destroy);
+    destroy_drag_icon_node(*server);
+    server->active_drag = nullptr;
+    server->drag_target = nullptr;
+    // wlroots asserts that no listeners remain on the signal after it is emitted.
+    wl_list_remove(&listener->link);
+    dbgln("WindowServer: drag ended");
+}
+
+static void seat_start_drag(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, seat_start_drag);
+    auto* drag = static_cast<wlr_drag*>(data);
+    server->active_drag = drag;
+    server->drag_target = nullptr;
+    server->drag_destroy.notify = drag_destroyed;
+    wl_signal_add(&drag->events.destroy, &server->drag_destroy);
+    if (drag->icon && drag->icon->surface && server->drag_icon_tree) {
+        auto* scene = wlr_scene_surface_create(server->drag_icon_tree, drag->icon->surface);
+        server->drag_icon_node = &scene->buffer->node;
+        wlr_scene_node_set_position(server->drag_icon_node, static_cast<int>(server->cursor->x), static_cast<int>(server->cursor->y));
+        server->drag_icon_destroy.notify = drag_icon_destroyed;
+        wl_signal_add(&drag->icon->events.destroy, &server->drag_icon_destroy);
+    }
+    dbgln("WindowServer: drag started (icon={})", server->drag_icon_node ? "yes" : "no");
+}
+
+static void seat_request_start_drag(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, seat_request_start_drag);
+    auto* event = static_cast<wlr_seat_request_start_drag_event*>(data);
+    // Validate the grab serial: a client must not be able to start a drag at will.
+    if (event->drag->grab_type == WLR_DRAG_GRAB_KEYBOARD_TOUCH) {
+        wlr_touch_point* point = nullptr;
+        if (!wlr_seat_validate_touch_grab_serial(server->seat, event->origin, event->serial, &point)) {
+            if (event->drag->source)
+                wlr_data_source_destroy(event->drag->source);
+            return;
+        }
+        wlr_seat_start_touch_drag(server->seat, event->drag, event->serial, point);
+    } else {
+        if (!wlr_seat_validate_pointer_grab_serial(server->seat, event->origin, event->serial)) {
+            if (event->drag->source)
+                wlr_data_source_destroy(event->drag->source);
+            return;
+        }
+        wlr_seat_start_pointer_drag(server->seat, event->drag, event->serial);
+    }
+}
+
 static void process_cursor_motion(Server& server, uint32_t time)
 {
     // While the session is locked, only the lock surface receives input.
@@ -994,6 +1070,28 @@ static void process_cursor_motion(Server& server, uint32_t time)
             wlr_seat_pointer_notify_enter(server.seat, lock->lock_surface->surface, x, y);
             wlr_seat_pointer_notify_motion(server.seat, time, x, y);
         }
+        return;
+    }
+
+    // Explicit drag-and-drop: route motion to the surface under the cursor (the
+    // drag grab turns it into wl_data_device enter/motion) and follow the cursor
+    // with the drag icon.
+    if (server.active_drag) {
+        double dx = 0;
+        double dy = 0;
+        wlr_surface* target = nullptr;
+        toplevel_at(server, server.cursor->x, server.cursor->y, &target, &dx, &dy);
+        if (target != server.drag_target) {
+            server.drag_target = target;
+            if (target)
+                wlr_seat_pointer_notify_enter(server.seat, target, dx, dy);
+            else
+                wlr_seat_pointer_clear_focus(server.seat);
+        } else if (target) {
+            wlr_seat_pointer_notify_motion(server.seat, time, dx, dy);
+        }
+        if (server.drag_icon_node)
+            wlr_scene_node_set_position(server.drag_icon_node, static_cast<int>(server.cursor->x), static_cast<int>(server.cursor->y));
         return;
     }
 
@@ -4237,6 +4335,8 @@ static ErrorOr<void> initialize(Server& server)
     server.windows_tree = wlr_scene_tree_create(&server.scene->tree);
     server.top_tree = wlr_scene_tree_create(&server.scene->tree);
     server.overlay_tree = wlr_scene_tree_create(&server.scene->tree);
+    // Drag icons render above every layer (R5 explicit drag-and-drop).
+    server.drag_icon_tree = wlr_scene_tree_create(&server.scene->tree);
     wlr_xdg_output_manager_v1_create(server.display, server.output_layout);
 
     server.new_output.notify = server_new_output;
@@ -4341,6 +4441,11 @@ static ErrorOr<void> initialize(Server& server)
     wl_signal_add(&server.seat->pointer_state.events.focus_change, &server.seat_pointer_focus_change);
     server.seat_request_set_selection.notify = seat_request_set_selection;
     wl_signal_add(&server.seat->events.request_set_selection, &server.seat_request_set_selection);
+    // R5: explicit drag-and-drop (data-device DnD between windows).
+    server.seat_request_start_drag.notify = seat_request_start_drag;
+    wl_signal_add(&server.seat->events.request_start_drag, &server.seat_request_start_drag);
+    server.seat_start_drag.notify = seat_start_drag;
+    wl_signal_add(&server.seat->events.start_drag, &server.seat_start_drag);
 
     // R5: the native-app compatibility surface. Most of these protocols are fully
     // implemented by wlroots, so the compositor only advertises them; relative

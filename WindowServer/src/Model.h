@@ -64,9 +64,11 @@ struct wlr_scene;
 struct wlr_scene_buffer;
 struct wlr_scene_layer_surface_v1;
 struct wlr_scene_output_layout;
+struct wlr_scene_node;
 struct wlr_scene_surface;
 struct wlr_scene_tree;
 struct wlr_seat;
+struct wlr_drag;
 struct wlr_session_lock_manager_v1;
 struct wlr_session_lock_surface_v1;
 struct wlr_session_lock_v1;
@@ -388,6 +390,16 @@ struct Server {
     wlr_pointer_constraints_v1* pointer_constraints { nullptr };
     wlr_pointer_constraint_v1* active_pointer_constraint { nullptr };
     wl_listener new_pointer_constraint { };
+    // Explicit drag-and-drop (data-device DnD between windows): the active drag,
+    // the surface it is currently over, and the scene node drawing its icon.
+    wlr_drag* active_drag { nullptr };
+    wlr_surface* drag_target { nullptr };
+    wlr_scene_tree* drag_icon_tree { nullptr };
+    wlr_scene_node* drag_icon_node { nullptr };
+    wl_listener seat_request_start_drag { };
+    wl_listener seat_start_drag { };
+    wl_listener drag_destroy { };
+    wl_listener drag_icon_destroy { };
     // Virtual input (wlr virtual-keyboard / virtual-pointer), so headless tests
     // can script keyboard and pointer events. See docs/09 §2.4.
     wlr_virtual_keyboard_manager_v1* virtual_keyboard_manager { nullptr };
