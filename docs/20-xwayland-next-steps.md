@@ -96,10 +96,24 @@ grid and icon paths) hoist into shared helpers as those land.
    to the X client, which positions override-redirect/popups itself.)
 8. ~~**`_NET_WM_STRUT` workarea**~~ — **done** (`47f794f`): the outputs' usable
    areas are reported to Xwayland (`wlr_xwayland_set_workareas` / `_NET_WORKAREA`).
-9. **X11 ↔ Wayland drag-and-drop** — the XDND ↔ `wl_data_device` bridge, the X11
-   counterpart of the compositor DnD already shipped.
-10. **Focus-stealing prevention / `_NET_ACTIVE_WINDOW`** — proper attention policy
-    for X11 clients requesting activation.
+9. **X11 ↔ Wayland drag-and-drop** — **blocked on wlroots 0.21 (unreleased)**: the
+   pinned wlroots 0.20 implements no XDND (only the atom names); XDND lands in
+   wlroots `master` (0.21.0-dev, `xwayland/selection/dnd.c`) and is wired into the
+   seat's drag, so it needs **no** compositor changes once bumped.
+10. **Focus-stealing prevention / `_NET_ACTIVE_WINDOW`** — **limited by wlroots**:
+    its `request_activate` signal carries no timestamp/source, so a timestamp-based
+    policy (KWin's) is not possible; only a coarse "recent input" heuristic is,
+    which would misfire on user-launched windows. Left for the wlroots 0.21 bump.
+
+## wlroots version
+
+SDE pins the wlroots **release** (`0.20.2` via `scripts/fetch-wlroots.sh`) to
+match what Arch Linux ships — deliberately a release, not the `master` dev
+branch. wlroots `master` (`0.21.0-dev`, unreleased) adds **XDND**,
+`wp-pointer-warp-v1`, `ext-background-effect-v1`, `xdg-toplevel-icon-v1` and
+`xdg-system-bell-v1`; bump to the 0.21 **release** when it lands and those items
+unblock together. `xdg-toplevel-drag`, `wp-fifo-v1` and
+`xwayland-keyboard-grab-v1` are in neither 0.20 nor master.
 
 ## Testing notes
 
