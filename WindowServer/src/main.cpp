@@ -199,6 +199,7 @@ static void arrange_layers(Server&, wlr_output*);
 static Output* output_for(Server&, wlr_output*);
 static void output_manager_send_configuration(Server&);
 static void persist_screen_layout(Server&);
+static void schedule_persist_screen_layout(Server&);
 static i32 g_next_wm_id { 1 };
 static u64 g_focus_order_counter { 0 };
 static Gfx::Palette* g_palette { nullptr };
@@ -1714,8 +1715,9 @@ static void server_new_output(wl_listener* listener, void* data)
     update_desktop_background(*server, *server->outputs.last());
     arrange_layers(*server, wlr_output);
     output_manager_send_configuration(*server);
-    // R4.5: keep screenlayout.ini in sync with the live layout.
-    persist_screen_layout(*server);
+    // R4.5: keep screenlayout.ini in sync with the live layout (coalesced so a
+    // startup burst of outputs writes the complete layout once).
+    schedule_persist_screen_layout(*server);
     // R5: the InputCapture zones are the outputs.
     InputCapture::on_outputs_changed(*server);
 }
@@ -2962,6 +2964,32 @@ static void server_new_toplevel_decoration(wl_listener* listener, void* data)
 
 // R4.5: persist the live output layout to screenlayout.ini so it survives a
 // restart and is visible to DisplaySettings (via the port's get_screen_layout).
+// True if the live layout already matches what screenlayout.ini holds (matched by
+// device), so persisting would be a no-op. Skipping avoids pointless writes that
+// race with a live edit, re-trigger the outputs watcher, and (during startup) could
+// clobber the saved entries.
+static bool live_layout_matches_loaded(Vector<Config::OutputSettings> const& computed)
+{
+    auto const& loaded = Config::outputs();
+    if (computed.size() != loaded.size())
+        return false;
+    for (auto const& entry : computed) {
+        bool found = false;
+        for (auto const& existing : loaded) {
+            if (existing.device == entry.device && existing.mode == entry.mode
+                && existing.left == entry.left && existing.top == entry.top
+                && existing.width == entry.width && existing.height == entry.height
+                && existing.scale == entry.scale) {
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+            return false;
+    }
+    return true;
+}
+
 static void persist_screen_layout(Server& server)
 {
     Vector<Config::OutputSettings> settings;
@@ -2985,7 +3013,26 @@ static void persist_screen_layout(Server& server)
         if (output.output == server.primary_output)
             main_index = index;
     }
+    if (live_layout_matches_loaded(settings))
+        return;
     Config::set_outputs(move(settings), main_index);
+}
+
+// Persist the layout, coalesced. Outputs are created in a burst at startup (and a
+// config edit can re-scale several at once); writing after each would clobber the
+// saved entries for outputs not yet present, and the outputs-file watcher would
+// then reload the truncated file and place the remaining outputs with add_auto
+// (the multi-output position bug). One short timer writes the settled layout once.
+static void schedule_persist_screen_layout(Server& server)
+{
+    static RefPtr<Core::Timer> timer;
+    static Server* target = nullptr;
+    target = &server;
+    timer = Core::Timer::create_single_shot(120, [] {
+        if (target)
+            persist_screen_layout(*target);
+    });
+    timer->start();
 }
 
 // R4.5: apply a saved screen entry (mode/scale/position) to a live output.
@@ -3058,7 +3105,7 @@ static void apply_output_scale(Server& server)
     }
     if (changed) {
         output_manager_send_configuration(server);
-        persist_screen_layout(server);
+        schedule_persist_screen_layout(server);
     }
 }
 
@@ -3127,7 +3174,7 @@ static void output_manager_apply_or_test(Server& server, wlr_output_configuratio
     if (!test) {
         output_manager_send_configuration(server);
         // R4.5: a monitor-layout change via zwlr_output_management_v1 is persisted.
-        persist_screen_layout(server);
+        schedule_persist_screen_layout(server);
     }
 }
 
