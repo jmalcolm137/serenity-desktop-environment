@@ -346,7 +346,8 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   region) — the only part wlroots leaves to the compositor.
   `pointer-gestures` and **touch** input (routed through the cursor with the drag
   icon following a touch point) are served, along with **switch** devices
-  (lid/tablet-mode). Pen/tablet (`tablet-v2`) and tablet-pad remain.
+  (lid/tablet-mode), **pen/tablet** (`zwp-tablet-v2`) and **tablet-pad**
+  (`zwp-tablet-pad-v2`).
   **Explicit drag-and-drop between windows is now
   served** (compositor-routed data-device DnD with a drag icon), and the port
   bridges LibGUI's `DragOperation` onto it both ways, so SerenityOS applications

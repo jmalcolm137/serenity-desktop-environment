@@ -7,6 +7,7 @@
 #pragma once
 
 #include <AK/ByteString.h>
+#include <AK/HashMap.h>
 #include <AK/NonnullOwnPtr.h>
 #include <AK/NonnullRefPtr.h>
 #include <AK/Optional.h>
@@ -61,6 +62,13 @@ struct wlr_keyboard_shortcuts_inhibit_manager_v1;
 struct wlr_pointer;
 struct wlr_pointer_gestures_v1;
 struct wlr_switch;
+struct wlr_tablet;
+struct wlr_tablet_tool;
+struct wlr_tablet_pad;
+struct wlr_tablet_manager_v2;
+struct wlr_tablet_v2_tablet;
+struct wlr_tablet_v2_tablet_tool;
+struct wlr_tablet_v2_tablet_pad;
 struct wlr_pointer_constraints_v1;
 struct wlr_pointer_constraint_v1;
 struct wlr_scene;
@@ -352,6 +360,17 @@ struct SwitchDevice {
     wl_listener destroy { };
 };
 
+// A tablet pad (express keys + ring/strip), forwarded as zwp_tablet_pad_v2.
+struct TabletPad {
+    Server* server { nullptr };
+    wlr_tablet_pad* pad { nullptr };
+    wlr_tablet_v2_tablet_pad* v2_pad { nullptr };
+    wl_listener button { };
+    wl_listener ring { };
+    wl_listener strip { };
+    wl_listener destroy { };
+};
+
 struct Decoration {
     Server* server { nullptr };
     Toplevel* toplevel { nullptr };
@@ -480,6 +499,15 @@ struct Server {
     Vector<NonnullOwnPtr<SwitchDevice>> switch_objects;
     // wp-pointer-gestures-v1: touchpad swipe/pinch/hold.
     wlr_pointer_gestures_v1* pointer_gestures { nullptr };
+    // zwp-tablet-v2 (pen/tablet): the manager plus the v2 tablet/tool wrappers.
+    wlr_tablet_manager_v2* tablet_manager { nullptr };
+    HashMap<u64, wlr_tablet_v2_tablet*> tablet_map;
+    HashMap<u64, wlr_tablet_v2_tablet_tool*> tablet_tool_map;
+    Vector<NonnullOwnPtr<TabletPad>> tablet_pads;
+    wl_listener tablet_tool_axis { };
+    wl_listener tablet_tool_proximity { };
+    wl_listener tablet_tool_tip { };
+    wl_listener tablet_tool_button { };
     Vector<NonnullOwnPtr<Decoration>> decorations;
     // serenity_window_manager resources, so the compositor can ask a client to
     // dismiss its menus (see maybe_dismiss_layer_menus).

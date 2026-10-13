@@ -83,6 +83,7 @@ check wp_tearing_control_manager_v1
 check zwp_relative_pointer_manager_v1
 check zwp_pointer_constraints_v1
 check zwp_pointer_gestures_v1
+check zwp_tablet_manager_v2
 check zwp_keyboard_shortcuts_inhibit_manager_v1
 check zxdg_exporter_v1
 check zxdg_importer_v1

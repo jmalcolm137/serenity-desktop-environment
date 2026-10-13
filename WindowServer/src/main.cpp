@@ -80,6 +80,9 @@ extern "C" {
 #include <wlr/types/wlr_pointer.h>
 #include <wlr/types/wlr_pointer_gestures_v1.h>
 #include <wlr/types/wlr_switch.h>
+#include <wlr/types/wlr_tablet_v2.h>
+#include <wlr/types/wlr_tablet_tool.h>
+#include <wlr/types/wlr_tablet_pad.h>
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_primary_selection_v1.h>
 #include <wlr/types/wlr_data_control_v1.h>
@@ -1779,6 +1782,170 @@ static void switch_destroy(wl_listener* listener, void*)
     remove_owned(device->server->switch_objects, device);
 }
 
+// zwp-tablet-v2 (pen/tablet). wlroots reports tool events through the cursor; the
+// compositor wraps each tablet/tool in its v2 counterpart and forwards surface
+// coordinates. The tool's position is normalised [0,1] over the output layout.
+static wlr_tablet_v2_tablet* v2_tablet_for(Server& server, wlr_tablet* tablet)
+{
+    if (!tablet || !server.tablet_manager)
+        return nullptr;
+    auto key = reinterpret_cast<u64>(tablet);
+    if (auto it = server.tablet_map.find(key); it != server.tablet_map.end())
+        return it->value;
+    auto* v2 = wlr_tablet_create(server.tablet_manager, server.seat, &tablet->base);
+    server.tablet_map.set(key, v2);
+    return v2;
+}
+
+static wlr_tablet_v2_tablet_tool* v2_tablet_tool_for(Server& server, wlr_tablet_tool* tool)
+{
+    if (!tool || !server.tablet_manager)
+        return nullptr;
+    auto key = reinterpret_cast<u64>(tool);
+    if (auto it = server.tablet_tool_map.find(key); it != server.tablet_tool_map.end())
+        return it->value;
+    auto* v2 = wlr_tablet_tool_create(server.tablet_manager, server.seat, tool);
+    server.tablet_tool_map.set(key, v2);
+    return v2;
+}
+
+static void tablet_tool_layout_position(Server& server, double x, double y, double* lx, double* ly)
+{
+    wlr_box box { };
+    wlr_output_layout_get_box(server.output_layout, nullptr, &box);
+    *lx = box.x + x * box.width;
+    *ly = box.y + y * box.height;
+}
+
+static void tablet_tool_axis(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, tablet_tool_axis);
+    auto* event = static_cast<wlr_tablet_tool_axis_event*>(data);
+    auto* tool = v2_tablet_tool_for(*server, event->tool);
+    if (!tool)
+        return;
+    if (event->updated_axes & (WLR_TABLET_TOOL_AXIS_X | WLR_TABLET_TOOL_AXIS_Y)) {
+        double lx = 0;
+        double ly = 0;
+        tablet_tool_layout_position(*server, event->x, event->y, &lx, &ly);
+        double sx = 0;
+        double sy = 0;
+        wlr_surface* surface = nullptr;
+        toplevel_at(*server, lx, ly, &surface, &sx, &sy);
+        wlr_tablet_v2_tablet_tool_notify_motion(tool, sx, sy);
+    }
+    if (event->updated_axes & WLR_TABLET_TOOL_AXIS_PRESSURE)
+        wlr_tablet_v2_tablet_tool_notify_pressure(tool, event->pressure);
+    if (event->updated_axes & WLR_TABLET_TOOL_AXIS_DISTANCE)
+        wlr_tablet_v2_tablet_tool_notify_distance(tool, event->distance);
+    if (event->updated_axes & (WLR_TABLET_TOOL_AXIS_TILT_X | WLR_TABLET_TOOL_AXIS_TILT_Y))
+        wlr_tablet_v2_tablet_tool_notify_tilt(tool, event->tilt_x, event->tilt_y);
+    if (event->updated_axes & WLR_TABLET_TOOL_AXIS_ROTATION)
+        wlr_tablet_v2_tablet_tool_notify_rotation(tool, event->rotation);
+    if (event->updated_axes & WLR_TABLET_TOOL_AXIS_SLIDER)
+        wlr_tablet_v2_tablet_tool_notify_slider(tool, event->slider);
+    if (event->updated_axes & WLR_TABLET_TOOL_AXIS_WHEEL)
+        wlr_tablet_v2_tablet_tool_notify_wheel(tool, event->wheel_delta, 0);
+    notify_activity(*server);
+}
+
+static void tablet_tool_proximity(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, tablet_tool_proximity);
+    auto* event = static_cast<wlr_tablet_tool_proximity_event*>(data);
+    auto* tool = v2_tablet_tool_for(*server, event->tool);
+    if (!tool)
+        return;
+    if (event->state == WLR_TABLET_TOOL_PROXIMITY_IN) {
+        double lx = 0;
+        double ly = 0;
+        tablet_tool_layout_position(*server, event->x, event->y, &lx, &ly);
+        double sx = 0;
+        double sy = 0;
+        wlr_surface* surface = nullptr;
+        if (auto* toplevel = toplevel_at(*server, lx, ly, &surface, &sx, &sy))
+            focus_toplevel(*server, toplevel);
+        wlr_tablet_v2_tablet_tool_notify_proximity_in(tool, v2_tablet_for(*server, event->tablet), surface);
+    } else {
+        wlr_tablet_v2_tablet_tool_notify_proximity_out(tool);
+    }
+    notify_activity(*server);
+}
+
+static void tablet_tool_tip(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, tablet_tool_tip);
+    auto* event = static_cast<wlr_tablet_tool_tip_event*>(data);
+    auto* tool = v2_tablet_tool_for(*server, event->tool);
+    if (!tool)
+        return;
+    if (event->state == WLR_TABLET_TOOL_TIP_DOWN)
+        wlr_tablet_v2_tablet_tool_notify_down(tool);
+    else
+        wlr_tablet_v2_tablet_tool_notify_up(tool);
+    notify_activity(*server);
+}
+
+static void tablet_tool_button(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, tablet_tool_button);
+    auto* event = static_cast<wlr_tablet_tool_button_event*>(data);
+    auto* tool = v2_tablet_tool_for(*server, event->tool);
+    if (!tool)
+        return;
+    wlr_tablet_v2_tablet_tool_notify_button(tool, event->button,
+        event->state == WLR_BUTTON_PRESSED ? ZWP_TABLET_PAD_V2_BUTTON_STATE_PRESSED
+                                           : ZWP_TABLET_PAD_V2_BUTTON_STATE_RELEASED);
+    notify_activity(*server);
+}
+
+// zwp-tablet-pad-v2: express keys and ring/strip controls.
+static void tablet_pad_button(wl_listener* listener, void* data)
+{
+    TabletPad* pad = nullptr;
+    pad = wl_container_of(listener, pad, button);
+    auto* event = static_cast<wlr_tablet_pad_button_event*>(data);
+    if (pad->v2_pad)
+        wlr_tablet_v2_tablet_pad_notify_button(pad->v2_pad, event->button, event->time_msec,
+            event->state == WLR_BUTTON_PRESSED ? ZWP_TABLET_PAD_V2_BUTTON_STATE_PRESSED
+                                               : ZWP_TABLET_PAD_V2_BUTTON_STATE_RELEASED);
+}
+
+static void tablet_pad_ring(wl_listener* listener, void* data)
+{
+    TabletPad* pad = nullptr;
+    pad = wl_container_of(listener, pad, ring);
+    auto* event = static_cast<wlr_tablet_pad_ring_event*>(data);
+    if (pad->v2_pad)
+        wlr_tablet_v2_tablet_pad_notify_ring(pad->v2_pad, event->ring, event->position,
+            event->source == WLR_TABLET_PAD_RING_SOURCE_FINGER, event->time_msec);
+}
+
+static void tablet_pad_strip(wl_listener* listener, void* data)
+{
+    TabletPad* pad = nullptr;
+    pad = wl_container_of(listener, pad, strip);
+    auto* event = static_cast<wlr_tablet_pad_strip_event*>(data);
+    if (pad->v2_pad)
+        wlr_tablet_v2_tablet_pad_notify_strip(pad->v2_pad, event->strip, event->position,
+            event->source == WLR_TABLET_PAD_STRIP_SOURCE_FINGER, event->time_msec);
+}
+
+static void tablet_pad_destroy(wl_listener* listener, void*)
+{
+    TabletPad* pad = nullptr;
+    pad = wl_container_of(listener, pad, destroy);
+    wl_list_remove(&pad->button.link);
+    wl_list_remove(&pad->ring.link);
+    wl_list_remove(&pad->strip.link);
+    wl_list_remove(&pad->destroy.link);
+    remove_owned(pad->server->tablet_pads, pad);
+}
+
 static void server_new_input(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
@@ -1854,6 +2021,27 @@ static void server_new_input(wl_listener* listener, void* data)
         switch_device->destroy.notify = switch_destroy;
         wl_signal_add(&device->events.destroy, &switch_device->destroy);
         server->switch_objects.append(move(switch_device));
+        break;
+    }
+    case WLR_INPUT_DEVICE_TABLET:
+        // Route tablet tool events through the cursor; the v2 wrappers are made
+        // lazily when the first event for a tool arrives.
+        wlr_cursor_attach_input_device(server->cursor, device);
+        break;
+    case WLR_INPUT_DEVICE_TABLET_PAD: {
+        auto pad = make<TabletPad>();
+        pad->server = server;
+        pad->pad = wlr_tablet_pad_from_input_device(device);
+        pad->v2_pad = server->tablet_manager ? wlr_tablet_pad_create(server->tablet_manager, server->seat, device) : nullptr;
+        pad->button.notify = tablet_pad_button;
+        wl_signal_add(&pad->pad->events.button, &pad->button);
+        pad->ring.notify = tablet_pad_ring;
+        wl_signal_add(&pad->pad->events.ring, &pad->ring);
+        pad->strip.notify = tablet_pad_strip;
+        wl_signal_add(&pad->pad->events.strip, &pad->strip);
+        pad->destroy.notify = tablet_pad_destroy;
+        wl_signal_add(&device->events.destroy, &pad->destroy);
+        server->tablet_pads.append(move(pad));
         break;
     }
     case WLR_INPUT_DEVICE_TOUCH:
@@ -4668,6 +4856,14 @@ static ErrorOr<void> initialize(Server& server)
     wl_signal_add(&server.cursor->events.touch_up, &server.touch_up);
     server.touch_cancel.notify = cursor_touch_cancel;
     wl_signal_add(&server.cursor->events.touch_cancel, &server.touch_cancel);
+    server.tablet_tool_axis.notify = tablet_tool_axis;
+    wl_signal_add(&server.cursor->events.tablet_tool_axis, &server.tablet_tool_axis);
+    server.tablet_tool_proximity.notify = tablet_tool_proximity;
+    wl_signal_add(&server.cursor->events.tablet_tool_proximity, &server.tablet_tool_proximity);
+    server.tablet_tool_tip.notify = tablet_tool_tip;
+    wl_signal_add(&server.cursor->events.tablet_tool_tip, &server.tablet_tool_tip);
+    server.tablet_tool_button.notify = tablet_tool_button;
+    wl_signal_add(&server.cursor->events.tablet_tool_button, &server.tablet_tool_button);
 
     server.new_input.notify = server_new_input;
     wl_signal_add(&server.backend->events.new_input, &server.new_input);
@@ -4711,6 +4907,7 @@ static ErrorOr<void> initialize(Server& server)
     wlr_fractional_scale_manager_v1_create(server.display, 1);
     server.relative_pointer_manager = wlr_relative_pointer_manager_v1_create(server.display);
     server.pointer_gestures = wlr_pointer_gestures_v1_create(server.display);
+    server.tablet_manager = wlr_tablet_v2_create(server.display);
     server.keyboard_shortcuts_inhibit = wlr_keyboard_shortcuts_inhibit_v1_create(server.display);
     server.pointer_constraints = wlr_pointer_constraints_v1_create(server.display);
     server.new_pointer_constraint.notify = new_pointer_constraint;
