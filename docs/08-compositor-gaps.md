@@ -28,9 +28,13 @@ until proven otherwise.
 R4 says "lock/power" but owns no mechanism. These belong with the session work,
 not R5/R6.
 
-- **logind/`libseat` contract (G6).** VT switching, DRM master handover,
-  device access, suspend/resume, lid, and multi-seat are left to
-  `wlr_backend_autocreate`; the plan does not say what SDE owns or how it fails.
+- **logind/`libseat` contract (G6) — mostly resolved.** VT switching, DRM master
+  handover and device access stay with `libseat`/`wlr_backend_autocreate` (by
+  design), but SDE now owns the seat *identity* and the failure story: the
+  session derives/exports `XDG_SEAT`/`XDG_VTNR`, namespaces its runtime per seat
+  (Wayland socket, pid file, `/bin` shadow dir, `SDE_WM_PORTAL_PATH`), and fails
+  with actionable guidance when there is no seat/DRM device
+  (`scripts/run-multiseat-test.sh`). Still open: suspend/resume hooks and lid.
 - **Idle / inhibit / lock / DPMS (G6).** No `ext-idle-notify-v1`,
   `zwp_idle_inhibit_v1`, `ext-session-lock-v1`, dim/lock-on-idle, or
   DPMS/backlight handling. `ext-session-lock-v1` in particular must blank and

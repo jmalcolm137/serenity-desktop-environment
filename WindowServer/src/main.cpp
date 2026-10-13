@@ -3595,9 +3595,26 @@ static ErrorOr<void> initialize(Server& server)
     if (!server.display)
         return Error::from_string_literal("failed to create wl_display");
 
+    // R4.3/R6: seat identity. The session exports XDG_SEAT/XDG_VTNR (from the
+    // display manager or logind); log them so multi-seat sessions are identifiable.
+    if (auto const* seat = getenv("XDG_SEAT"); seat && *seat) {
+        if (auto const* vt = getenv("XDG_VTNR"); vt && *vt)
+            dbgln("WindowServer: seat '{}' vt{}", seat, vt);
+        else
+            dbgln("WindowServer: seat '{}'", seat);
+    }
+
     server.backend = wlr_backend_autocreate(wl_display_get_event_loop(server.display), nullptr);
-    if (!server.backend)
+    if (!server.backend) {
+        // R4.3: the DRM/libinput backend needs a seat (libseat). Give actionable
+        // guidance rather than a bare failure so a TTY login is recoverable.
+        warnln("WindowServer: could not create a backend (DRM/libinput needs a seat).");
+        warnln("  * install and start seatd (recommended), or run under systemd-logind;");
+        warnln("  * for direct TTY access (builtin), join the 'video', 'render' and 'input' groups and re-login;");
+        warnln("  * or use a nested/headless session (scripts/start-sde-nested.sh).");
+        warnln("  * SDE_SEAT_BACKEND/LIBSEAT_BACKEND/SEATD_SOCK select the seat backend.");
         return Error::from_string_literal("failed to create wlr_backend");
+    }
 
     // R6/N5 renderer selection: [Output] Renderer in WindowServer.ini, with the
     // SDE_RENDERER environment variable overriding it (the config-test pattern).

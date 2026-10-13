@@ -328,6 +328,17 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 
 ## Recently resolved (kept so we don't re-chase them)
 
+- **Multi-seat & VT-switch polish (R4.3/R6).** `scripts/sde-seat.sh` derives and
+  exports `XDG_SEAT` (default `seat0`) and `XDG_VTNR` (logind, else the active
+  VT), and the session namespaces its runtime **per seat**: the Wayland socket
+  (`SDE_SESSION_DISPLAY`, `sde` → `sde-<seat>`), the supervisor pid file, the
+  `/bin` shadow dir, and the WindowManagerServer socket (`SDE_WM_PORTAL_PATH`,
+  `/tmp/portal/wm` → `/tmp/portal/wm-<seat>`; `seat0` keeps the bare names). The
+  port relocates the WM portal for clients (libgui-wayland patch `0041`), and the
+  compositor logs its seat and gives guidance when the DRM/libinput backend cannot
+  start; `start-sde-session.sh` preflights the DRM device. Covered by
+  `scripts/run-multiseat-test.sh`.
+
 - **Session watchdog & safe mode (R6/N4).** The compositor writes a liveness
   heartbeat (`SDE_HEARTBEAT_FILE` — a `Core::Timer` touching the file each
   second) and the session supervisor restarts it when the heartbeat goes stale,

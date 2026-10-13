@@ -602,7 +602,16 @@ Documented so they are not lost; none blocks R4.
   dim/blur); **PAM** authentication; multi-output + hotplug; idle-to-lock. Until
   then `SDE_LOCK_CMD` (default `swaylock`) selects the client.
 - **A portable SDE idle daemon** (`swayidle`-equivalent) for idle-to-lock/blank.
-- **Serial console / multi-seat, VT-switch polish, suspend/resume hooks** — R4.3.
+- **Multi-seat & VT-switch polish — done.** `scripts/sde-seat.sh` derives
+  `XDG_SEAT`/`XDG_VTNR` (from the display manager, else logind, else the active
+  VT) and the session namespaces its runtime **per seat** — the Wayland socket,
+  the supervisor pid file, the `/bin` shadow dir and the WindowManagerServer
+  socket (`SDE_SESSION_DISPLAY`/`SDE_WM_PORTAL_PATH`, with `seat0` keeping the
+  bare names). `start-sde-session.sh` preflights the DRM device and gives
+  actionable guidance (and the compositor explains a failed backend). Covered by
+  `scripts/run-multiseat-test.sh`; the port relocates the WM portal socket
+  (libgui-wayland patch `0041`).
+- **Serial console and suspend/resume hooks** — R4.3, still open.
 
 ## 11. Parity target: KDE Plasma (KWin)
 

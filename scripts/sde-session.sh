@@ -25,6 +25,12 @@
 # The user-facing policy above (idle/lock, restart budget, watchdog, safe mode,
 # autostart) can also live in session.conf (KEY=value); the environment overrides
 # the file, which overrides the built-in default.
+#
+# Seat (R4.3/R6 multi-seat): XDG_SEAT/XDG_VTNR come from the display manager,
+# logind or the active VT (scripts/sde-seat.sh). The runtime names are namespaced
+# per seat -- SDE_SESSION_DISPLAY (Wayland socket) and SDE_WM_PORTAL_PATH (the
+# WindowManagerServer socket), plus the pid file and the /bin shadow dir; seat0
+# keeps the bare names.
 set -u
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -73,8 +79,32 @@ if [ -r "$SESSION_CONF" ]; then
     echo "SDE session: loaded session policy from $SESSION_CONF"
 fi
 
+# R4.3/R6 multi-seat: seat identity (see scripts/sde-seat.sh). Apps and portals
+# use XDG_SEAT/XDG_VTNR; the runtime namespaces below are per seat so two seats
+# for one user do not collide.
+# shellcheck source=scripts/sde-seat.sh
+. "$SDE_ROOT/scripts/sde-seat.sh"
+sde_detect_seat
+SEAT_SUFFIX="$(sde_seat_suffix)"
+echo "SDE session: seat '$XDG_SEAT'${XDG_VTNR:+ vt$XDG_VTNR}"
+
+# The compositor's Wayland socket is per seat (seat0 keeps the bare name).
+SESSION_DISPLAY="${SDE_SESSION_DISPLAY:-sde$SEAT_SUFFIX}"
+# Export the effective session display (apps/services inherit it; the compositor
+# also sets WAYLAND_DISPLAY to it for its children).
+export SDE_SESSION_DISPLAY="$SESSION_DISPLAY"
+# Multi-seat: the WindowManagerServer socket is global in SerenityOS, so a
+# non-default seat gets its own path. Both the compositor and the port's clients
+# honour SDE_WM_PORTAL_PATH; seat0 keeps /tmp/portal/wm.
+if [ -z "${SDE_WM_PORTAL_PATH:-}" ] && [ -n "$SEAT_SUFFIX" ]; then
+    SDE_WM_PORTAL_PATH="$(sde_wm_portal_path)"
+fi
+if [ -n "${SDE_WM_PORTAL_PATH:-}" ]; then
+    export SDE_WM_PORTAL_PATH
+fi
+
 SDE_SESSION_SHELL="${SDE_SESSION_SHELL:-$BUILD/bin/Taskbar & $BUILD/bin/FileManager -d}"
-COMPOSITOR="${SDE_SESSION_COMPOSITOR:-$SDE_ROOT/build/WindowServer/WindowServer -n sde -s \"$SDE_SESSION_SHELL\"}"
+COMPOSITOR="${SDE_SESSION_COMPOSITOR:-$SDE_ROOT/build/WindowServer/WindowServer -n $SESSION_DISPLAY -s \"$SDE_SESSION_SHELL\"}"
 AUTOSTART_DIR="${SDE_SESSION_AUTOSTART_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/autostart}"
 MAX_RESTARTS="${SDE_SESSION_MAX_RESTARTS:-3}"
 RESTART_DELAY="${SDE_SESSION_RESTART_DELAY:-1}"
@@ -103,7 +133,7 @@ IDLE_PID=""
 
 # Session environment (R4.3, docs/12). Set the standard variables so apps and
 # portals can find the session; the supervisor owns ordering (no systemd target).
-SESSION_DISPLAY="${SDE_SESSION_DISPLAY:-sde}"
+# (SESSION_DISPLAY is set above, from the seat.)
 # Force the session identity: even when nested inside another desktop, the
 # session IS SDE (the host's XDG_CURRENT_DESKTOP/DESKTOP_SESSION must not leak).
 export XDG_SESSION_TYPE="wayland"
@@ -123,7 +153,7 @@ export WAYLAND_DISPLAY="$SESSION_DISPLAY"
 
 # A pid file so the power helper's portable logout fallback can stop us even
 # without logind.
-export SDE_SESSION_PID_FILE="${SDE_SESSION_PID_FILE:-${XDG_RUNTIME_DIR:-/tmp}/sde-session.pid}"
+export SDE_SESSION_PID_FILE="${SDE_SESSION_PID_FILE:-${XDG_RUNTIME_DIR:-/tmp}/sde-session$SEAT_SUFFIX.pid}"
 echo $$ > "$SDE_SESSION_PID_FILE"
 trap 'rm -f "$SDE_SESSION_PID_FILE"' EXIT
 
@@ -133,9 +163,13 @@ trap 'rm -f "$SDE_SESSION_PID_FILE"' EXIT
 push_dbus_activation_env() {
     [ -n "${SDE_DBUS_ENV_CMD:-}" ] || command -v dbus-update-activation-environment >/dev/null 2>&1 || return 0
     local cmd="${SDE_DBUS_ENV_CMD:-dbus-update-activation-environment}"
-    WAYLAND_DISPLAY="$SESSION_DISPLAY" "$cmd" \
-        XDG_SESSION_TYPE XDG_SESSION_CLASS XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION WAYLAND_DISPLAY \
-        >/dev/null 2>&1 || true
+    # Only pass variables that are actually set (an unset name makes
+    # dbus-update-activation-environment fail).
+    local vars="XDG_SESSION_TYPE XDG_SESSION_CLASS XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION WAYLAND_DISPLAY XDG_SEAT"
+    [ -n "${XDG_VTNR:-}" ] && vars="$vars XDG_VTNR"
+    [ -n "${XDG_SESSION_ID:-}" ] && vars="$vars XDG_SESSION_ID"
+    # shellcheck disable=SC2086
+    WAYLAND_DISPLAY="$SESSION_DISPLAY" "$cmd" $vars >/dev/null 2>&1 || true
 }
 push_dbus_activation_env
 
@@ -210,7 +244,7 @@ watch_compositor_hang() {
 # /bin/shutdown, /bin/reboot, /bin/logout) routes to logind instead of failing on
 # host binaries. The port's Process::resolve_executable_path() consults
 # SDE_SESSION_BIN_DIR first. Serenity-stdlib convention, standard backend.
-SESSION_BIN="${SDE_SESSION_BIN_DIR:-${XDG_RUNTIME_DIR:-/tmp}/sde-session-bin}"
+SESSION_BIN="${SDE_SESSION_BIN_DIR:-${XDG_RUNTIME_DIR:-/tmp}/sde-session-bin$SEAT_SUFFIX}"
 mkdir -p "$SESSION_BIN"
 for action in shutdown reboot logout suspend; do
     cat > "$SESSION_BIN/$action" <<EOF

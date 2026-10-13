@@ -27,6 +27,35 @@ if [[ ! -x "$COMP" ]]; then
     exit 1
 fi
 
+# R4.3/R6 multi-seat: seat identity + per-seat runtime namespaces (see
+# scripts/sde-seat.sh). SDE_SESSION_DISPLAY and SDE_WM_PORTAL_PATH are exported so
+# the supervisor, the session services and the apps all agree.
+# shellcheck source=scripts/sde-seat.sh
+. "$SDE_ROOT/scripts/sde-seat.sh"
+sde_detect_seat
+export SDE_SESSION_DISPLAY="${SDE_SESSION_DISPLAY:-sde$(sde_seat_suffix)}"
+SDE_WM_PORTAL_PATH="${SDE_WM_PORTAL_PATH:-$(sde_wm_portal_path)}"
+export SDE_WM_PORTAL_PATH
+echo "SDE: seat '${XDG_SEAT}'${XDG_VTNR:+ vt$XDG_VTNR} display '$SDE_SESSION_DISPLAY' wm-portal '$SDE_WM_PORTAL_PATH'"
+
+# R4.3/R6: a native (DRM+libinput) session needs a seat and a DRM device. Give
+# actionable guidance instead of a loop of opaque backend failures. Override with
+# SDE_ALLOW_NO_DRM=1 (and SDE_DRM_GLOB for tests).
+if [[ -z "${SDE_BACKENDS:-}" && "${SDE_ALLOW_NO_DRM:-0}" != "1" ]]; then
+    drm_glob="${SDE_DRM_GLOB:-/dev/dri/card*}"
+    if ! compgen -G "$drm_glob" >/dev/null 2>&1; then
+        cat >&2 <<EOF
+SDE: no DRM device ($drm_glob) — the native DRM+libinput backend cannot start.
+  * for a headless run:  SDE_BACKENDS=headless $0
+  * for development:     ./scripts/start-sde-nested.sh
+  * on a TTY, make sure the DRM device exists and your user can open it (a seat:
+    seatd or logind, or the 'video'/'render'/'input' groups for the builtin seat).
+  * set SDE_ALLOW_NO_DRM=1 to skip this check.
+EOF
+        exit 1
+    fi
+fi
+
 # Hardware session: no host compositor underneath us.
 unset WAYLAND_DISPLAY DISPLAY
 export SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}"
@@ -101,7 +130,7 @@ fi
 # session's WAYLAND_DISPLAY, or its children connect to the wrong compositor
 # (e.g. the host when nested). The compositor sets it for its own children; the
 # services are separate processes, so set it here.
-SESSION_DISPLAY="${SDE_SESSION_DISPLAY:-sde}"
+SESSION_DISPLAY="$SDE_SESSION_DISPLAY"
 LAUNCH_SERVER="$SDE_ROOT/build/LaunchServer/LaunchServer"
 LAUNCH_SERVER_PID=""
 if [[ -x "$LAUNCH_SERVER" ]]; then
