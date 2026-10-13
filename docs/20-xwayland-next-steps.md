@@ -26,6 +26,8 @@ the compositor maps as a separate scene surface. Landed, in order:
 | `0cf1933` | **Workspaces**. `X11Toplevel` gained `workspace_row`/`workspace_column`; a mapped X11 window joins the current stack and hides/shows with it (workspace switch and grid reload), and the switcher filters/labels X11 windows by stack. |
 | `b3ac13a` | **Icons + WM_CLASS**. Fetch `_NET_WM_ICON` (`wlr_xwayland_surface_fetch_icon` + `xcb_ewmh`) into a `Gfx::Bitmap` and report it (`emit_window_icon`) so the Taskbar button and the switcher draw it; read `WM_CLASS` (`instance`/`class`) onto the toplevel. |
 | `cb21165` | **Override-redirect polish**. Menus/tooltips stay visible across workspace switches (never workspace-hid) and are re-raised above their parent when it is focused/raised. |
+| `6c8e0c9` | **Selection bridge**. Forward `request_set_primary_selection` to the seat (`wlr_seat_set_primary_selection`); with the existing clipboard path, wlroots' XWM now bridges X11 `PRIMARY`/`CLIPBOARD` with the Wayland selection. |
+| `e20db92` | **LaunchServer DISPLAY**. The service adopts the session Xwayland `DISPLAY` (state file, with a wait + stale-file drop), so X11 apps it spawns (e.g. `xterm` from the Terminal) open in SDE, not on the host X server. |
 
 Where the code lives:
 
@@ -79,9 +81,10 @@ grid and icon paths) hoist into shared helpers as those land.
    app-grouping mode, so grouping needs a Taskbar-side change (in the port).
 4. ~~**Override-redirect polish**~~ — **done** (`cb21165`): menus/tooltips are
    never workspace-hid and stay above their parent.
-5. **Selection / clipboard bridge** — X11 `PRIMARY`/`CLIPBOARD` ↔ the Wayland data
-   device, so copy/paste works between X11 and native apps (wlroots' XWM owns the
-   X side; the compositor must bridge it).
+5. ~~**Selection / clipboard bridge**~~ — **done** (`6c8e0c9`): the compositor
+   forwards `PRIMARY` selection requests to the seat and already forwarded
+   `CLIPBOARD`, so wlroots' XWM bridges X11 `PRIMARY`/`CLIPBOARD` with the Wayland
+   selection. (Wayland-side round-trip covered by `scripts/run-selection-test.sh`.)
 6. **Xwayland keyboard grabs** — honour X11 keyboard grabs (wlroots
    `xwayland-keyboard-grab`), so X11 menus/screensavers that grab the keyboard work.
 7. **`_NET_WM_STATE` hints** — modal, skip-taskbar, above, demands-attention; and

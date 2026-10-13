@@ -341,8 +341,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   now lists X11 windows too (the `WindowRef` abstraction, `07027fc`; see
   [`20-xwayland-next-steps.md`](20-xwayland-next-steps.md)). **Still
   missing for full parity:** WM_CLASS-based Taskbar **grouping** (icons landed,
-  `b3ac13a`), the X11↔Wayland **selection / clipboard bridge**,
-  Xwayland **keyboard grabs**, `_NET_WM_STATE` hints
+  `b3ac13a`), Xwayland **keyboard grabs**, `_NET_WM_STATE` hints
   (modal/skip-taskbar/above/urgent), transients (parent/child), `_NET_WM_STRUT`
   workarea, and X11↔Wayland **drag-and-drop**.
 - **Native-app protocol matrix (G7).** **Mostly done** — the compositor advertises
