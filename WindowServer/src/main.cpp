@@ -40,6 +40,7 @@
 #include <LibCore/ResourceImplementationFile.h>
 #include <LibCore/Socket.h>
 #include <LibCore/Timer.h>
+#include <LibCore/ElapsedTimer.h>
 #include <LibGfx/Bitmap.h>
 #include <LibGfx/Font/FontDatabase.h>
 #include <LibGfx/ImageFormats/PNGWriter.h>
@@ -2221,6 +2222,117 @@ static void toplevel_close(Toplevel& toplevel)
     wlr_xdg_toplevel_send_close(toplevel.xdg_toplevel);
 }
 
+// --- window animations ----------------------------------------------------
+//
+// SerenityOS animates minimize/restore as an inverted outline that interpolates
+// between the window's frame and its Taskbar button (Window::start_minimize_
+// animation). We draw the same outline (a ChromeNode in the overlay tree) over
+// 150 ms, gated on [Effects] AnimateWindows, using the button rect the Taskbar
+// reports over the WindowManagerServer (set_window_taskbar_rect).
+struct MinimizeAnimation {
+    Gfx::IntRect from;
+    Gfx::IntRect to;
+    i64 start_ms { 0 };
+    OwnPtr<ChromeNode> node;
+};
+static Vector<MinimizeAnimation> s_minimize_animations;
+static RefPtr<Core::Timer> s_animation_timer;
+static constexpr int minimize_animation_duration_ms = 150;
+
+static Core::ElapsedTimer& animation_clock()
+{
+    static Core::ElapsedTimer clock = Core::ElapsedTimer::start_new();
+    return clock;
+}
+
+static Gfx::IntRect interpolate_rect(Gfx::IntRect const& a, Gfx::IntRect const& b, float t)
+{
+    auto lerp = [t](int from, int to) {
+        return from + static_cast<int>(static_cast<float>(to - from) * t + (t >= 0.5f ? 0.5f : -0.5f));
+    };
+    return { lerp(a.x(), b.x()), lerp(a.y(), b.y()), lerp(a.width(), b.width()), lerp(a.height(), b.height()) };
+}
+
+static void tick_minimize_animations()
+{
+    i64 const now = animation_clock().elapsed_milliseconds();
+    bool any_active = false;
+    for (auto& animation : s_minimize_animations) {
+        float t = clamp(static_cast<float>(now - animation.start_ms) / minimize_animation_duration_ms, 0.0f, 1.0f);
+        float eased = 1.0f - (1.0f - t) * (1.0f - t); // ease-out
+        auto rect = interpolate_rect(animation.from, animation.to, eased);
+        if (g_palette && animation.node && rect.width() > 0 && rect.height() > 0) {
+            auto color = g_palette->selection();
+            animation.node->set_visible(true);
+            animation.node->set_rect(rect);
+            animation.node->render([&](Gfx::Painter& painter) {
+                painter.draw_rect_with_thickness({ 0, 0, rect.width(), rect.height() }, color, 2);
+            });
+        }
+        if (t < 1.0f)
+            any_active = true;
+    }
+    if (!any_active) {
+        s_minimize_animations.clear(); // destroys the ChromeNodes (hides them)
+        if (s_animation_timer)
+            s_animation_timer->stop();
+    }
+}
+
+static void start_minimize_animation(Server& server, Toplevel& toplevel, Gfx::IntRect const& window_rect, bool minimizing)
+{
+    if (!server.overlay_tree || !Config::effects().animate_windows || window_rect.is_empty())
+        return;
+
+    Gfx::IntRect target = toplevel.taskbar_rect;
+    if (target.is_empty()) {
+        // No Taskbar button (no Taskbar, or one that has not reported yet): use
+        // the bottom-right corner (the applet/clock end of the Taskbar).
+        auto* output_state = output_for(server, server.primary_output);
+        Gfx::IntRect area { 0, 0, 1280, 720 };
+        if (output_state && !wlr_box_empty(&output_state->usable_area))
+            area = { output_state->usable_area.x, output_state->usable_area.y, output_state->usable_area.width, output_state->usable_area.height };
+        target = { area.right() - 24, area.bottom() - 24, 4, 4 };
+    }
+
+    MinimizeAnimation animation;
+    animation.from = minimizing ? window_rect : target;
+    animation.to = minimizing ? target : window_rect;
+    animation.start_ms = animation_clock().elapsed_milliseconds();
+    animation.node = make<ChromeNode>(*server.overlay_tree);
+    animation.node->set_rect(animation.from);
+    s_minimize_animations.append(move(animation));
+    dbgln("WindowServer: {} animation {}x{}+{},{} -> {}x{}+{},{}",
+        minimizing ? "minimize" : "restore",
+        animation.from.width(), animation.from.height(), animation.from.x(), animation.from.y(),
+        animation.to.width(), animation.to.height(), animation.to.x(), animation.to.y());
+
+    if (!s_animation_timer)
+        s_animation_timer = Core::Timer::create_repeating(15, tick_minimize_animations);
+    s_animation_timer->start();
+}
+
+// Minimize/restore a window: state, visibility, the foreign handle, and the
+// outline animation. Shared by the compositor's own minimize and the Taskbar's.
+static void set_toplevel_minimized(Server& server, Toplevel& toplevel, bool minimized)
+{
+    if (toplevel.minimized == minimized)
+        return;
+
+    Gfx::IntRect window_rect {
+        toplevel.scene_tree->node.x, toplevel.scene_tree->node.y,
+        toplevel.frame_size.width(), toplevel.frame_size.height()
+    };
+    if (window_rect.is_empty())
+        window_rect = { toplevel.scene_tree->node.x, toplevel.scene_tree->node.y, toplevel.xdg_toplevel->base->geometry.width, toplevel.xdg_toplevel->base->geometry.height };
+
+    toplevel.minimized = minimized;
+    WindowManager::update_toplevel_visibility(toplevel);
+    if (toplevel.foreign_handle)
+        wlr_foreign_toplevel_handle_v1_set_minimized(toplevel.foreign_handle, minimized);
+    start_minimize_animation(server, toplevel, window_rect, minimized);
+}
+
 static void toplevel_toggle_maximized(Toplevel& toplevel)
 {
     auto& server = *toplevel.server;
@@ -2253,10 +2365,7 @@ static void toplevel_toggle_maximized(Toplevel& toplevel)
 
 static void toplevel_toggle_minimized(Toplevel& toplevel)
 {
-    toplevel.minimized = !toplevel.minimized;
-    wlr_scene_node_set_enabled(&toplevel.scene_tree->node, !toplevel.minimized);
-    if (toplevel.foreign_handle)
-        wlr_foreign_toplevel_handle_v1_set_minimized(toplevel.foreign_handle, toplevel.minimized);
+    set_toplevel_minimized(*toplevel.server, toplevel, !toplevel.minimized);
 }
 
 static int window_menu_item_height()
@@ -4582,7 +4691,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     if (!wm_server->listen(wm_portal))
         warnln("WindowServer: could not listen on {}", wm_portal);
     // Let the window manager call back into the compositor's focus/menu code.
-    WindowManager::set_host_hooks({ focus_toplevel, open_window_menu, primary_usable_area, toplevel_report_position, toplevel_begin_interactive, current_palette, update_ext_workspace_active });
+    WindowManager::set_host_hooks({ focus_toplevel, open_window_menu, primary_usable_area, toplevel_report_position, toplevel_begin_interactive, current_palette, update_ext_workspace_active, set_toplevel_minimized });
     WindowSwitcher::set_host_hooks({ current_palette, focus_toplevel, WindowManager::switch_workspace, overlay_shadow_hook, toplevel_update_frame });
     AppletManager::set_host_hooks({ WindowManager::tell_wms_applet_area_size_changed, primary_usable_area, layer_report_position });
     // Bring the workspace grid up from the config, and follow later edits.

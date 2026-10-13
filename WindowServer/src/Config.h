@@ -74,6 +74,9 @@ struct Effects {
     // so the Effects settings tab and the compositor agree (R4.7).
     ByteString show_geometry { "OnMoveAndResize"sv };
     ByteString tile_window { "ShowTileOverlay"sv };
+    // Animate minimize/restore (the SerenityOS outline from the window to its
+    // Taskbar button). Off = no animation, matching the Effects tab.
+    bool animate_windows { true };
 };
 
 // Output defaults.

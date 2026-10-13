@@ -185,6 +185,9 @@ struct Toplevel {
     int pressed_button { -1 };
     Gfx::IntRect titlebar_icon_rect;
     wl_resource* chrome { nullptr };
+    // The Taskbar button rect for this window (reported over the
+    // WindowManagerServer), so minimize/restore can animate the outline to it.
+    Gfx::IntRect taskbar_rect;
     // The decoration object, if any; the server-side mode is applied once the
     // surface is initialized (set_mode schedules a configure).
     wlr_xdg_toplevel_decoration_v1* decoration { nullptr };

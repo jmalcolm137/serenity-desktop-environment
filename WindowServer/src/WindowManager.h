@@ -40,6 +40,9 @@ struct HostHooks {
     // R4.8: the current workspace or the grid changed, so the ext-workspace-v1
     // state can be refreshed.
     void (*workspace_changed)(Server&) { nullptr };
+    // Minimize/restore a window (state, visibility, the foreign handle, and the
+    // minimize/restore animation). main.cpp owns the visibility + animation.
+    void (*set_minimized)(Server&, Toplevel&, bool minimized) { nullptr };
 };
 void set_host_hooks(HostHooks);
 
@@ -78,6 +81,10 @@ void switch_workspace(Server&, u32 row, u32 column, bool carry_focused);
 
 // Set a window's scene visibility from its stack and minimized state.
 void update_toplevel_visibility(Toplevel&);
+// Minimize or restore a window (state, visibility, the foreign handle, and the
+// compositor's minimize/restore animation). Used by the Taskbar, Show Desktop,
+// Super+Down and the window switcher, so every path animates the same way.
+void set_toplevel_minimized(Server&, Toplevel&, bool minimized);
 
 // Super-key shortcuts the Taskbar expects (WindowManagerClient.ipc):
 // Super, Super+Space, Super+D and Super+digit.

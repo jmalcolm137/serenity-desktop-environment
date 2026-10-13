@@ -276,6 +276,8 @@ void load()
     g_effects.tile_window = read_entry(user, defaults, "Effects"sv, "TileWindow"sv);
     if (g_effects.tile_window.is_empty())
         g_effects.tile_window = "ShowTileOverlay"sv;
+    if (auto value = read_bool(user, defaults, "Effects"sv, "AnimateWindows"sv); value.has_value())
+        g_effects.animate_windows = value.value();
 
     if (auto value = read_scale(user, defaults, "Output"sv, "DefaultScale"sv); value.has_value())
         g_output.default_scale = value.value();

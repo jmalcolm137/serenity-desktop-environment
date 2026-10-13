@@ -266,10 +266,8 @@ static void activate(Server& server)
         dbgln("WindowSwitcher: activating wm_id={}", toplevel->wm_id);
         if (s_mode == Mode::AllWorkspaces && g_hooks.switch_workspace)
             g_hooks.switch_workspace(server, toplevel->workspace_row, toplevel->workspace_column, false);
-        if (toplevel->minimized) {
-            toplevel->minimized = false;
-            WindowManager::update_toplevel_visibility(*toplevel);
-        }
+        if (toplevel->minimized)
+            WindowManager::set_toplevel_minimized(server, *toplevel, false);
         if (g_hooks.focus_toplevel)
             g_hooks.focus_toplevel(server, toplevel);
     }

@@ -48,6 +48,16 @@ void set_host_hooks(HostHooks hooks)
     g_hooks = hooks;
 }
 
+void set_toplevel_minimized(Server& server, Toplevel& toplevel, bool minimized)
+{
+    if (g_hooks.set_minimized)
+        g_hooks.set_minimized(server, toplevel, minimized);
+    else {
+        toplevel.minimized = minimized;
+        update_toplevel_visibility(toplevel);
+    }
+}
+
 // The compositor's end of the Serenity WindowManagerServer protocol.
 class WindowManagerServerConnection final
     : public IPC::Connection<WindowManagerServerEndpoint, WindowManagerClientEndpoint>
@@ -79,10 +89,8 @@ public:
     virtual void set_active_window(i32, i32 window_id) override
     {
         if (auto* toplevel = find_toplevel_by_wm_id(m_server, window_id)) {
-            if (toplevel->minimized) {
-                toplevel->minimized = false;
-                update_toplevel_visibility(*toplevel);
-            }
+            if (toplevel->minimized)
+                set_toplevel_minimized(m_server, *toplevel, false);
             if (g_hooks.focus_toplevel)
                 g_hooks.focus_toplevel(m_server, toplevel);
             emit_window_state(*toplevel);
@@ -92,8 +100,7 @@ public:
     virtual void set_window_minimized(i32, i32 window_id, bool minimized) override
     {
         if (auto* toplevel = find_toplevel_by_wm_id(m_server, window_id)) {
-            toplevel->minimized = minimized;
-            update_toplevel_visibility(*toplevel);
+            set_toplevel_minimized(m_server, *toplevel, minimized);
             emit_window_state(*toplevel);
         }
     }
@@ -107,14 +114,12 @@ public:
             if (server.show_desktop) {
                 if (!toplevel->minimized) {
                     toplevel->hidden_by_show_desktop = true;
-                    toplevel->minimized = true;
-                    update_toplevel_visibility(*toplevel);
+                    set_toplevel_minimized(server, *toplevel, true);
                     changed = true;
                 }
             } else if (toplevel->hidden_by_show_desktop) {
                 toplevel->hidden_by_show_desktop = false;
-                toplevel->minimized = false;
-                update_toplevel_visibility(*toplevel);
+                set_toplevel_minimized(server, *toplevel, false);
                 changed = true;
             }
             if (changed)
@@ -140,9 +145,13 @@ public:
                 g_hooks.open_window_menu(m_server, *toplevel, screen_position);
         }
     }
-    // The Taskbar reports each button's rect for a minimise/restore animation the
-    // compositor does not implement; deliberately not consumed (see known-gaps).
-    virtual void set_window_taskbar_rect(i32, i32, Gfx::IntRect const&) override { }
+    // The Taskbar reports each button's rect, so minimize/restore can animate the
+    // SerenityOS outline between the window and its button.
+    virtual void set_window_taskbar_rect(i32, i32 window_id, Gfx::IntRect const& rect) override
+    {
+        if (auto* toplevel = find_toplevel_by_wm_id(m_server, window_id))
+            toplevel->taskbar_rect = rect;
+    }
 
     // Applets are layer surfaces; the compositor owns their layout (WS4). The
     // Taskbar tells us where the applet area sits and we place each applet.
@@ -357,8 +366,7 @@ static bool minimize_focused(Server& server)
     auto* toplevel = focused_toplevel(server);
     if (!toplevel)
         return false;
-    toplevel->minimized = true;
-    update_toplevel_visibility(*toplevel);
+    set_toplevel_minimized(server, *toplevel, true);
     emit_window_state(*toplevel);
     return true;
 }

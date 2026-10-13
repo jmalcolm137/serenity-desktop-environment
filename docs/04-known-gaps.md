@@ -34,10 +34,11 @@ calls are now either handled or explicitly reassigned:
   (`Userland/Services/Taskbar/TaskbarButton.cpp`). It now opens the compositor's
   window menu for the requested window at the requested position; the menu layout
   clamps it on-screen, so it appears above the Taskbar.
-- **Taskbar button geometry for minimize/restore (G1 / W2) — accepted no-op.**
-  `set_window_taskbar_rect` is deliberately not consumed: the compositor has no
-  minimize/restore animation (`toplevel_toggle_minimized` only toggles scene
-  visibility). Revisit if such an animation is added (R3-ish).
+- **Taskbar button geometry for minimize/restore (G1 / W2) — done.** The Taskbar
+  reports each window button's rect (`set_window_taskbar_rect`); the compositor
+  stores it and animates the minimize/restore outline between the window and that
+  button (SerenityOS `Window::start_minimize_animation`). See "Window animations"
+  in the R4 "Recently resolved" list.
 - **`start_window_resize` (G3 / W1)** — folded into R3 (snapping/resize; see
   [`05-r3-plan.md`](05-r3-plan.md) §4 WS2).
 - **`set_keymap` (G5 / W4)** — belongs with the R3/R4 keymap-switching work, not R2.
@@ -147,25 +148,15 @@ click was already handled and returned earlier).
 The window chrome and the core interactions are done — titlebar buttons, the
 window menu (minimize / maximize / restore / move / roll-up / menu bar / always
 on top / close), the icon-click menu, double-click-titlebar maximize, move and
-resize by the frame, snapping, tiling (`Super`+arrows, `Super+Alt` horizontal /
-vertical maximize), the Alt+Tab / Super+Tab switcher with live thumbnails, the
-workspace grid (with carry) and the `Super`-key events forwarded to the
-WindowManagerServer. What follows are behaviours present in SerenityOS's
-`Userland/Services/WindowServer/{WindowManager,Window,Compositor}.cpp` that SDE
-does **not** reproduce yet.
+resize by the frame, **`Super`+left-drag to move / `Super`+right-drag to resize
+from anywhere**, **unmaximize-on-move**, **`Alt+Shift` keyboard-layout
+switching**, **minimize/restore animations**, snapping, tiling (`Super`+arrows,
+`Super+Alt` horizontal / vertical maximize), the Alt+Tab / Super+Tab switcher
+with live thumbnails, the workspace grid (with carry) and the `Super`-key events
+forwarded to the WindowManagerServer. What follows are behaviours present in
+SerenityOS's `Userland/Services/WindowServer/{WindowManager,Window,Compositor}.cpp`
+that SDE does **not** reproduce yet.
 
-- **Window animations.** No open/close, minimize/restore, maximize or
-  window-stack-transition animation. SerenityOS animates these in `Window.cpp`
-  (gated on `system_effects().animate_windows()`) and via
-  `Compositor::m_window_stack_transition_animation`. SDE accepts the
-  `[Effects] AnimateWindows` key but the compositor never animates — the same
-  reason `set_window_taskbar_rect` (the minimize/restore target geometry the
-  Taskbar reports) is deliberately ignored.
-- **`Super`+left-drag to move, `Super`+right-drag to resize, from anywhere in the
-  window** (`WindowManager.cpp` ~1343). SDE moves only by dragging the Serenity
-  titlebar and resizes only by the frame edges.
-- **Unmaximize-on-move.** SerenityOS restores a maximized window's geometry when a
-  move begins (`WindowManager.cpp:860`); SDE drags the maximized window as-is.
 - **Modal and transient (parent/child) windows.** SerenityOS enforces
   `blocking_modal_window()` (input to the window behind a modal is blocked, the
   modal cannot be minimized, blockers are lowered) and stacks a transient above
@@ -181,12 +172,15 @@ does **not** reproduce yet.
 - **Drag-and-drop between windows.** SDE creates the data-device manager but never
   wires `request_start_drag` / `start_drag`, so a drag from one window does not
   reach another (also tracked under R5).
-- **The `Alt+Shift` keymap switcher** (`KeymapSwitcher`). SDE changes the keyboard
-  layout through KeyboardSettings; there is no `Alt+Shift` cycle.
 - **`Super+H` to toggle the cursor highlight.** SDE has the cursor highlight
   (R4.7, set from Mouse Settings) but no shortcut for it.
 - **`Ctrl+Super+Shift+I`** (reload icon bitmaps after a scale change) — an
   internal SerenityOS hotkey with no SDE equivalent (SDE reloads icons on demand).
+- **The remaining window animations.** Minimize/restore landed (see "Recently
+  resolved"); SerenityOS also animates a window's **launch** (an outline from the
+  launch origin, `start_launch_animation`, which needs the launcher to hand over
+  an origin rect) and the **window-stack transition**
+  (`Compositor::m_window_stack_transition_animation`). Neither is implemented.
 
 Not gaps, for the record: SDE's drag-to-edge snapping is an *addition* over stock
 SerenityOS (which tiles only through `Super`+arrows), and the minimal
@@ -377,6 +371,17 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   on this path ([`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md) §6).
 
 ## Recently resolved (kept so we don't re-chase them)
+
+- **SerenityOS window management: drag, unmaximize-on-move, Alt+Shift, animations
+  (R3).** `Super`+left-drag moves a window and `Super`+right-drag resizes it from
+  anywhere (the 3×3 hot area under the cursor picks the edges); dragging a
+  maximized window restores its size first, keeping the cursor's horizontal
+  fraction; `Alt+Shift` cycles the configured keyboard layouts; and minimize/
+  restore animate the SerenityOS outline between the window and its Taskbar
+  button (the Taskbar's `set_window_taskbar_rect` is now consumed), gated on
+  `[Effects] AnimateWindows`. Covered by `scripts/run-window-animation-test.sh`;
+  the launch and window-stack-transition animations remain (see the WM gaps
+  above).
 
 - **`on_demand` layer surfaces now take keyboard focus (R5).** Layer surfaces
   with `zwlr_layer_surface_v1` keyboard interactivity `on_demand` — client popups
