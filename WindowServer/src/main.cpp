@@ -2124,6 +2124,9 @@ static void focus_x11_toplevel(Server& server, X11Toplevel* toplevel)
 {
     if (!toplevel || !toplevel->xsurface || !toplevel->xsurface->surface)
         return;
+    // Override-redirect windows (menus, tooltips, drag icons) never take focus.
+    if (toplevel->override_redirect)
+        return;
     wlr_surface* surface = toplevel->xsurface->surface;
     if (server.seat->keyboard_state.focused_surface == surface)
         return;
