@@ -362,8 +362,23 @@ struct X11Toplevel {
     wlr_xwayland_surface* xsurface { nullptr };
     wlr_scene_tree* scene_tree { nullptr };
     wlr_scene_surface* scene { nullptr };
+    wlr_scene_buffer* frame_buffer { nullptr };
     bool mapped { false };
     bool override_redirect { false };
+    // Server-side decoration frame (X11 clients that don't draw their own).
+    bool frame_decorated { false };
+    int frame_left { 0 };
+    int frame_top { 0 };
+    int frame_right { 0 };
+    int frame_bottom { 0 };
+    Gfx::IntSize frame_size;
+    Vector<Gfx::IntRect> button_rects;
+    Gfx::IntRect titlebar_icon_rect;
+    bool frame_active { false };
+    bool maximized { false };
+    Gfx::IntSize restore_size;
+    int hovered_button { -1 };
+    int pressed_button { -1 };
     wl_listener associate { };
     wl_listener dissociate { };
     wl_listener surface_map { };
@@ -548,6 +563,10 @@ struct Server {
 
     CursorMode cursor_mode { CursorMode::Passthrough };
     Toplevel* grabbed_toplevel { nullptr };
+    X11Toplevel* grabbed_x11 { nullptr };
+    // The X11 window whose frame button is held, and which one.
+    X11Toplevel* pressed_button_x11 { nullptr };
+    int pressed_button_x11_index { -1 };
     double grab_x { 0 };
     double grab_y { 0 };
     wlr_box grab_box { };

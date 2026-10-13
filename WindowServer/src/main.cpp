@@ -196,6 +196,17 @@ static void notify_activity(Server& server);
 // The client surface (xdg or X11) under a layout point, and focus for it (R5).
 static wlr_surface* window_surface_at(Server& server, double lx, double ly, double* sx, double* sy);
 static void focus_window_at(Server& server, double lx, double ly);
+// X11 (Xwayland) window helpers (R5).
+static X11Toplevel* x11_toplevel_for_wlr_surface(Server& server, wlr_surface* surface);
+static bool x11_surface_at(Server& server, double lx, double ly, wlr_surface** surface, double* sx, double* sy);
+static void focus_x11_toplevel(Server& server, X11Toplevel* toplevel);
+static void x11_begin_interactive(X11Toplevel& toplevel, CursorMode mode, uint32_t edges);
+// X11 server-side decoration frames (R5).
+static void x11_update_frame(X11Toplevel& toplevel);
+static bool handle_x11_frame_press(Server& server, uint32_t button);
+static void handle_x11_frame_release(Server& server, uint32_t button);
+static void update_x11_button_hover(Server& server, double x, double y);
+static void use_nearest_filter(wlr_scene_node* node);
 // While the session is locked, input goes to the lock surface on the output
 // under the cursor.
 static LockSurface* lock_surface_at_cursor(Server& server);
@@ -742,12 +753,21 @@ static void reset_cursor_mode(Server& server)
 {
     server.cursor_mode = CursorMode::Passthrough;
     server.grabbed_toplevel = nullptr;
+    server.grabbed_x11 = nullptr;
     // The interactive grab ended: hide the geometry HUD (WS2).
     WindowManager::hide_geometry_hud();
 }
 
 static void process_cursor_move(Server& server)
 {
+    if (server.grabbed_x11) {
+        auto* toplevel = server.grabbed_x11;
+        int x = static_cast<int>(server.cursor->x - server.grab_x);
+        int y = static_cast<int>(server.cursor->y - server.grab_y);
+        wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
+        wlr_xwayland_surface_configure(toplevel->xsurface, x, y, toplevel->xsurface->width, toplevel->xsurface->height);
+        return;
+    }
     auto* toplevel = server.grabbed_toplevel;
     if (!toplevel)
         return;
@@ -758,6 +778,32 @@ static void process_cursor_move(Server& server)
 
 static void process_cursor_resize(Server& server)
 {
+    if (server.grabbed_x11) {
+        auto* toplevel = server.grabbed_x11;
+        double border_x = server.cursor->x - server.grab_x;
+        double border_y = server.cursor->y - server.grab_y;
+        int new_left = server.grab_box.x;
+        int new_right = server.grab_box.x + server.grab_box.width;
+        int new_top = server.grab_box.y;
+        int new_bottom = server.grab_box.y + server.grab_box.height;
+        if (server.resize_edges & WLR_EDGE_TOP) {
+            new_top = static_cast<int>(border_y);
+            if (new_top >= new_bottom) new_top = new_bottom - 1;
+        } else if (server.resize_edges & WLR_EDGE_BOTTOM) {
+            new_bottom = static_cast<int>(border_y);
+            if (new_bottom <= new_top) new_bottom = new_top + 1;
+        }
+        if (server.resize_edges & WLR_EDGE_LEFT) {
+            new_left = static_cast<int>(border_x);
+            if (new_left >= new_right) new_left = new_right - 1;
+        } else if (server.resize_edges & WLR_EDGE_RIGHT) {
+            new_right = static_cast<int>(border_x);
+            if (new_right <= new_left) new_right = new_left + 1;
+        }
+        wlr_scene_node_set_position(&toplevel->scene_tree->node, new_left, new_top);
+        wlr_xwayland_surface_configure(toplevel->xsurface, new_left, new_top, new_right - new_left, new_bottom - new_top);
+        return;
+    }
     auto* toplevel = server.grabbed_toplevel;
     if (!toplevel)
         return;
@@ -805,11 +851,14 @@ enum class FrameRegion {
 // Where the cursor is within a window's server-side frame.
 struct FrameHit {
     Toplevel* toplevel { nullptr };
+    X11Toplevel* x11_toplevel { nullptr };
     FrameRegion region { FrameRegion::None };
     int button_index { -1 };
     uint32_t edges { 0 };
     Gfx::IntPoint local;
 };
+
+static FrameHit x11_hit_test_frame(Server& server, double x, double y);
 
 static FrameHit hit_test_frame(Server& server, double x, double y)
 {
@@ -1142,6 +1191,7 @@ static void process_cursor_motion(Server& server, uint32_t time)
     auto hit = hit_test_frame(server, server.cursor->x, server.cursor->y);
     update_button_hover(server, hit);
     update_button_pressed(server, hit);
+    update_x11_button_hover(server, server.cursor->x, server.cursor->y);
 
     double sx = 0;
     double sy = 0;
@@ -1201,8 +1251,13 @@ static void process_cursor_motion(Server& server, uint32_t time)
 
     // Set the cursor for our chrome last: clearing client focus above resets it
     // to the default arrow, so the resize cursor must come after.
-    if (hit.region != FrameRegion::None)
+    if (hit.region != FrameRegion::None) {
         wlr_cursor_set_xcursor(server.cursor, server.cursor_manager, hit.region == FrameRegion::Border ? resize_cursor_name(hit.edges) : "default");
+    } else {
+        auto x11_hit = x11_hit_test_frame(server, server.cursor->x, server.cursor->y);
+        if (x11_hit.region == FrameRegion::Border)
+            wlr_cursor_set_xcursor(server.cursor, server.cursor_manager, resize_cursor_name(x11_hit.edges));
+    }
 }
 
 static void cursor_motion(wl_listener* listener, void* data)
@@ -1372,7 +1427,37 @@ static bool handle_super_drag_press(Server& server, uint32_t button)
     double sx = 0;
     double sy = 0;
     auto* toplevel = toplevel_at(server, server.cursor->x, server.cursor->y, &surface, &sx, &sy);
-    if (!toplevel || toplevel->fullscreen)
+    if (!toplevel) {
+        // X11 windows get the same Super+<button> move/resize (KWin's Alt+drag).
+        if (!x11_surface_at(server, server.cursor->x, server.cursor->y, &surface, &sx, &sy))
+            return false;
+        auto* x11 = x11_toplevel_for_wlr_surface(server, surface);
+        if (!x11 || x11->override_redirect)
+            return false;
+        focus_x11_toplevel(server, x11);
+        if (button == BTN_LEFT) {
+            x11_begin_interactive(*x11, CursorMode::Move, 0);
+            return true;
+        }
+        int width = x11->xsurface->width > 0 ? x11->xsurface->width : 1;
+        int height = x11->xsurface->height > 0 ? x11->xsurface->height : 1;
+        double relative_x = (server.cursor->x - x11->scene_tree->node.x) / width;
+        double relative_y = (server.cursor->y - x11->scene_tree->node.y) / height;
+        uint32_t edges = 0;
+        if (relative_x < 1.0 / 3.0)
+            edges |= WLR_EDGE_LEFT;
+        else if (relative_x > 2.0 / 3.0)
+            edges |= WLR_EDGE_RIGHT;
+        if (relative_y < 1.0 / 3.0)
+            edges |= WLR_EDGE_TOP;
+        else if (relative_y > 2.0 / 3.0)
+            edges |= WLR_EDGE_BOTTOM;
+        if (edges == 0)
+            return false;
+        x11_begin_interactive(*x11, CursorMode::Resize, edges);
+        return true;
+    }
+    if (toplevel->fullscreen)
         return false;
 
     if (button == BTN_LEFT) {
@@ -1468,6 +1553,10 @@ static void cursor_button(wl_listener* listener, void* data)
                 server->frame_grab = true;
             return;
         }
+        if (handle_x11_frame_press(*server, event->button)) {
+            server->frame_grab = true;
+            return;
+        }
         // SerenityOS: Super+LMB moves and Super+RMB resizes, from anywhere.
         if (handle_super_drag_press(*server, event->button)) {
             server->frame_grab = true;
@@ -1479,6 +1568,9 @@ static void cursor_button(wl_listener* listener, void* data)
         if (server->grabbed_toplevel && server->cursor_mode == CursorMode::Move)
             WindowManager::finish_move_snap(*server, *server->grabbed_toplevel);
         handle_frame_release(*server, event->button);
+        handle_x11_frame_release(*server, event->button);
+        if (server->grabbed_x11)
+            reset_cursor_mode(*server);
         return;
     }
 
@@ -2037,17 +2129,32 @@ static void focus_x11_toplevel(Server& server, X11Toplevel* toplevel)
         return;
 
     if (auto* previous = server.seat->keyboard_state.focused_surface) {
-        if (auto* xdg = wlr_xdg_toplevel_try_from_wlr_surface(previous))
+        if (auto* xdg = wlr_xdg_toplevel_try_from_wlr_surface(previous)) {
             wlr_xdg_toplevel_set_activated(xdg, false);
+            for (auto& other : server.toplevels) {
+                if (other->xdg_toplevel && other->xdg_toplevel->base->surface == previous) {
+                    other->frame_active = false;
+                    toplevel_update_frame(*other);
+                    break;
+                }
+            }
+        }
     }
-    if (server.focused_x11 && server.focused_x11 != toplevel)
+    if (server.focused_x11 && server.focused_x11 != toplevel) {
         wlr_xwayland_surface_activate(server.focused_x11->xsurface, false);
+        server.focused_x11->frame_active = false;
+        if (server.focused_x11->frame_decorated)
+            x11_update_frame(*server.focused_x11);
+    }
     server.focused_x11 = toplevel;
 
     server.keyboard_focus_layer = nullptr;
     stop_key_repeat();
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
+    toplevel->frame_active = true;
     wlr_xwayland_surface_activate(toplevel->xsurface, true);
+    if (toplevel->frame_decorated)
+        x11_update_frame(*toplevel);
     auto* keyboard = wlr_seat_get_keyboard(server.seat);
     if (keyboard)
         wlr_seat_keyboard_notify_enter(server.seat, surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
@@ -2088,6 +2195,7 @@ static void x11_surface_map(wl_listener* listener, void*)
     wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
     wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->xsurface->x, toplevel->xsurface->y);
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
+    x11_update_frame(*toplevel);
     dbgln("WindowServer: X11 window mapped '{}' at {},{}", toplevel->xsurface->title ? toplevel->xsurface->title : "", toplevel->xsurface->x, toplevel->xsurface->y);
     if (!toplevel->override_redirect)
         focus_x11_toplevel(server, toplevel);
@@ -2133,6 +2241,12 @@ static void x11_surface_destroy(wl_listener* listener, void*)
     auto& server = *toplevel->server;
     if (server.focused_x11 == toplevel)
         server.focused_x11 = nullptr;
+    if (server.grabbed_x11 == toplevel)
+        server.grabbed_x11 = nullptr;
+    if (server.pressed_button_x11 == toplevel)
+        server.pressed_button_x11 = nullptr;
+    if (toplevel->frame_buffer)
+        toplevel->frame_buffer = nullptr; // destroyed with the scene tree
     if (toplevel->scene_tree) {
         wlr_scene_node_destroy(&toplevel->scene_tree->node);
         toplevel->scene_tree = nullptr;
@@ -2148,6 +2262,7 @@ static void x11_request_configure(wl_listener* listener, void* data)
     wlr_xwayland_surface_configure(toplevel->xsurface, event->x, event->y, event->width, event->height);
     if (toplevel->mapped)
         wlr_scene_node_set_position(&toplevel->scene_tree->node, event->x, event->y);
+    x11_update_frame(*toplevel);
 }
 
 static void x11_request_close(wl_listener* listener, void*)
@@ -2170,6 +2285,8 @@ static void x11_set_title(wl_listener* listener, void*)
     X11Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, set_title);
     dbgln("WindowServer: X11 window '{}'", toplevel->xsurface->title ? toplevel->xsurface->title : "");
+    if (toplevel->frame_decorated)
+        x11_update_frame(*toplevel);
 }
 
 static void server_new_xwayland_surface(wl_listener* listener, void* data)
@@ -2209,6 +2326,267 @@ static void xwayland_ready(wl_listener* listener, void*)
     Server* server = nullptr;
     server = wl_container_of(listener, server, xwayland_ready);
     dbgln("WindowServer: Xwayland ready (DISPLAY={})", server->xwayland->display_name);
+}
+
+// --- X11 server-side decoration frames -------------------------------------
+
+// Render the SerenityOS frame around an X11 window, unless the client draws its
+// own decorations (Motif hints) or is an override-redirect window.
+static void x11_update_frame(X11Toplevel& toplevel)
+{
+    if (!g_palette || !toplevel.xsurface)
+        return;
+    auto* xsurface = toplevel.xsurface;
+    int content_width = xsurface->width;
+    int content_height = xsurface->height;
+    if (content_width <= 0 || content_height <= 0)
+        return;
+
+    bool decorate = !toplevel.override_redirect && xsurface->decorations == WLR_XWAYLAND_SURFACE_DECORATIONS_ALL;
+    if (!decorate) {
+        toplevel.frame_decorated = false;
+        toplevel.frame_left = toplevel.frame_top = toplevel.frame_right = toplevel.frame_bottom = 0;
+        toplevel.frame_size = { content_width, content_height };
+        toplevel.button_rects.clear_with_capacity();
+        if (toplevel.frame_buffer)
+            wlr_scene_node_set_enabled(&toplevel.frame_buffer->node, false);
+        if (toplevel.scene)
+            wlr_scene_node_set_position(&toplevel.scene->buffer->node, 0, 0);
+        return;
+    }
+
+    auto& theme = g_palette->window_theme();
+    Gfx::IntRect content_rect { 0, 0, content_width, content_height };
+    auto frame_rect = theme.frame_rect_for_window(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette, 0);
+    auto frame_size = frame_rect.size();
+    if (frame_size.is_empty())
+        return;
+    toplevel.frame_decorated = true;
+    toplevel.frame_left = -frame_rect.x();
+    toplevel.frame_top = -frame_rect.y();
+    toplevel.frame_right = frame_size.width() - content_width - toplevel.frame_left;
+    toplevel.frame_bottom = frame_size.height() - content_height - toplevel.frame_top;
+    toplevel.frame_size = frame_size;
+
+    auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, frame_size, output_scale()).release_value_but_fixme_should_propagate_errors();
+    Gfx::Painter painter(*bitmap);
+    painter.fill_rect(Gfx::IntRect { { }, frame_size }, g_palette->window());
+
+    static auto const blank_icon = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { 16, 16 }).release_value_but_fixme_should_propagate_errors();
+    Gfx::Bitmap const& icon = *blank_icon;
+    auto buttons = theme.layout_buttons(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette, 3, false);
+    toplevel.titlebar_icon_rect = theme.titlebar_icon_rect(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette);
+    Gfx::IntRect leftmost_button = buttons.is_empty() ? Gfx::IntRect { } : buttons.last();
+    auto state = toplevel.frame_active ? Gfx::WindowTheme::WindowState::Active : Gfx::WindowTheme::WindowState::Inactive;
+    StringView title { xsurface->title ? xsurface->title : "", xsurface->title ? strlen(xsurface->title) : 0 };
+    theme.paint_normal_frame(painter, state, Gfx::WindowTheme::WindowMode::Other, content_rect, title, icon, *g_palette, leftmost_button, 0, false);
+
+    toplevel.button_rects.clear_with_capacity();
+    float icon_opacity = toplevel.frame_active ? 1.0f : (g_palette->window_title_button_inactive_alpha() / 255.0f);
+    for (size_t index = 0; index < buttons.size(); ++index) {
+        auto button_rect = buttons[index];
+        toplevel.button_rects.append(button_rect);
+        bool pressed = toplevel.pressed_button == static_cast<int>(index);
+        bool hovered = toplevel.hovered_button == static_cast<int>(index);
+        if (!g_palette->title_buttons_icon_only())
+            Gfx::StylePainter::paint_button(painter, button_rect, *g_palette, Gfx::ButtonStyle::Normal, pressed, hovered);
+        RefPtr<Gfx::Bitmap> button_icon;
+        if (index == 0)
+            button_icon = g_frame_icons.close;
+        else if (index == 1)
+            button_icon = toplevel.maximized ? g_frame_icons.restore : g_frame_icons.maximize;
+        else if (index == 2)
+            button_icon = g_frame_icons.minimize;
+        if (button_icon) {
+            auto icon_location = button_rect.center().translated(-(button_icon->width() / 2), -(button_icon->height() / 2));
+            if (pressed)
+                icon_location.translate_by(1, 1);
+            painter.blit(icon_location, *button_icon, button_icon->rect(), icon_opacity);
+        }
+    }
+
+    auto* buffer = bitmap_buffer_create(move(bitmap));
+    if (!toplevel.frame_buffer) {
+        toplevel.frame_buffer = wlr_scene_buffer_create(toplevel.scene_tree, buffer);
+        wlr_scene_node_set_position(&toplevel.frame_buffer->node, 0, 0);
+    } else {
+        wlr_scene_buffer_set_buffer(toplevel.frame_buffer, buffer);
+    }
+    wlr_scene_buffer_set_dest_size(toplevel.frame_buffer, frame_size.width(), frame_size.height());
+    wlr_scene_node_set_position(&toplevel.frame_buffer->node, -toplevel.frame_left, -toplevel.frame_top);
+    wlr_scene_node_set_enabled(&toplevel.frame_buffer->node, true);
+    use_nearest_filter(&toplevel.frame_buffer->node);
+    wlr_buffer_drop(buffer);
+    if (toplevel.scene)
+        wlr_scene_node_set_position(&toplevel.scene->buffer->node, 0, 0);
+    dbgln("WindowServer: X11 frame '{}' {}x{} (content {}x{})", title, frame_size.width(), frame_size.height(), content_width, content_height);
+}
+
+static FrameHit x11_hit_test_frame(Server& server, double x, double y)
+{
+    FrameHit hit;
+    for (size_t index = server.x11_toplevels.size(); index-- > 0;) {
+        auto& toplevel = *server.x11_toplevels[index];
+        if (!toplevel.mapped || !toplevel.frame_decorated)
+            continue;
+        auto* node = &toplevel.scene_tree->node;
+        Gfx::IntRect frame_rect {
+            static_cast<int>(node->x) - toplevel.frame_left,
+            static_cast<int>(node->y) - toplevel.frame_top,
+            toplevel.frame_size.width(), toplevel.frame_size.height()
+        };
+        if (frame_rect.is_empty() || !frame_rect.contains({ static_cast<int>(x), static_cast<int>(y) }))
+            continue;
+        hit.x11_toplevel = &toplevel;
+        hit.local = { static_cast<int>(x) - frame_rect.x(), static_cast<int>(y) - frame_rect.y() };
+        for (size_t button_index = 0; button_index < toplevel.button_rects.size(); ++button_index) {
+            if (toplevel.button_rects[button_index].contains(hit.local)) {
+                hit.region = FrameRegion::Button;
+                hit.button_index = static_cast<int>(button_index);
+                return hit;
+            }
+        }
+        Gfx::IntRect titlebar_rect {
+            toplevel.frame_left, 0,
+            toplevel.frame_size.width() - toplevel.frame_left - toplevel.frame_right,
+            min(toplevel.frame_top + 2, toplevel.frame_size.height())
+        };
+        if (titlebar_rect.contains(hit.local)) {
+            hit.region = FrameRegion::Titlebar;
+            return hit;
+        }
+        constexpr int resize_border = 4;
+        uint32_t edges = 0;
+        if (hit.local.x() < resize_border)
+            edges |= WLR_EDGE_LEFT;
+        if (hit.local.x() >= toplevel.frame_size.width() - resize_border)
+            edges |= WLR_EDGE_RIGHT;
+        if (hit.local.y() < resize_border)
+            edges |= WLR_EDGE_TOP;
+        if (hit.local.y() >= toplevel.frame_size.height() - resize_border)
+            edges |= WLR_EDGE_BOTTOM;
+        if (edges) {
+            hit.region = FrameRegion::Border;
+            hit.edges = edges;
+        }
+        return hit;
+    }
+    return hit;
+}
+
+static void x11_begin_interactive(X11Toplevel& toplevel, CursorMode mode, uint32_t edges)
+{
+    auto& server = *toplevel.server;
+    server.grabbed_toplevel = nullptr;
+    server.grabbed_x11 = &toplevel;
+    server.cursor_mode = mode;
+    int width = toplevel.xsurface->width;
+    int height = toplevel.xsurface->height;
+    if (mode == CursorMode::Move) {
+        server.grab_x = server.cursor->x - toplevel.scene_tree->node.x;
+        server.grab_y = server.cursor->y - toplevel.scene_tree->node.y;
+    } else {
+        double border_x = toplevel.scene_tree->node.x + ((edges & WLR_EDGE_RIGHT) ? width : 0);
+        double border_y = toplevel.scene_tree->node.y + ((edges & WLR_EDGE_BOTTOM) ? height : 0);
+        server.grab_x = server.cursor->x - border_x;
+        server.grab_y = server.cursor->y - border_y;
+        server.grab_box = { static_cast<int>(toplevel.scene_tree->node.x), static_cast<int>(toplevel.scene_tree->node.y), width, height };
+        server.resize_edges = edges;
+    }
+    wlr_cursor_set_xcursor(server.cursor, server.cursor_manager, mode == CursorMode::Move ? "grabbing" : resize_cursor_name(edges));
+}
+
+static void x11_frame_button_action(X11Toplevel& toplevel, int button_index)
+{
+    switch (button_index) {
+    case 0:
+        wlr_xwayland_surface_close(toplevel.xsurface);
+        break;
+    case 1: {
+        toplevel.maximized = !toplevel.maximized;
+        if (toplevel.maximized) {
+            toplevel.restore_size = { toplevel.xsurface->width, toplevel.xsurface->height };
+            wlr_xwayland_surface_set_maximized(toplevel.xsurface, true, true);
+            wlr_box box { };
+            wlr_output_layout_get_box(toplevel.server->output_layout, nullptr, &box);
+            wlr_scene_node_set_position(&toplevel.scene_tree->node, box.x, box.y);
+            wlr_xwayland_surface_configure(toplevel.xsurface, box.x, box.y, box.width, box.height);
+        } else {
+            wlr_xwayland_surface_set_maximized(toplevel.xsurface, false, false);
+            int w = toplevel.restore_size.width() > 0 ? toplevel.restore_size.width() : toplevel.xsurface->width;
+            int h = toplevel.restore_size.height() > 0 ? toplevel.restore_size.height() : toplevel.xsurface->height;
+            wlr_xwayland_surface_configure(toplevel.xsurface, static_cast<int>(toplevel.scene_tree->node.x), static_cast<int>(toplevel.scene_tree->node.y), w, h);
+        }
+        break;
+    }
+    case 2:
+        wlr_xwayland_surface_set_minimized(toplevel.xsurface, true);
+        break;
+    default:
+        break;
+    }
+}
+
+static bool handle_x11_frame_press(Server& server, uint32_t button)
+{
+    auto hit = x11_hit_test_frame(server, server.cursor->x, server.cursor->y);
+    auto* toplevel = hit.x11_toplevel;
+    if (!toplevel)
+        return false;
+    if (button == BTN_LEFT && hit.region == FrameRegion::Button) {
+        server.pressed_button_x11 = toplevel;
+        server.pressed_button_x11_index = hit.button_index;
+        toplevel->hovered_button = hit.button_index;
+        toplevel->pressed_button = hit.button_index;
+        x11_update_frame(*toplevel);
+        return true;
+    }
+    if (button == BTN_LEFT && hit.region == FrameRegion::Titlebar) {
+        focus_x11_toplevel(server, toplevel);
+        x11_begin_interactive(*toplevel, CursorMode::Move, 0);
+        return true;
+    }
+    if (button == BTN_LEFT && hit.region == FrameRegion::Border) {
+        focus_x11_toplevel(server, toplevel);
+        x11_begin_interactive(*toplevel, CursorMode::Resize, hit.edges);
+        return true;
+    }
+    return false;
+}
+
+static void handle_x11_frame_release(Server& server, uint32_t button)
+{
+    auto* toplevel = server.pressed_button_x11;
+    if (!toplevel)
+        return;
+    server.pressed_button_x11 = nullptr;
+    int index = server.pressed_button_x11_index;
+    server.pressed_button_x11_index = -1;
+    toplevel->pressed_button = -1;
+    if (button != BTN_LEFT) {
+        x11_update_frame(*toplevel);
+        return;
+    }
+    // Act only if the release is still over the same button.
+    auto hit = x11_hit_test_frame(server, server.cursor->x, server.cursor->y);
+    bool same = hit.x11_toplevel == toplevel && hit.region == FrameRegion::Button && hit.button_index == index;
+    if (same)
+        x11_frame_button_action(*toplevel, index);
+    x11_update_frame(*toplevel);
+}
+
+// Update the hovered titlebar button for the X11 window under the cursor.
+static void update_x11_button_hover(Server& server, double x, double y)
+{
+    auto hit = x11_hit_test_frame(server, x, y);
+    for (auto& toplevel : server.x11_toplevels) {
+        int hovered = (toplevel.ptr() == hit.x11_toplevel && hit.region == FrameRegion::Button) ? hit.button_index : -1;
+        if (toplevel->hovered_button != hovered) {
+            toplevel->hovered_button = hovered;
+            if (toplevel->frame_decorated)
+                x11_update_frame(*toplevel);
+        }
+    }
 }
 
 static void server_new_input(wl_listener* listener, void* data)

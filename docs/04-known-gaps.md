@@ -329,14 +329,19 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
 
 Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.md) §3–4.
 
-- **XWayland (G7)** — **basic support landed**: the compositor runs Xwayland
-  (lazily, on the first X client) and X11 clients map, focus and stack (content,
-  position, click-to-focus, and close). Enabled by default; `[Compositor]
-  XWayland=false` in `WindowServer.ini` disables it entirely (no X server, no
-  `DISPLAY`). Verified by `scripts/run-xwayland-test.sh`. **Remaining:** X11
-  windows are not yet folded into the compositor's server-side decoration /
-  Taskbar / snapping / workspaces model — they draw their own decorations and are
-  managed as plain content windows.
+- **XWayland (G7)** — **landed, working toward KWin/Plasma parity.** The compositor
+  runs Xwayland lazily; X11 clients map, focus, stack (content, position,
+  click-to-focus, close), and get **server-side decoration frames** (unless the
+  client asks for no decorations via Motif hints): titlebar drag-to-move, border
+  resize, and close/maximize/minimize buttons, plus Super+drag move/resize.
+  `[Compositor] XWayland=false` in `WindowServer.ini` disables X11 entirely (no X
+  server, no `DISPLAY`). Verified by `scripts/run-xwayland-test.sh`. **Still
+  missing for full parity:** X11 windows in the **Taskbar / Alt-Tab** window list
+  (with WM_CLASS and `_NET_WM_ICON`), **workspaces / minimize** integration,
+  override-redirect (menus/tooltips) handling, the X11↔Wayland **selection /
+  clipboard bridge**, Xwayland **keyboard grabs**, `_NET_WM_STATE` hints
+  (modal/skip-taskbar/above/urgent), transients (parent/child), `_NET_WM_STRUT`
+  workarea, and X11↔Wayland **drag-and-drop**.
 - **Native-app protocol matrix (G7).** **Mostly done** — the compositor advertises
   (and wlroots implements) `xdg-activation`, `xdg-foreign` (v1 + v2), primary
   selection, `wlr`+`ext` data-control, `keyboard-shortcuts-inhibit`,
