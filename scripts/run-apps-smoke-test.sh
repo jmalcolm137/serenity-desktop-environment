@@ -38,6 +38,13 @@ for _ in $(seq 1 80); do
     [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SOCK" ]] && break
     sleep 0.1
 done
+# The compositor spawns each app itself (the apps are separate, not -s children),
+# so kill the compositor and any client it left behind.
+stop_compositor() {
+    kill -TERM "$COMP_PID" 2>/dev/null || true
+    wait "$COMP_PID" 2>/dev/null || true
+}
+trap 'stop_compositor; rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
 
 fail=0
 before="$(grep -c 'toplevel mapped' "$RUNTIME/comp.log" || true)"

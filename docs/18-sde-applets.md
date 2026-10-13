@@ -42,6 +42,13 @@ The remaining applets read **no** kernel interface:
 - **Keymap** uses `Keyboard::CharacterMap` (LibKeyboard).
 - **Audio** uses `Audio::ConnectionToManagerServer` (LibAudio).
 
+When an applet **launches a Serenity application** (ResourceGraph opens
+`/bin/SystemMonitor` on click), the path resolves through the port's
+`Process::resolve_executable_path()`: the session sets **`SDE_APP_BIN_DIR`** to the
+port's bin directory, so `/bin/SystemMonitor` reaches it even though the applet
+itself lives in `build/Applets` (libgui-wayland patch `0011`). Covered by
+`scripts/run-applet-launch-test.sh`.
+
 ## 3. Library abstractions stay in the libraries (the port)
 
 Where an applet only needs a *library* abstraction, that abstraction lives in the
