@@ -48,7 +48,7 @@ STARTUP="$BUILD/bin/Taskbar & $BUILD/bin/FileManager -d"
 
 setsid env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
+    SDE_WM_PORTAL_PATH="$RUNTIME/portal/wm" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     SDE_APP_BIN_DIR="$BUILD/bin" \
@@ -60,6 +60,10 @@ for _ in $(seq 1 80); do
     sleep 0.1
 done
 sleep 4
+# The compositor must have created the override path's parent directory and be
+# listening there (the WM clients connect to this socket).
+PORTAL_OK=0
+[[ -S "$RUNTIME/portal/wm" ]] && PORTAL_OK=1
 stop_compositor
 
 fail=0
@@ -69,6 +73,11 @@ check() {
 }
 
 echo "=== the shell starts with the WindowManagerServer already listening ==="
+if [[ "${PORTAL_OK:-0}" -eq 1 ]]; then
+    echo "  ok: compositor created and listens on $RUNTIME/portal/wm"
+else
+    echo "  FAIL: no WM portal socket at $RUNTIME/portal/wm"; fail=1
+fi
 check "title='Taskbar'"
 check "layer surface namespace='serenity-taskbar'"
 check "layer surface namespace='serenity-desktop'"

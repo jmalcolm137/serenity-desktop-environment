@@ -78,7 +78,9 @@ run_session "$RUNTIME/env-c" seat0 3 > "$RUNTIME/c.log" 2>&1 || true
 check "XDG_VTNR=3" "$(cat "$RUNTIME/env-c" 2>/dev/null || true)"
 
 echo "== (D) native preflight refuses without a DRM device =="
-if env SDE_DRM_GLOB="/nonexistent/card*" "$START" > "$RUNTIME/d.log" 2>&1; then
+# start-sde-session.sh logs to SDE_SESSION_LOG when it has no terminal, so point it
+# at the file we assert on.
+if env SDE_SESSION_LOG="$RUNTIME/d.log" SDE_DRM_GLOB="/nonexistent/card*" "$START" >/dev/null 2>&1; then
     echo "  FAIL: started without a DRM device"
     fail=1
 else

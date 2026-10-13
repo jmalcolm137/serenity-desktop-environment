@@ -4362,11 +4362,15 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     // Taskbar protocol), just like SerenityOS's WindowServer does. The socket
     // path can be overridden so tests can run isolated from a live session.
     ByteString wm_portal { "/tmp/portal/wm" };
-    if (auto const* override_path = getenv("SDE_WM_PORTAL_PATH"); override_path && *override_path) {
+    if (auto const* override_path = getenv("SDE_WM_PORTAL_PATH"); override_path && *override_path)
         wm_portal = override_path;
-    } else {
-        ::mkdir("/tmp/portal", 0755);
-    }
+    // Ensure the parent directory exists: /tmp/portal is not guaranteed to survive a
+    // tmp-clean, and an override may name a fresh directory. (Previously this was
+    // only done for the default path, so a session that exported SDE_WM_PORTAL_PATH
+    // =/tmp/portal/wm skipped it and listen() failed - leaving a login with applets
+    // but no Taskbar/desktop, as the WM clients could not connect.)
+    if (auto directory = LexicalPath(wm_portal).dirname(); !directory.is_empty())
+        (void)Core::Directory::create(directory, Core::Directory::CreateDirectories::Yes);
     ::unlink(wm_portal.characters());
     auto wm_server = Core::LocalServer::construct();
     if (!wm_server->listen(wm_portal))

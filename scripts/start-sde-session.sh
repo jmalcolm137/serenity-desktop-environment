@@ -47,9 +47,14 @@ fi
 . "$SDE_ROOT/scripts/sde-seat.sh"
 sde_detect_seat
 export SDE_SESSION_DISPLAY="${SDE_SESSION_DISPLAY:-sde$(sde_seat_suffix)}"
-SDE_WM_PORTAL_PATH="${SDE_WM_PORTAL_PATH:-$(sde_wm_portal_path)}"
-export SDE_WM_PORTAL_PATH
-echo "SDE: seat '${XDG_SEAT}'${XDG_VTNR:+ vt$XDG_VTNR} display '$SDE_SESSION_DISPLAY' wm-portal '$SDE_WM_PORTAL_PATH'"
+# Only a non-default seat relocates the WindowManagerServer socket; seat0 uses the
+# default (/tmp/portal/wm), which the compositor creates. Exporting the default
+# would make the compositor skip creating /tmp/portal (see WindowServer main.cpp).
+if [[ -z "${SDE_WM_PORTAL_PATH:-}" && -n "$(sde_seat_suffix)" ]]; then
+    SDE_WM_PORTAL_PATH="$(sde_wm_portal_path)"
+    export SDE_WM_PORTAL_PATH
+fi
+echo "SDE: seat '${XDG_SEAT}'${XDG_VTNR:+ vt$XDG_VTNR} display '$SDE_SESSION_DISPLAY' wm-portal '${SDE_WM_PORTAL_PATH:-/tmp/portal/wm}'"
 
 # R4.3/R6: a native (DRM+libinput) session needs a seat and a DRM device. Give
 # actionable guidance instead of a loop of opaque backend failures. Override with
