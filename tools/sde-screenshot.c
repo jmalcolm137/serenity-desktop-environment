@@ -26,6 +26,7 @@ static void* s_data = NULL;
 static int s_width = 0;
 static int s_height = 0;
 static uint32_t s_format = 0;
+static uint32_t s_stride = 0;
 static int s_done = 0;
 static char const* s_out_path = NULL;
 
@@ -35,6 +36,13 @@ static void buffer_handle_buffer(void* data, struct zwlr_screencopy_frame_v1* fr
     s_width = (int)width;
     s_height = (int)height;
     s_format = format;
+    s_stride = stride;
+
+    if (getenv("SDE_SCREENSHOT_DEBUG"))
+        fprintf(stderr, "sde-screenshot: buffer format=0x%08x (%c%c%c%c) %ux%u stride=%u bpp=%u\n",
+            format, (char)(format & 0xff), (char)((format >> 8) & 0xff),
+            (char)((format >> 16) & 0xff), (char)((format >> 24) & 0xff),
+            width, height, stride, width ? stride / width : 0);
 
     int const size = (int)stride * s_height;
     char name[] = "/tmp/screencopy-XXXXXX";
@@ -45,6 +53,10 @@ static void buffer_handle_buffer(void* data, struct zwlr_screencopy_frame_v1* fr
         exit(1);
     }
     s_data = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (s_data == MAP_FAILED) {
+        fprintf(stderr, "sde-screenshot: mmap failed\n");
+        exit(1);
+    }
     struct wl_shm_pool* pool = wl_shm_create_pool(s_shm, fd, size);
     s_buffer = wl_shm_pool_create_buffer(pool, 0, width, height, (int)stride, format);
     wl_shm_pool_destroy(pool);
@@ -58,17 +70,58 @@ static void buffer_handle_ready(void*, struct zwlr_screencopy_frame_v1* frame, u
     (void)tv_sec_hi; (void)tv_sec_lo; (void)tv_nsec;
     FILE* f = fopen(s_out_path, "wb");
     if (f) {
-        // wl_shm formats differ in channel order: *RGB8888 is B,G,R,X in memory
-        // (little-endian), *BGR8888 is R,G,B,X. wlroots' screencopy commonly
-        // hands back ABGR/XBGR, so honour the advertised format rather than
-        // assuming XRGB (a mismatch swaps red and blue).
-        bool const bgr = (s_format == WL_SHM_FORMAT_XRGB8888 || s_format == WL_SHM_FORMAT_ARGB8888);
+        // wl_shm formats differ in both channel order and pixel size. The
+        // compositor may hand back a 32-bit format (XRGB/ARGB = B,G,R,X in
+        // memory; XBGR/ABGR = R,G,B,X), a 24-bit one (BGR888/RGB888), or 16-bit
+        // RGB565 — and the row stride can exceed width * bytes-per-pixel. So
+        // honour the advertised format for both, rather than assuming 32-bit
+        // XRGB (which both swapped channels and ran off the end of the mapping
+        // for 24-bit buffers, crashing).
+        unsigned bpp = 4;
+        bool bgr = true;
+        bool rgb565 = false;
+        switch (s_format) {
+        case WL_SHM_FORMAT_XRGB8888:
+        case WL_SHM_FORMAT_ARGB8888:
+            bpp = 4;
+            bgr = true;
+            break;
+        case WL_SHM_FORMAT_XBGR8888:
+        case WL_SHM_FORMAT_ABGR8888:
+            bpp = 4;
+            bgr = false;
+            break;
+        case WL_SHM_FORMAT_BGR888:
+            // "[23:0] B:G:R little endian" -> R,G,B in memory.
+            bpp = 3;
+            bgr = false;
+            break;
+        case WL_SHM_FORMAT_RGB888:
+            // "[23:0] R:G:B little endian" -> B,G,R in memory.
+            bpp = 3;
+            bgr = true;
+            break;
+        case WL_SHM_FORMAT_RGB565:
+            bpp = 2;
+            rgb565 = true;
+            break;
+        default:
+            // Unknown format: trust the stride to stay in bounds.
+            bpp = s_width > 0 && s_stride >= (uint32_t)s_width * 3 ? s_stride / (uint32_t)s_width : 4;
+            bgr = true;
+            break;
+        }
         fprintf(f, "P6\n%d %d\n255\n", s_width, s_height);
         for (int y = 0; y < s_height; ++y) {
-            uint8_t* row = (uint8_t*)s_data + (size_t)y * s_width * 4;
+            uint8_t const* row = (uint8_t const*)s_data + (size_t)y * s_stride;
             for (int x = 0; x < s_width; ++x) {
-                uint8_t const* p = &row[x * 4];
-                if (bgr) {
+                uint8_t const* p = &row[(size_t)x * bpp];
+                if (rgb565) {
+                    uint16_t v = (uint16_t)(p[0] | (p[1] << 8));
+                    fputc(((v >> 11) & 0x1f) * 255 / 31, f);
+                    fputc(((v >> 5) & 0x3f) * 255 / 63, f);
+                    fputc((v & 0x1f) * 255 / 31, f);
+                } else if (bgr) {
                     fputc(p[2], f);
                     fputc(p[1], f);
                     fputc(p[0], f);
