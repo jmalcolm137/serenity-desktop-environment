@@ -110,6 +110,13 @@ if [[ ! -x "$BATTERY_APPLET" ]]; then
         || echo "note: BatteryApplet not built; skipping the battery applet" >&2
 fi
 
+# The Wi-Fi applet (a LibGUI app that fronts NetworkManager; docs/19).
+WIFI_APPLET="$SDE_ROOT/build/WifiApplet/WifiApplet"
+if [[ ! -x "$WIFI_APPLET" ]]; then
+    "$SDE_ROOT/scripts/build-wifi-applet.sh" >/dev/null 2>&1 \
+        || echo "note: WifiApplet not built; skipping the Wi-Fi applet" >&2
+fi
+
 # The SerenityOS taskbar applets (WorkspacePicker, ResourceGraph, Network, ...)
 # are SDE's; build them on demand so a fresh checkout gets them too.
 if [[ ! -x "$SDE_ROOT/build/Applets/WorkspacePicker" ]]; then
@@ -137,6 +144,9 @@ else
     fi
     if [[ -x "$BATTERY_APPLET" ]]; then
         STARTUP="$STARTUP & $BATTERY_APPLET"
+    fi
+    if [[ -x "$WIFI_APPLET" ]]; then
+        STARTUP="$STARTUP & $WIFI_APPLET"
     fi
 fi
 

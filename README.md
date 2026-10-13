@@ -30,6 +30,7 @@ The stack is split across a small family of repositories:
 - [`docs/14-r4.4-config.md`](docs/14-r4.4-config.md) — the compositor configuration seam: a validated, live-reloading `WindowServer.ini` and `scripts/sde-config`.
 - [`docs/15-xdg-desktop-portal-serenity.md`](docs/15-xdg-desktop-portal-serenity.md) — the SDE xdg-desktop-portal backend and its LibGUI dialogs (R5).
 - [`docs/16-battery-applet.md`](docs/16-battery-applet.md) — the battery status applet for the Taskbar's applet area.
+- [`docs/19-wifi-applet.md`](docs/19-wifi-applet.md) — the Wi-Fi applet for the Taskbar's applet area (a LibGUI frontend to NetworkManager, modeled on KDE Plasma's Networks applet).
 
 ## Status
 
@@ -44,6 +45,10 @@ Implementation is underway. This repo contains:
 - **`BatteryApplet/`** — the battery status applet for the Taskbar's applet area
   (a LibGUI app modeled on KDE's battery applet; see
   [`docs/16-battery-applet.md`](docs/16-battery-applet.md)).
+- **`WifiApplet/`** — the Wi-Fi applet for the Taskbar's applet area, just left of
+  the battery applet (a LibGUI frontend to NetworkManager, modeled on KDE
+  Plasma's Networks applet; see
+  [`docs/19-wifi-applet.md`](docs/19-wifi-applet.md)).
 - **`patches/`**, **`scripts/`** — SerenityOS host-build patches and the
   build / run / test scripts.
 

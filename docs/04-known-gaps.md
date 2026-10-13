@@ -328,6 +328,25 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 
 ## Recently resolved (kept so we don't re-chase them)
 
+- **`on_demand` layer surfaces now take keyboard focus (R5).** Layer surfaces
+  with `zwlr_layer_surface_v1` keyboard interactivity `on_demand` — client popups
+  such as the Wi-Fi network list and its passphrase field, or a ComboBox dropdown
+  — were never given keyboard focus by the compositor, so their text fields could
+  not be typed into (keys went to whatever toplevel had focus). The compositor now
+  focuses such a surface when it maps (and on commit), and restores focus to the
+  topmost toplevel when it unmaps; `focus_toplevel` clears the layer focus. Panels,
+  the desktop and applets use `NONE` and are unaffected. See
+  `WindowServer/src/main.cpp` (`focus_layer_surface`).
+
+- **Wi-Fi applet (G5/W6).** `WifiApplet` is a LibGUI frontend to **NetworkManager**
+  over the system D-Bus (libdbus + `Core::Notifier`), modeled on KDE Plasma's
+  Networks applet: the Breeze signal-arc tray icon, a tooltip, and a popup with a
+  Wi-Fi switch, the network list, connect/disconnect, an inline passphrase prompt
+  and a `SecretAgent`. It sits in the applet area to the left of the battery
+  applet (the compositor appends `WiFi` then `Battery` to `[Applet] Order`). See
+  [`19-wifi-applet.md`](19-wifi-applet.md); covered by
+  `scripts/run-wifi-applet-test.sh` (a private bus + a mock NetworkManager).
+
 - **Every Settings dialog launches and its settings apply (R4).** The Settings
   grid lists 13 `Category=Settings` apps. A launch + backend sweep
   (`scripts/run-settings-test.sh`) found three that could not open at all and two

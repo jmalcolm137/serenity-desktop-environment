@@ -74,7 +74,8 @@ The session startup launches the applets (with the same arguments as SerenityOS'
 `Base/etc/SystemServerUser.ini`) via `scripts/sde-applets.sh`
 (`sde_applet_startup_commands`), spliced into the compositor's startup command by
 `scripts/start-sde-session.sh` and `scripts/start-sde-nested.sh`. They are built
-on demand, like `BatteryApplet` (the SDE-owned battery applet, docs/16).
+on demand, like the SDE-owned `BatteryApplet` (docs/16) and `WifiApplet`
+(docs/19), which the same scripts also start.
 
 ## 5. Compositor: applet re-layout on resize
 

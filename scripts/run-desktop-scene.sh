@@ -105,7 +105,7 @@ write_placement() {
 [Placement]
 Windows=Terminal:0,0,${right},${top};File Manager:${right},0,$((WIDTH - right)),${top};Browser:0,${top},${right},${bottom};System Monitor:${right},${top},$((WIDTH - right)),${bottom}
 [Applet]
-Order=WorkspacePicker,CPUGraph,MemoryGraph,NetworkGraph,Network,ClipboardHistory,Audio,Keymap,Battery
+Order=WorkspacePicker,CPUGraph,MemoryGraph,NetworkGraph,Network,ClipboardHistory,Audio,Keymap,WiFi,Battery
 EOF
 }
 write_placement
@@ -149,6 +149,13 @@ if [[ ! -x "$BATTERY_APPLET" ]]; then
     "$SDE_ROOT/scripts/build-battery-applet.sh" >/dev/null 2>&1 || true
 fi
 [[ -x "$BATTERY_APPLET" ]] && STARTUP="$STARTUP & $BATTERY_APPLET"
+
+# Wi-Fi applet (SDE's; fronts NetworkManager — docs/19).
+WIFI_APPLET="$SDE_ROOT/build/WifiApplet/WifiApplet"
+if [[ ! -x "$WIFI_APPLET" ]]; then
+    "$SDE_ROOT/scripts/build-wifi-applet.sh" >/dev/null 2>&1 || true
+fi
+[[ -x "$WIFI_APPLET" ]] && STARTUP="$STARTUP & $WIFI_APPLET"
 
 if [[ ! -x "$SDE_ROOT/build/Applets/WorkspacePicker" ]]; then
     "$SDE_ROOT/scripts/build-applets.sh" >/dev/null 2>&1 || true

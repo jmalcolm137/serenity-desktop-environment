@@ -303,13 +303,15 @@ void load()
         if (!trimmed.is_empty())
             g_applet_order.append(trimmed);
     }
-    // SDE owns the Battery applet, which is not in the SerenityOS default order.
-    // Applets are laid out right-to-left by descending order index (the *last*
-    // entry is rightmost), so put Battery at the end unless the user placed it.
+    // SDE owns the Battery and Wi-Fi applets, which are not in the SerenityOS
+    // default order. Applets are laid out right-to-left by descending order index
+    // (the *last* entry is rightmost), so append Wi-Fi and then Battery unless the
+    // user placed them: Wi-Fi sits just to the left of the battery applet.
     if (!g_applet_order.is_empty()) {
-        auto battery = ByteString { "Battery"sv };
-        if (!g_applet_order.contains_slow(battery))
-            g_applet_order.append(move(battery));
+        for (auto const& name : { ByteString { "WiFi"sv }, ByteString { "Battery"sv } }) {
+            if (!g_applet_order.contains_slow(name))
+                g_applet_order.append(name);
+        }
     }
 
     // [Placement] Windows - initial window geometry rules (see Config.h).
