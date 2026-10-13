@@ -24,6 +24,7 @@ the compositor maps as a separate scene surface. Landed, in order:
 | `8bba52e` | **Override-redirect**: menus/tooltips never take keyboard focus. |
 | `07027fc` | **Alt-Tab** (and the `WindowRef` abstraction). `WindowRef` (an xdg `Toplevel` **or** an `X11Toplevel`, `Model.h`) is the small window abstraction the WM policy paths share. `WindowSwitcher` lists X11 windows alongside xdg ones: title, live thumbnail, frame rect, most-recently-focused order (X11 gained `focus_order`), select → focus, and the theme's *Highlighted* frame state. X11 windows list on the current stack. |
 | `0cf1933` | **Workspaces**. `X11Toplevel` gained `workspace_row`/`workspace_column`; a mapped X11 window joins the current stack and hides/shows with it (workspace switch and grid reload), and the switcher filters/labels X11 windows by stack. |
+| `b3ac13a` | **Icons + WM_CLASS**. Fetch `_NET_WM_ICON` (`wlr_xwayland_surface_fetch_icon` + `xcb_ewmh`) into a `Gfx::Bitmap` and report it (`emit_window_icon`) so the Taskbar button and the switcher draw it; read `WM_CLASS` (`instance`/`class`) onto the toplevel. |
 
 Where the code lives:
 
@@ -69,9 +70,12 @@ grid and icon paths) hoist into shared helpers as those land.
    list (title, live thumbnail, select → focus; the *Highlighted* frame state).
 2. ~~**Workspaces**~~ — **done** (`0cf1933`): an X11 window is assigned to the
    current stack on map and hides/shows with it (`update_x11_toplevel_visibility`).
-3. **Window icons + WM_CLASS** — fetch `_NET_WM_ICON` (`wlr_xwayland_surface_fetch_icon`
-   + `xcb_ewmh_get_wm_icon_iterator`) and emit it (`emit_window_icon`), and group
-   Taskbar buttons by `WM_CLASS`/`instance`.
+3. **Window icons** — **done** (`b3ac13a`): `_NET_WM_ICON` is fetched
+   (`wlr_xwayland_surface_fetch_icon` + `xcb_ewmh`) and emitted
+   (`emit_window_icon`). **WM_CLASS grouping** is read onto the toplevel
+   (`wm_class`/`wm_instance`) but the Taskbar still keys buttons per
+   `WindowIdentifier{client_id, window_id}` (one button per window) and has no
+   app-grouping mode, so grouping needs a Taskbar-side change (in the port).
 4. **Override-redirect polish** — position/raise menus & tooltips like ordinary
    unmanaged windows (they are mapped but not tuned for stacking).
 5. **Selection / clipboard bridge** — X11 `PRIMARY`/`CLIPBOARD` ↔ the Wayland data
