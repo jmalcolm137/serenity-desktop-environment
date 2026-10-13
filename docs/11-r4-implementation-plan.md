@@ -107,7 +107,7 @@ legend: **stable** ⊂ wayland-protocols `stable/`; **staging** = ready for adop
 | Screen capture | `ext-image-copy-capture-v1` + `ext-image-capture-source-v1` | staging | R5 | replaces `wlr-screencopy` |
 | Data control (clipboard mgr) | `ext-data-control-v1` | staging | R5 | replaces `wlr-data-control` |
 | Shortcut inhibit | `zwp_keyboard_shortcuts_inhibit_manager_v1` | unstable | R5 | games |
-| IME | `zwp_input_method_v2` + `wp_text_input_v3` | unstable | R5 | |
+| IME | `zwp_input_method_v2` + `wp_text_input_v3` | unstable | R5 | **done** ([`22`](22-input-method.md)) |
 | **Portals (capture/input/shortcuts)** | `xdg-desktop-portal` (+ `-wlr`, `-gtk`) | spec (D-Bus) | R5 | Screenshot/ScreenCast/RemoteDesktop/InputCapture/GlobalShortcuts |
 | Layer shell | `zwlr_layer_shell_v1` | wlroots | shell | no standard; universally supported |
 | Decorations | `zxdg_decoration_manager_v1` | unstable | chrome | server-side decorations |

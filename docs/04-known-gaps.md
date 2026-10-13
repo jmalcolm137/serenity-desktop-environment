@@ -382,8 +382,10 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   served** (compositor-routed data-device DnD with a drag icon), and the port
   bridges LibGUI's `DragOperation` onto it both ways, so SerenityOS applications
   offer and accept drag-and-drop interoperably with standard Wayland clients.
-  **Still absent:** `xdg-toplevel-drag` (not present in the pinned wlroots);
-  `text-input-v3`/`input-method-v2` (IME); and accessibility (AT-SPI).
+  **Still absent:** `xdg-toplevel-drag` (not present in the pinned wlroots); and
+  accessibility (AT-SPI). **Text input / IME is now served** — `text-input-v3` +
+  `input-method-v2` (see [`22-input-method.md`](22-input-method.md),
+  `scripts/run-ime-test.sh`).
 - **`xdg-desktop-portal` (G7).** Phase 1 landed: **`xdg-desktop-portal-serenity`**
   (see [`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md)) —
   an SDE backend for the freedesktop portals (Settings, Account, Lockdown,
@@ -399,8 +401,10 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   on a live TTY; **Camera** works via the frontend (PipeWire + our Access/Lockdown)
   and `Device` was superseded by USB; **InputCapture** is landed
   ([`17-input-capture.md`](17-input-capture.md)), and a real USB broker remains.
-- **Text input / IME (G5) and accessibility (G1).** `text-input-v3` /
-  `input-method-v2`, AT-SPI, sticky keys, magnifier and high contrast are absent.
+- **Text input / IME (G5) — done (R5); accessibility (G1) remains.** `text-input-v3`
+  / `input-method-v2` are served (see [`22-input-method.md`](22-input-method.md)),
+  so an input method can compose CJK text into a focused field. AT-SPI, sticky
+  keys, magnifier and high contrast are still absent.
 
 ## R6 — Hardening & packaging (not started)
 

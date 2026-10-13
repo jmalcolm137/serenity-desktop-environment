@@ -33,6 +33,7 @@ The stack is split across a small family of repositories:
 - [`docs/19-wifi-applet.md`](docs/19-wifi-applet.md) — the Wi-Fi applet for the Taskbar's applet area (a LibGUI frontend to NetworkManager, modeled on KDE Plasma's Networks applet).
 - [`docs/20-xwayland-next-steps.md`](docs/20-xwayland-next-steps.md) — XWayland state and the remaining work toward KWin/Plasma parity (the resume point for the R5 X11 effort).
 - [`docs/21-r5-protocol-parity-plan.md`](docs/21-r5-protocol-parity-plan.md) — the standard-protocol parity plan and the wlroots version policy (pin the release Arch ships; what lands in 0.21).
+- [`docs/22-input-method.md`](docs/22-input-method.md) — text input / IME (`wp_text_input_v3` + `zwp_input_method_v2`): the compositor as relay, and how it is tested.
 
 ## Status
 
@@ -67,7 +68,7 @@ Milestone progress (see [`docs/01-objectives.md`](docs/01-objectives.md) §11):
 | **R2** | Shell v1 | Done — Taskbar, WindowManagerServer, wallpaper, Desktop, file icons, Launch |
 | **R3** | Serenity look & behaviours | Done — window chrome, switcher, snapping, workspaces, applet area, notifications, tooltips; font-parity decision recorded (zoom deferred to R4/G5) |
 | **R4** | Session & settings | **Done** (R4.1–R4.9 landed) — safety net (idle/inhibit/DPMS + `ext-session-lock-v1`), session supervisor/autostart/power/restore, portable session, config + live reload, display/input/appearance/workspaces settings, Terminal/SystemMonitor/Debugger/CrashReporter; see `docs/11-r4-implementation-plan.md`. Deferred: CrashReporter *crash delivery*, real-hardware `seatd`/`builtin` verification. |
-| **R5** | Compatibility & ecosystem | Started — the native-app protocol matrix (incl. pointer-constraints, pointer-gestures, touch, tablet/tablet-pad, data-control, primary selection, xdg-activation/foreign, presentation-time, fractional-scale, content-type, tearing-control, **`xdg-toplevel-icon-v1`, `xdg-system-bell-v1`**) and two-way drag-and-drop are in place. **XWayland is a first-class window manager** (Alt-Tab, workspaces, `_NET_WM_ICON`/`WM_CLASS`, override-redirect, `PRIMARY`/`CLIPBOARD` bridge, `_NET_WM_STATE`+transients, `_NET_WORKAREA`) — see `docs/20-xwayland-next-steps.md`. Remaining: IME + accessibility, portal Phase 2, and XDND/pointer-warp/background-effect (wlroots-gated — `docs/21-r5-protocol-parity-plan.md`). |
+| **R5** | Compatibility & ecosystem | Started — the native-app protocol matrix (incl. pointer-constraints, pointer-gestures, touch, tablet/tablet-pad, data-control, primary selection, xdg-activation/foreign, presentation-time, fractional-scale, content-type, tearing-control, **`xdg-toplevel-icon-v1`, `xdg-system-bell-v1`, `wp_text_input_v3` + `zwp_input_method_v2` (IME)**) and two-way drag-and-drop are in place. **XWayland is a first-class window manager** (Alt-Tab, workspaces, `_NET_WM_ICON`/`WM_CLASS`, override-redirect, `PRIMARY`/`CLIPBOARD` bridge, `_NET_WM_STATE`+transients, `_NET_WORKAREA`) — see `docs/20-xwayland-next-steps.md`. Remaining: accessibility, portal Phase 2, and XDND/pointer-warp/background-effect (wlroots-gated — `docs/21-r5-protocol-parity-plan.md`). |
 | **R6** | Hardening & packaging | Not started |
 
 ## Running

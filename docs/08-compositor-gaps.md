@@ -141,9 +141,13 @@ table.
 
 ## 4. Input & accessibility (R4, R5)
 
-- **Text input / IME (G5).** No `text-input-v3` or `input-method-v2`; the docs
-  only mention IME as manual verification. This blocks CJK input and on-screen
-  keyboards on a desktop.
+- **Text input / IME (G5) — done (R5).** `text-input-v3` (clients) and
+  `input-method-v2` (input methods) are served: the compositor relays the focused
+  field's state to the input method and applies its preedit/commit back, routes
+  the keyboard to the input method's grab, and renders candidate popups. See
+  [`22-input-method.md`](22-input-method.md); `scripts/run-ime-test.sh`. This
+  unblocks CJK input and on-screen keyboards (a real input method client is a
+  manual check).
 - **Virtual input (N8, G5).** `wlr-virtual-keyboard`/`wlr-virtual-pointer` are
   listed in the protocol appendix but owned by no milestone — yet the R3 scripted
   tests depend on them, and they underpin an on-screen keyboard.
