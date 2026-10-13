@@ -214,6 +214,7 @@ static void x11_begin_interactive(X11Toplevel& toplevel, CursorMode mode, uint32
 static void x11_fetch_icon(X11Toplevel& toplevel);
 static void x11_update_class(X11Toplevel& toplevel);
 static void x11_update_hints(X11Toplevel& toplevel);
+static void x11_place_frame(X11Toplevel& toplevel);
 // X11 server-side decoration frames (R5).
 static void x11_update_frame(X11Toplevel& toplevel);
 static bool handle_x11_frame_press(Server& server, uint32_t button);
@@ -814,8 +815,18 @@ static void process_cursor_resize(Server& server)
             new_right = static_cast<int>(border_x);
             if (new_right <= new_left) new_right = new_left + 1;
         }
+        // new_left/top/right/bottom are frame edges; the client's size is the
+        // content (frame minus the decorations).
+        int const frame_left = toplevel->frame_decorated ? toplevel->frame_left : 0;
+        int const frame_top = toplevel->frame_decorated ? toplevel->frame_top : 0;
+        int const frame_right = toplevel->frame_decorated ? toplevel->frame_right : 0;
+        int const frame_bottom = toplevel->frame_decorated ? toplevel->frame_bottom : 0;
+        int content_w = new_right - new_left - frame_left - frame_right;
+        int content_h = new_bottom - new_top - frame_top - frame_bottom;
+        if (content_w < 1) content_w = 1;
+        if (content_h < 1) content_h = 1;
         wlr_scene_node_set_position(&toplevel->scene_tree->node, new_left, new_top);
-        wlr_xwayland_surface_configure(toplevel->xsurface, new_left, new_top, new_right - new_left, new_bottom - new_top);
+        wlr_xwayland_surface_configure(toplevel->xsurface, new_left, new_top, content_w, content_h);
         return;
     }
     auto* toplevel = server.grabbed_toplevel;
@@ -2258,12 +2269,14 @@ static void x11_surface_map(wl_listener* listener, void*)
     auto& server = *toplevel->server;
     toplevel->mapped = true;
     toplevel->title = ByteString { toplevel->xsurface->title ? StringView { toplevel->xsurface->title, strlen(toplevel->xsurface->title) } : StringView { } };
-    wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->xsurface->x, toplevel->xsurface->y);
     // A newly mapped X11 window joins the current workspace stack (its scene node
     // is enabled only if that stack is the current one).
     WindowManager::on_x11_toplevel_mapped(*toplevel);
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
     x11_update_frame(*toplevel);
+    // Place it (frame at the requested position) once the frame size is known, so
+    // the whole window — titlebar included — is on-screen.
+    x11_place_frame(*toplevel);
     // WM_CLASS / _NET_WM_ICON / _NET_WM_STATE may have been set before the
     // listeners were attached.
     x11_update_class(*toplevel);
@@ -2351,15 +2364,41 @@ static void x11_surface_destroy(wl_listener* listener, void*)
     remove_owned(server.x11_toplevels, toplevel);
 }
 
+// Place the window's frame origin at the client's requested position, keeping the
+// whole window — compositor frame included — on the primary output. The scene
+// tree is the frame origin (as for xdg toplevels): the frame is drawn at (0,0)
+// and the client content is inset by the frame inset.
+static void x11_place_frame(X11Toplevel& toplevel)
+{
+    if (!toplevel.scene_tree || !toplevel.xsurface)
+        return;
+    auto& server = *toplevel.server;
+    int x = toplevel.xsurface->x;
+    int y = toplevel.xsurface->y;
+    int const w = toplevel.frame_size.width() > 0 ? toplevel.frame_size.width() : toplevel.xsurface->width;
+    int const h = toplevel.frame_size.height() > 0 ? toplevel.frame_size.height() : toplevel.xsurface->height;
+    wlr_box workarea { };
+    wlr_output_layout_get_box(server.output_layout, server.primary_output, &workarea);
+    if (!wlr_box_empty(&workarea)) {
+        x = max(x, workarea.x);
+        y = max(y, workarea.y);
+        if (w <= workarea.width)
+            x = min(x, workarea.x + workarea.width - w);
+        if (h <= workarea.height)
+            y = min(y, workarea.y + workarea.height - h);
+    }
+    wlr_scene_node_set_position(&toplevel.scene_tree->node, x, y);
+}
+
 static void x11_request_configure(wl_listener* listener, void* data)
 {
     X11Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, request_configure);
     auto* event = static_cast<wlr_xwayland_surface_configure_event*>(data);
     wlr_xwayland_surface_configure(toplevel->xsurface, event->x, event->y, event->width, event->height);
-    if (toplevel->mapped)
-        wlr_scene_node_set_position(&toplevel->scene_tree->node, event->x, event->y);
     x11_update_frame(*toplevel);
+    if (toplevel->mapped)
+        x11_place_frame(*toplevel);
 }
 
 static void x11_request_close(wl_listener* listener, void*)
@@ -2450,50 +2489,143 @@ static void x11_request_demands_attention(wl_listener* listener, void*)
 // pick a frame and wrap it in a Gfx::Bitmap so the Taskbar button and the Alt-Tab
 // switcher can draw it. _NET_WM_ICON pixels are 0xAARRGGBB, i.e. B,G,R,A in
 // memory (little-endian), which is exactly BitmapFormat::BGRA8888.
+// Older clients (e.g. xterm) set their window icon through the legacy WM_HINTS
+// icon_pixmap (+ optional 1-bit mask), not _NET_WM_ICON. Read it over the xwm
+// connection and build a Gfx::Bitmap (best effort; depth 1 and 24/32).
+static void x11_fetch_wm_hints_icon(X11Toplevel& toplevel)
+{
+    auto* xsurface = toplevel.xsurface;
+    if (!xsurface || !xsurface->hints)
+        return;
+    if (!(xsurface->hints->flags & XCB_ICCCM_WM_HINT_ICON_PIXMAP))
+        return;
+    xcb_pixmap_t const pixmap = xsurface->hints->icon_pixmap;
+    if (pixmap == XCB_NONE)
+        return;
+    xcb_pixmap_t const mask = (xsurface->hints->flags & XCB_ICCCM_WM_HINT_ICON_MASK) ? xsurface->hints->icon_mask : XCB_NONE;
+
+    auto* connection = (toplevel.server && toplevel.server->xwayland) ? wlr_xwayland_get_xwm_connection(toplevel.server->xwayland) : nullptr;
+    if (!connection)
+        return;
+
+    xcb_get_geometry_reply_t* geometry = xcb_get_geometry_reply(connection, xcb_get_geometry(connection, pixmap), nullptr);
+    if (!geometry)
+        return;
+    int const width = geometry->width;
+    int const height = geometry->height;
+    uint8_t const depth = geometry->depth;
+    free(geometry);
+    if (width <= 0 || height <= 0 || width > 256 || height > 256)
+        return;
+
+    xcb_get_image_reply_t* image = xcb_get_image_reply(connection, xcb_get_image(connection, XCB_IMAGE_FORMAT_Z_PIXMAP, pixmap, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height), ~0u), nullptr);
+    if (!image)
+        return;
+    uint8_t const* data = xcb_get_image_data(image);
+
+    xcb_get_image_reply_t* mask_image = nullptr;
+    uint8_t const* mask_data = nullptr;
+    if (mask != XCB_NONE) {
+        mask_image = xcb_get_image_reply(connection, xcb_get_image(connection, XCB_IMAGE_FORMAT_Z_PIXMAP, mask, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height), ~0u), nullptr);
+        if (mask_image)
+            mask_data = xcb_get_image_data(mask_image);
+    }
+
+    if (auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { width, height }); !bitmap.is_error()) {
+        auto& created = *bitmap.value();
+        int const bitmap_row_stride = ((width + 7) / 8 + 3) & ~3; // 1-bit rows pad to 32 bits
+        for (int y = 0; y < height; ++y) {
+            auto* dst = created.scanline(y);
+            for (int x = 0; x < width; ++x) {
+                uint8_t r = 0;
+                uint8_t g = 0;
+                uint8_t b = 0;
+                if (depth == 1) {
+                    uint8_t const bit = (data[static_cast<size_t>(y) * bitmap_row_stride + x / 8] >> (x % 8)) & 1;
+                    r = g = b = bit ? 0 : 255; // 1 = foreground (black), 0 = background
+                } else if (depth == 24 || depth == 32) {
+                    int const bpp = depth / 8;
+                    uint8_t const* p = data + (static_cast<size_t>(y) * width + x) * bpp;
+                    b = p[0];
+                    g = p[1];
+                    r = p[2];
+                } else {
+                    continue;
+                }
+                uint8_t alpha = 255;
+                if (mask_data) {
+                    uint8_t const m = (mask_data[static_cast<size_t>(y) * bitmap_row_stride + x / 8] >> (x % 8)) & 1;
+                    alpha = m ? 255 : 0;
+                }
+                dst[x * 4 + 0] = b;
+                dst[x * 4 + 1] = g;
+                dst[x * 4 + 2] = r;
+                dst[x * 4 + 3] = alpha;
+            }
+        }
+        toplevel.icon = bitmap.release_value();
+        dbgln("WindowServer: X11 window '{}' WM_HINTS icon {}x{} (wm_id={})", toplevel.title, width, height, toplevel.wm_id);
+    }
+    free(image);
+    if (mask_image)
+        free(mask_image);
+}
+
 static void x11_fetch_icon(X11Toplevel& toplevel)
 {
     if (!toplevel.xsurface)
         return;
 
+    bool have_icon = false;
     xcb_ewmh_get_wm_icon_reply_t reply;
-    if (!wlr_xwayland_surface_fetch_icon(toplevel.xsurface, &reply))
-        return;
-
-    unsigned best_width = 0;
-    unsigned best_height = 0;
-    uint32_t const* best_pixels = nullptr;
-    int best_rank = -1;
-    auto it = xcb_ewmh_get_wm_icon_iterator(&reply);
-    while (it.rem > 0) {
-        unsigned const w = it.width;
-        unsigned const h = it.height;
-        int rank;
-        if (w == 16 && h == 16)
-            rank = 1 << 20; // the Taskbar/switcher size
-        else if (w <= 64 && h <= 64)
-            rank = static_cast<int>(w * h);
-        else
-            rank = 0;
-        if (it.data && rank > best_rank) {
-            best_rank = rank;
-            best_width = w;
-            best_height = h;
-            best_pixels = it.data;
+    if (wlr_xwayland_surface_fetch_icon(toplevel.xsurface, &reply)) {
+        unsigned best_width = 0;
+        unsigned best_height = 0;
+        uint32_t const* best_pixels = nullptr;
+        int best_rank = -1;
+        auto it = xcb_ewmh_get_wm_icon_iterator(&reply);
+        while (it.rem > 0) {
+            unsigned const w = it.width;
+            unsigned const h = it.height;
+            int rank;
+            if (w == 16 && h == 16)
+                rank = 1 << 20; // the Taskbar/switcher size
+            else if (w <= 64 && h <= 64)
+                rank = static_cast<int>(w * h);
+            else
+                rank = 0;
+            if (it.data && rank > best_rank) {
+                best_rank = rank;
+                best_width = w;
+                best_height = h;
+                best_pixels = it.data;
+            }
+            xcb_ewmh_get_wm_icon_next(&it);
         }
-        xcb_ewmh_get_wm_icon_next(&it);
+
+        if (best_pixels && best_width > 0 && best_height > 0) {
+            if (auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { static_cast<int>(best_width), static_cast<int>(best_height) }); !bitmap.is_error()) {
+                auto& created = *bitmap.value();
+                for (unsigned y = 0; y < best_height; ++y)
+                    memcpy(created.scanline(static_cast<int>(y)), best_pixels + static_cast<size_t>(y) * best_width, static_cast<size_t>(best_width) * 4);
+                toplevel.icon = bitmap.release_value();
+                have_icon = true;
+                dbgln("WindowServer: X11 window '{}' icon {}x{} (wm_id={})", toplevel.title, best_width, best_height, toplevel.wm_id);
+            }
+        }
+        xcb_ewmh_get_wm_icon_reply_wipe(&reply);
     }
 
-    if (best_pixels && best_width > 0 && best_height > 0) {
-        if (auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { static_cast<int>(best_width), static_cast<int>(best_height) }); !bitmap.is_error()) {
-            auto& created = *bitmap.value();
-            for (unsigned y = 0; y < best_height; ++y)
-                memcpy(created.scanline(static_cast<int>(y)), best_pixels + static_cast<size_t>(y) * best_width, static_cast<size_t>(best_width) * 4);
-            toplevel.icon = bitmap.release_value();
-            dbgln("WindowServer: X11 window '{}' icon {}x{} (wm_id={})", toplevel.title, best_width, best_height, toplevel.wm_id);
-            WindowManager::emit_window_icon(toplevel);
-        }
+    // Fall back to the legacy WM_HINTS icon (xterm and friends).
+    if (!have_icon)
+        x11_fetch_wm_hints_icon(toplevel);
+
+    if (toplevel.icon) {
+        WindowManager::emit_window_icon(toplevel);
+        // Repaint the titlebar so it shows the icon.
+        if (toplevel.frame_decorated)
+            x11_update_frame(toplevel);
     }
-    xcb_ewmh_get_wm_icon_reply_wipe(&reply);
 }
 
 static void x11_set_icon(wl_listener* listener, void*)
@@ -2601,7 +2733,8 @@ static void x11_update_frame(X11Toplevel& toplevel)
     painter.fill_rect(Gfx::IntRect { { }, frame_size }, g_palette->window());
 
     static auto const blank_icon = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { 16, 16 }).release_value_but_fixme_should_propagate_errors();
-    Gfx::Bitmap const& icon = *blank_icon;
+    // The fetched _NET_WM_ICON / WM_HINTS icon, or the default window icon.
+    Gfx::Bitmap const& icon = toplevel.icon ? *toplevel.icon : (g_default_window_icon ? *g_default_window_icon : *blank_icon);
     auto buttons = theme.layout_buttons(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette, 3, false);
     toplevel.titlebar_icon_rect = theme.titlebar_icon_rect(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette);
     Gfx::IntRect leftmost_button = buttons.is_empty() ? Gfx::IntRect { } : buttons.last();
@@ -2645,12 +2778,15 @@ static void x11_update_frame(X11Toplevel& toplevel)
         wlr_scene_buffer_set_buffer(toplevel.frame_buffer, buffer);
     }
     wlr_scene_buffer_set_dest_size(toplevel.frame_buffer, frame_size.width(), frame_size.height());
-    wlr_scene_node_set_position(&toplevel.frame_buffer->node, -toplevel.frame_left, -toplevel.frame_top);
+    // The scene tree is the *frame* origin (as for xdg toplevels): the frame is
+    // drawn at (0,0) and the client content is inset by the frame, so a window
+    // that asks to be at (0,0) shows its titlebar on-screen.
+    wlr_scene_node_set_position(&toplevel.frame_buffer->node, 0, 0);
     wlr_scene_node_set_enabled(&toplevel.frame_buffer->node, true);
     use_nearest_filter(&toplevel.frame_buffer->node);
     wlr_buffer_drop(buffer);
     if (toplevel.scene)
-        wlr_scene_node_set_position(&toplevel.scene->buffer->node, 0, 0);
+        wlr_scene_node_set_position(&toplevel.scene->buffer->node, toplevel.frame_left, toplevel.frame_top);
     dbgln("WindowServer: X11 frame '{}' {}x{} (content {}x{})", title, frame_size.width(), frame_size.height(), content_width, content_height);
 }
 
@@ -2663,8 +2799,7 @@ static FrameHit x11_hit_test_frame(Server& server, double x, double y)
             continue;
         auto* node = &toplevel.scene_tree->node;
         Gfx::IntRect frame_rect {
-            static_cast<int>(node->x) - toplevel.frame_left,
-            static_cast<int>(node->y) - toplevel.frame_top,
+            static_cast<int>(node->x), static_cast<int>(node->y),
             toplevel.frame_size.width(), toplevel.frame_size.height()
         };
         if (frame_rect.is_empty() || !frame_rect.contains({ static_cast<int>(x), static_cast<int>(y) }))
@@ -2718,11 +2853,14 @@ static void x11_begin_interactive(X11Toplevel& toplevel, CursorMode mode, uint32
         server.grab_x = server.cursor->x - toplevel.scene_tree->node.x;
         server.grab_y = server.cursor->y - toplevel.scene_tree->node.y;
     } else {
-        double border_x = toplevel.scene_tree->node.x + ((edges & WLR_EDGE_RIGHT) ? width : 0);
-        double border_y = toplevel.scene_tree->node.y + ((edges & WLR_EDGE_BOTTOM) ? height : 0);
+        // The scene tree is the frame origin; the frame edge is dragged.
+        int const frame_w = toplevel.frame_size.width() > 0 ? toplevel.frame_size.width() : width;
+        int const frame_h = toplevel.frame_size.height() > 0 ? toplevel.frame_size.height() : height;
+        double border_x = toplevel.scene_tree->node.x + ((edges & WLR_EDGE_RIGHT) ? frame_w : 0);
+        double border_y = toplevel.scene_tree->node.y + ((edges & WLR_EDGE_BOTTOM) ? frame_h : 0);
         server.grab_x = server.cursor->x - border_x;
         server.grab_y = server.cursor->y - border_y;
-        server.grab_box = { static_cast<int>(toplevel.scene_tree->node.x), static_cast<int>(toplevel.scene_tree->node.y), width, height };
+        server.grab_box = { static_cast<int>(toplevel.scene_tree->node.x), static_cast<int>(toplevel.scene_tree->node.y), frame_w, frame_h };
         server.resize_edges = edges;
     }
     wlr_cursor_set_xcursor(server.cursor, server.cursor_manager, mode == CursorMode::Move ? "grabbing" : resize_cursor_name(edges));
