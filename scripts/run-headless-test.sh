@@ -39,6 +39,9 @@ wayland-scanner private-code  "$SW_XML"    "$TOOLS_BUILD/serenity-window-protoco
 PRES_XML="$(pkg-config --variable=pkgdatadir wayland-protocols)/stable/presentation-time/presentation-time.xml"
 wayland-scanner client-header "$PRES_XML"  "$TOOLS_BUILD/presentation-time-client-protocol.h"
 wayland-scanner private-code  "$PRES_XML"  "$TOOLS_BUILD/presentation-time-protocol.c"
+FRAC_XML="$(pkg-config --variable=pkgdatadir wayland-protocols)/staging/fractional-scale/fractional-scale-v1.xml"
+wayland-scanner client-header "$FRAC_XML"  "$TOOLS_BUILD/fractional-scale-v1-client-protocol.h"
+wayland-scanner private-code  "$FRAC_XML"  "$TOOLS_BUILD/fractional-scale-v1-protocol.c"
 cc -O2 -I "$TOOLS_BUILD" \
     "$SDE_ROOT/tools/layer-shell-test.c" \
     "$TOOLS_BUILD/wlr-layer-shell-unstable-v1-protocol.c" \
@@ -50,6 +53,7 @@ cc -O2 -I "$TOOLS_BUILD" \
     "$TOOLS_BUILD/xdg-shell-protocol.c" \
     "$TOOLS_BUILD/serenity-window-protocol.c" \
     "$TOOLS_BUILD/presentation-time-protocol.c" \
+    "$TOOLS_BUILD/fractional-scale-v1-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/native-app-test"
 cc -O2 -I "$TOOLS_BUILD" \
@@ -265,6 +269,35 @@ if grep -q "crashed with SIGABRT" "$RUNTIME/WindowServer-crash.log" 2>/dev/null;
     echo "  ok: crash report written ($RUNTIME/WindowServer-crash.log)"
 else
     echo "  MISSING: crash report"
+    fail=1
+fi
+
+# R6 fractional scaling: a 1.5x output must assign a 1.5 preferred scale to a
+# client (wp_fractional_scale_v1, in 1/120ths -> 180).
+echo "=== R6 fractional scaling (1.5x) ==="
+SOCK_FRAC="sde-frac-$$"
+env -u WAYLAND_DISPLAY -u DISPLAY \
+    WLR_BACKENDS=headless \
+    WLR_HEADLESS_OUTPUTS=1 \
+    SDE_OUTPUT_SCALE=1.5 \
+    SDE_WM_PORTAL_PATH="$RUNTIME/wm-frac" \
+    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
+    LD_LIBRARY_PATH="$BUILD/lib" \
+    "$COMP" -n "$SOCK_FRAC" > "$RUNTIME/comp-frac.log" 2>&1 &
+FRAC_PID=$!
+for _ in $(seq 1 50); do
+    [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SOCK_FRAC" ]] && break
+    sleep 0.1
+done
+FRAC_STATUS=0
+env WAYLAND_DISPLAY="$SOCK_FRAC" timeout 4 "$TOOLS_BUILD/native-app-test" --fractional > "$RUNTIME/fractional.log" 2>&1 || FRAC_STATUS=$?
+kill "$FRAC_PID" 2>/dev/null || true
+wait "$FRAC_PID" 2>/dev/null || true
+check_log "scaling 1.5x" "$RUNTIME/comp-frac.log"
+if [ "${FRAC_STATUS:-1}" -eq 0 ] && grep -q "preferred_scale=180" "$RUNTIME/fractional.log"; then
+    echo "  ok: client learned the 1.5x preferred scale ($(grep -o 'preferred_scale=[0-9]* (.*)' "$RUNTIME/fractional.log" | head -1))"
+else
+    echo "  MISSING: fractional preferred scale"
     fail=1
 fi
 

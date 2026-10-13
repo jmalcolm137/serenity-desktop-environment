@@ -241,38 +241,49 @@ RUNPATH to `/usr/lib/sde/lib`.
 
 ---
 
-## Appendix A — HiDPI stopgap (integer output scale)
+## Appendix A — HiDPI and fractional output scale
 
-**Status:** implemented prototype · `WindowServer/src/main.cpp`
+**Status:** implemented · `WindowServer/src/main.cpp`, `docs/11` §11.
 
-Serenity's LibGUI has no fractional-scale support and its fonts are fixed
-bitmaps, so a 1x session on a high-DPI panel is unusably small. As a **stopgap**
-the compositor now integer-scales high-DPI outputs:
+Serenity's LibGUI renders on the CPU and its fonts are fixed bitmaps, so a
+high-DPI panel is made usable by **scaling the output** — integer by default,
+fractional supported:
 
 - **Auto rule** (`auto_output_scale`): 2x when the panel's true DPI is `>= 144`
   (from `phys_width`), else 1x; when the panel omits its physical size (common on
-  eDP) it falls back to `width >= 2560 && height >= 1600`. So 1080p/1440p stay
-  1x, while 1600p/1800p/4K scale 2x.
-- **Override:** `SDE_OUTPUT_SCALE=1|2` forces the factor (handy for tests).
-- **Crispness:** the content/chrome buffers the compositor creates (desktop
-  background, app surfaces, layer surfaces, popups, SSD frame, lock surface) are
-  set to `WLR_SCALE_FILTER_NEAREST`, so an integer upscale is pixel-doubling, not
-  bilinear-soft — and it is a no-op at 1x.
-- **Crisp compositor chrome:** the compositor-drawn chrome (window frames,
-  overlays, the Alt-Tab switcher, the geometry HUD, menus) is rendered *at* the
-  output scale, not upscaled: `Gfx::Painter` draws in logical coordinates into a
-  physical-resolution bitmap (`ChromeNode`, the frame buffer) that the scene
-  presents at the logical size (1:1 with physical pixels). So it is crisp at 2x.
-  Client content is still 1x and remains upscaled (the libgui-wayland
-  backing-store-scale M8 work), and the 64px switcher thumbnail / 16px app icon
-  stay source-limited.
-- **Logical sizing:** the compositor now sizes its own surfaces from
-  `wlr_output_effective_resolution()` (logical), not `wlr_output->width/height`
-  (physical); the desktop background and lock surface were fixed for 2x.
+  eDP) it falls back to `width >= 2560 && height >= 1600`.
+- **Override, fractional included:** `[Output] DefaultScale` in
+  `WindowServer.ini` (0 = auto; `0.5`–`4.0`, e.g. `1.5`) or the `SDE_OUTPUT_SCALE`
+  environment variable. `sde-config set Output DefaultScale 1.5` writes it, and a
+  **live edit re-scales the outputs immediately** (`Config::watch` →
+  `apply_output_scale`). Precedence: `SDE_OUTPUT_SCALE` > `[Output] DefaultScale`
+  > the saved `screenlayout.ini` scale > auto.
+- **Protocol:** `wp-fractional-scale-v1` is served. `wlr_scene` assigns each
+  mapped surface the output's preferred scale, so every client (native or
+  Serenity) learns the exact scale; `wl_output.scale` is the integer ceiling.
+- **Client rendering (host M8) — done.** The libgui-wayland shim reads the output
+  scale and rasters the backing store at it (`Window::set_backing_store_scale`),
+  presenting a physical buffer with `wl_surface.set_buffer_scale`, so client text
+  is rendered at native resolution, not upscaled. At a fractional scale the client
+  supersamples at `ceil(scale)` (e.g. 2x for 1.5) and the compositor downscales
+  1:1-crisply.
+- **Crisp compositor chrome.** Compositor-drawn chrome (frames, overlays, the
+  Alt-Tab switcher, the geometry HUD, menus) is rendered at an integer supersample
+  of the output scale into a physical-resolution bitmap that the scene presents at
+  the logical size.
+- **Filtering.** Integer scales use `WLR_SCALE_FILTER_NEAREST` (a pixel-doubling
+  no-op at 1x, crisp at 2x); a fractional scale uses bilinear.
+- **Logical sizing:** the compositor sizes its own surfaces from
+  `wlr_output_effective_resolution()` (logical), and a saved size with no matching
+  mode requests a **custom mode** (so a headless capture can be, e.g., 2560x1440).
+- **Capturing a HiDPI scene:** `scripts/run-desktop-scene.sh --headless --scale 2
+  --size 1280x720 --screenshot out.png` lays the scene out in 1280x720 *logical*
+  coordinates and captures a 2560x1440 *physical* image; `--scale 1.5` captures
+  1920x1080.
 
-**This is a stopgap, not HiDPI support.** It closes no protocol surface (no
-`wp-fractional-scale-v1`, no `wp_viewporter`, no backing-store scale), so client
-text is upscaled rather than rendered at native resolution, fractional scaling is
-unsupported, and other 1x content (e.g. the cursor) is upscaled too. The real fix
-is the **LibWindowServer backing-store scale (host M8)** — see §10 above and
-[`08-compositor-gaps.md`](08-compositor-gaps.md) §5.
+**Known limit:** Serenity's own `DisplaySettings` Monitor tab is **display-only**
+in this port (libgui-wayland patch `0020`): the host does not implement Serenity's
+output-configuration IPC, and its `ScreenLayout` `ScaleFactor` is an integer, so
+it cannot express a fractional scale. Set the scale with `[Output] DefaultScale` /
+`sde-config` (or SDE's own settings surface); exposing a fractional control in
+`DisplaySettings` is future work.

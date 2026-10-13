@@ -17,6 +17,7 @@
 #include "xdg-shell-client-protocol.h"
 #include "serenity-window-client-protocol.h"
 #include "presentation-time-client-protocol.h"
+#include "fractional-scale-v1-client-protocol.h"
 
 static struct wl_display* display;
 static struct wl_compositor* compositor;
@@ -69,6 +70,19 @@ static struct wp_presentation_feedback_listener const feedback_listener = {
     .presented = feedback_presented,
     .discarded = feedback_discarded,
 };
+
+// wp_fractional_scale_v1: learn the (possibly fractional) preferred scale.
+static struct wp_fractional_scale_manager_v1* fractional_scale_manager;
+static uint32_t preferred_scale_v120;
+
+static void fractional_preferred_scale(void* data, struct wp_fractional_scale_v1* object, uint32_t scale)
+{
+    (void)data;
+    (void)object;
+    preferred_scale_v120 = scale;
+}
+
+static struct wp_fractional_scale_v1_listener const fractional_scale_listener = { fractional_preferred_scale };
 
 static struct wl_buffer* create_buffer(int w, int h)
 {
@@ -196,6 +210,8 @@ static void registry_global(void* data, struct wl_registry* registry, uint32_t n
         window_manager = wl_registry_bind(registry, name, &serenity_window_manager_interface, 1);
     } else if (strcmp(interface, wp_presentation_interface.name) == 0) {
         presentation = wl_registry_bind(registry, name, &wp_presentation_interface, 1);
+    } else if (strcmp(interface, wp_fractional_scale_manager_v1_interface.name) == 0) {
+        fractional_scale_manager = wl_registry_bind(registry, name, &wp_fractional_scale_manager_v1_interface, 1);
     }
 }
 
@@ -211,6 +227,7 @@ static struct wl_registry_listener const registry_listener = { registry_global, 
 int main(int argc, char** argv)
 {
     int const want_presentation = argc > 1 && strcmp(argv[1], "--presentation") == 0;
+    int const want_fractional = argc > 1 && strcmp(argv[1], "--fractional") == 0;
 
     display = wl_display_connect(NULL);
     if (!display) {
@@ -261,6 +278,30 @@ int main(int argc, char** argv)
     }
 
     fprintf(stderr, "native-app-test: mapped %dx%d\n", width, height);
+
+    if (want_fractional) {
+        if (!fractional_scale_manager) {
+            fprintf(stderr, "native-app-test: no wp_fractional_scale_manager_v1 global\n");
+            return 1;
+        }
+        // Learn the (possibly fractional) preferred scale the compositor has
+        // assigned to our surface (R6 fractional scaling).
+        struct wp_fractional_scale_v1* fractional =
+            wp_fractional_scale_manager_v1_get_fractional_scale(fractional_scale_manager, surface);
+        wp_fractional_scale_v1_add_listener(fractional, &fractional_scale_listener, NULL);
+        render();
+        for (int i = 0; i < 200 && preferred_scale_v120 == 0; i++) {
+            if (wl_display_dispatch(display) < 0)
+                break;
+        }
+        if (preferred_scale_v120 == 0) {
+            fprintf(stderr, "native-app-test: no fractional preferred_scale\n");
+            return 1;
+        }
+        fprintf(stderr, "native-app-test: fractional preferred_scale=%u (%.3f)\n",
+            preferred_scale_v120, preferred_scale_v120 / 120.0);
+        return 0;
+    }
 
     if (want_presentation) {
         if (!presentation) {

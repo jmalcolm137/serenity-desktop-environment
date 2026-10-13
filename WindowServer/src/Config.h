@@ -30,7 +30,7 @@
 //                DragToEdge             bool    (drag a window to an edge to snap)
 //   [Focus]      FollowsMouse           bool    (focus on hover, not just click)
 //   [Effects]    WindowGeometry        bool     (geometry HUD while moving/resizing)
-//   [Output]     DefaultScale          0..4      (0 = auto integer HiDPI scale)
+//   [Output]     DefaultScale          0 or 0.5..4 (0 = auto integer HiDPI; fractional allowed)
 //                Renderer              name      (auto|gles2|vulkan|pixman; R6/N5)
 //   [Log]        Level                 name      (error|warn|info|debug; R6/N8)
 //   [Keybindings] <Action>              combo(s)  (e.g. Ctrl+Alt+Left; see Action)
@@ -78,7 +78,10 @@ struct Effects {
 
 // Output defaults.
 struct Output {
-    int default_scale { 0 }; // 0 = auto (integer HiDPI)
+    // 0 = auto (integer HiDPI scale), else an explicit output scale (0.5–4.0;
+    // fractional allowed, e.g. 1.5). The SDE_OUTPUT_SCALE environment variable
+    // overrides it.
+    double default_scale { 0 };
     // Requested wlroots renderer: auto|gles2|vulkan|pixman (empty = auto). The
     // SDE_RENDERER environment variable overrides it (R6/N5).
     ByteString renderer;

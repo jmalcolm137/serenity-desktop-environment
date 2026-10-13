@@ -219,6 +219,21 @@ static Optional<int> read_int(RefPtr<Core::ConfigFile> const& user, RefPtr<Core:
     return value;
 }
 
+// Output scale: 0 = auto, else 0.5..4.0 (fractional allowed, e.g. 1.5).
+static Optional<double> read_scale(RefPtr<Core::ConfigFile> const& user, RefPtr<Core::ConfigFile> const& defaults, StringView group, StringView key)
+{
+    auto raw = read_entry(user, defaults, group, key);
+    if (raw.is_empty())
+        return {};
+    char* end = nullptr;
+    double const value = strtod(raw.characters(), &end);
+    if (end == raw.characters() || value < 0.0 || (value != 0.0 && (value < 0.5 || value > 4.0))) {
+        g_diagnostics.append(ByteString::formatted("[{}] {}='{}' invalid (expected 0 for auto, or 0.5-4.0)", group, key, raw));
+        return {};
+    }
+    return value;
+}
+
 static Optional<bool> read_bool(RefPtr<Core::ConfigFile> const& user, RefPtr<Core::ConfigFile> const& defaults, StringView group, StringView key)
 {
     auto raw = read_entry(user, defaults, group, key);
@@ -262,7 +277,7 @@ void load()
     if (g_effects.tile_window.is_empty())
         g_effects.tile_window = "ShowTileOverlay"sv;
 
-    if (auto value = read_int(user, defaults, "Output"sv, "DefaultScale"sv, 0, 4); value.has_value())
+    if (auto value = read_scale(user, defaults, "Output"sv, "DefaultScale"sv); value.has_value())
         g_output.default_scale = value.value();
     g_output.renderer = read_entry(user, defaults, "Output"sv, "Renderer"sv);
     if (!g_output.renderer.is_empty()) {

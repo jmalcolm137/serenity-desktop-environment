@@ -8,6 +8,7 @@
 
 #include <AK/ScopeGuard.h>
 #include <LibGfx/Painter.h>
+#include <cmath>
 #include <drm_fourcc.h>
 #include <string.h>
 
@@ -21,16 +22,29 @@ extern "C" {
 
 // --- output scale (HiDPI stopgap) -------------------------------------------
 
-static int s_output_scale { 1 };
+static float s_output_scale { 1.0f };
 
-void set_output_scale(int scale)
+void set_output_scale(float scale)
 {
-    s_output_scale = scale < 1 ? 1 : scale;
+    s_output_scale = scale < 1.0f ? 1.0f : scale;
 }
 
-int output_scale()
+float output_scale_factor()
 {
     return s_output_scale;
+}
+
+// Compositor-drawn bitmaps render at an integer supersample of the output scale
+// (ceil), which the scene scales back down to the logical size.
+int output_scale()
+{
+    int const supersample = static_cast<int>(std::ceil(s_output_scale));
+    return supersample < 1 ? 1 : supersample;
+}
+
+bool output_scale_is_integral()
+{
+    return std::floor(s_output_scale) == s_output_scale;
 }
 
 // --- bitmap buffers ---------------------------------------------------------

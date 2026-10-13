@@ -7,7 +7,7 @@
 #
 # Usage:
 #   run-desktop-scene.sh [--headless] [--nested] [--screenshot out.png]
-#                        [--wallpaper file.png] [--size WxH]
+#                        [--wallpaper file.png] [--size WxH] [--scale N]
 #
 #   --nested (default)  run as a Wayland client of the current host session, so
 #                       the scene is visible on screen.
@@ -30,6 +30,7 @@ MODE="nested"
 SCREENSHOT=""
 WALLPAPER="$SERENITY/Base/res/wallpapers/blue-grid.png"
 SIZE="1280x720"
+SCALE="1"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -38,12 +39,16 @@ while [[ $# -gt 0 ]]; do
         --screenshot) SCREENSHOT="$2"; shift ;;
         --wallpaper) WALLPAPER="$2"; shift ;;
         --size) SIZE="$2"; shift ;;
+        --scale) SCALE="$2"; shift ;;
         -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
     shift
 done
 
+# SIZE is the logical size (used for window placement and virtual-input extent);
+# --scale makes the headless output that many times larger physically (a HiDPI
+# capture: e.g. --size 1280x720 --scale 2 -> a 2560x1440 screenshot at 2x).
 WIDTH="${SIZE%x*}"
 HEIGHT="${SIZE#*x}"
 
@@ -176,8 +181,12 @@ if [[ "$MODE" == "nested" ]]; then
     "$SDE_ROOT/scripts/sde-session.sh"
 else
     # Headless: fixed output size via screenlayout.ini, then optionally capture.
+    # The mode is the *physical* size (logical * scale); SDE_OUTPUT_SCALE carries
+    # the scale so the compositor maps it back to the logical size.
     SOCK="sde-scene-$$"
     rm -f "$XDG_RUNTIME_DIR/$SOCK"
+    PHYS_W="$(awk "BEGIN { printf \"%d\", $WIDTH * $SCALE }")"
+    PHYS_H="$(awk "BEGIN { printf \"%d\", $HEIGHT * $SCALE }")"
     cat > "$RUNTIME/screenlayout.ini" <<EOF
 [Screens]
 MainScreen=0
@@ -186,16 +195,17 @@ Mode=Device
 Device=HEADLESS-1
 Left=0
 Top=0
-Width=$WIDTH
-Height=$HEIGHT
+Width=$PHYS_W
+Height=$PHYS_H
 ScaleFactor=1
 EOF
 
-    echo "==> SDE desktop scene (headless ${WIDTH}x${HEIGHT})"
+    echo "==> SDE desktop scene (headless ${WIDTH}x${HEIGHT} @${SCALE}x)"
     # The compositor spawns the scene; its children inherit the session display.
     env -u WAYLAND_DISPLAY -u DISPLAY \
         WLR_BACKENDS=headless \
         WLR_HEADLESS_OUTPUTS=1 \
+        SDE_OUTPUT_SCALE="$SCALE" \
         SDE_STATE_DIR="$RUNTIME" \
         SERENITY_RES_ROOT="$SERENITY_RES_ROOT" \
         LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \

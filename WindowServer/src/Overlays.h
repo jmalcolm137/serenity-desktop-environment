@@ -65,9 +65,13 @@ private:
 // returns nullptr, and callers fall back to the application icon.
 RefPtr<Gfx::Bitmap> snapshot_toplevel(wlr_scene_node& toplevel_node);
 
-// The compositor's output scale (the integer HiDPI stopgap). Compositor-drawn
-// bitmaps (chrome nodes, window frames) are rendered at this scale - their
-// Painter draws in logical coordinates into a physical-resolution bitmap - so
-// they stay crisp on HiDPI panels instead of being upscaled. 1 disables it.
-void set_output_scale(int scale);
+// The compositor's output scale (HiDPI / fractional). Compositor-drawn bitmaps
+// (chrome nodes, window frames) are rendered at an integer supersample of the
+// output scale - their Painter draws in logical coordinates into a
+// physical-resolution bitmap - and the scene scales them back to the logical
+// size, so they stay crisp. output_scale() is that supersample (ceil(scale));
+// output_scale_factor() is the exact scale (which may be fractional).
+void set_output_scale(float scale);
 int output_scale();
+float output_scale_factor();
+bool output_scale_is_integral();

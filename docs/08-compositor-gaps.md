@@ -96,12 +96,15 @@ table.
 - **Input protocols (G3, G7).** `keyboard-shortcuts-inhibit` and
   `relative-pointer` are served; `pointer-constraints` and `pointer-gestures`
   remain — needed for games and remote desktop.
-- **Presentation & scaling (N3, N5).** `wp-viewporter`, `content-type-v1`,
-  `tearing-control`, `wp-single-pixel-buffer`, `wp-alpha-modifier` and
-  **`presentation-time`** are served (`wp_presentation v2`; the compositor feeds
-  wlroots' presentation object from `output_frame`, so clients get "presented"
-  events). Still missing: `fractional-scale-v1` (the client backing-store scale,
-  M8), `commit-timing`/`fifo` (needs a wlroots bump), and dmabuf
+- **Presentation & scaling (N3, N5) — largely done.** `wp-viewporter`,
+  `content-type-v1`, `tearing-control`, `wp-single-pixel-buffer`,
+  `wp-alpha-modifier`, **`presentation-time`** (`wp_presentation v2`; the
+  compositor feeds wlroots' presentation object from `output_frame`) and
+  **`wp-fractional-scale-v1`** are served. The output scale may be fractional
+  (`[Output] DefaultScale`, applied live), the compositor renders its chrome at an
+  integer supersample, and the client backing store rasters at the output scale
+  (host M8 resolved) — see [`13`](13-native-session-and-aur-packaging.md) Appendix
+  A. Still missing: `commit-timing`/`fifo` (needs a wlroots bump) and dmabuf
   feedback/explicit sync (`wp-linux-drm-syncobj`).
 - **Portals (G7).** No `xdg-desktop-portal` strategy. The project's *Serenity*
   portals (`/tmp/session/<id>/portal/…`) are unrelated to the freedesktop

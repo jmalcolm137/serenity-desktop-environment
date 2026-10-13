@@ -328,6 +328,19 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 
 ## Recently resolved (kept so we don't re-chase them)
 
+- **HiDPI & fractional output scaling (R6).** `[Output] DefaultScale` accepts a
+  fractional value (0 = auto, 0.5–4.0) and is now applied **live** on a config
+  edit (`Config::watch` → `apply_output_scale`); precedence is `SDE_OUTPUT_SCALE` >
+  config > saved `screenlayout.ini` > auto. `wp-fractional-scale-v1` is served
+  (`wlr_scene` assigns each surface the output's preferred scale), the compositor
+  renders its chrome at an integer supersample and uses bilinear filtering for
+  non-integer scales, and the client backing store rasters at the output scale
+  (host M8 resolved — verified: a Serenity client presents `@2x` on a 2x/1.5x
+  output). A saved size with no matching mode requests a **custom mode**, so
+  `scripts/run-desktop-scene.sh --headless --scale 2` captures a 2560x1440 HiDPI
+  scene. Serenity's `DisplaySettings` Monitor tab stays display-only (patch
+  `0020`; integer `ScaleFactor`), so fractional scale is set via the config.
+
 - **Suspend/resume hooks (R4.3/R6).** `scripts/sde-sleep.sh` watches logind's
   `PrepareForSleep` signal (portable: `gdbus` or `dbus-monitor`, a no-op without
   logind/D-Bus). On suspend it locks the session (`SDE_LOCK_CMD`, unless

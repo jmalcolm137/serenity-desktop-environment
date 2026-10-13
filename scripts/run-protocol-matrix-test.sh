@@ -90,6 +90,7 @@ check wp_single_pixel_buffer_manager_v1
 check wp_alpha_modifier_v1
 check xdg_wm_dialog_v1
 check wp_presentation
+check wp_fractional_scale_manager_v1
 
 echo "=== portals / capture / session (pre-existing) ==="
 check wl_output

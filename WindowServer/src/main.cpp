@@ -84,6 +84,7 @@ extern "C" {
 #include <wlr/types/wlr_alpha_modifier_v1.h>
 #include <wlr/types/wlr_xdg_dialog_v1.h>
 #include <wlr/types/wlr_presentation_time.h>
+#include <wlr/types/wlr_fractional_scale_v1.h>
 #include <wlr/types/wlr_relative_pointer_v1.h>
 #include <wlr/types/wlr_keyboard_shortcuts_inhibit_v1.h>
 #include <wlr/types/wlr_xdg_foreign_registry.h>
@@ -1376,14 +1377,16 @@ static Gfx::IntSize output_logical_size(wlr_output* output)
 // Nearest filtering makes an integer upscale crisp (pixel-doubling) instead of
 // bilinear-soft, and is a no-op at 1x. Applied to the app content and compositor
 // chrome buffers so the HiDPI stopgap looks sharp.
-static void set_buffer_nearest(struct wlr_scene_buffer* buffer, int, int, void*)
+static void set_buffer_filter(struct wlr_scene_buffer* buffer, int, int, void*)
 {
-    wlr_scene_buffer_set_filter_mode(buffer, WLR_SCALE_FILTER_NEAREST);
+    // An integer scale is exact, so nearest-neighbour is a pixel-doubling no-op at
+    // 1x and crisp at 2x; a fractional scale needs linear filtering.
+    wlr_scene_buffer_set_filter_mode(buffer, output_scale_is_integral() ? WLR_SCALE_FILTER_NEAREST : WLR_SCALE_FILTER_BILINEAR);
 }
 
 static void use_nearest_filter(struct wlr_scene_node* node)
 {
-    wlr_scene_node_for_each_buffer(node, set_buffer_nearest, nullptr);
+    wlr_scene_node_for_each_buffer(node, set_buffer_filter, nullptr);
 }
 
 static void update_desktop_background(Server& server, Output& output)
@@ -1584,28 +1587,20 @@ static void output_commit(wl_listener* listener, void*)
     reconfigure_lock_surface(*output->server, output->output);
 }
 
-// --- HiDPI: integer output scale (stopgap) -------------------------------
+// --- HiDPI / fractional output scale ---------------------------------------
 //
-// Scale a display by an integer factor (2x) on high-DPI panels and leave
-// everything else at 1x. Serenity's LibGUI has no fractional-scale support and
-// its fonts are fixed bitmaps, so an integer upscale of the 1x buffers is the
-// pragmatic way to make a HiDPI panel usable. This adds no protocol surface
-// (no wp-fractional-scale-v1, no backing-store scale); the real fix is the
-// LibWindowServer M8 work. See docs/13-native-session-and-aur-packaging.md.
+// Serenity's LibGUI renders on the CPU and its fonts are fixed bitmaps, so a
+// high-DPI panel is made usable by scaling the output (integer by default, but
+// fractional is supported: the compositor renders its own chrome at an integer
+// supersample and lets the scene scale it down, native clients learn the exact
+// scale from wp-fractional-scale-v1). The client-side backing-store scale is the
+// libgui-wayland shim's job (it rasters at the output scale). See
+// docs/13-native-session-and-aur-packaging.md.
+//
+// Auto rule: 2x when the panel's true DPI is >= 144, else 1x; panels that omit
+// their physical size fall back to a resolution threshold.
 static float auto_output_scale(struct wlr_output* output, struct wlr_output_mode* mode)
 {
-    // Explicit override: SDE_OUTPUT_SCALE=1 disables, =2 forces.
-    if (auto const* env = getenv("SDE_OUTPUT_SCALE"); env && *env) {
-        char* end = nullptr;
-        double const value = strtod(env, &end);
-        if (end != env && value >= 1.0)
-            return static_cast<float>(value);
-    }
-
-    // [Output] DefaultScale (R4.4): 0 = auto, else a fixed integer scale.
-    if (int const configured = Config::output().default_scale; configured > 0)
-        return static_cast<float>(configured);
-
     int const width = mode ? mode->width : output->width;
     int const height = mode ? mode->height : output->height;
 
@@ -1617,6 +1612,23 @@ static float auto_output_scale(struct wlr_output* output, struct wlr_output_mode
     // ...but eDP panels often omit it, so fall back to a resolution threshold
     // that keeps 1080p/1440p displays at 1x while catching 1600p/1800p/4K panels.
     return (width >= 2560 && height >= 1600) ? 2.0f : 1.0f;
+}
+
+// Resolve the output scale: the SDE_OUTPUT_SCALE override wins, then the
+// configured [Output] DefaultScale, then a saved layout, then the auto rule.
+static float resolve_output_scale(struct wlr_output* output, struct wlr_output_mode* mode, Config::OutputSettings const* saved)
+{
+    if (auto const* env = getenv("SDE_OUTPUT_SCALE"); env && *env) {
+        char* end = nullptr;
+        double const value = strtod(env, &end);
+        if (end != env && value >= 0.5)
+            return static_cast<float>(value);
+    }
+    if (double const configured = Config::output().default_scale; configured > 0)
+        return static_cast<float>(configured);
+    if (saved && saved->scale > 0)
+        return static_cast<float>(saved->scale);
+    return auto_output_scale(output, mode);
 }
 
 static void server_new_output(wl_listener* listener, void* data)
@@ -1652,32 +1664,27 @@ static void server_new_output(wl_listener* listener, void* data)
             }
         }
     }
-    if (!mode)
-        mode = wlr_output_preferred_mode(wlr_output);
     if (mode)
         wlr_output_state_set_mode(&state, mode);
-    // HiDPI stopgap: integer-scale high-DPI panels (see auto_output_scale),
-    // unless a saved screen layout specifies a scale.
-    float scale = (saved && saved->scale > 0) ? static_cast<float>(saved->scale) : auto_output_scale(wlr_output, mode);
-    // An explicit test/debug override (SDE_OUTPUT_SCALE) always wins over a
-    // persisted layout.
-    if (auto const* env = getenv("SDE_OUTPUT_SCALE"); env && *env) {
-        char* end = nullptr;
-        double const value = strtod(env, &end);
-        if (end != env && value >= 1.0)
-            scale = static_cast<float>(value);
-    }
+    else if (saved && saved->width > 0 && saved->height > 0)
+        // A saved size with no matching mode (e.g. the headless backend): request
+        // a custom mode, which the backend honours (HiDPI captures need this).
+        wlr_output_state_set_custom_mode(&state, saved->width, saved->height, 0);
+    else if (auto* preferred = wlr_output_preferred_mode(wlr_output))
+        wlr_output_state_set_mode(&state, preferred);
+    // HiDPI / fractional scale (see resolve_output_scale).
+    float const scale = resolve_output_scale(wlr_output, mode, saved);
     if (scale != 1.0f) {
         wlr_output_state_set_scale(&state, scale);
         dbgln("WindowServer: output '{}' scaling {}x ({})",
-            wlr_output->name ? wlr_output->name : "?", static_cast<int>(scale), saved ? "saved layout" : "high-DPI");
+            wlr_output->name ? wlr_output->name : "?", scale, saved ? "saved layout" : "high-DPI");
     } else if (saved) {
         dbgln("WindowServer: output '{}' scale 1x (saved layout)", wlr_output->name ? wlr_output->name : "?");
     }
     wlr_output_commit_state(wlr_output, &state);
     // Compositor-drawn chrome (frames, overlays, the switcher) is rendered at the
     // output scale so it stays crisp on HiDPI panels.
-    set_output_scale(static_cast<int>(wlr_output->scale));
+    set_output_scale(wlr_output->scale);
     wlr_output_state_finish(&state);
 
     auto output = make<Output>();
@@ -1702,7 +1709,7 @@ static void server_new_output(wl_listener* listener, void* data)
         server->primary_output = wlr_output;
 
     auto const logical_size = output_logical_size(wlr_output);
-    dbgln("WindowServer: output '{}' {}x{} @{}x", wlr_output->name ? wlr_output->name : "?", logical_size.width(), logical_size.height(), static_cast<int>(wlr_output->scale));
+    dbgln("WindowServer: output '{}' {}x{} @{}x", wlr_output->name ? wlr_output->name : "?", logical_size.width(), logical_size.height(), wlr_output->scale);
     server->outputs.append(move(output));
     update_desktop_background(*server, *server->outputs.last());
     arrange_layers(*server, wlr_output);
@@ -2970,7 +2977,10 @@ static void persist_screen_layout(Server& server)
         entry.top = box.y;
         entry.width = output.output->width;
         entry.height = output.output->height;
-        entry.scale = static_cast<int>(output.output->scale);
+        // The SerenityOS screenlayout.ini ScaleFactor is an integer; a fractional
+        // scale is recorded as 0 ("unspecified") so a reload re-decides it from
+        // [Output] DefaultScale / the auto rule instead of a wrong integer.
+        entry.scale = output_scale_is_integral() ? static_cast<int>(output.output->scale) : 0;
         settings.append(move(entry));
         if (output.output == server.primary_output)
             main_index = index;
@@ -2996,18 +3006,60 @@ static void apply_saved_settings_to_output(Server& server, struct wlr_output* ou
             }
         }
     }
-    if (!mode)
-        mode = wlr_output_preferred_mode(output);
     if (mode)
         wlr_output_state_set_mode(&state, mode);
-    if (settings.scale > 0)
-        wlr_output_state_set_scale(&state, static_cast<float>(settings.scale));
+    else if (settings.width > 0 && settings.height > 0)
+        wlr_output_state_set_custom_mode(&state, settings.width, settings.height, 0);
+    else if (auto* preferred = wlr_output_preferred_mode(output))
+        wlr_output_state_set_mode(&state, preferred);
+    // The resolved scale honours SDE_OUTPUT_SCALE / [Output] DefaultScale first, so
+    // a configured scale wins over the persisted (integer) layout.
+    float const scale = resolve_output_scale(output, mode, &settings);
+    wlr_output_state_set_scale(&state, scale);
     wlr_output_commit_state(output, &state);
     wlr_output_state_finish(&state);
 
     wlr_output_layout_add(server.output_layout, output, settings.left, settings.top);
     dbgln("WindowServer: applied screen layout to '{}': {}x{} @{}x at {},{}",
-        output->name ? output->name : "?", settings.width, settings.height, settings.scale, settings.left, settings.top);
+        output->name ? output->name : "?", settings.width, settings.height, scale, settings.left, settings.top);
+}
+
+// R6 HiDPI: re-apply the resolved output scale to the live outputs. Called at
+// startup and whenever [Output] DefaultScale changes so a config edit takes effect
+// immediately (Live reload, docs/14 §4).
+static void apply_output_scale(Server& server)
+{
+    bool changed = false;
+    for (auto& output : server.outputs) {
+        Config::OutputSettings const* saved = nullptr;
+        for (auto const& settings : Config::outputs()) {
+            if (output->output->name && settings.mode == "Device"sv && settings.device == output->output->name) {
+                saved = &settings;
+                break;
+            }
+        }
+        float const scale = resolve_output_scale(output->output, wlr_output_preferred_mode(output->output), saved);
+        if (output->output->scale == scale)
+            continue;
+
+        wlr_output_state state;
+        wlr_output_state_init(&state);
+        wlr_output_state_set_enabled(&state, true);
+        // Keep the current mode; only the scale changes.
+        wlr_output_state_set_scale(&state, scale);
+        if (wlr_output_commit_state(output->output, &state)) {
+            set_output_scale(output->output->scale);
+            changed = true;
+            dbgln("WindowServer: output '{}' re-scaled to {}x", output->output->name ? output->output->name : "?", output->output->scale);
+            update_desktop_background(server, *output);
+            arrange_layers(server, output->output);
+        }
+        wlr_output_state_finish(&state);
+    }
+    if (changed) {
+        output_manager_send_configuration(server);
+        persist_screen_layout(server);
+    }
 }
 
 // R4.5: re-apply the on-disk layout to the live outputs (screenlayout.ini watch).
@@ -3807,6 +3859,9 @@ static ErrorOr<void> initialize(Server& server)
     // R6 presentation-time: frame feedback (presented events). Fed from
     // output_frame() via wlr_presentation_surface_textured_on_output().
     wlr_presentation_create(server.display, server.backend, 2);
+    // R6 HiDPI: fractional output scale. wlr_scene notifies each mapped surface of
+    // the preferred (possibly fractional) scale, so native clients render at it.
+    wlr_fractional_scale_manager_v1_create(server.display, 1);
     server.relative_pointer_manager = wlr_relative_pointer_manager_v1_create(server.display);
     server.keyboard_shortcuts_inhibit = wlr_keyboard_shortcuts_inhibit_v1_create(server.display);
     auto* foreign_registry = wlr_xdg_foreign_registry_create(server.display);
@@ -4277,7 +4332,11 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     AppletManager::set_host_hooks({ WindowManager::tell_wms_applet_area_size_changed, primary_usable_area, layer_report_position });
     // Bring the workspace grid up from the config, and follow later edits.
     WindowManager::load_workspaces(*server);
-    Config::watch([&] { WindowManager::load_workspaces(*server); });
+    Config::watch([&] {
+        WindowManager::load_workspaces(*server);
+        // R6 HiDPI: a live [Output] DefaultScale edit re-scales the outputs.
+        apply_output_scale(*server);
+    });
     // R4.5: apply monitor-layout edits (screenlayout.ini) to the live outputs.
     Config::watch_outputs([&] { apply_loaded_screen_layout(*server); });
     // R4.6: apply input-setting edits (input.ini) to the live devices.

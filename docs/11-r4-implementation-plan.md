@@ -332,9 +332,11 @@ the host supports it.
 > `scripts/run-output-test.sh` and a Monitor screenshot against a headless
 > session on `HEADLESS-1`.
 >
-> **Deferred:** `wp-fractional-scale-v1` + `wp_viewporter` fractional scale, and
-> rotation/primary persistence — the Serenity ScreenLayout model has no rotation
-> field, so those land with the LibWindowServer backing-store scale work (R6).
+> **Deferred:** rotation/primary persistence — the Serenity ScreenLayout model has
+> no rotation field. (Fractional scale landed in R6: `wp-fractional-scale-v1` is
+> served and `[Output] DefaultScale` accepts a fractional value; the Serenity
+> `DisplaySettings` Monitor tab remains display-only and its integer `ScaleFactor`
+> cannot express 1.5 — see [`13`](13-native-session-and-aur-packaging.md) App. A.)
 
 ### R4.6 — Input settings & keymaps
 
@@ -664,7 +666,7 @@ Legend: **✓** have · **↗** planned R4 · **→** planned R5 · **·** plann
 | `ext-image-copy-capture-v1` | – | ✓ | R5 |
 | `ext-transient-seat-v1` | ✗ | ✗ | R4.3 / R6 |
 | `ext-background-effect-v1` | ✓ | ✗ | R6 (needs a wlroots bump) |
-| `wp-fractional-scale-v1` | ✓ | ✗ | R4.5 / R6 (client backing-store M8) |
+| `wp-fractional-scale-v1` | ✓ | ✓ | R6 (landed) |
 | `wp-color-management-v1` | ✓ | ✗ | R6 |
 | `wp-color-representation-v1` | ✓ | ✗ | R6 |
 | `wp-content-type-v1` | ✓ | ✓ | R4.5 |
