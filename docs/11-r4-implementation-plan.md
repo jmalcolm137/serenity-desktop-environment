@@ -663,9 +663,9 @@ Legend: **✓** have · **↗** planned R4 · **→** planned R5 · **·** plann
 | `xdg-session-management-v1` | ✓ | ✓ | R4.2 |
 | `xdg-dialog-v1` | ✓ | ✓ | R6 (landed) |
 | `xdg-foreign-v2` | ✓ | ✓ | R5 |
-| `xdg-system-bell-v1` | ✓ | ✗ | R5 |
-| `xdg-toplevel-drag-v1` | ✓ | ✗ | R5 (needs a wlroots bump) |
-| `xdg-toplevel-icon-v1` | ✓ | ✗ | R5 |
+| `xdg-system-bell-v1` | ✓ | ✓ | R5 (landed) |
+| `xdg-toplevel-drag-v1` | ✓ | ✗ | R5 (in neither wlroots 0.20 nor master) |
+| `xdg-toplevel-icon-v1` | ✓ | ✓ | R5 (landed) |
 | `xdg-toplevel-tag-v1` | ✓ | ✗ | R5 |
 | `xwayland-shell-v1`, `xwayland-keyboard-grab-v1` | ✓ | ✗ | R5 (XWayland) |
 | `ext-idle-notify-v1` | ✓ | ✓ | R4.1 |
@@ -694,6 +694,10 @@ Legend: **✓** have · **↗** planned R4 · **→** planned R5 · **·** plann
 | `wp-keyboard-shortcuts-inhibit-v1` | ✓ | ✓ | R5 |
 | `wp-linux-drm-syncobj-v1` | ✓ | ✗ | R6 |
 | `xdpip` (`xx-pip-v1`) | ✓ (private) | ✗ | R6 (private) |
+
+> **wlroots availability & order.** Which rows can be implemented on the current
+> wlroots release versus needing a future one (and the plan/order) is recorded in
+> [`21-r5-protocol-parity-plan.md`](21-r5-protocol-parity-plan.md).
 
 **KDE-private protocols (NOT parity targets).** `org_kde_kwin_*`
 (plasma-shell, plasma-window-management, plasma-virtual-desktop, output-device,
