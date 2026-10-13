@@ -97,6 +97,10 @@ check xdg_wm_dialog_v1
 check wp_presentation
 check wp_fractional_scale_manager_v1
 
+echo "=== standard-protocol parity (docs/21-r5-protocol-parity-plan.md) ==="
+check xdg_toplevel_icon_manager_v1
+check xdg_system_bell_v1
+
 echo "=== portals / capture / session (pre-existing) ==="
 check wl_output
 check zwp_idle_inhibit_manager_v1

@@ -45,6 +45,8 @@ struct wlr_ext_foreign_toplevel_list_v1;
 struct wlr_ext_foreign_toplevel_handle_v1;
 struct wlr_ext_foreign_toplevel_image_capture_source_manager_v1;
 struct wlr_xdg_activation_v1;
+struct wlr_xdg_toplevel_icon_manager_v1;
+struct wlr_xdg_system_bell_v1;
 struct wlr_cursor_shape_manager_v1;
 struct wlr_idle_inhibit_manager_v1;
 struct wlr_idle_inhibitor_v1;
@@ -504,6 +506,11 @@ struct Server {
     wlr_ext_foreign_toplevel_list_v1* ext_foreign_toplevel_list { nullptr };
     wlr_ext_foreign_toplevel_image_capture_source_manager_v1* ext_toplevel_capture_source_manager { nullptr };
     wlr_xdg_activation_v1* xdg_activation { nullptr };
+    // R5 protocol parity (docs/21): client window icons and the system bell.
+    wlr_xdg_toplevel_icon_manager_v1* toplevel_icon_manager { nullptr };
+    wl_listener toplevel_icon_set { };
+    wlr_xdg_system_bell_v1* system_bell { nullptr };
+    wl_listener system_bell_ring { };
     wlr_cursor_shape_manager_v1* cursor_shape_manager { nullptr };
     wlr_output_manager_v1* output_manager { nullptr };
     // R5: native-app compatibility protocols (mostly wlroots-implemented; these

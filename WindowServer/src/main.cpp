@@ -95,6 +95,9 @@ static char const* xwayland_surface_class(wlr_xwayland_surface* surface) { retur
 #undef class
 #include <wlr/types/wlr_primary_selection.h>
 #include <wlr/types/wlr_primary_selection_v1.h>
+#include <wlr/types/wlr_xdg_toplevel_icon_v1.h>
+#include <wlr/types/wlr_xdg_system_bell_v1.h>
+#include <wlr/types/wlr_buffer.h>
 #include <wlr/types/wlr_data_control_v1.h>
 #include <wlr/types/wlr_ext_data_control_v1.h>
 #include <wlr/types/wlr_viewporter.h>
@@ -5772,6 +5775,109 @@ static void cursor_shape_request(wl_listener* listener, void* data)
         wlr_cursor_set_xcursor(server->cursor, server->cursor_manager, name);
 }
 
+// --- R5 protocol parity: xdg-toplevel-icon-v1 + xdg-system-bell-v1 (docs/21) --
+
+static Toplevel* toplevel_for_xdg(Server& server, wlr_xdg_toplevel* xdg_toplevel)
+{
+    for (auto& toplevel : server.toplevels) {
+        if (toplevel->xdg_toplevel == xdg_toplevel)
+            return toplevel.ptr();
+    }
+    return nullptr;
+}
+
+// wl_shm fourcc channel order: ARGB8888/XRGB8888 are B,G,R,(X) in memory; the
+// XBGR/ABGR variants are R,G,B,(X). (Same values as the DRM formats.)
+static bool shm_format_is_bgr(uint32_t format)
+{
+    return format == 0x34325241u /* ARGB8888 */ || format == 0x34325258u /* XRGB8888 */;
+}
+
+static bool shm_format_is_rgb(uint32_t format)
+{
+    return format == 0x34324241u /* ABGR8888 */ || format == 0x34324258u /* XBGR8888 */;
+}
+
+// xdg-toplevel-icon-v1: a client set (or cleared) a window icon. Convert the
+// chosen buffer to a Gfx::Bitmap and report it, like the X11 _NET_WM_ICON path
+// (docs/20 item 3) — the Taskbar button and the Alt-Tab switcher draw it.
+static void toplevel_icon_set(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, toplevel_icon_set);
+    auto* event = static_cast<wlr_xdg_toplevel_icon_manager_v1_set_icon_event*>(data);
+    auto* toplevel = toplevel_for_xdg(*server, event->toplevel);
+    if (!toplevel)
+        return;
+
+    RefPtr<Gfx::Bitmap> icon;
+    if (event->icon) {
+        // Prefer a scale-1 buffer nearest 16x16 (the Taskbar/switcher size).
+        wlr_xdg_toplevel_icon_v1_buffer* best = nullptr;
+        int best_score = -1000000;
+        wlr_xdg_toplevel_icon_v1_buffer* buffer = nullptr;
+        wl_list_for_each(buffer, &event->icon->buffers, link)
+        {
+            if (!buffer->buffer)
+                continue;
+            int const w = buffer->buffer->width;
+            int const distance = w >= 16 ? w - 16 : 16 - w;
+            int const score = (buffer->scale == 1 ? 100 : 0) - distance;
+            if (score > best_score) {
+                best_score = score;
+                best = buffer;
+            }
+        }
+        if (best) {
+            auto* buffer = best->buffer;
+            void* pixels = nullptr;
+            uint32_t format = 0;
+            size_t stride = 0;
+            if (wlr_buffer_begin_data_ptr_access(buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ, &pixels, &format, &stride)) {
+                int const w = buffer->width;
+                int const h = buffer->height;
+                if ((shm_format_is_bgr(format) || shm_format_is_rgb(format)) && w > 0 && h > 0 && stride >= static_cast<size_t>(w) * 4) {
+                    if (auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { w, h }); !bitmap.is_error()) {
+                        auto& created = *bitmap.value();
+                        for (int y = 0; y < h; ++y) {
+                            auto const* src = static_cast<uint8_t const*>(pixels) + static_cast<size_t>(y) * stride;
+                            auto* dst = created.scanline(y);
+                            if (shm_format_is_bgr(format)) {
+                                memcpy(dst, src, static_cast<size_t>(w) * 4);
+                            } else {
+                                for (int x = 0; x < w; ++x) {
+                                    dst[x * 4 + 0] = src[x * 4 + 2];
+                                    dst[x * 4 + 1] = src[x * 4 + 1];
+                                    dst[x * 4 + 2] = src[x * 4 + 0];
+                                    dst[x * 4 + 3] = src[x * 4 + 3];
+                                }
+                            }
+                        }
+                        icon = bitmap.release_value();
+                    }
+                }
+                wlr_buffer_end_data_ptr_access(buffer);
+            }
+        }
+    }
+
+    toplevel->icon = icon ? move(icon) : g_default_window_icon;
+    WindowManager::emit_window_icon(*toplevel);
+    toplevel_update_frame(*toplevel);
+    dbgln("WindowServer: xdg-toplevel-icon set for wm_id={} ({}x{})", toplevel->wm_id,
+        toplevel->icon ? toplevel->icon->width() : 0, toplevel->icon ? toplevel->icon->height() : 0);
+}
+
+// xdg-system-bell-v1: a client asked for the system bell. Advertise the global so
+// such clients do not fail; the audible/visual bell itself is not implemented.
+static void system_bell_ring(wl_listener* listener, void*)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, system_bell_ring);
+    (void)server;
+    dbgln("WindowServer: xdg-system-bell ring (bell output not implemented)");
+}
+
 static ErrorOr<void> initialize(Server& server)
 {
     server.display = wl_display_create();
@@ -5892,6 +5998,21 @@ static ErrorOr<void> initialize(Server& server)
     // Window capture sources (ext-image-capture-source-v1) for the ScreenCast portal.
     server.ext_toplevel_capture_source_manager = wlr_ext_foreign_toplevel_image_capture_source_manager_v1_create(server.display, 1);
     server.xdg_activation = wlr_xdg_activation_v1_create(server.display);
+
+    // R5 protocol parity (docs/21-r5-protocol-parity-plan.md): client window icons
+    // and the system bell, both available on the pinned wlroots 0.20.
+    server.toplevel_icon_manager = wlr_xdg_toplevel_icon_manager_v1_create(server.display, 1);
+    if (server.toplevel_icon_manager) {
+        static int sizes[] = { 16, 32, 64 };
+        wlr_xdg_toplevel_icon_manager_v1_set_sizes(server.toplevel_icon_manager, sizes, 3);
+        server.toplevel_icon_set.notify = toplevel_icon_set;
+        wl_signal_add(&server.toplevel_icon_manager->events.set_icon, &server.toplevel_icon_set);
+    }
+    server.system_bell = wlr_xdg_system_bell_v1_create(server.display, 1);
+    if (server.system_bell) {
+        server.system_bell_ring.notify = system_bell_ring;
+        wl_signal_add(&server.system_bell->events.ring, &server.system_bell_ring);
+    }
     server.xdg_activation_activate.notify = xdg_activation_activate;
     wl_signal_add(&server.xdg_activation->events.request_activate, &server.xdg_activation_activate);
 
