@@ -40,7 +40,8 @@ fi
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-profiler.XXXXXX")"
 export SDE_STATE_DIR="$RUNTIME"
-trap 'rm -rf "$RUNTIME"; rm -f "$XDG_RUNTIME_DIR"/sde-*-$$ "$XDG_RUNTIME_DIR"/sde-*-$$.lock 2>/dev/null || true' EXIT
+PERFCORE=""
+trap 'rm -rf "$RUNTIME"; { [[ -n "$PERFCORE" ]] && rm -f "$PERFCORE"; } || true; rm -f "$XDG_RUNTIME_DIR"/sde-*-$$ "$XDG_RUNTIME_DIR"/sde-*-$$.lock 2>/dev/null || true' EXIT
 
 fail=0
 
@@ -154,7 +155,6 @@ fi
 kill "$PROF_PID" 2>/dev/null || true
 kill "$COMP_PID" 2>/dev/null || true
 wait "$COMP_PID" 2>/dev/null || true
-rm -f "$PERFCORE" 2>/dev/null || true
 
 if [[ "$fail" -ne 0 ]]; then
     echo "--- compositor log ---"; cat "$RUNTIME/comp.log"
