@@ -415,6 +415,7 @@ struct X11Toplevel {
     wl_listener set_title { };
     wl_listener set_class { };
     wl_listener set_icon { };
+    wl_listener set_hints { };
     wl_listener request_skip_taskbar { };
     wl_listener request_demands_attention { };
 };

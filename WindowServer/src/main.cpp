@@ -270,6 +270,65 @@ static FrameIcons g_frame_icons;
 // (titlebar, switcher, Taskbar) and the Taskbar never receives an invalid icon.
 static RefPtr<Gfx::Bitmap> g_default_window_icon;
 
+// A distinct default icon for **X11 (Xwayland)** clients that supply none: a small
+// application window with an "X" on it, so an X11 window's titlebar is recognisable
+// at a glance (vs. the generic window icon). Drawn at 16x16 (the titlebar/switcher
+// size); pixels are written directly to avoid any font/format dependency.
+static RefPtr<Gfx::Bitmap> g_x11_default_icon;
+
+static RefPtr<Gfx::Bitmap> make_x11_default_icon()
+{
+    constexpr int size = 16;
+    auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { size, size });
+    if (bitmap.is_error())
+        return nullptr;
+    auto bmp = bitmap.release_value();
+    // A window: grey body, light border, blue titlebar, and a dark "X".
+    constexpr u8 body_rgb[3] = { 0xd4, 0xd0, 0xc8 };
+    constexpr u8 border_rgb[3] = { 0x6a, 0x6a, 0x6a };
+    constexpr u8 title_rgb[3] = { 0x2a, 0x5d, 0xb0 };
+    constexpr u8 ink_rgb[3] = { 0x10, 0x10, 0x10 };
+    for (int y = 0; y < size; ++y) {
+        auto* row = bmp->scanline_u8(y);
+        for (int x = 0; x < size; ++x) {
+            u8 r = 0;
+            u8 g = 0;
+            u8 b = 0;
+            u8 a = 0;
+            if (x >= 1 && x <= 14 && y >= 1 && y <= 14) {
+                a = 255;
+                u8 const* rgb = body_rgb;
+                if (y >= 2 && y <= 4)
+                    rgb = title_rgb;
+                else if (x == 1 || x == 14 || y == 1 || y == 14)
+                    rgb = border_rgb;
+                r = rgb[0];
+                g = rgb[1];
+                b = rgb[2];
+                // The "X" (two diagonals) over the window body.
+                if (y >= 6 && y <= 13 && x >= 3 && x <= 12) {
+                    int const dx = x - 7;
+                    int const dy = y - 9;
+                    int d1 = dx - dy;
+                    int d2 = dx + dy;
+                    if (d1 < 0) d1 = -d1;
+                    if (d2 < 0) d2 = -d2;
+                    if (d1 <= 1 || d2 <= 1) {
+                        r = ink_rgb[0];
+                        g = ink_rgb[1];
+                        b = ink_rgb[2];
+                    }
+                }
+            }
+            row[x * 4 + 0] = b;
+            row[x * 4 + 1] = g;
+            row[x * 4 + 2] = r;
+            row[x * 4 + 3] = a;
+        }
+    }
+    return bmp;
+}
+
 // Desktop background: a wallpaper image (optional) drawn over the theme's
 // background colour. The Display Settings app writes the choice (image, mode and
 // colour) to a shared state directory; we load it at startup and watch it.
@@ -2490,6 +2549,87 @@ static void x11_request_demands_attention(wl_listener* listener, void*)
 // switcher can draw it. _NET_WM_ICON pixels are 0xAARRGGBB, i.e. B,G,R,A in
 // memory (little-endian), which is exactly BitmapFormat::BGRA8888.
 
+// Older clients (e.g. xterm) set their window icon via the legacy WM_HINTS
+// icon_pixmap (+ optional 1-bit mask), not _NET_WM_ICON. Read it over the xwm
+// connection (wlr_xwayland_get_xwm_connection) and build a Gfx::Bitmap.
+static void x11_fetch_wm_hints_icon(X11Toplevel& toplevel)
+{
+    auto* xsurface = toplevel.xsurface;
+    if (!xsurface || !xsurface->hints)
+        return;
+    if (!(xsurface->hints->flags & XCB_ICCCM_WM_HINT_ICON_PIXMAP))
+        return;
+    xcb_pixmap_t const pixmap = xsurface->hints->icon_pixmap;
+    if (pixmap == XCB_NONE)
+        return;
+    xcb_pixmap_t const mask = (xsurface->hints->flags & XCB_ICCCM_WM_HINT_ICON_MASK) ? xsurface->hints->icon_mask : XCB_NONE;
+
+    auto* connection = (toplevel.server && toplevel.server->xwayland) ? wlr_xwayland_get_xwm_connection(toplevel.server->xwayland) : nullptr;
+    if (!connection)
+        return;
+
+    xcb_get_geometry_reply_t* geometry = xcb_get_geometry_reply(connection, xcb_get_geometry(connection, pixmap), nullptr);
+    if (!geometry)
+        return;
+    int const width = geometry->width;
+    int const height = geometry->height;
+    uint8_t const depth = geometry->depth;
+    free(geometry);
+    if (width <= 0 || height <= 0 || width > 256 || height > 256)
+        return;
+
+    xcb_get_image_reply_t* image = xcb_get_image_reply(connection, xcb_get_image(connection, XCB_IMAGE_FORMAT_Z_PIXMAP, pixmap, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height), ~0u), nullptr);
+    if (!image)
+        return;
+    uint8_t const* data = xcb_get_image_data(image);
+
+    xcb_get_image_reply_t* mask_image = nullptr;
+    uint8_t const* mask_data = nullptr;
+    if (mask != XCB_NONE) {
+        mask_image = xcb_get_image_reply(connection, xcb_get_image(connection, XCB_IMAGE_FORMAT_Z_PIXMAP, mask, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height), ~0u), nullptr);
+        if (mask_image)
+            mask_data = xcb_get_image_data(mask_image);
+    }
+
+    if (auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { width, height }); !bitmap.is_error()) {
+        auto& created = *bitmap.value();
+        int const one_bit_stride = ((width + 31) / 32) * 4; // 1-bit rows pad to 32 bits
+        for (int y = 0; y < height; ++y) {
+            auto* dst = created.scanline_u8(y);
+            for (int x = 0; x < width; ++x) {
+                uint8_t r = 0;
+                uint8_t g = 0;
+                uint8_t b = 0;
+                if (depth == 1) {
+                    uint8_t const bit = (data[static_cast<size_t>(y) * one_bit_stride + x / 8] >> (x % 8)) & 1;
+                    r = g = b = bit ? 0x10 : 0xf0; // foreground / background of the bitmap
+                } else if (depth == 24 || depth == 32) {
+                    uint8_t const* p = data + (static_cast<size_t>(y) * width + x) * 4; // 32 bits/pixel
+                    b = p[0];
+                    g = p[1];
+                    r = p[2];
+                } else {
+                    continue;
+                }
+                uint8_t alpha = 255;
+                if (mask_data) {
+                    uint8_t const m = (mask_data[static_cast<size_t>(y) * one_bit_stride + x / 8] >> (x % 8)) & 1;
+                    alpha = m ? 255 : 0;
+                }
+                dst[x * 4 + 0] = b;
+                dst[x * 4 + 1] = g;
+                dst[x * 4 + 2] = r;
+                dst[x * 4 + 3] = alpha;
+            }
+        }
+        toplevel.icon = bitmap.release_value();
+        dbgln("WindowServer: X11 window '{}' WM_HINTS icon {}x{} (wm_id={})", toplevel.title, width, height, toplevel.wm_id);
+    }
+    free(image);
+    if (mask_image)
+        free(mask_image);
+}
+
 static void x11_fetch_icon(X11Toplevel& toplevel)
 {
     if (!toplevel.xsurface)
@@ -2535,13 +2675,11 @@ static void x11_fetch_icon(X11Toplevel& toplevel)
         xcb_ewmh_get_wm_icon_reply_wipe(&reply);
     }
 
-    // Clients that do not set _NET_WM_ICON (e.g. xterm, which uses the legacy
-    // WM_HINTS icon pixmap) get the **default** window icon, drawn by
-    // x11_update_frame — never a blank slot. The WM_HINTS icon is deliberately not
-    // read: it needs synchronous xcb_get_image/geometry round-trips, and wlroots
-    // owns the xwm xcb connection, so doing that (even deferred to idle) corrupts
-    // the heap and aborts the compositor. (No safe public API reads an X pixmap.)
-    (void)have_icon;
+    // Fall back to the legacy WM_HINTS icon (xterm and friends).
+    if (!have_icon && toplevel.server && toplevel.xsurface && toplevel.xsurface->hints
+        && (toplevel.xsurface->hints->flags & XCB_ICCCM_WM_HINT_ICON_PIXMAP)
+        && toplevel.xsurface->hints->icon_pixmap != XCB_NONE)
+        x11_fetch_wm_hints_icon(toplevel);
 
     if (toplevel.icon) {
         WindowManager::emit_window_icon(toplevel);
@@ -2555,6 +2693,14 @@ static void x11_set_icon(wl_listener* listener, void*)
 {
     X11Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, set_icon);
+    x11_fetch_icon(*toplevel);
+}
+
+// WM_HINTS changed (e.g. the legacy icon pixmap): (re)read the icon.
+static void x11_set_hints(wl_listener* listener, void*)
+{
+    X11Toplevel* toplevel = nullptr;
+    toplevel = wl_container_of(listener, toplevel, set_hints);
     x11_fetch_icon(*toplevel);
 }
 
@@ -2590,6 +2736,8 @@ static void server_new_xwayland_surface(wl_listener* listener, void* data)
     wl_signal_add(&xsurface->events.set_class, &toplevel->set_class);
     toplevel->set_icon.notify = x11_set_icon;
     wl_signal_add(&xsurface->events.set_icon, &toplevel->set_icon);
+    toplevel->set_hints.notify = x11_set_hints;
+    wl_signal_add(&xsurface->events.set_hints, &toplevel->set_hints);
     toplevel->request_skip_taskbar.notify = x11_request_skip_taskbar;
     wl_signal_add(&xsurface->events.request_skip_taskbar, &toplevel->request_skip_taskbar);
     toplevel->request_demands_attention.notify = x11_request_demands_attention;
@@ -2656,8 +2804,9 @@ static void x11_update_frame(X11Toplevel& toplevel)
     painter.fill_rect(Gfx::IntRect { { }, frame_size }, g_palette->window());
 
     static auto const blank_icon = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { 16, 16 }).release_value_but_fixme_should_propagate_errors();
-    // The fetched _NET_WM_ICON / WM_HINTS icon, or the default window icon.
-    Gfx::Bitmap const& icon = toplevel.icon ? *toplevel.icon : (g_default_window_icon ? *g_default_window_icon : *blank_icon);
+    // The fetched _NET_WM_ICON icon, else the X11 default (a window with an "X"),
+    // else the generic default window icon.
+    Gfx::Bitmap const& icon = toplevel.icon ? *toplevel.icon : (g_x11_default_icon ? *g_x11_default_icon : (g_default_window_icon ? *g_default_window_icon : *blank_icon));
     auto buttons = theme.layout_buttons(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette, 3, false);
     toplevel.titlebar_icon_rect = theme.titlebar_icon_rect(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette);
     Gfx::IntRect leftmost_button = buttons.is_empty() ? Gfx::IntRect { } : buttons.last();
@@ -6272,6 +6421,7 @@ static ErrorOr<void> initialize_gfx()
     g_frame_icons.move = load_icon(resource_root, "move"sv, ""sv);
     g_frame_icons.pin = load_icon(resource_root, "window-pin"sv, ""sv);
     g_default_window_icon = load_icon(resource_root, "window"sv, "window"sv);
+    g_x11_default_icon = make_x11_default_icon();
 
     // Wallpaper/background: load the persisted state, seeding from
     // SDE_WALLPAPER / SDE_WALLPAPER_MODE on the first run.
