@@ -404,6 +404,10 @@ struct X11Toplevel {
     u32 workspace_column { 0 };
     int hovered_button { -1 };
     int pressed_button { -1 };
+    // Whether surface_map/surface_unmap are attached to listened_surface, so we can
+    // detach them on dissociate/destroy (and never add the same listener twice).
+    bool surface_listeners_attached { false };
+    wlr_surface* listened_surface { nullptr };
     wl_listener associate { };
     wl_listener dissociate { };
     wl_listener surface_map { };

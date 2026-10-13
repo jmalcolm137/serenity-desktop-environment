@@ -271,53 +271,41 @@ static FrameIcons g_frame_icons;
 // (titlebar, switcher, Taskbar) and the Taskbar never receives an invalid icon.
 static RefPtr<Gfx::Bitmap> g_default_window_icon;
 
-// A distinct default icon for **X11 (Xwayland)** clients that supply none: a small
-// application window with an "X" on it, so an X11 window's titlebar is recognisable
-// at a glance (vs. the generic window icon). Drawn at 16x16 (the titlebar/switcher
-// size) with Gfx::Painter (anti-aliased), in the theme's window colours.
+// A distinct default icon for **X11 (Xwayland)** clients that supply none: a big
+// monochrome "X" (in the spirit of the X11 logo), so an X11 window's titlebar is
+// recognisable at a glance (vs. the generic window icon). Drawn in the titlebar's
+// text colour at 64x64 and downscaled to 16x16 (the titlebar/switcher size) for
+// crisp, anti-aliased diagonals.
 static RefPtr<Gfx::Bitmap> g_x11_default_icon;
 
-static RefPtr<Gfx::Bitmap> make_x11_default_icon()
+static RefPtr<Gfx::Bitmap> make_x11_default_icon(Gfx::Color ink)
 {
-    constexpr int size = 16;
-    auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { size, size });
-    if (bitmap.is_error())
+    constexpr int big = 64;
+    constexpr int small = 16;
+
+    auto canvas = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { big, big });
+    if (canvas.is_error())
         return nullptr;
-    auto bmp = bitmap.release_value();
-    Gfx::Painter painter(*bmp);
-    painter.clear_rect(bmp->rect(), Gfx::Color::Transparent);
+    auto source = canvas.release_value();
+    Gfx::Painter painter(*source);
+    painter.clear_rect(source->rect(), Gfx::Color::Transparent);
 
-    auto const body = Gfx::Color::from_rgb(0xD7D3CB);
-    auto const edge = Gfx::Color::from_rgb(0x8F8A80);
-    auto const title = Gfx::Color::from_rgb(0x2F6FD0);
-    auto const button = Gfx::Color::from_rgb(0xE9EEF7);
-    auto const ink = Gfx::Color::from_rgb(0x20242B);
-
-    // A rounded light window body, a titlebar across the top and two buttons.
-    Gfx::IntRect const window { 1, 1, 14, 14 };
-    painter.fill_rect_with_rounded_corners(window, body, 2);
-    painter.fill_rect_with_rounded_corners({ 1, 1, 14, 5 }, title, 2, 2, 0, 0);
-    painter.fill_rect({ 8, 2, 3, 3 }, button);
-    painter.fill_rect({ 12, 2, 2, 3 }, button);
-    painter.draw_rect(window, edge);
-
-    // A crisp, anti-aliased "X" in the body.
+    // A big "X" (no window frame), taller than it is wide like the X11 logo.
     Gfx::Path cross;
-    cross.move_to({ 3.5f, 6.5f });
-    cross.line_to({ 5.1f, 6.5f });
-    cross.line_to({ 8.0f, 9.5f });
-    cross.line_to({ 10.9f, 6.5f });
-    cross.line_to({ 12.5f, 6.5f });
-    cross.line_to({ 8.9f, 10.0f });
-    cross.line_to({ 12.5f, 13.5f });
-    cross.line_to({ 10.9f, 13.5f });
-    cross.line_to({ 8.0f, 10.5f });
-    cross.line_to({ 5.1f, 13.5f });
-    cross.line_to({ 3.5f, 13.5f });
-    cross.line_to({ 7.1f, 10.0f });
-    cross.close();
-    painter.fill_path(cross, ink);
-    return bmp;
+    cross.move_to({ 19, 5 });
+    cross.line_to({ 45, 59 });
+    cross.move_to({ 45, 5 });
+    cross.line_to({ 19, 59 });
+    painter.stroke_path(cross, ink, 10);
+
+    auto result = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { small, small });
+    if (result.is_error())
+        return nullptr;
+    auto downscaled = result.release_value();
+    Gfx::Painter downscaled_painter(*downscaled);
+    downscaled_painter.clear_rect(downscaled->rect(), Gfx::Color::Transparent);
+    downscaled_painter.draw_scaled_bitmap(downscaled->rect(), *source, source->rect(), 1.0f, Gfx::ScalingMode::BilinearBlend);
+    return downscaled;
 }
 
 // Desktop background: a wallpaper image (optional) drawn over the theme's
@@ -2367,11 +2355,20 @@ static void x11_surface_associate(wl_listener* listener, void*)
     auto* xsurface = toplevel->xsurface;
     if (!xsurface->surface)
         return;
+    // Re-associating would add the same listeners twice (corrupting the list), so
+    // drop any previous ones first.
+    if (toplevel->surface_listeners_attached) {
+        wl_list_remove(&toplevel->surface_map.link);
+        wl_list_remove(&toplevel->surface_unmap.link);
+        toplevel->surface_listeners_attached = false;
+    }
     toplevel->scene = wlr_scene_surface_create(toplevel->scene_tree, xsurface->surface);
     toplevel->surface_map.notify = x11_surface_map;
     wl_signal_add(&xsurface->surface->events.map, &toplevel->surface_map);
     toplevel->surface_unmap.notify = x11_surface_unmap;
     wl_signal_add(&xsurface->surface->events.unmap, &toplevel->surface_unmap);
+    toplevel->listened_surface = xsurface->surface;
+    toplevel->surface_listeners_attached = true;
 }
 
 static void x11_surface_dissociate(wl_listener* listener, void*)
@@ -2379,6 +2376,13 @@ static void x11_surface_dissociate(wl_listener* listener, void*)
     X11Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, dissociate);
     toplevel->mapped = false;
+    // The surface is going away: detach our map/unmap listeners from it.
+    if (toplevel->surface_listeners_attached) {
+        wl_list_remove(&toplevel->surface_map.link);
+        wl_list_remove(&toplevel->surface_unmap.link);
+        toplevel->surface_listeners_attached = false;
+        toplevel->listened_surface = nullptr;
+    }
     if (toplevel->scene) {
         wlr_scene_node_destroy(&toplevel->scene->buffer->node);
         toplevel->scene = nullptr;
@@ -2390,6 +2394,27 @@ static void x11_surface_destroy(wl_listener* listener, void*)
     X11Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, destroy);
     auto& server = *toplevel->server;
+    // Detach every listener we added to the Xwayland surface: wlroots' destroy
+    // asserts that all of these event listener lists are empty, so leaving any
+    // attached aborts the whole compositor (e.g. when an xterm exits).
+    if (toplevel->surface_listeners_attached) {
+        wl_list_remove(&toplevel->surface_map.link);
+        wl_list_remove(&toplevel->surface_unmap.link);
+        toplevel->surface_listeners_attached = false;
+        toplevel->listened_surface = nullptr;
+    }
+    wl_list_remove(&toplevel->associate.link);
+    wl_list_remove(&toplevel->dissociate.link);
+    wl_list_remove(&toplevel->request_configure.link);
+    wl_list_remove(&toplevel->request_close.link);
+    wl_list_remove(&toplevel->request_activate.link);
+    wl_list_remove(&toplevel->set_title.link);
+    wl_list_remove(&toplevel->set_class.link);
+    wl_list_remove(&toplevel->set_icon.link);
+    wl_list_remove(&toplevel->set_hints.link);
+    wl_list_remove(&toplevel->request_skip_taskbar.link);
+    wl_list_remove(&toplevel->request_demands_attention.link);
+    wl_list_remove(&toplevel->destroy.link);
     if (server.focused_x11 == toplevel)
         server.focused_x11 = nullptr;
     if (server.grabbed_x11 == toplevel)
@@ -2705,6 +2730,9 @@ static void server_new_xwayland_surface(wl_listener* listener, void* data)
     toplevel->server = server;
     toplevel->xsurface = xsurface;
     toplevel->override_redirect = xsurface->override_redirect;
+    // The default icon (a big "X") until the client supplies its own: it shows on the
+    // titlebar, the Alt-Tab switcher and the Taskbar button.
+    toplevel->icon = g_x11_default_icon;
     toplevel->scene_tree = wlr_scene_tree_create(server->windows_tree);
     wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
     xsurface->data = toplevel.ptr();
@@ -2795,9 +2823,9 @@ static void x11_update_frame(X11Toplevel& toplevel)
     painter.fill_rect(Gfx::IntRect { { }, frame_size }, g_palette->window());
 
     static auto const blank_icon = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { 16, 16 }).release_value_but_fixme_should_propagate_errors();
-    // The fetched _NET_WM_ICON icon, else the X11 default (a window with an "X"),
-    // else the generic default window icon.
-    Gfx::Bitmap const& icon = toplevel.icon ? *toplevel.icon : (g_x11_default_icon ? *g_x11_default_icon : (g_default_window_icon ? *g_default_window_icon : *blank_icon));
+    // The client's icon, which is the X11 default (a big "X") drawn in the titlebar
+    // text colour until/unless the client supplies its own.
+    Gfx::Bitmap const& icon = toplevel.icon ? *toplevel.icon : (g_default_window_icon ? *g_default_window_icon : *blank_icon);
     auto buttons = theme.layout_buttons(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette, 3, false);
     toplevel.titlebar_icon_rect = theme.titlebar_icon_rect(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette);
     Gfx::IntRect leftmost_button = buttons.is_empty() ? Gfx::IntRect { } : buttons.last();
@@ -6412,7 +6440,7 @@ static ErrorOr<void> initialize_gfx()
     g_frame_icons.move = load_icon(resource_root, "move"sv, ""sv);
     g_frame_icons.pin = load_icon(resource_root, "window-pin"sv, ""sv);
     g_default_window_icon = load_icon(resource_root, "window"sv, "window"sv);
-    g_x11_default_icon = make_x11_default_icon();
+    g_x11_default_icon = make_x11_default_icon(g_palette ? g_palette->active_window_title() : Gfx::Color::White);
 
     // Wallpaper/background: load the persisted state, seeding from
     // SDE_WALLPAPER / SDE_WALLPAPER_MODE on the first run.

@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# XWayland regression (R5): an X11 client exiting must NOT abort the compositor.
+#
+# wlroots' xwayland_surface_destroy() asserts that every listener list on the
+# xsurface's events (destroy, set_title, set_hints, ...) is empty once it emits
+# "destroy". The compositor therefore has to detach each listener it added; when
+# it leaked them, typing "exit" in xterm (or any X11 client going away) aborted
+# the whole compositor with:
+#   xwayland/xwm.c:581: xwayland_surface_destroy: Assertion
+#   `wl_list_empty(&xsurface->events.destroy.listener_list)' failed.
+# Runs headless.
+set -euo pipefail
+
+SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
+SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
+BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
+COMP="$SDE_ROOT/build/WindowServer/WindowServer"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
+command -v xmessage >/dev/null || { echo "SKIP: no xmessage (X11 client)"; exit 0; }
+
+"$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
+
+R="$(mktemp -d "${TMPDIR:-/tmp}/sde-xwayland-exit.XXXXXX")"
+chmod 700 "$R"
+SOCK="sde-xwayland-exit-$$"
+
+env -u WAYLAND_DISPLAY -u DISPLAY \
+    WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 SDE_OUTPUT_SCALE=1 \
+    SDE_STATE_DIR="$R" \
+    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
+    LD_LIBRARY_PATH="$BUILD/lib" \
+    "$COMP" -n "$SOCK" > "$R/comp.log" 2>&1 &
+CP=$!
+
+cleanup() {
+    kill "$CP" 2>/dev/null || true
+    wait "$CP" 2>/dev/null || true
+    rm -rf "$R"
+    rm -f "$XDG_RUNTIME_DIR"/sde-xwayland-exit-$$* 2>/dev/null || true
+}
+trap cleanup EXIT
+
+for _ in $(seq 1 80); do [[ -e "$XDG_RUNTIME_DIR/$SOCK" ]] && break; sleep 0.1; done
+sleep 0.5
+DISP=""
+[[ -f "$R/xwayland-display" ]] && DISP="$(cat "$R/xwayland-display")"
+[[ -n "$DISP" ]] || { echo "==> xwayland-exit test FAILED (no DISPLAY)"; exit 1; }
+
+fail=0
+alive() { kill -0 "$CP" 2>/dev/null; }
+
+# A client mapping and then exiting on its own (the "exit in xterm" path).
+env -u WAYLAND_DISPLAY DISPLAY="$DISP" \
+    timeout 20 xmessage -name exit-test -geometry 120x60+40+40 "bye" >/dev/null 2>&1 &
+C1=$!
+for _ in $(seq 1 40); do grep -q "X11 window mapped 'exit-test'" "$R/comp.log" && break; sleep 0.1; done
+if grep -q "X11 window mapped 'exit-test'" "$R/comp.log"; then
+    echo "  ok: the X11 client mapped a window"
+else
+    echo "  FAIL: the X11 client never mapped a window"; fail=1
+fi
+# A client with no icon of its own is still reported to the WM with the default
+# icon (the Taskbar drops an icon that arrives before the window button exists, so
+# this must reach it after the window state).
+if grep -qE "WM: X11 window [0-9]+ icon 16x16" "$R/comp.log"; then
+    echo "  ok: an iconless X11 window reports the default icon to the WM"
+else
+    echo "  FAIL: the default X11 icon was not reported to the WM"; fail=1
+fi
+kill -TERM "$C1" 2>/dev/null || true
+wait "$C1" 2>/dev/null || true
+sleep 1
+if alive; then
+    echo "  ok: the compositor survived the client exiting"
+else
+    echo "  FAIL: the compositor died when the client exited"; fail=1
+fi
+
+# Repeated map/exit cycles: the listener bookkeeping must not leak or double-add.
+cycles_ok=1
+for i in 1 2 3 4 5; do
+    env -u WAYLAND_DISPLAY DISPLAY="$DISP" \
+        timeout 20 xmessage -name "cycle-$i" -geometry 100x40+40+$((40 * i)) "x" >/dev/null 2>&1 &
+    P=$!
+    sleep 0.4
+    kill -TERM "$P" 2>/dev/null || true
+    wait "$P" 2>/dev/null || true
+    if ! alive; then echo "  FAIL: the compositor died on exit cycle $i"; fail=1; cycles_ok=0; break; fi
+done
+[[ "$cycles_ok" -eq 1 ]] && echo "  ok: the compositor survived 5 map/exit cycles"
+
+# The wlroots assertion must not have fired, and the compositor must not have faulted.
+# (Note: benign "xcb error ... code Window" lines at xwm.c:1984 appear when a client
+# exits with requests in flight — only the listener assertion is fatal.)
+if grep -qiE "Assertion|wl_list_empty|listener_list" "$R/comp.log"; then
+    echo "  FAIL: a wlroots listener assertion fired:"; grep -aiE "Assertion|wl_list_empty|listener_list" "$R/comp.log" | head -2; fail=1
+else
+    echo "  ok: no wlroots listener assertion"
+fi
+if grep -qiE "SIGSEGV|Segmentation fault|ASSERTION FAILED|VERIFICATION FAILED" "$R/comp.log"; then
+    echo "  FAIL: the compositor faulted"; fail=1
+fi
+
+if [[ "$fail" -ne 0 ]]; then echo "==> xwayland-exit test FAILED"; exit 1; fi
+echo "==> xwayland-exit test PASSED"

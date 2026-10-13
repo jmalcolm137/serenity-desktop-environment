@@ -826,6 +826,10 @@ void emit_window_state(X11Toplevel& toplevel)
             static_cast<i32>(WindowServer::WindowType::Normal), toplevel.title,
             Gfx::IntRect { 0, 0, 0, 0 }, Optional<i32> { });
     }
+    // The Taskbar drops an icon that arrives before the window button exists, and the
+    // X11 icon is fetched before the window is reported, so re-send it now.
+    if (toplevel.icon)
+        emit_window_icon(toplevel);
 }
 
 void emit_window_removed(X11Toplevel& toplevel)
