@@ -188,6 +188,11 @@ struct Toplevel {
     // The decoration object, if any; the server-side mode is applied once the
     // surface is initialized (set_mode schedules a configure).
     wlr_xdg_toplevel_decoration_v1* decoration { nullptr };
+    // True when the client draws its own decorations. This is the default for
+    // Wayland clients (Firefox/GTK never ask for server-side decorations); a
+    // client that explicitly requests server-side decorations (the LibGUI/
+    // Serenity apps do) gets the compositor frame instead.
+    bool client_side_decorations { true };
     bool menubar_visible { true };
     // The window stack (workspace grid cell) this window belongs to. WS1.
     u32 workspace_row { 0 };

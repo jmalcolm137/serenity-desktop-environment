@@ -779,6 +779,10 @@ static FrameHit hit_test_frame(Server& server, double x, double y)
         auto& toplevel = *server.toplevels[index];
         if (toplevel.minimized)
             continue;
+        // A client-side-decorated window has no compositor frame, so it has no
+        // frame regions to hit-test; the client handles move/resize itself.
+        if (toplevel.client_side_decorations)
+            continue;
 
         auto* node = &toplevel.scene_tree->node;
         Gfx::IntRect frame_rect { static_cast<int>(node->x), static_cast<int>(node->y), toplevel.frame_size.width(), toplevel.frame_size.height() };
@@ -1789,6 +1793,22 @@ static void toplevel_update_frame(Toplevel& toplevel)
     if (content_width <= 0 || content_height <= 0)
         return;
 
+    // A client that draws its own decorations (Firefox/GTK CSD) gets no
+    // compositor frame: its content fills the whole window.
+    if (toplevel.client_side_decorations) {
+        toplevel.frame_left = 0;
+        toplevel.frame_top = 0;
+        toplevel.frame_right = 0;
+        toplevel.frame_bottom = 0;
+        toplevel.frame_size = { content_width, content_height };
+        toplevel.button_rects.clear_with_capacity();
+        if (toplevel.frame_buffer)
+            wlr_scene_node_set_enabled(&toplevel.frame_buffer->node, false);
+        wlr_scene_node_set_position(&toplevel.content_tree->node, 0, 0);
+        wlr_scene_node_set_enabled(&toplevel.content_tree->node, true);
+        return;
+    }
+
     // A fullscreen window is frameless: the client content fills the output.
     if (toplevel.fullscreen) {
         toplevel.frame_left = 0;
@@ -1901,6 +1921,27 @@ static void toplevel_update_frame(Toplevel& toplevel)
     wlr_buffer_drop(buffer);
 }
 
+// Decide and apply a toplevel's decoration mode. Wayland-first (P8): a client
+// that does not ask for server-side decorations draws its own (Firefox/GTK CSD),
+// so the compositor draws no frame; a client that requests server-side
+// decorations (the LibGUI/Serenity apps do) gets the compositor frame. `set_mode`
+// schedules a configure, so it only runs once the surface is initialized.
+static void apply_toplevel_decoration(Toplevel& toplevel)
+{
+    bool client_side = !toplevel.decoration
+        || toplevel.decoration->requested_mode != WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE;
+    if (toplevel.client_side_decorations != client_side) {
+        toplevel.client_side_decorations = client_side;
+        if (toplevel.xdg_toplevel->base->surface->mapped)
+            toplevel_update_frame(toplevel);
+    }
+    if (!toplevel.decoration || !toplevel.xdg_toplevel->base->initialized)
+        return;
+    wlr_xdg_toplevel_decoration_v1_set_mode(toplevel.decoration,
+        client_side ? WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE
+                    : WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+}
+
 static void toplevel_map(wl_listener* listener, void*)
 {
     Toplevel* toplevel = nullptr;
@@ -1911,6 +1952,7 @@ static void toplevel_map(wl_listener* listener, void*)
         toplevel->xdg_toplevel->app_id ? toplevel->xdg_toplevel->app_id : "");
     wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
     toplevel->frame_active = true;
+    apply_toplevel_decoration(*toplevel);
     toplevel_update_frame(*toplevel);
     // The new window joins the current workspace stack.
     WindowManager::on_toplevel_mapped(*toplevel);
@@ -1985,11 +2027,9 @@ static void toplevel_commit(wl_listener* listener, void*)
             wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
         }
     }
-    // A decoration created before the surface was initialized is configured now.
-    if (toplevel->decoration && toplevel->xdg_toplevel->base->initialized) {
-        wlr_xdg_toplevel_decoration_v1_set_mode(toplevel->decoration, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
-        toplevel->decoration = nullptr;
-    }
+    // A decoration created (and possibly requested) before the surface was
+    // initialized is applied now that it is.
+    apply_toplevel_decoration(*toplevel);
     toplevel_update_foreign(*toplevel);
     toplevel_update_frame(*toplevel);
     maybe_dump_thumbnail(*toplevel);
@@ -2962,16 +3002,12 @@ static void decoration_request_mode(wl_listener* listener, void*)
 {
     Decoration* decoration = nullptr;
     decoration = wl_container_of(listener, decoration, request_mode);
-    // Configure only once the surface is initialized; the initial commit applies
-    // the default mode otherwise.
-    if (!decoration->decoration->toplevel->base->initialized)
+    if (!decoration->toplevel)
         return;
-    auto requested = decoration->decoration->requested_mode;
-    // Strongly prefer server-side decorations, but honour an explicit CSD request.
-    if (requested == WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE)
-        wlr_xdg_toplevel_decoration_v1_set_mode(decoration->decoration, requested);
-    else
-        wlr_xdg_toplevel_decoration_v1_set_mode(decoration->decoration, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+    // Honour the client's request (CLIENT_SIDE -> no compositor frame; anything
+    // else -> server-side decorations). Applied now if initialized, else at the
+    // initial commit.
+    apply_toplevel_decoration(*decoration->toplevel);
 }
 
 static void decoration_destroy(wl_listener* listener, void*)
@@ -3007,13 +3043,12 @@ static void server_new_toplevel_decoration(wl_listener* listener, void* data)
         }
     }
 
-    // Prefer server-side decorations. `set_mode` schedules a configure and
-    // asserts the surface is initialized, so defer to the first commit if it is
-    // created before the toplevel is initialized.
-    if (xdg_toplevel->base->initialized)
-        wlr_xdg_toplevel_decoration_v1_set_mode(wlr_decoration, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
-    else if (decoration->toplevel)
+    // Honour the client's decoration choice (Firefox/GTK ask for CSD); apply it
+    // now if the toplevel is initialized, else at the initial commit.
+    if (decoration->toplevel) {
         decoration->toplevel->decoration = wlr_decoration;
+        apply_toplevel_decoration(*decoration->toplevel);
+    }
     server->decorations.append(move(decoration));
 }
 
