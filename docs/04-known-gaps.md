@@ -344,7 +344,10 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   compositor activates the constraint of the surface under the cursor and enforces
   it in the cursor-motion path (locked to the client's hint, or confined to its
   region) — the only part wlroots leaves to the compositor.
-  `pointer-gestures` remains. **Explicit drag-and-drop between windows is now
+  `pointer-gestures` and **touch** input (routed through the cursor with the drag
+  icon following a touch point) are served, along with **switch** devices
+  (lid/tablet-mode). Pen/tablet (`tablet-v2`) and tablet-pad remain.
+  **Explicit drag-and-drop between windows is now
   served** (compositor-routed data-device DnD with a drag icon), and the port
   bridges LibGUI's `DragOperation` onto it both ways, so SerenityOS applications
   offer and accept drag-and-drop interoperably with standard Wayland clients.

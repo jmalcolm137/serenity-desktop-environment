@@ -76,6 +76,10 @@ extern "C" {
 #include <wlr/types/wlr_buffer.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_cursor.h>
+#include <wlr/types/wlr_touch.h>
+#include <wlr/types/wlr_pointer.h>
+#include <wlr/types/wlr_pointer_gestures_v1.h>
+#include <wlr/types/wlr_switch.h>
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_primary_selection_v1.h>
 #include <wlr/types/wlr_data_control_v1.h>
@@ -1237,6 +1241,69 @@ static void cursor_motion_absolute(wl_listener* listener, void* data)
     notify_activity(*server);
 }
 
+// Touch input. wlroots routes touch through the cursor; the compositor maps the
+// normalised touch coordinates to the layout, finds the surface under the point
+// and hands it to the seat. During a touch drag the icon follows the finger.
+static void cursor_touch_down(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, touch_down);
+    auto* event = static_cast<wlr_touch_down_event*>(data);
+    double lx = 0;
+    double ly = 0;
+    wlr_cursor_absolute_to_layout_coords(server->cursor, &event->touch->base, event->x, event->y, &lx, &ly);
+    double sx = 0;
+    double sy = 0;
+    wlr_surface* surface = nullptr;
+    if (auto* toplevel = toplevel_at(*server, lx, ly, &surface, &sx, &sy))
+        focus_toplevel(*server, toplevel);
+    if (surface)
+        wlr_seat_touch_notify_down(server->seat, surface, event->time_msec, event->touch_id, sx, sy);
+    notify_activity(*server);
+}
+
+static void cursor_touch_motion(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, touch_motion);
+    auto* event = static_cast<wlr_touch_motion_event*>(data);
+    double lx = 0;
+    double ly = 0;
+    wlr_cursor_absolute_to_layout_coords(server->cursor, &event->touch->base, event->x, event->y, &lx, &ly);
+    // A touch drag's icon follows the finger (the pointer cursor does not move).
+    if (server->active_drag && server->drag_icon_node)
+        wlr_scene_node_set_position(server->drag_icon_node, static_cast<int>(lx), static_cast<int>(ly));
+    double sx = 0;
+    double sy = 0;
+    wlr_surface* surface = nullptr;
+    toplevel_at(*server, lx, ly, &surface, &sx, &sy);
+    if (surface)
+        wlr_seat_touch_notify_motion(server->seat, event->time_msec, event->touch_id, sx, sy);
+    notify_activity(*server);
+}
+
+static void cursor_touch_up(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, touch_up);
+    auto* event = static_cast<wlr_touch_up_event*>(data);
+    wlr_seat_touch_notify_up(server->seat, event->time_msec, event->touch_id);
+    notify_activity(*server);
+}
+
+static void cursor_touch_cancel(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, touch_cancel);
+    (void)data;
+    // A device-level cancel: send wl_touch.cancel to every client with touch points.
+    wlr_seat_client* seat_client = nullptr;
+    wl_list_for_each(seat_client, &server->seat->clients, link) {
+        if (!wl_list_empty(&seat_client->touches))
+            wlr_seat_touch_notify_cancel(server->seat, seat_client);
+    }
+}
+
 // Client menus opened from layer surfaces (the Taskbar/Desktop) are overlay layer
 // surfaces with no input grab, so wlroots will not route an outside press to
 // them and the client cannot dismiss them. On a press that lands on another
@@ -1591,6 +1658,127 @@ static void apply_input_settings(Server& server)
         Config::input().mouse.buttons_switched ? "on" : "off", Config::input().mouse.left_handed ? "on" : "off", Config::input().keyboard.layouts);
 }
 
+// wp-pointer-gestures-v1: forward touchpad swipe/pinch/hold to clients. libinput
+// reports them per pointer device; the compositor relays them on the seat.
+static void pointer_swipe_begin(wl_listener* listener, void* data)
+{
+    Pointer* pointer = nullptr;
+    pointer = wl_container_of(listener, pointer, swipe_begin);
+    auto* event = static_cast<wlr_pointer_swipe_begin_event*>(data);
+    if (pointer->server->pointer_gestures)
+        wlr_pointer_gestures_v1_send_swipe_begin(pointer->server->pointer_gestures, pointer->server->seat, event->time_msec, event->fingers);
+    notify_activity(*pointer->server);
+}
+
+static void pointer_swipe_update(wl_listener* listener, void* data)
+{
+    Pointer* pointer = nullptr;
+    pointer = wl_container_of(listener, pointer, swipe_update);
+    auto* event = static_cast<wlr_pointer_swipe_update_event*>(data);
+    if (pointer->server->pointer_gestures)
+        wlr_pointer_gestures_v1_send_swipe_update(pointer->server->pointer_gestures, pointer->server->seat, event->time_msec, event->dx, event->dy);
+    notify_activity(*pointer->server);
+}
+
+static void pointer_swipe_end(wl_listener* listener, void* data)
+{
+    Pointer* pointer = nullptr;
+    pointer = wl_container_of(listener, pointer, swipe_end);
+    auto* event = static_cast<wlr_pointer_swipe_end_event*>(data);
+    if (pointer->server->pointer_gestures)
+        wlr_pointer_gestures_v1_send_swipe_end(pointer->server->pointer_gestures, pointer->server->seat, event->time_msec, event->cancelled);
+    notify_activity(*pointer->server);
+}
+
+static void pointer_pinch_begin(wl_listener* listener, void* data)
+{
+    Pointer* pointer = nullptr;
+    pointer = wl_container_of(listener, pointer, pinch_begin);
+    auto* event = static_cast<wlr_pointer_pinch_begin_event*>(data);
+    if (pointer->server->pointer_gestures)
+        wlr_pointer_gestures_v1_send_pinch_begin(pointer->server->pointer_gestures, pointer->server->seat, event->time_msec, event->fingers);
+    notify_activity(*pointer->server);
+}
+
+static void pointer_pinch_update(wl_listener* listener, void* data)
+{
+    Pointer* pointer = nullptr;
+    pointer = wl_container_of(listener, pointer, pinch_update);
+    auto* event = static_cast<wlr_pointer_pinch_update_event*>(data);
+    if (pointer->server->pointer_gestures)
+        wlr_pointer_gestures_v1_send_pinch_update(pointer->server->pointer_gestures, pointer->server->seat, event->time_msec, event->dx, event->dy, event->scale, event->rotation);
+    notify_activity(*pointer->server);
+}
+
+static void pointer_pinch_end(wl_listener* listener, void* data)
+{
+    Pointer* pointer = nullptr;
+    pointer = wl_container_of(listener, pointer, pinch_end);
+    auto* event = static_cast<wlr_pointer_pinch_end_event*>(data);
+    if (pointer->server->pointer_gestures)
+        wlr_pointer_gestures_v1_send_pinch_end(pointer->server->pointer_gestures, pointer->server->seat, event->time_msec, event->cancelled);
+    notify_activity(*pointer->server);
+}
+
+static void pointer_hold_begin(wl_listener* listener, void* data)
+{
+    Pointer* pointer = nullptr;
+    pointer = wl_container_of(listener, pointer, hold_begin);
+    auto* event = static_cast<wlr_pointer_hold_begin_event*>(data);
+    if (pointer->server->pointer_gestures)
+        wlr_pointer_gestures_v1_send_hold_begin(pointer->server->pointer_gestures, pointer->server->seat, event->time_msec, event->fingers);
+    notify_activity(*pointer->server);
+}
+
+static void pointer_hold_end(wl_listener* listener, void* data)
+{
+    Pointer* pointer = nullptr;
+    pointer = wl_container_of(listener, pointer, hold_end);
+    auto* event = static_cast<wlr_pointer_hold_end_event*>(data);
+    if (pointer->server->pointer_gestures)
+        wlr_pointer_gestures_v1_send_hold_end(pointer->server->pointer_gestures, pointer->server->seat, event->time_msec, event->cancelled);
+    notify_activity(*pointer->server);
+}
+
+static void pointer_destroy(wl_listener* listener, void*)
+{
+    Pointer* pointer = nullptr;
+    pointer = wl_container_of(listener, pointer, destroy);
+    wl_list_remove(&pointer->swipe_begin.link);
+    wl_list_remove(&pointer->swipe_update.link);
+    wl_list_remove(&pointer->swipe_end.link);
+    wl_list_remove(&pointer->pinch_begin.link);
+    wl_list_remove(&pointer->pinch_update.link);
+    wl_list_remove(&pointer->pinch_end.link);
+    wl_list_remove(&pointer->hold_begin.link);
+    wl_list_remove(&pointer->hold_end.link);
+    wl_list_remove(&pointer->destroy.link);
+    remove_owned(pointer->server->pointer_objects, pointer);
+}
+
+// Switch devices: lid, tablet-mode, keypad-slide. The compositor forwards the
+// state (a lid close is a natural place to idle/lock) rather than owning policy.
+static void switch_toggle(wl_listener* listener, void* data)
+{
+    SwitchDevice* device = nullptr;
+    device = wl_container_of(listener, device, toggle);
+    auto* event = static_cast<wlr_switch_toggle_event*>(data);
+    char const* type = event->switch_type == WLR_SWITCH_TYPE_LID ? "lid"
+        : event->switch_type == WLR_SWITCH_TYPE_TABLET_MODE ? "tablet-mode"
+                                                            : "keypad-slide";
+    dbgln("WindowServer: switch {} {}", type, event->switch_state == WLR_SWITCH_STATE_ON ? "on" : "off");
+    notify_activity(*device->server);
+}
+
+static void switch_destroy(wl_listener* listener, void*)
+{
+    SwitchDevice* device = nullptr;
+    device = wl_container_of(listener, device, destroy);
+    wl_list_remove(&device->toggle.link);
+    wl_list_remove(&device->destroy.link);
+    remove_owned(device->server->switch_objects, device);
+}
+
 static void server_new_input(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
@@ -1627,10 +1815,52 @@ static void server_new_input(wl_listener* listener, void* data)
         }
         break;
     }
-    case WLR_INPUT_DEVICE_POINTER:
+    case WLR_INPUT_DEVICE_POINTER: {
         wlr_cursor_attach_input_device(server->cursor, device);
         server->pointer_devices.append(device);
         apply_mouse_input(*server);
+        // Track the pointer so its touchpad gestures can be forwarded (R5).
+        auto pointer = make<Pointer>();
+        pointer->server = server;
+        pointer->device = device;
+        pointer->pointer = wlr_pointer_from_input_device(device);
+        pointer->swipe_begin.notify = pointer_swipe_begin;
+        wl_signal_add(&pointer->pointer->events.swipe_begin, &pointer->swipe_begin);
+        pointer->swipe_update.notify = pointer_swipe_update;
+        wl_signal_add(&pointer->pointer->events.swipe_update, &pointer->swipe_update);
+        pointer->swipe_end.notify = pointer_swipe_end;
+        wl_signal_add(&pointer->pointer->events.swipe_end, &pointer->swipe_end);
+        pointer->pinch_begin.notify = pointer_pinch_begin;
+        wl_signal_add(&pointer->pointer->events.pinch_begin, &pointer->pinch_begin);
+        pointer->pinch_update.notify = pointer_pinch_update;
+        wl_signal_add(&pointer->pointer->events.pinch_update, &pointer->pinch_update);
+        pointer->pinch_end.notify = pointer_pinch_end;
+        wl_signal_add(&pointer->pointer->events.pinch_end, &pointer->pinch_end);
+        pointer->hold_begin.notify = pointer_hold_begin;
+        wl_signal_add(&pointer->pointer->events.hold_begin, &pointer->hold_begin);
+        pointer->hold_end.notify = pointer_hold_end;
+        wl_signal_add(&pointer->pointer->events.hold_end, &pointer->hold_end);
+        pointer->destroy.notify = pointer_destroy;
+        wl_signal_add(&device->events.destroy, &pointer->destroy);
+        server->pointer_objects.append(move(pointer));
+        break;
+    }
+    case WLR_INPUT_DEVICE_SWITCH: {
+        auto switch_device = make<SwitchDevice>();
+        switch_device->server = server;
+        switch_device->device = wlr_switch_from_input_device(device);
+        switch_device->toggle.notify = switch_toggle;
+        wl_signal_add(&switch_device->device->events.toggle, &switch_device->toggle);
+        switch_device->destroy.notify = switch_destroy;
+        wl_signal_add(&device->events.destroy, &switch_device->destroy);
+        server->switch_objects.append(move(switch_device));
+        break;
+    }
+    case WLR_INPUT_DEVICE_TOUCH:
+        // Touch is routed through the cursor (touch_down/motion/up events), like
+        // pointers; the compositor converts them to wlr_seat touch notifications.
+        wlr_cursor_attach_input_device(server->cursor, device);
+        server->touch_devices.append(device);
         break;
     default:
         break;
@@ -4430,6 +4660,14 @@ static ErrorOr<void> initialize(Server& server)
     wl_signal_add(&server.cursor->events.axis, &server.cursor_axis);
     server.cursor_frame.notify = cursor_frame;
     wl_signal_add(&server.cursor->events.frame, &server.cursor_frame);
+    server.touch_down.notify = cursor_touch_down;
+    wl_signal_add(&server.cursor->events.touch_down, &server.touch_down);
+    server.touch_motion.notify = cursor_touch_motion;
+    wl_signal_add(&server.cursor->events.touch_motion, &server.touch_motion);
+    server.touch_up.notify = cursor_touch_up;
+    wl_signal_add(&server.cursor->events.touch_up, &server.touch_up);
+    server.touch_cancel.notify = cursor_touch_cancel;
+    wl_signal_add(&server.cursor->events.touch_cancel, &server.touch_cancel);
 
     server.new_input.notify = server_new_input;
     wl_signal_add(&server.backend->events.new_input, &server.new_input);
@@ -4472,6 +4710,7 @@ static ErrorOr<void> initialize(Server& server)
     // the preferred (possibly fractional) scale, so native clients render at it.
     wlr_fractional_scale_manager_v1_create(server.display, 1);
     server.relative_pointer_manager = wlr_relative_pointer_manager_v1_create(server.display);
+    server.pointer_gestures = wlr_pointer_gestures_v1_create(server.display);
     server.keyboard_shortcuts_inhibit = wlr_keyboard_shortcuts_inhibit_v1_create(server.display);
     server.pointer_constraints = wlr_pointer_constraints_v1_create(server.display);
     server.new_pointer_constraint.notify = new_pointer_constraint;

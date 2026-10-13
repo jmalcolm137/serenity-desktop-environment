@@ -58,6 +58,9 @@ struct wlr_output_power_manager_v1;
 struct wlr_renderer;
 struct wlr_relative_pointer_manager_v1;
 struct wlr_keyboard_shortcuts_inhibit_manager_v1;
+struct wlr_pointer;
+struct wlr_pointer_gestures_v1;
+struct wlr_switch;
 struct wlr_pointer_constraints_v1;
 struct wlr_pointer_constraint_v1;
 struct wlr_scene;
@@ -324,6 +327,31 @@ struct Keyboard {
     wl_listener destroy { };
 };
 
+// A pointer device plus its gesture listeners (touchpad swipe/pinch/hold), which
+// are forwarded to clients as wp-pointer-gestures-v1.
+struct Pointer {
+    Server* server { nullptr };
+    wlr_input_device* device { nullptr };
+    wlr_pointer* pointer { nullptr };
+    wl_listener swipe_begin { };
+    wl_listener swipe_update { };
+    wl_listener swipe_end { };
+    wl_listener pinch_begin { };
+    wl_listener pinch_update { };
+    wl_listener pinch_end { };
+    wl_listener hold_begin { };
+    wl_listener hold_end { };
+    wl_listener destroy { };
+};
+
+// A switch device (lid, tablet-mode, ...).
+struct SwitchDevice {
+    Server* server { nullptr };
+    wlr_switch* device { nullptr };
+    wl_listener toggle { };
+    wl_listener destroy { };
+};
+
 struct Decoration {
     Server* server { nullptr };
     Toplevel* toplevel { nullptr };
@@ -422,6 +450,10 @@ struct Server {
     wl_listener cursor_button { };
     wl_listener cursor_axis { };
     wl_listener cursor_frame { };
+    wl_listener touch_down { };
+    wl_listener touch_motion { };
+    wl_listener touch_up { };
+    wl_listener touch_cancel { };
     wl_listener seat_request_cursor { };
     wl_listener seat_pointer_focus_change { };
     wl_listener seat_request_set_selection { };
@@ -443,6 +475,11 @@ struct Server {
     // Pointer devices, so input.ini's libinput settings can be (re)applied when
     // the config changes. See R4.6.
     Vector<wlr_input_device*> pointer_devices;
+    Vector<wlr_input_device*> touch_devices;
+    Vector<NonnullOwnPtr<Pointer>> pointer_objects;
+    Vector<NonnullOwnPtr<SwitchDevice>> switch_objects;
+    // wp-pointer-gestures-v1: touchpad swipe/pinch/hold.
+    wlr_pointer_gestures_v1* pointer_gestures { nullptr };
     Vector<NonnullOwnPtr<Decoration>> decorations;
     // serenity_window_manager resources, so the compositor can ask a client to
     // dismiss its menus (see maybe_dismiss_layer_menus).

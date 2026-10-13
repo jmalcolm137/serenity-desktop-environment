@@ -98,10 +98,12 @@ table.
   enter/motion/drop to the surface under the cursor. The port bridges LibGUI's
   `DragOperation` onto it (source and target), so Serenity apps interoperate with
   standard Wayland clients. Remaining: touch-drag polish and pointer-gestures.
-- **Input protocols (G3, G7).** `keyboard-shortcuts-inhibit`, `relative-pointer`
-  and `pointer-constraints` (lock/confine, enforced in the cursor-motion path) are
-  served; `pointer-gestures` remains — needed for touchpad gestures and remote
-  desktop.
+- **Input protocols (G3, G7).** `keyboard-shortcuts-inhibit`, `relative-pointer`,
+  `pointer-constraints` (lock/confine, enforced in the cursor-motion path) and
+  `pointer-gestures` (touchpad swipe/pinch/hold) are served. **Touch** input is
+  routed (cursor touch events → `wlr_seat` touch notifications; the drag icon
+  follows a touch point), and **switch** devices (lid/tablet-mode/keypad-slide)
+  are tracked. Pen/tablet (`tablet-v2`) and tablet-pad remain.
 - **Presentation & scaling (N3, N5) — largely done.** `wp-viewporter`,
   `content-type-v1`, `tearing-control`, `wp-single-pixel-buffer`,
   `wp-alpha-modifier`, **`presentation-time`** (`wp_presentation v2`; the
