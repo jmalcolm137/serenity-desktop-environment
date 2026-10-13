@@ -139,9 +139,18 @@ else
     echo "note: no browser; the scene will have no browser window" >&2
 fi
 
-# Terminal (top-left, like the screenshot), running `uname -a` and `df -h` in a
-# shell that then stays interactive (the host shell has no SerenityOS --keep-open).
-STARTUP="$STARTUP & $BUILD/bin/Terminal -e 'uname -a; df -Th; exec sh'"
+# Terminal (top-left, like the screenshot). It runs an interactive shell with a
+# clean prompt; the screenshot step then *types* `uname -a` and `df -Th` into it
+# (via virtual input), so the capture shows the prompt, the commands and their
+# output — like a user session — not just the output.
+SCENE_PS1="$(whoami)@$(hostname -s):~$ "
+{
+    printf 'export PS1=%q\n' "$SCENE_PS1"
+    printf 'cd ~\n'
+    printf 'exec bash --norc -i\n'
+} > "$RUNTIME/scene-shell"
+chmod +x "$RUNTIME/scene-shell"
+STARTUP="$STARTUP & $BUILD/bin/Terminal -e $RUNTIME/scene-shell"
 
 # Battery applet (SDE's) + the SerenityOS taskbar applets.
 BATTERY_APPLET="$SDE_ROOT/build/BatteryApplet/BatteryApplet"
@@ -228,11 +237,46 @@ EOF
     if [[ -n "$SCREENSHOT" ]]; then
         echo "==> letting the scene settle (browser startup can be slow)..."
         sleep "${SDE_SCENE_SETTLE:-12}"
-        # Open the Taskbar's system menu and the Development submenu, like the
-        # reference screenshot. (The menu needs a mouse-down on the Taskbar, so
-        # click the start button rather than using the Super key.)
+        # Type `uname -a` and `df -Th` into the Terminal (so the capture shows the
+        # prompt, the commands and the output), then open the Taskbar's system menu
+        # and the Development submenu, like the reference screenshot. (The menu
+        # needs a mouse-down on the Taskbar, so click the start button rather than
+        # using the Super key.)
         VI="$("$SDE_ROOT/scripts/build-virtual-input.sh")"
+
+        # Minimal char -> evdev keycode map (enough for the two commands).
+        declare -A EVDEV=(
+            [a]=30 [b]=48 [c]=46 [d]=32 [e]=18 [f]=33 [g]=34 [h]=35 [i]=23
+            [j]=36 [k]=37 [l]=38 [m]=50 [n]=49 [o]=24 [p]=25 [q]=16 [r]=19
+            [s]=31 [t]=20 [u]=22 [v]=47 [w]=17 [x]=45 [y]=21 [z]=44
+            [0]=11 [1]=2 [2]=3 [3]=4 [4]=5 [5]=6 [6]=7 [7]=8 [8]=9 [9]=10
+            [" "]=57 ["-"]=12 ["."]=52 ["/"]=53 [":"]=39
+        )
+        KEY_ARGS=()
+        add_key() { KEY_ARGS+=(--key "$1" press --key "$1" release --sleep 25); }
+        type_string() {
+            local s="$1" i ch code
+            for (( i = 0; i < ${#s}; ++i )); do
+                ch="${s:i:1}"
+                if [[ "$ch" =~ [A-Z] ]]; then
+                    ch="${ch,,}"
+                    KEY_ARGS+=(--key 42 press)
+                    add_key "${EVDEV[$ch]:-}"
+                    KEY_ARGS+=(--key 42 release)
+                else
+                    add_key "${EVDEV[$ch]:-}"
+                fi
+            done
+            add_key 28 # Enter
+            sleep 0.1
+        }
+        type_string "uname -a"
+        type_string "df -Th"
+
         env WAYLAND_DISPLAY="$SOCK" "$VI" --extent "$WIDTH" "$HEIGHT" \
+            --move 200 120 --button 0x110 press --sleep 60 --button 0x110 release --sleep 500 \
+            "${KEY_ARGS[@]}" \
+            --sleep 300 \
             --move 20 $((HEIGHT - 14)) --button 0x110 press --sleep 80 --button 0x110 release --sleep 400 \
             --move 60 $((HEIGHT - 302)) --sleep 700 >/dev/null 2>&1 || true
         sleep 0.5
