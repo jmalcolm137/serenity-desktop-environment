@@ -33,6 +33,7 @@ the compositor maps as a separate scene surface. Landed, in order:
 | `373e077` | **Window placement + titlebar icon**. X11 windows use the xdg convention (scene tree = *frame* origin; content inset), so a window at `(0,0)` shows its titlebar; the frame is clamped on-screen; the titlebar draws the fetched icon or the **default** window icon (never blank). |
 | `5ad2264` | **Revert the WM_HINTS icon read** (it aborted the compositor; the real cause is fixed in `a95fa67`). |
 | `a95fa67` | **Real `WM_HINTS` icon + X11 default icon.** The abort was not XCB re-entrancy but `Gfx::Bitmap::scanline()` (an `ARGB32*`) used as a byte pointer — `scanline_u8` fixes it. Fetch the legacy `WM_HINTS` icon (xterm's X logo) and listen to `set_hints` (hints are unset at map time); clients with no icon get a distinct X11 default (a window with an "X"). |
+| `2d557e2` | **Client-exit crash fix + default icon.** The X11 destroy handler now detaches every listener it added to the `wlr_xwayland_surface` (and the surface `map`/`unmap` listeners, tracked so a re-association can't double-add them) — wlroots' `xwayland_surface_destroy()` asserts all of those lists are empty, so leaking them aborted the compositor whenever an X11 client exited (`exit` in xterm). The iconless default icon is now a big monochrome **"X"** (no frame, taller than wide; drawn 64x64 → 16x16 in the titlebar text colour) stored on `X11Toplevel::icon`, so the Taskbar and switcher see it (`emit_window_state` re-sends it after the window is reported). Verified by `scripts/run-xwayland-exit-test.sh`. |
 
 Where the code lives:
 
@@ -122,6 +123,8 @@ unblock together. `xdg-toplevel-drag`, `wp-fifo-v1` and
 
 The headless harness drives X11 with `xterm`/`xmessage` (present on the dev box).
 `scripts/run-xwayland-test.sh` is the home for new assertions (e.g. icons, Alt-Tab,
-workspaces). Anything that needs a compositor with a Taskbar can run one as in
-`scripts/run-headless-test.sh`; `scripts/run-virtual-touch-test.sh` +
+workspaces). `scripts/run-xwayland-exit-test.sh` guards the client-exit path (an
+X11 client going away must not abort the compositor, nor must the default icon go
+missing from the WM). Anything that needs a compositor with a Taskbar can run one
+as in `scripts/run-headless-test.sh`; `scripts/run-virtual-touch-test.sh` +
 `tools/virtual-input-test.c` drive pointer/keyboard.

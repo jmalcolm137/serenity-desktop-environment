@@ -351,7 +351,10 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   **selection bridge** works (`6c8e0c9`); `_NET_WM_STATE`
   (`above`/`skip-taskbar`/`demands-attention`/`modal`) and **transients** are
   honoured (`c69b1ae`); and the **workarea** (`_NET_WORKAREA`) is reported
-  (`47f794f`). See [`20-xwayland-next-steps.md`](20-xwayland-next-steps.md).
+  (`47f794f`). An exiting X11 client no longer aborts the compositor (the destroy
+  handler detaches its `wlr_xwayland_surface` listeners — `2d557e2`), and iconless
+  X11 clients report the default "X" icon to the Taskbar/switcher. See
+  [`20-xwayland-next-steps.md`](20-xwayland-next-steps.md).
   **Still missing for full parity:** WM_CLASS-based Taskbar **grouping** (needs a
   Taskbar-side change), Xwayland **keyboard grabs** (in no wlroots release),
   **XDND** drag-and-drop (wlroots 0.21), and focus-stealing prevention (wlroots
