@@ -109,6 +109,7 @@ add_executable(WindowServer
     src/AppletManager.cpp
     src/Config.cpp
     src/InputCapture.cpp
+    src/InputMethod.cpp
     src/Overlays.cpp
     src/SessionManager.cpp
     src/WindowManager.cpp

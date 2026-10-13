@@ -22,6 +22,7 @@
 
 #include "Config.h"
 #include "InputCapture.h"
+#include "InputMethod.h"
 #include "Model.h"
 #include "Overlays.h"
 #include "AppletManager.h"
@@ -475,6 +476,8 @@ void focus_toplevel(Server& server, Toplevel* toplevel)
     auto* keyboard = wlr_seat_get_keyboard(server.seat);
     if (keyboard)
         wlr_seat_keyboard_notify_enter(server.seat, surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+    // R5 IME: hand the new focus to text-input-v3 and the input method.
+    InputMethod::set_focus(server, surface);
 }
 
 // --- keyboard -------------------------------------------------------------
@@ -483,6 +486,10 @@ static void keyboard_modifiers(wl_listener* listener, void*)
 {
     Keyboard* keyboard = nullptr;
     keyboard = wl_container_of(listener, keyboard, modifiers);
+    // R5 IME: while an input method holds the keyboard grab, modifiers go to it
+    // instead of the focused client.
+    if (InputMethod::handle_modifiers(*keyboard->server, keyboard->keyboard))
+        return;
     wlr_seat_set_keyboard(keyboard->server->seat, keyboard->keyboard);
     wlr_seat_keyboard_notify_modifiers(keyboard->server->seat, &keyboard->keyboard->modifiers);
 }
@@ -653,7 +660,8 @@ static void keyboard_key(wl_listener* listener, void* data)
     keyboard->keyboard->modifiers.latched = xkb_state_serialize_mods(xkb_state, XKB_STATE_MODS_LATCHED);
     keyboard->keyboard->modifiers.locked = xkb_state_serialize_mods(xkb_state, XKB_STATE_MODS_LOCKED);
     keyboard->keyboard->modifiers.group = xkb_state_serialize_layout(xkb_state, XKB_STATE_LAYOUT_EFFECTIVE);
-    wlr_seat_keyboard_notify_modifiers(server.seat, &keyboard->keyboard->modifiers);
+    if (!InputMethod::handle_modifiers(server, keyboard->keyboard))
+        wlr_seat_keyboard_notify_modifiers(server.seat, &keyboard->keyboard->modifiers);
 
     // R5: InputCapture — while keyboard capture is active, keys go to the EIS client.
     if (InputCapture::handle_keyboard_key(server, event->keycode, event->state == WL_KEYBOARD_KEY_STATE_PRESSED,
@@ -731,6 +739,13 @@ static void keyboard_key(wl_listener* listener, void* data)
             for (int i = 0; i < syms_count; ++i)
                 handled |= handle_keybinding(server, syms[i], modifiers);
         }
+    }
+
+    if (!handled && InputMethod::handle_key(server, event->time_msec, event->keycode, event->state)) {
+        // R5 IME: the input method's keyboard grab consumed the key.
+        if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
+            stop_key_repeat();
+        return;
     }
 
     if (!handled) {
@@ -2272,6 +2287,8 @@ static void focus_x11_toplevel(Server& server, X11Toplevel* toplevel)
     auto* keyboard = wlr_seat_get_keyboard(server.seat);
     if (keyboard)
         wlr_seat_keyboard_notify_enter(server.seat, surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+    // R5 IME: hand the new focus to text-input-v3 and the input method.
+    InputMethod::set_focus(server, surface);
 }
 
 // The client surface (xdg x11 content or X11) under a layout point.
@@ -4846,6 +4863,8 @@ static void focus_layer_surface(Server& server, LayerSurface* layer)
     auto* keyboard = wlr_seat_get_keyboard(server.seat);
     if (keyboard)
         wlr_seat_keyboard_notify_enter(server.seat, surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+    // R5 IME: a client popup's text field can be typed into via an input method.
+    InputMethod::set_focus(server, surface);
 }
 
 // Give keyboard focus back to the topmost normal window (or clear it) when an
@@ -4862,6 +4881,8 @@ static void restore_keyboard_focus(Server& server)
         }
     }
     wlr_seat_keyboard_notify_clear_focus(server.seat);
+    // R5 IME: no focus, so no text input is active.
+    InputMethod::set_focus(server, nullptr);
 }
 
 static void layer_surface_commit(wl_listener* listener, void*)
@@ -5797,6 +5818,8 @@ static void lock_surface_commit(wl_listener* listener, void*)
     if (server.session_lock && !server.locked && covered >= static_cast<int>(server.outputs.size())) {
         wlr_session_lock_v1_send_locked(server.session_lock);
         server.locked = true;
+        // R5 IME: no text input on the lock screen.
+        InputMethod::set_focus(server, nullptr);
         // Give the keyboard to a lock surface (the primary output's, else any).
         auto* lock = lock_surface_for_output(server, server.primary_output);
         if (!lock)
@@ -6388,6 +6411,9 @@ static ErrorOr<void> initialize(Server& server)
     auto* foreign_registry = wlr_xdg_foreign_registry_create(server.display);
     wlr_xdg_foreign_v1_create(server.display, foreign_registry);
     wlr_xdg_foreign_v2_create(server.display, foreign_registry);
+
+    // R5 IME: text-input-v3 + input-method-v2 (docs/22-input-method.md).
+    InputMethod::initialize(server);
 
     return { };
 }

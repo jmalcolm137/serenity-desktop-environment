@@ -61,6 +61,13 @@ struct wlr_output_power_manager_v1;
 struct wlr_renderer;
 struct wlr_relative_pointer_manager_v1;
 struct wlr_keyboard_shortcuts_inhibit_manager_v1;
+// R5 IME: text-input-v3 (clients) + input-method-v2 (input methods).
+struct wlr_text_input_manager_v3;
+struct wlr_text_input_v3;
+struct wlr_input_method_manager_v2;
+struct wlr_input_method_v2;
+struct wlr_input_popup_surface_v2;
+struct wlr_input_method_keyboard_grab_v2;
 struct wlr_compositor;
 struct wlr_pointer;
 struct wlr_pointer_gestures_v1;
@@ -340,6 +347,47 @@ struct Keyboard {
     wl_listener destroy { };
 };
 
+// R5 IME (docs/22-input-method.md): the compositor's relay for one client
+// text input (wp_text_input_v3). The surfaceless association with the keyboard
+// focus lives in `pending_focused_surface` (used until an input method is
+// available), while `input->focused_surface` is what wlroots told the client.
+struct TextInput {
+    Server* server { nullptr };
+    wlr_text_input_v3* input { nullptr };
+    wlr_surface* pending_focused_surface { nullptr };
+    wl_listener enable { };
+    wl_listener commit { };
+    wl_listener disable { };
+    wl_listener destroy { };
+    wl_listener pending_focused_surface_destroy { };
+};
+
+// One input-method popup surface (the candidate/preedit window a CJK input
+// method draws). Rendered in a scene tree above the shell and positioned near
+// the text cursor.
+struct InputPopup {
+    Server* server { nullptr };
+    wlr_input_popup_surface_v2* popup_surface { nullptr };
+    wlr_scene_tree* scene_tree { nullptr };
+    wlr_surface* focused_surface { nullptr };
+    wl_listener destroy { };
+    wl_listener surface_commit { };
+    wl_listener surface_map { };
+    wl_listener surface_unmap { };
+    wl_listener focused_surface_unmap { };
+};
+
+// The relay for one input method client (zwp_input_method_v2). Only one input
+// method is served per seat (a second is answered with `unavailable`).
+struct InputMethodClient {
+    Server* server { nullptr };
+    wlr_input_method_v2* input_method { nullptr };
+    wl_listener commit { };
+    wl_listener grab_keyboard { };
+    wl_listener new_popup_surface { };
+    wl_listener destroy { };
+};
+
 // A pointer device plus its gesture listeners (touchpad swipe/pinch/hold), which
 // are forwarded to clients as wp-pointer-gestures-v1.
 struct Pointer {
@@ -522,6 +570,20 @@ struct Server {
     // need a little compositor glue — relative motion and shortcut inhibition).
     wlr_relative_pointer_manager_v1* relative_pointer_manager { nullptr };
     wlr_keyboard_shortcuts_inhibit_manager_v1* keyboard_shortcuts_inhibit { nullptr };
+    // R5 IME (docs/22-input-method.md): text-input-v3 + input-method-v2. The
+    // compositor relays text-input state between the focused client and the
+    // (single) input method, and routes keys to the input method's keyboard grab.
+    wlr_text_input_manager_v3* text_input_manager { nullptr };
+    wl_listener text_input_new { };
+    wlr_input_method_manager_v2* input_method_manager { nullptr };
+    wl_listener input_method_new { };
+    Vector<NonnullOwnPtr<TextInput>> text_inputs;
+    Vector<NonnullOwnPtr<InputPopup>> input_popups;
+    Vector<NonnullOwnPtr<InputMethodClient>> input_methods;
+    wlr_input_method_v2* input_method { nullptr };
+    // Scene tree for input-method popups (candidate windows), above the shell.
+    wlr_scene_tree* ime_popup_tree { nullptr };
+    wl_listener input_method_grab_destroy { };
     // zwp-pointer-constraints-v1: pointer lock/confine for games. The active
     // constraint (for the focused pointer surface) is enforced in
     // process_cursor_motion(); null when none applies.
