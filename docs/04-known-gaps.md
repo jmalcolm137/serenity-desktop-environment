@@ -231,13 +231,16 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
   compositor socket is up, so they start after the compositor and are relaunched
   after a restart; supervising long-running apps beyond that is not yet done.
 
-- **Session lifecycle (G6 / W5).** No greet/login, session start, autostart,
-  save/restore, lock, logout, reboot, or shut-down; no SystemServer-style
-  supervision.
-- **Settings & appearance (G5 / W6).** No display (mode/scale/rotation), input,
-  appearance or cursor settings backends. Fonts are fixed to the bitmap Katica
-  family, so size-based zoom is a no-op. `SDE_WALLPAPER` / `SDE_WALLPAPER_MODE`
-  are now only a first-run seed for the wallpaper state (see below).
+- **Session lifecycle (G6 / W5) — resolved (R4.1–R4.9).** Greet/login stays the
+  display manager's; the session now starts, autostarts, locks, idles, saves/
+  restores toplevels (`xdg-session-management-v1`) and powers off/reboots, with
+  logind optional. See [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md).
+- **Settings & appearance (G5 / W6) — resolved (R4.4–R4.7).** Display (mode/scale/
+  arrangement), input (libinput/keymaps), appearance/effects and cursor settings
+  backends are in, driven by a live-reloadable config and exposed via the Settings
+  portal; the session **font broker** now supports a scalable default, so
+  size-based zoom works. `SDE_WALLPAPER`/`SDE_WALLPAPER_MODE` remain only the
+  first-run seed for the wallpaper state.
 - **Display Settings app (W6, host).** SerenityOS's `DisplaySettings` builds and
   runs with all tabs (Background, Themes, Fonts, Monitor, Workspaces, Effects);
   launch it from the desktop right-click ▸ "Display Settings" (or
@@ -337,12 +340,22 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   X11 windows also join the **Taskbar window list** (reported to the
   WindowManagerServer by id, so the Taskbar can activate/minimize them).
   `[Compositor] XWayland=false` in `WindowServer.ini` disables X11 entirely (no X
-  server, no `DISPLAY`). Verified by `scripts/run-xwayland-test.sh`. **Alt-Tab**
-  now lists X11 windows too (the `WindowRef` abstraction, `07027fc`; see
-  [`20-xwayland-next-steps.md`](20-xwayland-next-steps.md)). **Still
-  missing for full parity:** WM_CLASS-based Taskbar **grouping** (icons landed,
-  `b3ac13a`), Xwayland **keyboard grabs** (blocked on a wlroots bump), and
-  X11↔Wayland **drag-and-drop**.
+  server, no `DISPLAY`). Verified by `scripts/run-xwayland-test.sh`.
+  **Landing since:** X11 windows joined the **Alt-Tab** switcher (the `WindowRef`
+  abstraction, `07027fc`) and the **workspace grid**; they carry their
+  **`_NET_WM_ICON`** and **WM_CLASS** (`b3ac13a`); the window is placed with its
+  frame at the client's requested position and **kept on-screen** (titlebar
+  visible) with a **default icon** when the client supplies none; override-redirect
+  menus/tooltips are polished (`cb21165`); the X11 `PRIMARY`/`CLIPBOARD`
+  **selection bridge** works (`6c8e0c9`); `_NET_WM_STATE`
+  (`above`/`skip-taskbar`/`demands-attention`/`modal`) and **transients** are
+  honoured (`c69b1ae`); and the **workarea** (`_NET_WORKAREA`) is reported
+  (`47f794f`). See [`20-xwayland-next-steps.md`](20-xwayland-next-steps.md).
+  **Still missing for full parity:** WM_CLASS-based Taskbar **grouping** (needs a
+  Taskbar-side change), Xwayland **keyboard grabs** (in no wlroots release),
+  **XDND** drag-and-drop (wlroots 0.21), and focus-stealing prevention (wlroots
+  gives no timestamp) — see
+  [`21-r5-protocol-parity-plan.md`](21-r5-protocol-parity-plan.md).
 - **Native-app protocol matrix (G7).** **Mostly done** — the compositor advertises
   (and wlroots implements) `xdg-activation`, `xdg-foreign` (v1 + v2), primary
   selection, `wlr`+`ext` data-control, `keyboard-shortcuts-inhibit`,
