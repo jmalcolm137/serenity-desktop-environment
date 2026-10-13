@@ -20,6 +20,8 @@
 #   SDE_SESSION_HEARTBEAT_FILE    liveness file the compositor writes (default below)
 #   SDE_SESSION_COMPOSITOR_SAFE   compositor command for safe mode (minimal session)
 #   SDE_SESSION_SAFE_MODE         1 to start in safe mode (default 0)
+#   SDE_SESSION_SLEEP_BIN         suspend/resume listener (default scripts/sde-sleep.sh)
+#   SDE_SUSPEND_LOCK_ON / SDE_SUSPEND_HOOK / SDE_RESUME_HOOK  suspend/resume hooks
 #   SDE_SESSION_CONF             policy file (default $XDG_CONFIG_HOME/sde/session.conf)
 #
 # The user-facing policy above (idle/lock, restart budget, watchdog, safe mode,
@@ -73,6 +75,9 @@ if [ -r "$SESSION_CONF" ]; then
             safe_mode) apply_session_setting SDE_SESSION_SAFE_MODE "$value" ;;
             autostart) apply_session_setting SDE_SESSION_AUTOSTART "$value" ;;
             autostart_dir) apply_session_setting SDE_SESSION_AUTOSTART_DIR "$value" ;;
+            lock_on_suspend) apply_session_setting SDE_SUSPEND_LOCK_ON "$value" ;;
+            suspend_hook) apply_session_setting SDE_SUSPEND_HOOK "$value" ;;
+            resume_hook) apply_session_setting SDE_RESUME_HOOK "$value" ;;
             *) echo "SDE session: $SESSION_CONF: ignoring unknown key '$key'" >&2 ;;
         esac
     done < "$SESSION_CONF"
@@ -130,6 +135,11 @@ LOCK_CMD="${SDE_LOCK_CMD:-swaylock}"
 DPMS_BIN="${SDE_SESSION_DPMS_BIN:-$SDE_ROOT/build/tools/sde-dpms}"
 DPMS_SECONDS="${SDE_SESSION_IDLE_DPMS_SECONDS:-0}"
 IDLE_PID=""
+
+# R4.3/R6 suspend/resume: start a portable logind PrepareForSleep listener (locks
+# on suspend, re-applies state on resume); a no-op without logind/D-Bus.
+SLEEP_BIN="${SDE_SESSION_SLEEP_BIN:-$SDE_ROOT/scripts/sde-sleep.sh}"
+SLEEP_PID=""
 
 # Session environment (R4.3, docs/12). Set the standard variables so apps and
 # portals can find the session; the supervisor owns ordering (no systemd target).
@@ -300,6 +310,13 @@ while :; do
         IDLE_PID=$!
     fi
 
+    # R4.3/R6: watch logind's PrepareForSleep (lock on suspend; re-apply state on
+    # resume). Started here, killed below, so it lives with the compositor.
+    if [ -x "$SLEEP_BIN" ]; then
+        "$SLEEP_BIN" >/dev/null 2>&1 &
+        SLEEP_PID=$!
+    fi
+
     # Launch the XDG Autostart entries once the compositor's socket is up. Inside
     # the loop so they are relaunched after a compositor restart (they were
     # disconnected when the old compositor exited), and never before the socket
@@ -314,7 +331,7 @@ while :; do
     # down). Single quotes so comp_pid/IDLE_PID resolve when the signal arrives.
     stopping=0
     # shellcheck disable=SC2064
-    trap 'stopping=1; kill -TERM $comp_pid $IDLE_PID 2>/dev/null || true' TERM INT
+    trap 'stopping=1; kill -TERM $comp_pid $IDLE_PID $SLEEP_PID 2>/dev/null || true' TERM INT
 
     # Watchdog: restart a wedged compositor (event loop blocked). Backgrounded so
     # the blocking `wait` below stays responsive to SIGTERM.
@@ -333,6 +350,10 @@ while :; do
     if [ -n "$IDLE_PID" ]; then
         kill "$IDLE_PID" 2>/dev/null || true
         IDLE_PID=""
+    fi
+    if [ -n "$SLEEP_PID" ]; then
+        kill "$SLEEP_PID" 2>/dev/null || true
+        SLEEP_PID=""
     fi
 
     if [ "$stopping" -eq 1 ]; then

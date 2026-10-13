@@ -328,6 +328,13 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 
 ## Recently resolved (kept so we don't re-chase them)
 
+- **Suspend/resume hooks (R4.3/R6).** `scripts/sde-sleep.sh` watches logind's
+  `PrepareForSleep` signal (portable: `gdbus` or `dbus-monitor`, a no-op without
+  logind/D-Bus). On suspend it locks the session (`SDE_LOCK_CMD`, unless
+  `lock_on_suspend=0`); on resume it unblanks (`sde-dpms on`) and runs the optional
+  `suspend_hook`/`resume_hook`. The supervisor starts it alongside the idle daemon;
+  the hooks come from `session.conf`. Covered by `run-session-test.sh` phase (L).
+
 - **More protocols: single-pixel-buffer, alpha-modifier, xdg-dialog, presentation-time
   (R6).** The compositor now advertises `wp_single_pixel_buffer_manager_v1`,
   `wp_alpha_modifier_v1` and `xdg_wm_dialog_v1` (wlroots implements them; announcing

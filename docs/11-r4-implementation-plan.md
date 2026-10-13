@@ -611,7 +611,12 @@ Documented so they are not lost; none blocks R4.
   actionable guidance (and the compositor explains a failed backend). Covered by
   `scripts/run-multiseat-test.sh`; the port relocates the WM portal socket
   (libgui-wayland patch `0041`).
-- **Serial console and suspend/resume hooks** — R4.3, still open.
+- **Suspend/resume hooks — done.** `scripts/sde-sleep.sh` watches logind's
+  `PrepareForSleep` (via `gdbus`/`dbus-monitor`) and locks the session on suspend
+  and re-applies state on resume (`sde-dpms on` plus optional
+  `suspend_hook`/`resume_hook`); `session.conf` keys `lock_on_suspend`,
+  `suspend_hook`, `resume_hook`. Covered by `run-session-test.sh` phase (L).
+- **Serial console** — R4.3, still open.
 
 ## 11. Parity target: KDE Plasma (KWin)
 

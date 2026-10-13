@@ -254,6 +254,38 @@ env SDE_SESSION_CONF="$RUNTIME/conf/session.conf" \
 cat "$RUNTIME/session-k2.log"
 check "idle-to-lock after 7s via 'sde-lock-conf'" "$RUNTIME/session-k2.log"
 
+echo "== (L) suspend/resume hooks fire on PrepareForSleep =="
+cat > "$RUNTIME/sleep-monitor" <<'EOF'
+#!/bin/sh
+printf 'PrepareForSleep(true)\n'
+sleep 0.1
+printf 'PrepareForSleep(false)\n'
+EOF
+chmod +x "$RUNTIME/sleep-monitor"
+env SDE_SLEEP_MONITOR_CMD="$RUNTIME/sleep-monitor" \
+    SDE_SUSPEND_LOCK_ON=1 \
+    SDE_LOCK_CMD="touch $RUNTIME/locked" \
+    SDE_RESUME_CMD= \
+    SDE_SUSPEND_HOOK="touch $RUNTIME/suspended" \
+    SDE_RESUME_HOOK="touch $RUNTIME/resumed" \
+    "$SDE_ROOT/scripts/sde-sleep.sh" > "$RUNTIME/sleep.log" 2>&1 || true
+cat "$RUNTIME/sleep.log"
+check "sde-sleep: suspending" "$RUNTIME/sleep.log"
+check "sde-sleep: resumed" "$RUNTIME/sleep.log"
+check_file "$RUNTIME/locked"
+check_file "$RUNTIME/suspended"
+check_file "$RUNTIME/resumed"
+
+# lock_on_suspend=0 skips the lock but still runs the suspend hook.
+env SDE_SLEEP_MONITOR_CMD="$RUNTIME/sleep-monitor" \
+    SDE_SUSPEND_LOCK_ON=0 \
+    SDE_LOCK_CMD="touch $RUNTIME/locked-2" \
+    SDE_RESUME_CMD= \
+    SDE_SUSPEND_HOOK="touch $RUNTIME/suspended-2" \
+    "$SDE_ROOT/scripts/sde-sleep.sh" >/dev/null 2>&1 || true
+check_absent_file "$RUNTIME/locked-2"
+check_file "$RUNTIME/suspended-2"
+
 if [ "$fail" -ne 0 ]; then
     echo "==> session test FAILED"
     exit 1

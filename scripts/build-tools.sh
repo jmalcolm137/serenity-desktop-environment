@@ -54,10 +54,14 @@ wayland-scanner private-code  "$XDG_XML" "$TOOLS_BUILD/xdg-shell-protocol.c"
 SW_XML="$SDE_ROOT/WindowServer/protocol/serenity-window.xml"
 wayland-scanner client-header "$SW_XML" "$TOOLS_BUILD/serenity-window-client-protocol.h"
 wayland-scanner private-code  "$SW_XML" "$TOOLS_BUILD/serenity-window-protocol.c"
+PRES_XML="$(pkg-config --variable=pkgdatadir wayland-protocols)/stable/presentation-time/presentation-time.xml"
+wayland-scanner client-header "$PRES_XML" "$TOOLS_BUILD/presentation-time-client-protocol.h"
+wayland-scanner private-code  "$PRES_XML" "$TOOLS_BUILD/presentation-time-protocol.c"
 cc -O2 -I "$TOOLS_BUILD" \
     "$SDE_ROOT/tools/native-app-test.c" \
     "$TOOLS_BUILD/xdg-shell-protocol.c" \
     "$TOOLS_BUILD/serenity-window-protocol.c" \
+    "$TOOLS_BUILD/presentation-time-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/native-app-test"
 
