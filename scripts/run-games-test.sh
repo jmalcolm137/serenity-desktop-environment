@@ -18,7 +18,7 @@ SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
 BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
 COMP="$SDE_ROOT/build/WindowServer/WindowServer"
 
-GAMES=(2048 BrickGame Chess ColorLines FlappyBug Flood GameOfLife Hearts MasterWord Minesweeper Snake Solitaire Spider)
+GAMES=(2048 BrickGame Chess ColorLines FlappyBug Flood GameOfLife Hearts MasterWord Minesweeper Snake Solitaire Spider Sudoku)
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 
