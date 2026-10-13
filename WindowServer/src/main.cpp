@@ -55,7 +55,10 @@
 
 #include <ctime>
 #include <drm_fourcc.h>
+#include <execinfo.h>
+#include <fcntl.h>
 #include <linux/input-event-codes.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -3989,9 +3992,77 @@ static void watch_cursor_state(Server& server)
 
 }
 
+// R6/N8 crash-dump policy. A fatal signal appends a short report (including a
+// backtrace) to $SDE_CRASH_LOG (default: the state dir's WindowServer-crash.log)
+// and then re-raises, so the supervisor restarts the session and we still have a
+// diagnostic. The handler only uses async-signal-safe calls (write/backtrace_
+// symbols_fd) and never swallows the crash.
+static ByteString s_crash_log_path;
+static int s_crash_log_fd { -1 };
+
+static void crash_write(char const* data, size_t length)
+{
+    while (length > 0) {
+        auto written = ::write(s_crash_log_fd, data, length);
+        if (written <= 0)
+            return;
+        data += written;
+        length -= static_cast<size_t>(written);
+    }
+}
+
+static void fatal_signal_handler(int signal_number)
+{
+    char const* name = "signal";
+    switch (signal_number) {
+    case SIGSEGV: name = "SIGSEGV"; break;
+    case SIGABRT: name = "SIGABRT"; break;
+    case SIGBUS: name = "SIGBUS"; break;
+    case SIGILL: name = "SIGILL"; break;
+    case SIGFPE: name = "SIGFPE"; break;
+    default: break;
+    }
+    // open(2) is async-signal-safe, so the log file is created lazily (a normal
+    // exit never leaves an empty crash log behind).
+    s_crash_log_fd = ::open(s_crash_log_path.characters(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);
+    if (s_crash_log_fd >= 0) {
+        char const* header = "\nWindowServer: crashed with ";
+        crash_write(header, strlen(header));
+        crash_write(name, strlen(name));
+        char const* suffix = " (backtrace follows)\n";
+        crash_write(suffix, strlen(suffix));
+        void* frames[64];
+        int frame_count = backtrace(frames, 64);
+        backtrace_symbols_fd(frames, frame_count, s_crash_log_fd);
+        ::close(s_crash_log_fd);
+        s_crash_log_fd = -1;
+    }
+    // Restore the default action and re-raise, so the process still dies with the
+    // signal (the supervisor sees a non-zero exit and restarts).
+    signal(signal_number, SIG_DFL);
+    raise(signal_number);
+}
+
+static void install_crash_report_handler()
+{
+    if (auto const* configured = getenv("SDE_CRASH_LOG"); configured && *configured)
+        s_crash_log_path = configured;
+    else
+        s_crash_log_path = ByteString::formatted("{}/WindowServer-crash.log", Config::state_directory());
+    if (auto directory = LexicalPath(s_crash_log_path).dirname(); !directory.is_empty())
+        (void)Core::Directory::create(directory, Core::Directory::CreateDirectories::Yes);
+    struct sigaction action { };
+    action.sa_handler = fatal_signal_handler;
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = 0;
+    for (int signal_number : { SIGSEGV, SIGABRT, SIGBUS, SIGILL, SIGFPE })
+        sigaction(signal_number, &action, nullptr);
+}
+
 ErrorOr<int> serenity_main(Main::Arguments arguments)
 {
     wlr_log_init(WLR_ERROR, nullptr);
+    install_crash_report_handler();
 
     StringView startup_command;
     StringView socket_name;

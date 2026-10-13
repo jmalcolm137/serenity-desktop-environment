@@ -8,8 +8,9 @@
 #
 # It also checks the R6/N4 liveness heartbeat (SDE_HEARTBEAT_FILE) that the
 # session supervisor's watchdog watches, R6/N4 protocol-error isolation (a client
-# that violates a protocol rule is dropped; the compositor keeps serving), and the
-# R6/N5 renderer fallback (a broken GPU path falls back to the software renderer
+# that violates a protocol rule is dropped; the compositor keeps serving), the
+# R6/N8 crash-report policy (a fatal signal writes a backtrace), and the R6/N5
+# renderer fallback (a broken GPU path falls back to the software renderer
 # instead of ending the session).
 #
 # Runs entirely headless (no host compositor, no DRM), so it is CI-friendly.
@@ -213,6 +214,38 @@ done
 kill "$EXPLICIT_PID" 2>/dev/null || true
 wait "$EXPLICIT_PID" 2>/dev/null || true
 check_log "renderer 'pixman'" "$RUNTIME/comp-explicit.log"
+
+# R6/N8 crash-dump policy: a fatal signal writes a backtrace to the crash log and
+# the process still dies with the signal (the supervisor then restarts).
+echo "=== R6/N8 crash report ==="
+SOCK_CRASH="sde-crash-$$"
+env -u WAYLAND_DISPLAY -u DISPLAY \
+    WLR_BACKENDS=headless \
+    WLR_HEADLESS_OUTPUTS=1 \
+    SDE_WM_PORTAL_PATH="$RUNTIME/wm-crash" \
+    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
+    LD_LIBRARY_PATH="$BUILD/lib" \
+    "$COMP" -n "$SOCK_CRASH" > "$RUNTIME/comp-crash.log" 2>&1 &
+CRASH_PID=$!
+for _ in $(seq 1 50); do
+    [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SOCK_CRASH" ]] && break
+    sleep 0.1
+done
+kill -ABRT "$CRASH_PID" 2>/dev/null || true
+CRASH_STATUS=0
+wait "$CRASH_PID" 2>/dev/null || CRASH_STATUS=$?
+if [ "${CRASH_STATUS:-0}" -eq 134 ]; then
+    echo "  ok: died with SIGABRT (exit 134)"
+else
+    echo "  MISSING: exit status ${CRASH_STATUS} (expected 134)"
+    fail=1
+fi
+if grep -q "crashed with SIGABRT" "$RUNTIME/WindowServer-crash.log" 2>/dev/null; then
+    echo "  ok: crash report written ($RUNTIME/WindowServer-crash.log)"
+else
+    echo "  MISSING: crash report"
+    fail=1
+fi
 
 if [[ "$fail" -ne 0 ]]; then
     echo "==> R1 headless smoke test FAILED"

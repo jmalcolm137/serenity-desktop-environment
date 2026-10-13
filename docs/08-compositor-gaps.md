@@ -163,8 +163,12 @@ table.
 - **wlroots version policy & protocol versioning.** wlroots API drift is an
   accepted risk with no upgrade cadence; `serenity-window` has no versioning or
   extension policy.
-- **Observability (N8).** `wlr_log_init(WLR_ERROR, …)` is fixed; no configurable
-  log levels, tracing, or crash-dump policy.
+- **Observability (N8).** A fatal-signal **crash report** (the signal name plus a
+  backtrace) is written to `$SDE_CRASH_LOG` (default the state dir's
+  `WindowServer-crash.log`) before the signal is re-raised, so a crash is
+  diagnosable and the supervisor still restarts the session (R6). Still missing:
+  configurable log levels (`wlr_log_init(WLR_ERROR, …)` is fixed), tracing, and
+  structured logs.
 - **WM policy details (G3).** Focus-follows-mouse vs click, focus-stealing
   prevention, transient/modal dialogs, cross-output maximize, struts beyond
   layer-shell, and session restore of window placement are unspecified.
