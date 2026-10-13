@@ -122,7 +122,7 @@ if [[ "${SDE_SAFE_MODE:-0}" == "1" ]]; then
 elif [[ -n "${1:-}" ]]; then
     STARTUP="$1"
 else
-    STARTUP="$BUILD/bin/Taskbar & $BUILD/bin/TextEditor"
+    STARTUP="$BUILD/bin/Taskbar & $BUILD/bin/FileManager -d"
     if [[ -n "$APPLET_CMDS" ]]; then
         STARTUP="$STARTUP & $APPLET_CMDS"
     fi

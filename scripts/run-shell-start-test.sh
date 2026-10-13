@@ -35,12 +35,14 @@ stop_compositor() {
 }
 trap 'stop_compositor; rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
 
-# The real session startup: the shell, the applets, and the battery applet.
+# The real session startup: the shell (Taskbar + Desktop), the applets, and the
+# battery applet. (FileManager -d is the SerenityOS Desktop - icons over the
+# wallpaper.)
 # shellcheck source=scripts/sde-applets.sh
 . "$SDE_ROOT/scripts/sde-applets.sh"
 APPLET_CMDS="$(sde_applet_startup_commands "$SDE_ROOT")"
 BATTERY_APPLET="$SDE_ROOT/build/BatteryApplet/BatteryApplet"
-STARTUP="$BUILD/bin/Taskbar & $BUILD/bin/TextEditor"
+STARTUP="$BUILD/bin/Taskbar & $BUILD/bin/FileManager -d"
 [[ -n "$APPLET_CMDS" ]] && STARTUP="$STARTUP & $APPLET_CMDS"
 [[ -x "$BATTERY_APPLET" ]] && STARTUP="$STARTUP & $BATTERY_APPLET"
 
@@ -68,6 +70,8 @@ check() {
 
 echo "=== the shell starts with the WindowManagerServer already listening ==="
 check "title='Taskbar'"
+check "layer surface namespace='serenity-taskbar'"
+check "layer surface namespace='serenity-desktop'"
 check "AppletManager: applet area size"
 
 if grep -q "VERIFICATION FAILED" "$RUNTIME/comp.log"; then
