@@ -142,6 +142,56 @@ click was already handled and returned earlier).
   set wallpaper stays and covers the colour. This is intentional parity, not a
   bug.
 
+### SerenityOS window-manager behaviours not yet implemented
+
+The window chrome and the core interactions are done — titlebar buttons, the
+window menu (minimize / maximize / restore / move / roll-up / menu bar / always
+on top / close), the icon-click menu, double-click-titlebar maximize, move and
+resize by the frame, snapping, tiling (`Super`+arrows, `Super+Alt` horizontal /
+vertical maximize), the Alt+Tab / Super+Tab switcher with live thumbnails, the
+workspace grid (with carry) and the `Super`-key events forwarded to the
+WindowManagerServer. What follows are behaviours present in SerenityOS's
+`Userland/Services/WindowServer/{WindowManager,Window,Compositor}.cpp` that SDE
+does **not** reproduce yet.
+
+- **Window animations.** No open/close, minimize/restore, maximize or
+  window-stack-transition animation. SerenityOS animates these in `Window.cpp`
+  (gated on `system_effects().animate_windows()`) and via
+  `Compositor::m_window_stack_transition_animation`. SDE accepts the
+  `[Effects] AnimateWindows` key but the compositor never animates — the same
+  reason `set_window_taskbar_rect` (the minimize/restore target geometry the
+  Taskbar reports) is deliberately ignored.
+- **`Super`+left-drag to move, `Super`+right-drag to resize, from anywhere in the
+  window** (`WindowManager.cpp` ~1343). SDE moves only by dragging the Serenity
+  titlebar and resizes only by the frame edges.
+- **Unmaximize-on-move.** SerenityOS restores a maximized window's geometry when a
+  move begins (`WindowManager.cpp:860`); SDE drags the maximized window as-is.
+- **Modal and transient (parent/child) windows.** SerenityOS enforces
+  `blocking_modal_window()` (input to the window behind a modal is blocked, the
+  modal cannot be minimized, blockers are lowered) and stacks a transient above
+  its parent. SDE has no modal/transient semantics (dialogs render, but nothing
+  blocks).
+- **Fragile windows** — SerenityOS closes them on focus loss / certain actions
+  (`request_close_fragile_windows`). SDE: none.
+- **Automatic cursor tracking windows** (a tracked window, e.g. a client menu,
+  follows the pointer) — `set_automatic_cursor_tracking_window`. SDE: none.
+- **The window-stack-switch overlay.** SerenityOS briefly shows the workspace-grid
+  overlay when switching stacks (`switch_to_window_stack(..., show_overlay)`); SDE
+  switches silently. (The tile-preview and geometry overlays *are* implemented.)
+- **Drag-and-drop between windows.** SDE creates the data-device manager but never
+  wires `request_start_drag` / `start_drag`, so a drag from one window does not
+  reach another (also tracked under R5).
+- **The `Alt+Shift` keymap switcher** (`KeymapSwitcher`). SDE changes the keyboard
+  layout through KeyboardSettings; there is no `Alt+Shift` cycle.
+- **`Super+H` to toggle the cursor highlight.** SDE has the cursor highlight
+  (R4.7, set from Mouse Settings) but no shortcut for it.
+- **`Ctrl+Super+Shift+I`** (reload icon bitmaps after a scale change) — an
+  internal SerenityOS hotkey with no SDE equivalent (SDE reloads icons on demand).
+
+Not gaps, for the record: SDE's drag-to-edge snapping is an *addition* over stock
+SerenityOS (which tiles only through `Super`+arrows), and the minimal
+`serenity-window` chrome is a deliberate P8 choice, not a missing behaviour.
+
 ## R4 — Session & settings (started)
 
 R4 is broken into milestones **R4.1–R4.9** with sequencing, de-risking spikes and
