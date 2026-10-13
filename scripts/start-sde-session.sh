@@ -22,6 +22,19 @@ COMP="$SDE_ROOT/build/WindowServer/WindowServer"
 
 : "${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR must be set (log in to a proper session)}"
 
+# A display manager (SDDM) discards the session's stdout, so when there is no
+# terminal, log to a file. Diagnose a failed login with:
+#   cat ~/.local/state/sde/session.log
+if [[ ! -t 1 ]]; then
+    SDE_SESSION_LOG="${SDE_SESSION_LOG:-${XDG_STATE_HOME:-${HOME:-/tmp}/.local/state}/sde/session.log}"
+    if mkdir -p "$(dirname "$SDE_SESSION_LOG")" 2>/dev/null && : >>"$SDE_SESSION_LOG" 2>/dev/null; then
+        exec >>"$SDE_SESSION_LOG" 2>&1
+        echo "--- SDE session start $(date -Is) ---"
+        echo "user=$(id -un) uid=$(id -u) display=${WAYLAND_DISPLAY:-<unset>} session_type=${XDG_SESSION_TYPE:-<unset>}"
+        echo "seat=${XDG_SEAT:-<unset>} vt=${XDG_VTNR:-<unset>} runtime=${XDG_RUNTIME_DIR}"
+    fi
+fi
+
 if [[ ! -x "$COMP" ]]; then
     echo "error: $COMP not found; run scripts/build-window-server.sh first" >&2
     exit 1

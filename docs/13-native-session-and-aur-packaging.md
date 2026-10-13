@@ -166,6 +166,11 @@ orphaned `WindowServer` holding the VT). Verified by
 `scripts/run-session-entry-test.sh` (entry/launcher/install) and a headless launch +
 SIGTERM check.
 
+**Diagnosing a failed login.** A display manager discards the session's stdout, so
+`start-sde-session.sh` appends to `~/.local/state/sde/session.log` (override with
+`SDE_SESSION_LOG`) when it has no terminal; the compositor also appends to
+`~/.config/sde/WindowServer-crash.log` on a fatal signal.
+
 ---
 
 ## 7. Seat / logind in a DM session
