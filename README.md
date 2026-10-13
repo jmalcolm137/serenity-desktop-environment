@@ -31,6 +31,7 @@ The stack is split across a small family of repositories:
 - [`docs/15-xdg-desktop-portal-serenity.md`](docs/15-xdg-desktop-portal-serenity.md) — the SDE xdg-desktop-portal backend and its LibGUI dialogs (R5).
 - [`docs/16-battery-applet.md`](docs/16-battery-applet.md) — the battery status applet for the Taskbar's applet area.
 - [`docs/19-wifi-applet.md`](docs/19-wifi-applet.md) — the Wi-Fi applet for the Taskbar's applet area (a LibGUI frontend to NetworkManager, modeled on KDE Plasma's Networks applet).
+- [`docs/20-xwayland-next-steps.md`](docs/20-xwayland-next-steps.md) — XWayland state and the remaining work toward KWin/Plasma parity (the resume point for the R5 X11 effort).
 
 ## Status
 
