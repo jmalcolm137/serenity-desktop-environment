@@ -281,10 +281,14 @@ fractional supported:
   coordinates and captures a 2560x1440 *physical* image; `--scale 1.5` captures
   1920x1080.
 
-**DisplaySettings.** The Monitor tab's **Display scale** control offers
-**1x / 1.25x / 1.5x / 2x** and applies immediately: it sends the exact scale (as
-v120) over a `set_output_scale` WindowServer-IPC method (libgui-wayland patch
-`0042`), the shim writes `[Output] DefaultScale`, and the compositor re-scales the
-outputs live. v120 is used because Serenity's `ScreenLayout` `ScaleFactor` is an
-integer and cannot carry `1.5`. (The tab's Apply button remains inert for
-mode/position: the host does not implement Serenity's output-configuration IPC.)
+**DisplaySettings.** The Monitor tab is now **live**. **Resolution** and
+**Position** (X/Y) come from the layout and, together with the **Display scale**
+control (1x / 1.25x / 1.5x / 2x), take effect when you press **Apply**: the shim
+writes `screenlayout.ini` (mode + position) and `[Output] DefaultScale` (scale),
+and the compositor applies both live (it watches the files). We deliberately skip
+SerenityOS's "Do you want to keep the new screen layout?" revert dialog —
+`SettingsWindow` applies every tab, so a modal there would freeze the window. The
+scale is also sent as v120 over a `set_output_scale` WindowServer-IPC method
+(libgui-wayland patch `0042`) because Serenity's `ScreenLayout` `ScaleFactor` is an
+integer and cannot carry `1.5`; the Position spin boxes are meaningful with
+multiple outputs (`normalize()` keeps a single screen at 0,0).
