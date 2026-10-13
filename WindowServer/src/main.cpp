@@ -4111,6 +4111,25 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     watch_cursor_state(*server);
     watch_wallpaper_state(*server);
 
+    // R6/N4: a liveness heartbeat for the session supervisor's watchdog. A wedged
+    // event loop stops updating the file, so the supervisor can restart the
+    // session instead of hanging forever. Off unless SDE_HEARTBEAT_FILE is set
+    // (the session supervisor sets it), so nested/headless runs are unaffected.
+    if (auto const* heartbeat = getenv("SDE_HEARTBEAT_FILE"); heartbeat && *heartbeat) {
+        ByteString heartbeat_path { heartbeat };
+        auto beat = [heartbeat_path] {
+            auto file = Core::File::open(heartbeat_path, Core::File::OpenMode::Write);
+            if (file.is_error())
+                return;
+            auto text = ByteString::number(static_cast<long>(::time(nullptr)));
+            (void)file.value()->write_until_depleted(text.bytes());
+        };
+        beat();
+        static RefPtr<Core::Timer> heartbeat_timer;
+        heartbeat_timer = Core::Timer::create_repeating(1000, [beat] { beat(); });
+        heartbeat_timer->start();
+    }
+
     int result = loop.exec();
     wl_display_destroy_clients(server->display);
     wl_display_destroy(server->display);

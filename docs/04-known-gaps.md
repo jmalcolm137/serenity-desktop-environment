@@ -298,8 +298,16 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 - **Performance budget & latency instrumentation (N3).** No budget, frame-pacing
   plan or perf-regression test, despite N3 targeting "low predictable input
   latency, 60 Hz".
-- **Crash recovery / watchdog / safe mode (N4)** — no supervisor, restart or
-  session restore; a compositor crash loses the session.
+- **Crash recovery / watchdog / safe mode (N4) — done.** The R4.2 supervisor
+  restarts a *crashed* compositor; R6 adds a **watchdog** for a *wedged* one (the
+  compositor writes a liveness heartbeat, `SDE_HEARTBEAT_FILE`; the supervisor
+  restarts it when the heartbeat goes stale) and **safe mode** (after the restart
+  budget, drop to a minimal shell instead of ending the session). User-facing
+  session policy is configurable in `$XDG_CONFIG_HOME/sde/session.conf`
+  (environment overrides). Covered by `run-session-test.sh` phases (H)–(K) and
+  the heartbeat assertion in `run-headless-test.sh`. Full **session restore**
+  (relaunching the user's windows after a compositor restart) is not done — it
+  needs `xdg-session-management-v1`.
 - **Packaging** of `WindowServer` and the session; **headless CI matrix**;
   **sanitizers/fuzzing**; **compositor design doc** and observability.
 
@@ -313,6 +321,16 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   on this path ([`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md) §6).
 
 ## Recently resolved (kept so we don't re-chase them)
+
+- **Session watchdog & safe mode (R6/N4).** The compositor writes a liveness
+  heartbeat (`SDE_HEARTBEAT_FILE` — a `Core::Timer` touching the file each
+  second) and the session supervisor restarts it when the heartbeat goes stale,
+  so a *wedged* event loop no longer hangs the session. After the restart budget
+  the supervisor drops to **safe mode** (a minimal shell via
+  `SDE_SESSION_COMPOSITOR_SAFE`, no autostart) instead of ending the session, and
+  only gives up if safe mode also keeps failing. User-facing session policy lives
+  in `$XDG_CONFIG_HOME/sde/session.conf` (env overrides the file). Tests:
+  `run-session-test.sh` phases (H)–(K), `run-headless-test.sh`.
 
 - **Profiler (Development ▸ Profiler).** SerenityOS's kernel profiling interface
   (`profiling_enable(pid, mask)` + `/proc/<pid>/perf_events`) has no Linux

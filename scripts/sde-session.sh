@@ -16,11 +16,62 @@
 #   SDE_SESSION_MAX_RESTARTS   restart budget on non-zero exit (default 3)
 #   SDE_SESSION_RESTART_DELAY  seconds between restarts (default 1)
 #   SDE_SESSION_AUTOSTART     0 to skip autostart (default 1)
+#   SDE_SESSION_WATCHDOG_SECONDS  heartbeat staleness before restarting (default 10; 0 disables)
+#   SDE_SESSION_HEARTBEAT_FILE    liveness file the compositor writes (default below)
+#   SDE_SESSION_COMPOSITOR_SAFE   compositor command for safe mode (minimal session)
+#   SDE_SESSION_SAFE_MODE         1 to start in safe mode (default 0)
+#   SDE_SESSION_CONF             policy file (default $XDG_CONFIG_HOME/sde/session.conf)
+#
+# The user-facing policy above (idle/lock, restart budget, watchdog, safe mode,
+# autostart) can also live in session.conf (KEY=value); the environment overrides
+# the file, which overrides the built-in default.
 set -u
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
 BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
+
+# Session policy (R6): $XDG_CONFIG_HOME/sde/session.conf (KEY=value lines), the
+# session sibling of WindowServer.ini (same state directory; see
+# docs/14-r4.4-config.md §1). Precedence is environment > file > built-in default,
+# so tests and embedding can force a value without touching the file.
+session_state_dir() {
+    if [ -n "${SDE_STATE_DIR:-}" ]; then printf '%s' "$SDE_STATE_DIR"
+    elif [ -n "${XDG_CONFIG_HOME:-}" ]; then printf '%s/sde' "$XDG_CONFIG_HOME"
+    elif [ -n "${HOME:-}" ]; then printf '%s/.config/sde' "$HOME"
+    else printf '%s' /tmp/sde
+    fi
+}
+# Assign a session variable from the file only when the environment did not set it.
+apply_session_setting() {
+    local var="$1" value="$2"
+    if eval "[ -n \"\${$var+x}\" ]"; then
+        return 0
+    fi
+    printf -v "$var" '%s' "$value"
+}
+SESSION_CONF="${SDE_SESSION_CONF:-$(session_state_dir)/session.conf}"
+if [ -r "$SESSION_CONF" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in ''|'#'*) continue ;; esac
+        case "$line" in *=*) ;; *) continue ;; esac
+        key="$(printf '%s' "${line%%=*}" | tr -d '[:blank:]')"
+        value="$(printf '%s' "${line#*=}" | sed -E 's/^[[:blank:]]+//; s/[[:blank:]]+$//')"
+        case "$key" in
+            idle_seconds) apply_session_setting SDE_SESSION_IDLE_SECONDS "$value" ;;
+            idle_dpms_seconds) apply_session_setting SDE_SESSION_IDLE_DPMS_SECONDS "$value" ;;
+            lock_command) apply_session_setting SDE_LOCK_CMD "$value" ;;
+            max_restarts) apply_session_setting SDE_SESSION_MAX_RESTARTS "$value" ;;
+            restart_delay) apply_session_setting SDE_SESSION_RESTART_DELAY "$value" ;;
+            watchdog_seconds) apply_session_setting SDE_SESSION_WATCHDOG_SECONDS "$value" ;;
+            safe_mode) apply_session_setting SDE_SESSION_SAFE_MODE "$value" ;;
+            autostart) apply_session_setting SDE_SESSION_AUTOSTART "$value" ;;
+            autostart_dir) apply_session_setting SDE_SESSION_AUTOSTART_DIR "$value" ;;
+            *) echo "SDE session: $SESSION_CONF: ignoring unknown key '$key'" >&2 ;;
+        esac
+    done < "$SESSION_CONF"
+    echo "SDE session: loaded session policy from $SESSION_CONF"
+fi
 
 SDE_SESSION_SHELL="${SDE_SESSION_SHELL:-$BUILD/bin/Taskbar & $BUILD/bin/FileManager -d}"
 COMPOSITOR="${SDE_SESSION_COMPOSITOR:-$SDE_ROOT/build/WindowServer/WindowServer -n sde -s \"$SDE_SESSION_SHELL\"}"
@@ -28,6 +79,17 @@ AUTOSTART_DIR="${SDE_SESSION_AUTOSTART_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/au
 MAX_RESTARTS="${SDE_SESSION_MAX_RESTARTS:-3}"
 RESTART_DELAY="${SDE_SESSION_RESTART_DELAY:-1}"
 RUN_AUTOSTART="${SDE_SESSION_AUTOSTART:-1}"
+
+# R6/N4 hardening. The watchdog restarts a *wedged* compositor (one whose event
+# loop is blocked) by watching a liveness heartbeat file the compositor writes;
+# safe mode is a minimal session used when the compositor keeps failing, so a bad
+# applet/autostart entry cannot wedge the login loop.
+WATCHDOG_SECONDS="${SDE_SESSION_WATCHDOG_SECONDS:-10}"
+SAFE_MODE="${SDE_SESSION_SAFE_MODE:-0}"
+SAFE_COMPOSITOR="${SDE_SESSION_COMPOSITOR_SAFE:-}"
+HEARTBEAT_FILE="${SDE_SESSION_HEARTBEAT_FILE:-${XDG_RUNTIME_DIR:-/tmp}/sde-heartbeat}"
+# The compositor (and its clients) inherit this and touch the file each second.
+export SDE_HEARTBEAT_FILE="$HEARTBEAT_FILE"
 
 # Idle-to-lock policy (R4.1/R4.2): if SDE_SESSION_IDLE_SECONDS > 0, run the
 # portable sde-idle daemon to lock after that many idle seconds. sde-idle is a
@@ -120,6 +182,29 @@ wait_for_socket() {
     return 1
 }
 
+# A liveness watchdog (R6/N4): if the compositor's heartbeat file goes stale its
+# event loop is blocked, so terminate it and let the main loop restart it. Runs in
+# the background so the foreground `wait` keeps the fast SIGTERM path.
+watch_compositor_hang() {
+    local pid="$1" beat now
+    while kill -0 "$pid" 2>/dev/null; do
+        sleep 1
+        [ -e "$HEARTBEAT_FILE" ] || continue
+        beat="$(cat "$HEARTBEAT_FILE" 2>/dev/null || echo 0)"
+        now="$(date +%s)"
+        case "$beat" in
+            ''|*[!0-9]*) continue ;;
+        esac
+        if [ "$((now - beat))" -gt "$WATCHDOG_SECONDS" ]; then
+            echo "SDE session: compositor heartbeat stale (${beat}s, now ${now}s > ${WATCHDOG_SECONDS}s); restarting" >&2
+            kill -TERM "$pid" 2>/dev/null || true
+            sleep 2
+            kill -KILL "$pid" 2>/dev/null || true
+            return
+        fi
+    done
+}
+
 # Power helpers: shadow /bin/{shutdown,reboot,logout,suspend} with sde-power, so
 # the unmodified Taskbar "Exit..." menu (whose ShutdownDialog spawns
 # /bin/shutdown, /bin/reboot, /bin/logout) routes to logind instead of failing on
@@ -138,14 +223,31 @@ export SDE_SESSION_BIN_DIR="$SESSION_BIN"
 echo "SDE session: power helpers in $SESSION_BIN (/bin shadow)"
 
 restarts=0
+SAFE=0
+active_compositor="$COMPOSITOR"
+enter_safe_mode() {
+    SAFE=1
+    echo "SDE session: SAFE MODE (minimal session: no autostart, no applets)" >&2
+    RUN_AUTOSTART=0
+    if [ -n "$SAFE_COMPOSITOR" ]; then
+        active_compositor="$SAFE_COMPOSITOR"
+    fi
+}
+if [ "$SAFE_MODE" = "1" ]; then
+    enter_safe_mode
+fi
+
 while :; do
-    echo "SDE session: starting compositor: $COMPOSITOR"
+    # Start from a clean heartbeat: while the compositor is starting up it has not
+    # written one yet, and a stale file from the previous run must not look hung.
+    rm -f "$HEARTBEAT_FILE" 2>/dev/null || true
+    echo "SDE session: starting compositor: $active_compositor"
     # Native (no captured host display): leave WAYLAND_DISPLAY unset so
     # wlr_backend_autocreate selects DRM+libinput. Nested: connect to the host.
     if [ -n "$COMPOSITOR_DISPLAY" ]; then
-        WAYLAND_DISPLAY="$COMPOSITOR_DISPLAY" sh -c "$COMPOSITOR" &
+        WAYLAND_DISPLAY="$COMPOSITOR_DISPLAY" sh -c "$active_compositor" &
     else
-        env -u WAYLAND_DISPLAY -u DISPLAY sh -c "$COMPOSITOR" &
+        env -u WAYLAND_DISPLAY -u DISPLAY sh -c "$active_compositor" &
     fi
     comp_pid=$!
 
@@ -179,9 +281,21 @@ while :; do
     stopping=0
     # shellcheck disable=SC2064
     trap 'stopping=1; kill -TERM $comp_pid $IDLE_PID 2>/dev/null || true' TERM INT
+
+    # Watchdog: restart a wedged compositor (event loop blocked). Backgrounded so
+    # the blocking `wait` below stays responsive to SIGTERM.
+    watchdog_pid=""
+    if [ "$WATCHDOG_SECONDS" -gt 0 ]; then
+        watch_compositor_hang "$comp_pid" &
+        watchdog_pid=$!
+    fi
+
     wait "$comp_pid"
     status=$?
     trap - TERM INT
+    if [ -n "$watchdog_pid" ]; then
+        kill "$watchdog_pid" 2>/dev/null || true
+    fi
     if [ -n "$IDLE_PID" ]; then
         kill "$IDLE_PID" 2>/dev/null || true
         IDLE_PID=""
@@ -198,7 +312,15 @@ while :; do
 
     restarts=$((restarts + 1))
     if [ "$restarts" -gt "$MAX_RESTARTS" ]; then
-        echo "SDE session: compositor failed $restarts time(s); giving up" >&2
+        if [ "$SAFE" -eq 0 ]; then
+            # Rather than ending the session, drop to a minimal one.
+            echo "SDE session: compositor failed $restarts time(s); entering safe mode" >&2
+            enter_safe_mode
+            restarts=0
+            sleep "$RESTART_DELAY"
+            continue
+        fi
+        echo "SDE session: compositor failed $restarts time(s) in safe mode; giving up" >&2
         exit 1
     fi
     echo "SDE session: compositor exited ($status); restart $restarts/$MAX_RESTARTS"

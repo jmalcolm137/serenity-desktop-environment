@@ -69,7 +69,15 @@ fi
 . "$SDE_ROOT/scripts/sde-applets.sh"
 APPLET_CMDS="$(sde_applet_startup_commands "$SDE_ROOT")"
 
-if [[ -n "${1:-}" ]]; then
+# R6/N4: a minimal startup for safe mode (used automatically when the compositor
+# keeps failing, and with SDE_SAFE_MODE=1): just the shell, no applets/battery.
+SAFE_STARTUP="$BUILD/bin/Taskbar"
+
+if [[ "${SDE_SAFE_MODE:-0}" == "1" ]]; then
+    # Manual safe mode: minimal shell, and tell the supervisor to skip autostart.
+    STARTUP="$SAFE_STARTUP"
+    export SDE_SESSION_SAFE_MODE=1
+elif [[ -n "${1:-}" ]]; then
     STARTUP="$1"
 else
     STARTUP="$BUILD/bin/Taskbar & $BUILD/bin/TextEditor"
@@ -136,6 +144,9 @@ fi
 # The session supervisor (R4.2) starts/restarts the compositor, runs XDG
 # Autostart, owns the session environment, and arms idle-to-lock.
 export SDE_SESSION_COMPOSITOR="$COMP -n $SESSION_DISPLAY -s \"$STARTUP\""
+# R6/N4: if the compositor keeps failing, the supervisor drops to safe mode with
+# this minimal shell instead of ending the session.
+export SDE_SESSION_COMPOSITOR_SAFE="$COMP -n $SESSION_DISPLAY -s \"$SAFE_STARTUP\""
 "$SDE_ROOT/scripts/sde-session.sh"
 status=$?
 

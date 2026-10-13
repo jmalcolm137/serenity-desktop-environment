@@ -2,7 +2,12 @@
 # Headless session test (R4.2, docs/11-r4-implementation-plan.md):
 #   (A) XDG Autostart entries run (and Hidden=true is skipped);
 #   (B) the supervisor restarts a failing compositor, then gives up;
-#   (C) power actions route through the portable path (mocked here).
+#   (C) power actions route through the portable path (mocked here);
+#   (D-G) idle-to-lock, /bin power helpers, SIGTERM, capability probe;
+#   (H) the watchdog restarts a wedged compositor (stale heartbeat);
+#   (I) repeated failure drops to safe mode instead of ending the session;
+#   (J) manual safe mode starts minimal and skips autostart;
+#   (K) session.conf supplies policy and the environment overrides it (R6).
 # Uses stub commands, so it needs no compositor or display.
 set -euo pipefail
 
@@ -162,6 +167,92 @@ cat "$RUNTIME/caps.log"
 check "logind=absent" "$RUNTIME/caps.log"
 check "dbus_session_bus=absent" "$RUNTIME/caps.log"
 check "seat=builtin" "$RUNTIME/caps.log"
+
+echo "== (H) watchdog restarts a wedged compositor (stale heartbeat) =="
+cat > "$RUNTIME/hang-comp" <<EOF
+#!/bin/sh
+echo "\$(date +%s)" > "$RUNTIME/hb"
+sleep 30
+EOF
+chmod +x "$RUNTIME/hang-comp"
+env SDE_SESSION_COMPOSITOR="$RUNTIME/hang-comp" \
+    SDE_SESSION_HEARTBEAT_FILE="$RUNTIME/hb" \
+    SDE_SESSION_WATCHDOG_SECONDS=2 \
+    SDE_SESSION_MAX_RESTARTS=5 \
+    SDE_SESSION_AUTOSTART=0 \
+    SDE_SESSION_RESTART_DELAY=0 \
+    "$SDE" > "$RUNTIME/session-h.log" 2>&1 &
+SUP_H=$!
+sleep 6
+kill -TERM "$SUP_H" 2>/dev/null || true
+wait "$SUP_H" 2>/dev/null || true
+cat "$RUNTIME/session-h.log"
+check "heartbeat stale" "$RUNTIME/session-h.log"
+check "restart 1/5" "$RUNTIME/session-h.log"
+
+echo "== (I) repeated failure drops to safe mode (does not end the session) =="
+cat > "$RUNTIME/safe-comp" <<EOF
+#!/bin/sh
+echo safe >> "$RUNTIME/safe-ran"
+exit 1
+EOF
+chmod +x "$RUNTIME/safe-comp"
+env SDE_SESSION_COMPOSITOR="exit 1" \
+    SDE_SESSION_COMPOSITOR_SAFE="$RUNTIME/safe-comp" \
+    SDE_SESSION_MAX_RESTARTS=1 \
+    SDE_SESSION_AUTOSTART=0 \
+    SDE_SESSION_RESTART_DELAY=0 \
+    "$SDE" > "$RUNTIME/session-i.log" 2>&1 || true
+cat "$RUNTIME/session-i.log"
+check "entering safe mode" "$RUNTIME/session-i.log"
+check "SAFE MODE" "$RUNTIME/session-i.log"
+check_file "$RUNTIME/safe-ran"
+
+echo "== (J) manual safe mode starts minimal and skips autostart =="
+mkdir -p "$RUNTIME/autostart-j"
+cat > "$RUNTIME/autostart-j/run.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Runs
+Exec=touch $RUNTIME/autostarted-j
+EOF
+env SDE_SESSION_COMPOSITOR="sleep 0.4" \
+    SDE_SESSION_COMPOSITOR_SAFE="sleep 0.4" \
+    SDE_SESSION_AUTOSTART=1 \
+    SDE_SESSION_AUTOSTART_DIR="$RUNTIME/autostart-j" \
+    SDE_SESSION_SAFE_MODE=1 \
+    SDE_SESSION_RESTART_DELAY=0 \
+    "$SDE" > "$RUNTIME/session-j.log" 2>&1 || true
+cat "$RUNTIME/session-j.log"
+check "SAFE MODE" "$RUNTIME/session-j.log"
+check_absent_file "$RUNTIME/autostarted-j"
+
+echo "== (K) session.conf supplies policy; the environment overrides it =="
+mkdir -p "$RUNTIME/conf"
+cat > "$RUNTIME/conf/session.conf" <<'EOF'
+# SDE session policy
+idle_seconds=42
+lock_command=sde-lock-conf
+max_restarts=9
+EOF
+env SDE_SESSION_CONF="$RUNTIME/conf/session.conf" \
+    SDE_SESSION_COMPOSITOR="sleep 0.4" \
+    SDE_SESSION_AUTOSTART=0 \
+    SDE_SESSION_IDLE_BIN="$SDE_ROOT/build/tools/sde-idle" \
+    SDE_SESSION_RESTART_DELAY=0 \
+    "$SDE" > "$RUNTIME/session-k1.log" 2>&1 || true
+cat "$RUNTIME/session-k1.log"
+check "loaded session policy" "$RUNTIME/session-k1.log"
+check "idle-to-lock after 42s via 'sde-lock-conf'" "$RUNTIME/session-k1.log"
+env SDE_SESSION_CONF="$RUNTIME/conf/session.conf" \
+    SDE_SESSION_IDLE_SECONDS=7 \
+    SDE_SESSION_COMPOSITOR="sleep 0.4" \
+    SDE_SESSION_AUTOSTART=0 \
+    SDE_SESSION_IDLE_BIN="$SDE_ROOT/build/tools/sde-idle" \
+    SDE_SESSION_RESTART_DELAY=0 \
+    "$SDE" > "$RUNTIME/session-k2.log" 2>&1 || true
+cat "$RUNTIME/session-k2.log"
+check "idle-to-lock after 7s via 'sde-lock-conf'" "$RUNTIME/session-k2.log"
 
 if [ "$fail" -ne 0 ]; then
     echo "==> session test FAILED"

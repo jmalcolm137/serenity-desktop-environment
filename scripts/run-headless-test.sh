@@ -6,6 +6,9 @@
 #   2. a layer-shell panel                        -> a layer surface
 #   3. a native (non-Serenity) Wayland application-> an xdg toplevel
 #
+# It also checks the R6/N4 liveness heartbeat (SDE_HEARTBEAT_FILE) that the
+# session supervisor's watchdog watches.
+#
 # Runs entirely headless (no host compositor, no DRM), so it is CI-friendly.
 set -euo pipefail
 
@@ -56,6 +59,7 @@ env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless \
     WLR_HEADLESS_OUTPUTS=1 \
     SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
+    SDE_HEARTBEAT_FILE="$RUNTIME/heartbeat" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     "$COMP" -n "$SOCK" -s "$BUILD/bin/TextEditor" > "$RUNTIME/comp.log" 2>&1 &
@@ -70,6 +74,10 @@ env WAYLAND_DISPLAY="$SOCK" timeout 4 "$TOOLS_BUILD/layer-shell-test" > "$RUNTIM
 env WAYLAND_DISPLAY="$SOCK" timeout 4 "$TOOLS_BUILD/native-app-test" > "$RUNTIME/native.log" 2>&1 || true
 # Give the LibWindowServer app a moment to map its toplevel.
 sleep 1
+
+# R6/N4: the compositor writes a liveness heartbeat for the session watchdog.
+HEARTBEAT_VALUE="$(cat "$RUNTIME/heartbeat" 2>/dev/null || echo 0)"
+HEARTBEAT_NOW="$(date +%s)"
 
 # Stop the shell app the compositor spawned (it is a child of the compositor),
 # then the compositor itself.
@@ -99,6 +107,14 @@ check "output 'HEADLESS-1' 1280x720"
 check "layer surface namespace='sde-test-panel'"
 check "toplevel mapped title='SDE Native Test'"
 check "toplevel mapped title='Untitled[*] - Text Editor'"
+
+# R6/N4: the liveness heartbeat must be present and recent (within 5s).
+if [ "${HEARTBEAT_VALUE:-0}" -ge "$((HEARTBEAT_NOW - 5))" ] 2>/dev/null; then
+    echo "  ok: compositor heartbeat is live (${HEARTBEAT_VALUE}s)"
+else
+    echo "  MISSING: compositor heartbeat (got '${HEARTBEAT_VALUE}', now ${HEARTBEAT_NOW})"
+    fail=1
+fi
 
 if [[ "$fail" -ne 0 ]]; then
     echo "==> R1 headless smoke test FAILED"
