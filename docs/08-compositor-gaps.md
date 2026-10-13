@@ -89,10 +89,11 @@ table.
 - **Sandbox & portal interop (G7).** `xdg-foreign` v1/v2 (toplevel import, used by
   portals and XWayland) and `xdg-wm-dialog-v1` are served; `xdg-toplevel-drag`
   (needs a wlroots bump) and `xdg-system-bell` remain.
-- **Clipboard completeness (G4).** `set_selection` and **primary selection**
-  (`zwp_primary_selection_device_manager_v1`) are served; missing
-  `wlr-data-control`/`ext-data-control` and full **drag-and-drop** (gestures, drag
-  icon, enter/leave choreography).
+- **Clipboard completeness (G4).** `set_selection`, **primary selection**
+  (`zwp_primary_selection_device_manager_v1`) and both **data-control** variants
+  (`zwlr_data_control_manager_v1`, `ext_data_control_manager_v1` — for clipboard
+  managers such as the ClipboardHistory applet) are served; full **drag-and-drop**
+  (gestures, drag icon, enter/leave choreography) remains.
 - **Input protocols (G3, G7).** `keyboard-shortcuts-inhibit` and
   `relative-pointer` are served; `pointer-constraints` and `pointer-gestures`
   remain — needed for games and remote desktop.

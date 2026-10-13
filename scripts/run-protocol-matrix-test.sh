@@ -75,6 +75,8 @@ check xdg_activation_v1
 
 echo "=== R5 native-app compatibility (this batch) ==="
 check zwp_primary_selection_device_manager_v1
+check zwlr_data_control_manager_v1
+check ext_data_control_manager_v1
 check wp_viewporter
 check wp_content_type_manager_v1
 check wp_tearing_control_manager_v1

@@ -78,6 +78,8 @@ extern "C" {
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_primary_selection_v1.h>
+#include <wlr/types/wlr_data_control_v1.h>
+#include <wlr/types/wlr_ext_data_control_v1.h>
 #include <wlr/types/wlr_viewporter.h>
 #include <wlr/types/wlr_content_type_v1.h>
 #include <wlr/types/wlr_tearing_control_v1.h>
@@ -4259,6 +4261,11 @@ static ErrorOr<void> initialize(Server& server)
     // pointer and keyboard-shortcuts-inhibit also need a little glue (below and
     // in keyboard_key()).
     wlr_primary_selection_v1_device_manager_create(server.display);
+    // data-control lets clipboard managers (e.g. the SDE ClipboardHistory applet)
+    // observe and set the selection and primary selection. wlroots implements the
+    // protocol; both the wlr and the ext variants are advertised.
+    wlr_data_control_manager_v1_create(server.display);
+    wlr_ext_data_control_manager_v1_create(server.display, 1);
     wlr_viewporter_create(server.display);
     wlr_content_type_manager_v1_create(server.display, 1);
     wlr_tearing_control_manager_v1_create(server.display, 1);

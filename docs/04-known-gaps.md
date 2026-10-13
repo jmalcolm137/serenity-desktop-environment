@@ -325,16 +325,26 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
   see "Recently resolved". **Help** (Taskbar system menu ▸ Help) renders the man
   pages; **Browser** loads pages (local `file://` and the WebContent pipeline).
 
-## R5 — Compatibility & ecosystem (not started)
+## R5 — Compatibility & ecosystem (started)
 
 Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.md) §3–4.
 
 - **XWayland (G7)** — not implemented; native Wayland apps work via `xdg-shell`.
-- **Native-app protocol matrix (G7).** `xdg-activation`, `xdg-foreign`,
-  `xdg-toplevel-drag`, `data-control`/primary selection, drag-and-drop,
-  `keyboard-shortcuts-inhibit`, `relative-pointer`/`pointer-constraints`/
-  `pointer-gestures`, `presentation-time`, `fractional-scale`/`wp-viewporter`,
-  `content-type`, `tearing-control` are all absent.
+  This is the largest remaining compatibility item: X11 clients need the Xwayland
+  server *and* to be folded into the same focus/stacking/frame model the
+  compositor applies to `xdg-shell` toplevels.
+- **Native-app protocol matrix (G7).** **Mostly done** — the compositor advertises
+  (and wlroots implements) `xdg-activation`, `xdg-foreign` (v1 + v2), primary
+  selection, `wlr`+`ext` data-control, `keyboard-shortcuts-inhibit`,
+  `relative-pointer`, `presentation-time`, `fractional-scale` + `wp-viewporter`,
+  `content-type`, `tearing-control`, `cursor-shape`, `xdg-wm-dialog`,
+  single-pixel-buffer and alpha-modifier, alongside the workspace / foreign-
+  toplevel / capture globals. Verified by `scripts/run-protocol-matrix-test.sh`.
+  **Still absent:** `pointer-constraints` (mouse lock/confine for games — the
+  manager is not created and the cursor-motion path does not enforce a
+  constraint region); `xdg-toplevel-drag` (not present in the pinned wlroots);
+  `pointer-gestures`; compositor-mediated drag-and-drop *between* windows;
+  `text-input-v3`/`input-method-v2` (IME); and accessibility (AT-SPI).
 - **`xdg-desktop-portal` (G7).** Phase 1 landed: **`xdg-desktop-portal-serenity`**
   (see [`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md)) —
   an SDE backend for the freedesktop portals (Settings, Account, Lockdown,
