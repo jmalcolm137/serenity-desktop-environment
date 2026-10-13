@@ -3554,9 +3554,37 @@ static ErrorOr<void> initialize(Server& server)
     if (!server.backend)
         return Error::from_string_literal("failed to create wlr_backend");
 
+    // R6/N5 renderer selection: [Output] Renderer in WindowServer.ini, with the
+    // SDE_RENDERER environment variable overriding it (the config-test pattern).
+    // It maps onto wlroots' `WLR_RENDERER`.
+    ByteString requested_renderer_storage;
+    if (auto const* renderer = getenv("SDE_RENDERER"); renderer && *renderer)
+        requested_renderer_storage = renderer;
+    else
+        requested_renderer_storage = Config::output().renderer;
+    char const* requested_renderer = requested_renderer_storage.is_empty() ? "auto" : requested_renderer_storage.characters();
+    if (!requested_renderer_storage.is_empty())
+        setenv("WLR_RENDERER", requested_renderer, true);
+
+    bool used_software_fallback = false;
     server.renderer = wlr_renderer_autocreate(server.backend);
+    if (!server.renderer) {
+        // The GPU path failed (no DRM render node, EGL bring-up failure,
+        // unsupported driver, ...). Rather than ending the session, retry with
+        // wlroots' software (pixman) renderer, which needs no device. (LibGPU/
+        // LibSoftGPU are the *client* GL software path; they cannot back a
+        // wlr_renderer.)
+        wlr_log(WLR_ERROR, "failed to create a GPU renderer; falling back to the software (pixman) renderer");
+        setenv("WLR_RENDERER", "pixman", true);
+        server.renderer = wlr_renderer_autocreate(server.backend);
+        used_software_fallback = true;
+    }
     if (!server.renderer)
         return Error::from_string_literal("failed to create wlr_renderer");
+    if (used_software_fallback)
+        dbgln("WindowServer: renderer 'pixman' (software fallback from '{}')", requested_renderer);
+    else
+        dbgln("WindowServer: renderer '{}'", requested_renderer);
     wlr_renderer_init_wl_display(server.renderer, server.display);
 
     server.allocator = wlr_allocator_autocreate(server.backend, server.renderer);

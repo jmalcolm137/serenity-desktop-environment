@@ -295,6 +295,12 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   soft-fractional-scaling issue still open — a host dependency, not compositor
   code).
 - **Multi-GPU / render-device selection; color management; direct scanout.**
+- **Renderer selection & fallback (N2/N5) — done.** `[Output] Renderer`
+  (`auto`/`gles2`/`vulkan`/`pixman`, with the `SDE_RENDERER` override) selects the
+  wlroots renderer, and a failed GPU path falls back to the software (pixman)
+  renderer instead of ending the session; a full software mode is
+  `SDE_RENDERER=pixman` + `LIBGL_GPU_DRIVER=softgpu`. Covered by
+  `scripts/run-headless-test.sh`.
 - **Performance budget & latency instrumentation (N3).** No budget, frame-pacing
   plan or perf-regression test, despite N3 targeting "low predictable input
   latency, 60 Hz".
@@ -331,6 +337,14 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   only gives up if safe mode also keeps failing. User-facing session policy lives
   in `$XDG_CONFIG_HOME/sde/session.conf` (env overrides the file). Tests:
   `run-session-test.sh` phases (H)–(K), `run-headless-test.sh`.
+
+- **Renderer selection & software fallback (R6/N5).** The compositor honours
+  `[Output] Renderer` (`auto`/`gles2`/`vulkan`/`pixman`; `SDE_RENDERER` overrides),
+  and when `wlr_renderer_autocreate` fails it retries with the software (pixman)
+  renderer rather than returning an error and ending the session. (LibSoftGPU is
+  the *client* GL software path, not a wlr_renderer.) Covered by
+  `run-headless-test.sh` (a broken DRM render node forces the fallback; an
+  explicit `SDE_RENDERER=pixman` selects it directly).
 
 - **Profiler (Development ▸ Profiler).** SerenityOS's kernel profiling interface
   (`profiling_enable(pid, mask)` + `/proc/<pid>/perf_events`) has no Linux

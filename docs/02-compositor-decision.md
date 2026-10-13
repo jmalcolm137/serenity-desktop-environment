@@ -362,7 +362,15 @@ compositor, not the client:
   or Vulkan renderer) so that many `wl_shm` surfaces, HiDPI scaling and
   animation stay affordable; each surface is uploaded once per damage.
 - A **software (Pixman) renderer** is a required fallback: headless CI, VMs,
-  systems without a usable GPU, and the early bring-up phase.
+  systems without a usable GPU, and the early bring-up phase. It is selected
+  automatically when the GPU renderer cannot be created, or explicitly through
+  `[Output] Renderer=pixman` in `WindowServer.ini` (or the `SDE_RENDERER=pixman`
+  override). Note the **three** distinct software paths in SDE, by layer:
+  **pixman** composites the compositor's output (wlroots); **LibSoftGPU** is the
+  *client* GL backend (`LibGL` prefers `eglgpu` and falls back to `softgpu`;
+  libgui-wayland patch `0007`); **LibGfx** (the CPU `Gfx::Painter`) draws the
+  shell's chrome. A full "software mode" is `SDE_RENDERER=pixman` +
+  `LIBGL_GPU_DRIVER=softgpu`.
 - The compositor's own chrome — server-side window frames, the window switcher
   and overlays — is drawn with LibGfx into a bitmap and uploaded as a texture.
   Frames are small and change rarely, so CPU drawing is not a bottleneck.

@@ -47,9 +47,12 @@ not R5/R6.
 - **Crash recovery / watchdog (N4).** A compositor crash kills every client and
   loses the session. No plan for a supervisor, restart, session restore, or
   preserving window/app state across a restart.
-- **Safe mode / renderer fallback (N2, N5).** No selection logic or fallback
-  session for when the GPU path fails (`wlr_renderer_autocreate` is used
-  directly); no documented "start with Pixman" path for recovery.
+- **Safe mode / renderer fallback (N2, N5) — done.** `[Output] Renderer`
+  (`auto`/`gles2`/`vulkan`/`pixman`; the `SDE_RENDERER` environment variable
+  overrides it) selects the wlroots renderer, and if the GPU path fails the
+  compositor falls back to the software (pixman) renderer instead of ending the
+  session (the R4.2 supervisor's safe mode covers a bad shell). See
+  [`04-known-gaps.md`](04-known-gaps.md) R6.
 - **Protocol-error & state-machine coverage (N4, N8).** xdg configure/commit,
   the initial commit, decoration negotiation, popup/layer grabs, buffer release,
   dmabuf import failure and `wl_resource` lifetimes have no conformance or fuzz

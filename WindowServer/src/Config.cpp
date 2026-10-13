@@ -263,6 +263,14 @@ void load()
 
     if (auto value = read_int(user, defaults, "Output"sv, "DefaultScale"sv, 0, 4); value.has_value())
         g_output.default_scale = value.value();
+    g_output.renderer = read_entry(user, defaults, "Output"sv, "Renderer"sv);
+    if (!g_output.renderer.is_empty()) {
+        // R6/N5: the wlroots renderer selection (see main.cpp).
+        if (g_output.renderer != "auto" && g_output.renderer != "gles2" && g_output.renderer != "vulkan" && g_output.renderer != "pixman") {
+            g_diagnostics.append(ByteString::formatted("[Output] Renderer='{}' invalid (expected auto|gles2|vulkan|pixman)", g_output.renderer));
+            g_output.renderer = {};
+        }
+    }
 
     g_applet_order.clear();
     for (auto& entry : read_entry(user, defaults, "Applet"sv, "Order"sv).split(',')) {

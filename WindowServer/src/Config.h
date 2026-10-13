@@ -31,6 +31,7 @@
 //   [Focus]      FollowsMouse           bool    (focus on hover, not just click)
 //   [Effects]    WindowGeometry        bool     (geometry HUD while moving/resizing)
 //   [Output]     DefaultScale          0..4      (0 = auto integer HiDPI scale)
+//                Renderer              name      (auto|gles2|vulkan|pixman; R6/N5)
 //   [Keybindings] <Action>              combo(s)  (e.g. Ctrl+Alt+Left; see Action)
 //
 // Invalid values are rejected (the previous value is kept) and reported through
@@ -77,6 +78,9 @@ struct Effects {
 // Output defaults.
 struct Output {
     int default_scale { 0 }; // 0 = auto (integer HiDPI)
+    // Requested wlroots renderer: auto|gles2|vulkan|pixman (empty = auto). The
+    // SDE_RENDERER environment variable overrides it (R6/N5).
+    ByteString renderer;
 };
 
 // A persisted screen entry (screenlayout.ini in the state directory). This is
