@@ -2489,87 +2489,6 @@ static void x11_request_demands_attention(wl_listener* listener, void*)
 // pick a frame and wrap it in a Gfx::Bitmap so the Taskbar button and the Alt-Tab
 // switcher can draw it. _NET_WM_ICON pixels are 0xAARRGGBB, i.e. B,G,R,A in
 // memory (little-endian), which is exactly BitmapFormat::BGRA8888.
-// Older clients (e.g. xterm) set their window icon through the legacy WM_HINTS
-// icon_pixmap (+ optional 1-bit mask), not _NET_WM_ICON. Read it over the xwm
-// connection and build a Gfx::Bitmap (best effort; depth 1 and 24/32).
-static void x11_fetch_wm_hints_icon(X11Toplevel& toplevel)
-{
-    auto* xsurface = toplevel.xsurface;
-    if (!xsurface || !xsurface->hints)
-        return;
-    if (!(xsurface->hints->flags & XCB_ICCCM_WM_HINT_ICON_PIXMAP))
-        return;
-    xcb_pixmap_t const pixmap = xsurface->hints->icon_pixmap;
-    if (pixmap == XCB_NONE)
-        return;
-    xcb_pixmap_t const mask = (xsurface->hints->flags & XCB_ICCCM_WM_HINT_ICON_MASK) ? xsurface->hints->icon_mask : XCB_NONE;
-
-    auto* connection = (toplevel.server && toplevel.server->xwayland) ? wlr_xwayland_get_xwm_connection(toplevel.server->xwayland) : nullptr;
-    if (!connection)
-        return;
-
-    xcb_get_geometry_reply_t* geometry = xcb_get_geometry_reply(connection, xcb_get_geometry(connection, pixmap), nullptr);
-    if (!geometry)
-        return;
-    int const width = geometry->width;
-    int const height = geometry->height;
-    uint8_t const depth = geometry->depth;
-    free(geometry);
-    if (width <= 0 || height <= 0 || width > 256 || height > 256)
-        return;
-
-    xcb_get_image_reply_t* image = xcb_get_image_reply(connection, xcb_get_image(connection, XCB_IMAGE_FORMAT_Z_PIXMAP, pixmap, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height), ~0u), nullptr);
-    if (!image)
-        return;
-    uint8_t const* data = xcb_get_image_data(image);
-
-    xcb_get_image_reply_t* mask_image = nullptr;
-    uint8_t const* mask_data = nullptr;
-    if (mask != XCB_NONE) {
-        mask_image = xcb_get_image_reply(connection, xcb_get_image(connection, XCB_IMAGE_FORMAT_Z_PIXMAP, mask, 0, 0, static_cast<uint16_t>(width), static_cast<uint16_t>(height), ~0u), nullptr);
-        if (mask_image)
-            mask_data = xcb_get_image_data(mask_image);
-    }
-
-    if (auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { width, height }); !bitmap.is_error()) {
-        auto& created = *bitmap.value();
-        int const bitmap_row_stride = ((width + 7) / 8 + 3) & ~3; // 1-bit rows pad to 32 bits
-        for (int y = 0; y < height; ++y) {
-            auto* dst = created.scanline(y);
-            for (int x = 0; x < width; ++x) {
-                uint8_t r = 0;
-                uint8_t g = 0;
-                uint8_t b = 0;
-                if (depth == 1) {
-                    uint8_t const bit = (data[static_cast<size_t>(y) * bitmap_row_stride + x / 8] >> (x % 8)) & 1;
-                    r = g = b = bit ? 0 : 255; // 1 = foreground (black), 0 = background
-                } else if (depth == 24 || depth == 32) {
-                    int const bpp = depth / 8;
-                    uint8_t const* p = data + (static_cast<size_t>(y) * width + x) * bpp;
-                    b = p[0];
-                    g = p[1];
-                    r = p[2];
-                } else {
-                    continue;
-                }
-                uint8_t alpha = 255;
-                if (mask_data) {
-                    uint8_t const m = (mask_data[static_cast<size_t>(y) * bitmap_row_stride + x / 8] >> (x % 8)) & 1;
-                    alpha = m ? 255 : 0;
-                }
-                dst[x * 4 + 0] = b;
-                dst[x * 4 + 1] = g;
-                dst[x * 4 + 2] = r;
-                dst[x * 4 + 3] = alpha;
-            }
-        }
-        toplevel.icon = bitmap.release_value();
-        dbgln("WindowServer: X11 window '{}' WM_HINTS icon {}x{} (wm_id={})", toplevel.title, width, height, toplevel.wm_id);
-    }
-    free(image);
-    if (mask_image)
-        free(mask_image);
-}
 
 static void x11_fetch_icon(X11Toplevel& toplevel)
 {
@@ -2616,9 +2535,13 @@ static void x11_fetch_icon(X11Toplevel& toplevel)
         xcb_ewmh_get_wm_icon_reply_wipe(&reply);
     }
 
-    // Fall back to the legacy WM_HINTS icon (xterm and friends).
-    if (!have_icon)
-        x11_fetch_wm_hints_icon(toplevel);
+    // Clients that do not set _NET_WM_ICON (e.g. xterm, which uses the legacy
+    // WM_HINTS icon pixmap) get the **default** window icon, drawn by
+    // x11_update_frame — never a blank slot. The WM_HINTS icon is deliberately not
+    // read: it needs synchronous xcb_get_image/geometry round-trips, and wlroots
+    // owns the xwm xcb connection, so doing that (even deferred to idle) corrupts
+    // the heap and aborts the compositor. (No safe public API reads an X pixmap.)
+    (void)have_icon;
 
     if (toplevel.icon) {
         WindowManager::emit_window_icon(toplevel);
