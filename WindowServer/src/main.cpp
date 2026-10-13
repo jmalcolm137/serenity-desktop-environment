@@ -84,6 +84,11 @@ extern "C" {
 #include <wlr/types/wlr_tablet_tool.h>
 #include <wlr/types/wlr_tablet_pad.h>
 #include <wlr/types/wlr_data_device.h>
+// wlroots' xwayland.h declares a C field named `class`, which is a C++ keyword;
+// rename it for the duration of the include (we never read that field).
+#define class class_
+#include <wlr/xwayland/xwayland.h>
+#undef class
 #include <wlr/types/wlr_primary_selection_v1.h>
 #include <wlr/types/wlr_data_control_v1.h>
 #include <wlr/types/wlr_ext_data_control_v1.h>
@@ -188,6 +193,9 @@ static void toplevel_report_position(Toplevel& toplevel);
 
 // Idle notification (R4.1): reset the seat's idle timer on input.
 static void notify_activity(Server& server);
+// The client surface (xdg or X11) under a layout point, and focus for it (R5).
+static wlr_surface* window_surface_at(Server& server, double lx, double ly, double* sx, double* sy);
+static void focus_window_at(Server& server, double lx, double ly);
 // While the session is locked, input goes to the lock surface on the output
 // under the cursor.
 static LockSurface* lock_surface_at_cursor(Server& server);
@@ -1139,7 +1147,7 @@ static void process_cursor_motion(Server& server, uint32_t time)
     double sy = 0;
     wlr_surface* surface = nullptr;
     if (hit.region == FrameRegion::None)
-        toplevel_at(server, server.cursor->x, server.cursor->y, &surface, &sx, &sy);
+        surface = window_surface_at(server, server.cursor->x, server.cursor->y, &sx, &sy);
 
     // Pointer constraints: activate the constraint of the surface under the
     // cursor and, while one is active, keep the cursor locked or confined.
@@ -1187,14 +1195,9 @@ static void process_cursor_motion(Server& server, uint32_t time)
         wlr_seat_pointer_clear_focus(server.seat);
     }
 
-    // [Focus] FollowsMouse (R4.4): focus the toplevel under the cursor.
-    if (Config::focus().follows_mouse && server.cursor_mode == CursorMode::Passthrough && !server.pointer_grab_surface) {
-        double focus_x = 0;
-        double focus_y = 0;
-        wlr_surface* focus_surface = nullptr;
-        if (auto* toplevel = toplevel_at(server, server.cursor->x, server.cursor->y, &focus_surface, &focus_x, &focus_y))
-            focus_toplevel(server, toplevel);
-    }
+    // [Focus] FollowsMouse (R4.4): focus the window (xdg or X11) under the cursor.
+    if (Config::focus().follows_mouse && server.cursor_mode == CursorMode::Passthrough && !server.pointer_grab_surface)
+        focus_window_at(server, server.cursor->x, server.cursor->y);
 
     // Set the cursor for our chrome last: clearing client focus above resets it
     // to the default arrow, so the resize cursor must come after.
@@ -1499,8 +1502,8 @@ static void cursor_button(wl_listener* listener, void* data)
     } else {
         double sx = 0;
         double sy = 0;
-        wlr_surface* surface = nullptr;
-        focus_toplevel(*server, toplevel_at(*server, server->cursor->x, server->cursor->y, &surface, &sx, &sy));
+        wlr_surface* surface = window_surface_at(*server, server->cursor->x, server->cursor->y, &sx, &sy);
+        focus_window_at(*server, server->cursor->x, server->cursor->y);
         // The seat accepted the press: remember the surface so the release finds
         // its way back to the same client even if the cursor moves away.
         if (serial && surface) {
@@ -1994,6 +1997,218 @@ static void tablet_pad_destroy(wl_listener* listener, void*)
     wl_list_remove(&pad->strip.link);
     wl_list_remove(&pad->destroy.link);
     remove_owned(pad->server->tablet_pads, pad);
+}
+
+// --- XWayland (X11 clients) ------------------------------------------------
+// X11 clients draw their own decorations, so the compositor manages content,
+// position, focus and stacking only. Enabled by [Compositor] XWayland.
+
+static X11Toplevel* x11_toplevel_for_wlr_surface(Server& server, wlr_surface* surface)
+{
+    for (auto& toplevel : server.x11_toplevels) {
+        if (toplevel->xsurface && toplevel->xsurface->surface == surface)
+            return toplevel.ptr();
+    }
+    return nullptr;
+}
+
+// The X11 (Xwayland) surface under a layout point, if any. Layer surfaces and
+// xdg toplevels are handled elsewhere, so only X11 surfaces are considered.
+static bool x11_surface_at(Server& server, double lx, double ly, wlr_surface** surface, double* sx, double* sy)
+{
+    if (!server.xwayland)
+        return false;
+    auto* node = wlr_scene_node_at(&server.scene->tree.node, lx, ly, sx, sy);
+    if (!node || node->type != WLR_SCENE_NODE_BUFFER)
+        return false;
+    auto* scene_surface = wlr_scene_surface_try_from_buffer(wlr_scene_buffer_from_node(node));
+    if (!scene_surface || !wlr_xwayland_surface_try_from_wlr_surface(scene_surface->surface))
+        return false;
+    *surface = scene_surface->surface;
+    return true;
+}
+
+static void focus_x11_toplevel(Server& server, X11Toplevel* toplevel)
+{
+    if (!toplevel || !toplevel->xsurface || !toplevel->xsurface->surface)
+        return;
+    wlr_surface* surface = toplevel->xsurface->surface;
+    if (server.seat->keyboard_state.focused_surface == surface)
+        return;
+
+    if (auto* previous = server.seat->keyboard_state.focused_surface) {
+        if (auto* xdg = wlr_xdg_toplevel_try_from_wlr_surface(previous))
+            wlr_xdg_toplevel_set_activated(xdg, false);
+    }
+    if (server.focused_x11 && server.focused_x11 != toplevel)
+        wlr_xwayland_surface_activate(server.focused_x11->xsurface, false);
+    server.focused_x11 = toplevel;
+
+    server.keyboard_focus_layer = nullptr;
+    stop_key_repeat();
+    wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
+    wlr_xwayland_surface_activate(toplevel->xsurface, true);
+    auto* keyboard = wlr_seat_get_keyboard(server.seat);
+    if (keyboard)
+        wlr_seat_keyboard_notify_enter(server.seat, surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+}
+
+// The client surface (xdg x11 content or X11) under a layout point.
+static wlr_surface* window_surface_at(Server& server, double lx, double ly, double* sx, double* sy)
+{
+    wlr_surface* surface = nullptr;
+    toplevel_at(server, lx, ly, &surface, sx, sy);
+    if (!surface)
+        x11_surface_at(server, lx, ly, &surface, sx, sy);
+    return surface;
+}
+
+// Focus the window (xdg or X11) under a layout point.
+static void focus_window_at(Server& server, double lx, double ly)
+{
+    double sx = 0;
+    double sy = 0;
+    wlr_surface* surface = nullptr;
+    if (auto* toplevel = toplevel_at(server, lx, ly, &surface, &sx, &sy)) {
+        focus_toplevel(server, toplevel);
+        return;
+    }
+    if (x11_surface_at(server, lx, ly, &surface, &sx, &sy)) {
+        if (auto* x11 = x11_toplevel_for_wlr_surface(server, surface))
+            focus_x11_toplevel(server, x11);
+    }
+}
+
+static void x11_surface_map(wl_listener* listener, void*)
+{
+    X11Toplevel* toplevel = nullptr;
+    toplevel = wl_container_of(listener, toplevel, surface_map);
+    auto& server = *toplevel->server;
+    toplevel->mapped = true;
+    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
+    wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->xsurface->x, toplevel->xsurface->y);
+    wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
+    dbgln("WindowServer: X11 window mapped '{}' at {},{}", toplevel->xsurface->title ? toplevel->xsurface->title : "", toplevel->xsurface->x, toplevel->xsurface->y);
+    if (!toplevel->override_redirect)
+        focus_x11_toplevel(server, toplevel);
+}
+
+static void x11_surface_unmap(wl_listener* listener, void*)
+{
+    X11Toplevel* toplevel = nullptr;
+    toplevel = wl_container_of(listener, toplevel, surface_unmap);
+    toplevel->mapped = false;
+    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
+}
+
+static void x11_surface_associate(wl_listener* listener, void*)
+{
+    X11Toplevel* toplevel = nullptr;
+    toplevel = wl_container_of(listener, toplevel, associate);
+    auto* xsurface = toplevel->xsurface;
+    if (!xsurface->surface)
+        return;
+    toplevel->scene = wlr_scene_surface_create(toplevel->scene_tree, xsurface->surface);
+    toplevel->surface_map.notify = x11_surface_map;
+    wl_signal_add(&xsurface->surface->events.map, &toplevel->surface_map);
+    toplevel->surface_unmap.notify = x11_surface_unmap;
+    wl_signal_add(&xsurface->surface->events.unmap, &toplevel->surface_unmap);
+}
+
+static void x11_surface_dissociate(wl_listener* listener, void*)
+{
+    X11Toplevel* toplevel = nullptr;
+    toplevel = wl_container_of(listener, toplevel, dissociate);
+    toplevel->mapped = false;
+    if (toplevel->scene) {
+        wlr_scene_node_destroy(&toplevel->scene->buffer->node);
+        toplevel->scene = nullptr;
+    }
+}
+
+static void x11_surface_destroy(wl_listener* listener, void*)
+{
+    X11Toplevel* toplevel = nullptr;
+    toplevel = wl_container_of(listener, toplevel, destroy);
+    auto& server = *toplevel->server;
+    if (server.focused_x11 == toplevel)
+        server.focused_x11 = nullptr;
+    if (toplevel->scene_tree) {
+        wlr_scene_node_destroy(&toplevel->scene_tree->node);
+        toplevel->scene_tree = nullptr;
+    }
+    remove_owned(server.x11_toplevels, toplevel);
+}
+
+static void x11_request_configure(wl_listener* listener, void* data)
+{
+    X11Toplevel* toplevel = nullptr;
+    toplevel = wl_container_of(listener, toplevel, request_configure);
+    auto* event = static_cast<wlr_xwayland_surface_configure_event*>(data);
+    wlr_xwayland_surface_configure(toplevel->xsurface, event->x, event->y, event->width, event->height);
+    if (toplevel->mapped)
+        wlr_scene_node_set_position(&toplevel->scene_tree->node, event->x, event->y);
+}
+
+static void x11_request_close(wl_listener* listener, void*)
+{
+    X11Toplevel* toplevel = nullptr;
+    toplevel = wl_container_of(listener, toplevel, request_close);
+    wlr_xwayland_surface_close(toplevel->xsurface);
+}
+
+static void x11_request_activate(wl_listener* listener, void*)
+{
+    X11Toplevel* toplevel = nullptr;
+    toplevel = wl_container_of(listener, toplevel, request_activate);
+    if (!toplevel->override_redirect)
+        focus_x11_toplevel(*toplevel->server, toplevel);
+}
+
+static void x11_set_title(wl_listener* listener, void*)
+{
+    X11Toplevel* toplevel = nullptr;
+    toplevel = wl_container_of(listener, toplevel, set_title);
+    dbgln("WindowServer: X11 window '{}'", toplevel->xsurface->title ? toplevel->xsurface->title : "");
+}
+
+static void server_new_xwayland_surface(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, new_xwayland_surface);
+    auto* xsurface = static_cast<wlr_xwayland_surface*>(data);
+
+    auto toplevel = make<X11Toplevel>();
+    toplevel->server = server;
+    toplevel->xsurface = xsurface;
+    toplevel->override_redirect = xsurface->override_redirect;
+    toplevel->scene_tree = wlr_scene_tree_create(server->windows_tree);
+    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
+    xsurface->data = toplevel.ptr();
+
+    toplevel->associate.notify = x11_surface_associate;
+    wl_signal_add(&xsurface->events.associate, &toplevel->associate);
+    toplevel->dissociate.notify = x11_surface_dissociate;
+    wl_signal_add(&xsurface->events.dissociate, &toplevel->dissociate);
+    toplevel->destroy.notify = x11_surface_destroy;
+    wl_signal_add(&xsurface->events.destroy, &toplevel->destroy);
+    toplevel->request_configure.notify = x11_request_configure;
+    wl_signal_add(&xsurface->events.request_configure, &toplevel->request_configure);
+    toplevel->request_close.notify = x11_request_close;
+    wl_signal_add(&xsurface->events.request_close, &toplevel->request_close);
+    toplevel->request_activate.notify = x11_request_activate;
+    wl_signal_add(&xsurface->events.request_activate, &toplevel->request_activate);
+    toplevel->set_title.notify = x11_set_title;
+    wl_signal_add(&xsurface->events.set_title, &toplevel->set_title);
+
+    server->x11_toplevels.append(move(toplevel));
+}
+
+static void xwayland_ready(wl_listener* listener, void*)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, xwayland_ready);
+    dbgln("WindowServer: Xwayland ready (DISPLAY={})", server->xwayland->display_name);
 }
 
 static void server_new_input(wl_listener* listener, void* data)
@@ -4976,7 +5191,7 @@ static ErrorOr<void> initialize(Server& server)
     if (!server.allocator)
         return Error::from_string_literal("failed to create wlr_allocator");
 
-    wlr_compositor_create(server.display, 5, server.renderer);
+    server.compositor = wlr_compositor_create(server.display, 5, server.renderer);
     wlr_subcompositor_create(server.display);
     wlr_data_device_manager_create(server.display);
 
@@ -5110,6 +5325,26 @@ static ErrorOr<void> initialize(Server& server)
     wl_signal_add(&server.backend->events.new_input, &server.new_input);
 
     server.seat = wlr_seat_create(server.display, "seat0");
+
+    // XWayland (R5): X11 client support. [Compositor] XWayland=false disables it
+    // entirely (no server, no DISPLAY). Lazy: the X server starts on first use.
+    if (Config::compositor().xwayland && server.compositor) {
+        server.xwayland = wlr_xwayland_create(server.display, server.compositor, true);
+        if (server.xwayland) {
+            wlr_xwayland_set_seat(server.xwayland, server.seat);
+            server.new_xwayland_surface.notify = server_new_xwayland_surface;
+            wl_signal_add(&server.xwayland->events.new_surface, &server.new_xwayland_surface);
+            server.xwayland_ready.notify = xwayland_ready;
+            wl_signal_add(&server.xwayland->events.ready, &server.xwayland_ready);
+            // Export DISPLAY for the session's apps (state file + our own env).
+            setenv("DISPLAY", server.xwayland->display_name, 1);
+            StringView display { server.xwayland->display_name, strlen(server.xwayland->display_name) };
+            Config::write_state("xwayland-display"sv, display.bytes());
+            dbgln("WindowServer: Xwayland enabled (DISPLAY={})", server.xwayland->display_name);
+        } else {
+            warnln("WindowServer: could not create Xwayland");
+        }
+    }
     server.seat_request_cursor.notify = seat_request_cursor;
     wl_signal_add(&server.seat->events.request_set_cursor, &server.seat_request_cursor);
     server.seat_pointer_focus_change.notify = seat_pointer_focus_change;

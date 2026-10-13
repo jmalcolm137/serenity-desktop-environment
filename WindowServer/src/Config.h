@@ -33,6 +33,7 @@
 //   [Output]     DefaultScale          0 or 0.5..4 (0 = auto integer HiDPI; fractional allowed)
 //                Renderer              name      (auto|gles2|vulkan|pixman; R6/N5)
 //   [Log]        Level                 name      (error|warn|info|debug; R6/N8)
+//   [Compositor] XWayland              bool      (run X11 clients via Xwayland; default true)
 //   [Keybindings] <Action>              combo(s)  (e.g. Ctrl+Alt+Left; see Action)
 //
 // Invalid values are rejected (the previous value is kept) and reported through
@@ -95,6 +96,13 @@ struct Log {
     ByteString level;
 };
 
+// [Compositor] - compositor feature toggles.
+struct Compositor {
+    // Run Xwayland so X11 clients work (R5). false disables X11 support entirely
+    // (no Xwayland server, no DISPLAY).
+    bool xwayland { true };
+};
+
 // A persisted screen entry (screenlayout.ini in the state directory). This is
 // the Serenity WindowServer ScreenLayout format ([Screens] MainScreen, then
 // [Screen0] Mode/Device/Left/Top/Width/Height/ScaleFactor) so the port's
@@ -136,6 +144,7 @@ Focus const& focus();
 Effects const& effects();
 Output const& output();
 Log const& log();
+Compositor const& compositor();
 
 // The persisted screen layout (R4.5), in the Serenity ScreenLayout format
 // (screenlayout.ini). outputs() is the desired layout; set_outputs() replaces it

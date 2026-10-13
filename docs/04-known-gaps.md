@@ -329,10 +329,14 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
 
 Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.md) §3–4.
 
-- **XWayland (G7)** — not implemented; native Wayland apps work via `xdg-shell`.
-  This is the largest remaining compatibility item: X11 clients need the Xwayland
-  server *and* to be folded into the same focus/stacking/frame model the
-  compositor applies to `xdg-shell` toplevels.
+- **XWayland (G7)** — **basic support landed**: the compositor runs Xwayland
+  (lazily, on the first X client) and X11 clients map, focus and stack (content,
+  position, click-to-focus, and close). Enabled by default; `[Compositor]
+  XWayland=false` in `WindowServer.ini` disables it entirely (no X server, no
+  `DISPLAY`). Verified by `scripts/run-xwayland-test.sh`. **Remaining:** X11
+  windows are not yet folded into the compositor's server-side decoration /
+  Taskbar / snapping / workspaces model — they draw their own decorations and are
+  managed as plain content windows.
 - **Native-app protocol matrix (G7).** **Mostly done** — the compositor advertises
   (and wlroots implements) `xdg-activation`, `xdg-foreign` (v1 + v2), primary
   selection, `wlr`+`ext` data-control, `keyboard-shortcuts-inhibit`,

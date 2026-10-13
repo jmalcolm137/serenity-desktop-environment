@@ -65,7 +65,7 @@ Milestone progress (see [`docs/01-objectives.md`](docs/01-objectives.md) §11):
 | **R2** | Shell v1 | Done — Taskbar, WindowManagerServer, wallpaper, Desktop, file icons, Launch |
 | **R3** | Serenity look & behaviours | Done — window chrome, switcher, snapping, workspaces, applet area, notifications, tooltips; font-parity decision recorded (zoom deferred to R4/G5) |
 | **R4** | Session & settings | Started — R4.1 safety net (idle/inhibit/DPMS + `ext-session-lock-v1`); R4.2 session supervisor, autostart, logind power, idle-to-lock, and `xdg-session-management-v1` restore; see `docs/11-r4-implementation-plan.md` |
-| **R5** | Compatibility & ecosystem | Started — the native-app protocol matrix (xdg-activation, xdg-foreign, primary selection, wlr+ext data-control, pointer/keyboard protocols, presentation-time, fractional-scale, content-type, tearing-control) is in place; XWayland, pointer-constraints and IME/accessibility remain |
+| **R5** | Compatibility & ecosystem | Started — the native-app protocol matrix (including pointer-constraints, pointer-gestures, touch, tablet/tablet-pad, data-control, primary selection, xdg-activation/foreign, presentation-time, fractional-scale, content-type, tearing-control) and two-way drag-and-drop are in place, and basic XWayland support landed (`[Compositor] XWayland`); IME/accessibility and full X11 WM parity remain |
 | **R6** | Hardening & packaging | Not started |
 
 ## Running

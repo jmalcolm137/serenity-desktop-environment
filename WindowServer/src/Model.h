@@ -59,9 +59,12 @@ struct wlr_output_power_manager_v1;
 struct wlr_renderer;
 struct wlr_relative_pointer_manager_v1;
 struct wlr_keyboard_shortcuts_inhibit_manager_v1;
+struct wlr_compositor;
 struct wlr_pointer;
 struct wlr_pointer_gestures_v1;
 struct wlr_switch;
+struct wlr_xwayland;
+struct wlr_xwayland_surface;
 struct wlr_tablet;
 struct wlr_tablet_tool;
 struct wlr_tablet_pad;
@@ -352,6 +355,26 @@ struct Pointer {
     wl_listener destroy { };
 };
 
+// An X11 (Xwayland) window. X11 clients draw their own decorations, so the
+// compositor only manages content, position, focus and stacking (no SSD frame).
+struct X11Toplevel {
+    Server* server { nullptr };
+    wlr_xwayland_surface* xsurface { nullptr };
+    wlr_scene_tree* scene_tree { nullptr };
+    wlr_scene_surface* scene { nullptr };
+    bool mapped { false };
+    bool override_redirect { false };
+    wl_listener associate { };
+    wl_listener dissociate { };
+    wl_listener surface_map { };
+    wl_listener surface_unmap { };
+    wl_listener destroy { };
+    wl_listener request_configure { };
+    wl_listener request_close { };
+    wl_listener request_activate { };
+    wl_listener set_title { };
+};
+
 // A switch device (lid, tablet-mode, ...).
 struct SwitchDevice {
     Server* server { nullptr };
@@ -502,6 +525,13 @@ struct Server {
     Vector<NonnullOwnPtr<SwitchDevice>> switch_objects;
     // wp-pointer-gestures-v1: touchpad swipe/pinch/hold.
     wlr_pointer_gestures_v1* pointer_gestures { nullptr };
+    // XWayland (R5): X11 client support.
+    wlr_compositor* compositor { nullptr };
+    wlr_xwayland* xwayland { nullptr };
+    Vector<NonnullOwnPtr<X11Toplevel>> x11_toplevels;
+    X11Toplevel* focused_x11 { nullptr };
+    wl_listener new_xwayland_surface { };
+    wl_listener xwayland_ready { };
     // zwp-tablet-v2 (pen/tablet): the manager plus the v2 tablet/tool wrappers.
     wlr_tablet_manager_v2* tablet_manager { nullptr };
     HashMap<u64, wlr_tablet_v2_tablet*> tablet_map;

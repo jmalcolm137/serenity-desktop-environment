@@ -25,6 +25,7 @@ static Workspaces g_workspaces;
 static Tiling g_tiling;
 static Focus g_focus;
 static Effects g_effects;
+static Compositor g_compositor;
 static Output g_output;
 static Log g_log;
 static Vector<OutputSettings> g_outputs;
@@ -289,6 +290,9 @@ void load()
             g_output.renderer = {};
         }
     }
+
+    if (auto value = read_bool(user, defaults, "Compositor"sv, "XWayland"sv); value.has_value())
+        g_compositor.xwayland = value.value();
 
     g_log.level = read_entry(user, defaults, "Log"sv, "Level"sv);
     if (!g_log.level.is_empty()) {
@@ -715,6 +719,11 @@ Output const& output()
 Log const& log()
 {
     return g_log;
+}
+
+Compositor const& compositor()
+{
+    return g_compositor;
 }
 
 Vector<ByteString> const& applet_order()
