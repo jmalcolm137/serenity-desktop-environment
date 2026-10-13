@@ -165,6 +165,10 @@ fi
 SESSION_DISPLAY="$SDE_SESSION_DISPLAY"
 LAUNCH_SERVER="$SDE_ROOT/build/LaunchServer/LaunchServer"
 LAUNCH_SERVER_PID=""
+# Drop the previous session's Xwayland DISPLAY so the LaunchServer waits for the
+# fresh one the compositor writes on startup (else it would use a stale or host
+# DISPLAY for the X11 apps it spawns).
+rm -f "${SDE_STATE_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/sde}/xwayland-display"
 if [[ -x "$LAUNCH_SERVER" ]]; then
     WAYLAND_DISPLAY="$SESSION_DISPLAY" "$LAUNCH_SERVER" &
     LAUNCH_SERVER_PID=$!

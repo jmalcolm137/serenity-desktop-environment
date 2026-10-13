@@ -39,6 +39,10 @@ fi
 WS="$SDE_ROOT/build/tools/ext-workspace-test"
 [[ -x "$WS" ]] || "$SDE_ROOT/scripts/build-tools.sh" >/dev/null 2>&1 || true
 
+# The SDE LaunchServer (spawns apps; must adopt the session Xwayland DISPLAY).
+LAUNCH_SERVER="$SDE_ROOT/build/LaunchServer/LaunchServer"
+"$SDE_ROOT/scripts/build-launch-server.sh" >/dev/null 2>&1 || true
+
 # An X11 client that sets _NET_WM_ICON (xterm/xmessage do not).
 XICON="$TOOLS_BUILD/x11-icon-test"
 if command -v cc >/dev/null && pkg-config --exists xcb xcb-ewmh; then
@@ -125,6 +129,21 @@ if [[ -x "$XICON" && -n "$DISP" ]]; then
     fi
 else
     echo "  note: x11-icon-test unavailable; skipping the icon/class check"
+fi
+# The LaunchServer spawns apps; it must adopt the session Xwayland DISPLAY (not
+# the host's), or X11 apps it spawns open on the host X server.
+if [[ -x "$LAUNCH_SERVER" && -n "$DISP" ]]; then
+    SDE_STATE_DIR="$R" SDE_SESSION_DIR="$R/session" WAYLAND_DISPLAY="$SOCK" "$LAUNCH_SERVER" > "$R/launch.log" 2>&1 &
+    LP=$!
+    for _ in $(seq 1 40); do grep -q "using session Xwayland DISPLAY=" "$R/launch.log" && break; sleep 0.1; done
+    if grep -q "using session Xwayland DISPLAY=${DISP}" "$R/launch.log"; then
+        echo "  ok: the LaunchServer adopted the session DISPLAY ($DISP)"
+    else
+        echo "  FAIL: the LaunchServer did not adopt the session DISPLAY"; fail=1
+    fi
+    kill "$LP" 2>/dev/null || true
+else
+    echo "  note: LaunchServer or DISPLAY unavailable; skipping the display check"
 fi
 # X11 windows join the workspace grid (docs/20 item 2): they map on the current
 # stack and hide/show with it.

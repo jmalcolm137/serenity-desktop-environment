@@ -24,6 +24,11 @@ export XDG_RUNTIME_DIR
 
 rm -f "$XDG_RUNTIME_DIR/$SESSION_DISPLAY"
 
+# Drop the previous session's Xwayland DISPLAY so the session services wait for
+# the fresh one (the compositor writes it on startup). Otherwise LaunchServer-
+# spawned X11 apps would use a stale/host DISPLAY.
+rm -f "${SDE_STATE_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/sde}/xwayland-display"
+
 # Seed the SerenityOS skeleton user config (Browser filters, etc.).
 XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
   SERENITY="$SERENITY" "$SDE_ROOT/scripts/seed-serenity-home.sh" || true

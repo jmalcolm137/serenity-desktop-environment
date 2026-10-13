@@ -23,12 +23,51 @@
 #include <AK/Vector.h>
 #include <LibCore/Directory.h>
 #include <LibCore/EventLoop.h>
+#include <LibCore/File.h>
 #include <LibCore/LocalServer.h>
 #include <LibCore/SessionManagement.h>
 #include <LibCore/System.h>
 #include <LibMain/Main.h>
 
+#include <stdlib.h>
+#include <unistd.h>
+
 #include "LaunchServerConnection.h"
+
+// Applications spawned by this service inherit its environment. Any X11 client
+// among them (xterm, Firefox, ...) must reach the *SDE* Xwayland, not the host X
+// server the session may have inherited (the launcher runs this service before
+// the compositor, so at start DISPLAY is still the host's). The compositor writes
+// the Xwayland DISPLAY to the session state file when it starts Xwayland; adopt
+// it, waiting briefly since the compositor starts after this service.
+static void adopt_session_display()
+{
+    ByteString directory;
+    if (auto const* dir = getenv("SDE_STATE_DIR"); dir && *dir)
+        directory = ByteString(dir);
+    else if (auto const* config = getenv("XDG_CONFIG_HOME"); config && *config)
+        directory = ByteString::formatted("{}/sde", config);
+    else if (auto const* home = getenv("HOME"); home && *home)
+        directory = ByteString::formatted("{}/.config/sde", home);
+    else
+        directory = ByteString { "/tmp/sde" };
+
+    auto const path = ByteString::formatted("{}/xwayland-display", directory);
+    for (int attempt = 0; attempt < 50; ++attempt) {
+        if (auto file = Core::File::open(path, Core::File::OpenMode::Read); !file.is_error()) {
+            if (auto contents = file.value()->read_until_eof(); !contents.is_error()) {
+                auto display = StringView { contents.value() }.trim_whitespace();
+                if (!display.is_empty()) {
+                    setenv("DISPLAY", ByteString(display).characters(), 1);
+                    dbgln("SDE LaunchServer: using session Xwayland DISPLAY={}", display);
+                    return;
+                }
+            }
+        }
+        usleep(100 * 1000);
+    }
+    dbgln("SDE LaunchServer: no session Xwayland display found; leaving DISPLAY unchanged");
+}
 
 ErrorOr<int> serenity_main(Main::Arguments)
 {
@@ -40,6 +79,9 @@ ErrorOr<int> serenity_main(Main::Arguments)
     // may have left a socket file behind.
     TRY(Core::Directory::create(LexicalPath(path).dirname(), Core::Directory::CreateDirectories::Yes));
     (void)Core::System::unlink(path);
+
+    // Adopt the session Xwayland DISPLAY for the applications we spawn (above).
+    adopt_session_display();
 
     auto server = TRY(Core::LocalServer::try_create());
 
