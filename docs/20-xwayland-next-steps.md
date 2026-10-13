@@ -22,6 +22,7 @@ the compositor maps as a separate scene surface. Landed, in order:
 | `ae5a602` | **Server-side decoration frames**: the SerenityOS frame (titlebar + close/maximize/minimize buttons) around X11 windows unless the client asks for none (Motif hints) or is override-redirect; titlebar drag-to-move, border resize, Super+`<button>` move/resize. |
 | `44ce17b` | **Taskbar window list**: X11 windows are reported to the WindowManagerServer by `wm_id` (map/unmap/title/focus/destroy) and the Taskbar's activate/minimize requests route back (host hooks `focus_x11` / `set_minimized_x11`). |
 | `8bba52e` | **Override-redirect**: menus/tooltips never take keyboard focus. |
+| `07027fc` | **Alt-Tab** (and the `WindowRef` abstraction). `WindowRef` (an xdg `Toplevel` **or** an `X11Toplevel`, `Model.h`) is the small window abstraction the WM policy paths share. `WindowSwitcher` lists X11 windows alongside xdg ones: title, live thumbnail, frame rect, most-recently-focused order (X11 gained `focus_order`), select → focus, and the theme's *Highlighted* frame state. X11 windows list on the current stack. |
 
 Where the code lives:
 
@@ -39,13 +40,13 @@ Note: wlroots' `xwayland.h` declares a C field named `class`, a C++ keyword, so
 `main.cpp` includes it with a scoped `#define class class_` (the field is never
 read).
 
-## The blocker for the rest
+## The window abstraction
 
 The WM internals are typed on the xdg **`Toplevel`**: `WindowSwitcher`,
 `WindowManager::update_toplevel_visibility` / `emit_window_icon` /
 `find_toplevel_by_wm_id`, the frame hit-test/interactive paths, and the workspace
-grid. X11 windows can only join those once there is a small **window
-abstraction**. Suggested shape:
+grid. X11 windows join those through a small **window abstraction**, `WindowRef`
+(`Model.h`; landed in `07027fc`):
 
 ```cpp
 // A window is either an xdg toplevel or an X11 (Xwayland) window.
@@ -56,15 +57,15 @@ struct WindowRef {
 };
 ```
 
-with helpers `title(WindowRef)`, `rect(WindowRef)`, `focus(WindowRef)`,
-`set_minimized(WindowRef, bool)`. That unlocks items 1–3 below together.
+The `WindowSwitcher` now goes through it (its `title`/`rect`/`thumbnail`/`focus`/
+`minimize` accessors live beside its use), which landed item 1. Items 2–3 reuse
+the same type; their accessors (`rect`/`focus`/`set_minimized` for the workspace
+grid and icon paths) hoist into shared helpers as those land.
 
 ## Remaining for parity (in a suggested order)
 
-1. **Alt-Tab** — include X11 windows in the `WindowSwitcher` list (title,
-   rect/thumbnail, select → focus). Needs the `WindowRef` refactor; the switcher's
-   highlight uses the theme's *Highlighted* state, which `x11_update_frame` does
-   not yet render.
+1. ~~**Alt-Tab**~~ — **done** (`07027fc`): X11 windows join the `WindowSwitcher`
+   list (title, live thumbnail, select → focus; the *Highlighted* frame state).
 2. **Workspaces** — assign each X11 window to the current stack grid cell and
    apply `update_toplevel_visibility` on switch (X11 windows are currently always
    visible, on every workspace).

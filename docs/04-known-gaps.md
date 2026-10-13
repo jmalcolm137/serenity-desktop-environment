@@ -337,8 +337,10 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   X11 windows also join the **Taskbar window list** (reported to the
   WindowManagerServer by id, so the Taskbar can activate/minimize them).
   `[Compositor] XWayland=false` in `WindowServer.ini` disables X11 entirely (no X
-  server, no `DISPLAY`). Verified by `scripts/run-xwayland-test.sh`. **Still
-  missing for full parity:** X11 windows in the **Alt-Tab** switcher, **workspaces**
+  server, no `DISPLAY`). Verified by `scripts/run-xwayland-test.sh`. **Alt-Tab**
+  now lists X11 windows too (the `WindowRef` abstraction, `07027fc`; see
+  [`20-xwayland-next-steps.md`](20-xwayland-next-steps.md)). **Still
+  missing for full parity:** **workspaces**
   integration (X11 windows are always on the current stack), window **icons**
   (`_NET_WM_ICON`) and WM_CLASS-based grouping, override-redirect
   (menus/tooltips) polish, the X11↔Wayland **selection / clipboard bridge**,
