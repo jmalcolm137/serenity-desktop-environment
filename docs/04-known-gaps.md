@@ -343,9 +343,10 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   server, no `DISPLAY`). Verified by `scripts/run-xwayland-test.sh`.
   **Landing since:** X11 windows joined the **Alt-Tab** switcher (the `WindowRef`
   abstraction, `07027fc`) and the **workspace grid**; they carry their
-  **`_NET_WM_ICON`** and **WM_CLASS** (`b3ac13a`); the window is placed with its
-  frame at the client's requested position and **kept on-screen** (titlebar
-  visible) with a **default icon** when the client supplies none; override-redirect
+  **`_NET_WM_ICON`**/**`WM_HINTS`** icons and **WM_CLASS** (`b3ac13a`,
+  `a95fa67`); the window is placed with its frame at the client's requested
+  position and **kept on-screen** (titlebar visible), with a distinct X11
+  **default icon** when the client supplies none; override-redirect
   menus/tooltips are polished (`cb21165`); the X11 `PRIMARY`/`CLIPBOARD`
   **selection bridge** works (`6c8e0c9`); `_NET_WM_STATE`
   (`above`/`skip-taskbar`/`demands-attention`/`modal`) and **transients** are

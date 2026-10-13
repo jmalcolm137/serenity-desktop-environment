@@ -31,7 +31,8 @@ the compositor maps as a separate scene surface. Landed, in order:
 | `c69b1ae` | **`_NET_WM_STATE` + transients**. Read and honour `above` (always-on-top), `skip-taskbar`, `demands-attention`, `modal`, and the transient parent (a dialog stays above its parent). |
 | `47f794f` | **`_NET_WORKAREA`**. Report the outputs' usable areas to Xwayland (`wlr_xwayland_set_workareas`), so X11 panels/maximized windows respect SDE's panels/docks. |
 | `373e077` | **Window placement + titlebar icon**. X11 windows use the xdg convention (scene tree = *frame* origin; content inset), so a window at `(0,0)` shows its titlebar; the frame is clamped on-screen; the titlebar draws the fetched icon or the **default** window icon (never blank). |
-| `5ad2264` | **Revert the WM_HINTS icon read.** Fetching the legacy `WM_HINTS` `icon_pixmap` with synchronous `xcb_get_image` corrupted the heap (wlroots owns the xcb connection) and aborted the compositor — dropped in favour of the default icon for `WM_HINTS`-only clients (xterm). |
+| `5ad2264` | **Revert the WM_HINTS icon read** (it aborted the compositor; the real cause is fixed in `a95fa67`). |
+| `a95fa67` | **Real `WM_HINTS` icon + X11 default icon.** The abort was not XCB re-entrancy but `Gfx::Bitmap::scanline()` (an `ARGB32*`) used as a byte pointer — `scanline_u8` fixes it. Fetch the legacy `WM_HINTS` icon (xterm's X logo) and listen to `set_hints` (hints are unset at map time); clients with no icon get a distinct X11 default (a window with an "X"). |
 
 Where the code lives:
 
