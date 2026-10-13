@@ -16,6 +16,7 @@
 
 #include "xdg-shell-client-protocol.h"
 #include "serenity-window-client-protocol.h"
+#include "presentation-time-client-protocol.h"
 
 static struct wl_display* display;
 static struct wl_compositor* compositor;
@@ -27,6 +28,47 @@ static struct xdg_toplevel* toplevel;
 static int width = 320;
 static int height = 200;
 static int configured;
+
+// wp_presentation: with --presentation, request feedback for a committed frame
+// and wait for the compositor to report it displayed.
+static struct wp_presentation* presentation;
+static int presented;
+static uint32_t presented_refresh;
+
+static void feedback_presented(void* data, struct wp_presentation_feedback* feedback,
+    uint32_t tv_sec_hi, uint32_t tv_sec_lo, uint32_t tv_nsec, uint32_t refresh,
+    uint32_t seq_hi, uint32_t seq_lo, uint32_t flags)
+{
+    (void)data;
+    (void)feedback;
+    (void)tv_sec_hi;
+    (void)tv_sec_lo;
+    (void)tv_nsec;
+    (void)seq_hi;
+    (void)seq_lo;
+    (void)flags;
+    presented = 1;
+    presented_refresh = refresh;
+}
+
+static void feedback_sync_output(void* data, struct wp_presentation_feedback* feedback, struct wl_output* output)
+{
+    (void)data;
+    (void)feedback;
+    (void)output;
+}
+
+static void feedback_discarded(void* data, struct wp_presentation_feedback* feedback)
+{
+    (void)data;
+    (void)feedback;
+}
+
+static struct wp_presentation_feedback_listener const feedback_listener = {
+    .sync_output = feedback_sync_output,
+    .presented = feedback_presented,
+    .discarded = feedback_discarded,
+};
 
 static struct wl_buffer* create_buffer(int w, int h)
 {
@@ -152,6 +194,8 @@ static void registry_global(void* data, struct wl_registry* registry, uint32_t n
         wl_seat_add_listener(seat, &seat_listener, NULL);
     } else if (strcmp(interface, serenity_window_manager_interface.name) == 0) {
         window_manager = wl_registry_bind(registry, name, &serenity_window_manager_interface, 1);
+    } else if (strcmp(interface, wp_presentation_interface.name) == 0) {
+        presentation = wl_registry_bind(registry, name, &wp_presentation_interface, 1);
     }
 }
 
@@ -164,8 +208,10 @@ static void registry_remove(void* data, struct wl_registry* registry, uint32_t n
 
 static struct wl_registry_listener const registry_listener = { registry_global, registry_remove };
 
-int main(void)
+int main(int argc, char** argv)
 {
+    int const want_presentation = argc > 1 && strcmp(argv[1], "--presentation") == 0;
+
     display = wl_display_connect(NULL);
     if (!display) {
         fprintf(stderr, "native-app-test: cannot connect to a compositor\n");
@@ -215,6 +261,28 @@ int main(void)
     }
 
     fprintf(stderr, "native-app-test: mapped %dx%d\n", width, height);
+
+    if (want_presentation) {
+        if (!presentation) {
+            fprintf(stderr, "native-app-test: no wp_presentation global\n");
+            return 1;
+        }
+        // Ask for feedback for the next frame, commit it, and wait for the
+        // compositor to report it displayed (R6 presentation-time).
+        struct wp_presentation_feedback* feedback = wp_presentation_feedback(presentation, surface);
+        wp_presentation_feedback_add_listener(feedback, &feedback_listener, NULL);
+        render();
+        for (int i = 0; i < 400 && !presented; i++) {
+            if (wl_display_dispatch(display) < 0)
+                break;
+        }
+        if (!presented) {
+            fprintf(stderr, "native-app-test: no presentation feedback\n");
+            return 1;
+        }
+        fprintf(stderr, "native-app-test: presented refresh=%u\n", presented_refresh);
+        return 0;
+    }
 
     for (int i = 0; i < 200; i++)
         wl_display_dispatch(display);

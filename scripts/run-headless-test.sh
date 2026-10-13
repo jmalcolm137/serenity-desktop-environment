@@ -36,6 +36,9 @@ wayland-scanner private-code  "$XDG_XML"   "$TOOLS_BUILD/xdg-shell-protocol.c"
 SW_XML="$SDE_ROOT/WindowServer/protocol/serenity-window.xml"
 wayland-scanner client-header "$SW_XML"    "$TOOLS_BUILD/serenity-window-client-protocol.h"
 wayland-scanner private-code  "$SW_XML"    "$TOOLS_BUILD/serenity-window-protocol.c"
+PRES_XML="$(pkg-config --variable=pkgdatadir wayland-protocols)/stable/presentation-time/presentation-time.xml"
+wayland-scanner client-header "$PRES_XML"  "$TOOLS_BUILD/presentation-time-client-protocol.h"
+wayland-scanner private-code  "$PRES_XML"  "$TOOLS_BUILD/presentation-time-protocol.c"
 cc -O2 -I "$TOOLS_BUILD" \
     "$SDE_ROOT/tools/layer-shell-test.c" \
     "$TOOLS_BUILD/wlr-layer-shell-unstable-v1-protocol.c" \
@@ -46,6 +49,7 @@ cc -O2 -I "$TOOLS_BUILD" \
     "$SDE_ROOT/tools/native-app-test.c" \
     "$TOOLS_BUILD/xdg-shell-protocol.c" \
     "$TOOLS_BUILD/serenity-window-protocol.c" \
+    "$TOOLS_BUILD/presentation-time-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/native-app-test"
 cc -O2 -I "$TOOLS_BUILD" \
@@ -93,6 +97,12 @@ env WAYLAND_DISPLAY="$SOCK" timeout 4 "$TOOLS_BUILD/native-app-test" > "$RUNTIME
 sleep 1
 NATIVE_MAPPED_COUNT="$(grep -c "toplevel mapped title='SDE Native Test'" "$RUNTIME/comp.log" || true)"
 
+# R6: presentation-time — a client that requests feedback must receive a
+# "presented" event (the compositor feeds wlroots' presentation object from
+# output_frame).
+PRESENTATION_STATUS=0
+env WAYLAND_DISPLAY="$SOCK" timeout 4 "$TOOLS_BUILD/native-app-test" --presentation > "$RUNTIME/presentation.log" 2>&1 || PRESENTATION_STATUS=$?
+
 # R6/N4: the compositor writes a liveness heartbeat for the session watchdog.
 HEARTBEAT_VALUE="$(cat "$RUNTIME/heartbeat" 2>/dev/null || echo 0)"
 HEARTBEAT_NOW="$(date +%s)"
@@ -113,6 +123,8 @@ echo "--- protocol-error client (scale0) ---"
 cat "$RUNTIME/protocol-scale.log"
 echo "--- protocol-error client (shm-size) ---"
 cat "$RUNTIME/protocol-shm.log"
+echo "--- presentation client ---"
+cat "$RUNTIME/presentation.log"
 
 fail=0
 check() {
@@ -156,6 +168,15 @@ if [ "${NATIVE_MAPPED_COUNT:-0}" -ge 2 ]; then
     echo "  ok: compositor survived the protocol errors (a client mapped after)"
 else
     echo "  MISSING: no client mapped after the protocol errors"
+    fail=1
+fi
+
+# R6: presentation-time feedback.
+echo "=== R6 presentation-time ==="
+if [ "${PRESENTATION_STATUS:-1}" -eq 0 ] && grep -q "presented refresh=" "$RUNTIME/presentation.log"; then
+    echo "  ok: presentation feedback delivered ($(grep -o 'presented refresh=.*' "$RUNTIME/presentation.log" | head -1))"
+else
+    echo "  MISSING: no presentation feedback"
     fail=1
 fi
 

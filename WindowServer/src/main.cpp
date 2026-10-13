@@ -80,6 +80,10 @@ extern "C" {
 #include <wlr/types/wlr_viewporter.h>
 #include <wlr/types/wlr_content_type_v1.h>
 #include <wlr/types/wlr_tearing_control_v1.h>
+#include <wlr/types/wlr_single_pixel_buffer_v1.h>
+#include <wlr/types/wlr_alpha_modifier_v1.h>
+#include <wlr/types/wlr_xdg_dialog_v1.h>
+#include <wlr/types/wlr_presentation_time.h>
 #include <wlr/types/wlr_relative_pointer_v1.h>
 #include <wlr/types/wlr_keyboard_shortcuts_inhibit_v1.h>
 #include <wlr/types/wlr_xdg_foreign_registry.h>
@@ -1522,6 +1526,18 @@ static void watch_wallpaper_state(Server& server)
         (void)watcher->add_watch(Config::state_file(name), Core::FileWatcherEvent::Type::ContentModified | Core::FileWatcherEvent::Type::MetadataModified | Core::FileWatcherEvent::Type::Deleted);
 }
 
+// R6 presentation-time: mark the surfaces the upcoming frame displays on this
+// output, so wlroots can deliver wp_presentation_feedback ("presented" events).
+// The scene reports the buffers visible on the output in rendering order.
+static void mark_buffer_presented(wlr_scene_buffer* buffer, int sx, int sy, void* data)
+{
+    (void)sx;
+    (void)sy;
+    auto* output = static_cast<wlr_output*>(data);
+    if (auto* scene_surface = wlr_scene_surface_try_from_buffer(buffer))
+        wlr_presentation_surface_textured_on_output(scene_surface->surface, output);
+}
+
 static void output_frame(wl_listener* listener, void*)
 {
     Output* output = nullptr;
@@ -1530,6 +1546,7 @@ static void output_frame(wl_listener* listener, void*)
     auto* scene_output = wlr_scene_get_scene_output(output->server->scene, output->output);
     if (!scene_output)
         return;
+    wlr_scene_output_for_each_buffer(scene_output, mark_buffer_presented, output->output);
     wlr_scene_output_commit(scene_output, nullptr);
     timespec now { };
     clock_gettime(CLOCK_MONOTONIC, &now);
@@ -3782,6 +3799,14 @@ static ErrorOr<void> initialize(Server& server)
     wlr_viewporter_create(server.display);
     wlr_content_type_manager_v1_create(server.display, 1);
     wlr_tearing_control_manager_v1_create(server.display, 1);
+    // R6: more standard protocols wlroots implements; advertising them is all
+    // that is needed (solid-colour buffers, per-surface opacity, modal dialogs).
+    wlr_single_pixel_buffer_manager_v1_create(server.display);
+    wlr_alpha_modifier_v1_create(server.display);
+    wlr_xdg_wm_dialog_v1_create(server.display, 1);
+    // R6 presentation-time: frame feedback (presented events). Fed from
+    // output_frame() via wlr_presentation_surface_textured_on_output().
+    wlr_presentation_create(server.display, server.backend, 2);
     server.relative_pointer_manager = wlr_relative_pointer_manager_v1_create(server.display);
     server.keyboard_shortcuts_inhibit = wlr_keyboard_shortcuts_inhibit_v1_create(server.display);
     auto* foreign_registry = wlr_xdg_foreign_registry_create(server.display);

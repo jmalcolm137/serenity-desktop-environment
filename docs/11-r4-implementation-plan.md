@@ -638,43 +638,43 @@ Legend: **✓** have · **↗** planned R4 · **→** planned R5 · **·** plann
 | `xdg-decoration` | ✓ | ✓ | — |
 | `xdg-output` | ✓ | ✓ | — |
 | `wlr-layer-shell` | ✓ | ✓ | — |
-| `linux-dmabuf` | ✓ | wlroots | R6 |
-| `presentation-time` | ✓ | ✗ | R6 |
+| `linux-dmabuf` | ✓ | ✓ | — |
+| `presentation-time` | ✓ | ✓ | R6 (landed) |
 | `tablet-v2` | ✓ | ✗ | R5 |
-| `viewporter` | ✓ | needed (client uses it) | R4.5 |
-| `xdg-activation-v1` | ✓ | ✗ | R4.2 / R5 |
-| `xdg-session-management-v1` | ✓ | ✗ | **R4.2** |
-| `xdg-dialog-v1` | ✓ | ✗ | R5 |
-| `xdg-foreign-v2` | ✓ | ✗ | R5 |
+| `viewporter` | ✓ | ✓ | R4.5 |
+| `xdg-activation-v1` | ✓ | ✓ | R4.2 |
+| `xdg-session-management-v1` | ✓ | ✓ | R4.2 |
+| `xdg-dialog-v1` | ✓ | ✓ | R6 (landed) |
+| `xdg-foreign-v2` | ✓ | ✓ | R5 |
 | `xdg-system-bell-v1` | ✓ | ✗ | R5 |
-| `xdg-toplevel-drag-v1` | ✓ | ✗ | R5 |
+| `xdg-toplevel-drag-v1` | ✓ | ✗ | R5 (needs a wlroots bump) |
 | `xdg-toplevel-icon-v1` | ✓ | ✗ | R5 |
 | `xdg-toplevel-tag-v1` | ✓ | ✗ | R5 |
 | `xwayland-shell-v1`, `xwayland-keyboard-grab-v1` | ✓ | ✗ | R5 (XWayland) |
 | `ext-idle-notify-v1` | ✓ | ✓ | R4.1 |
 | `ext-session-lock-v1` | – (private overlay) | ✓ | R4.1 |
-| `ext-workspace-v1` | – (private) | ✗ | **R4.8** |
-| `ext-foreign-toplevel-list-v1` | – (private) | ✗ | **R4.8 / R5** |
+| `ext-workspace-v1` | – (private) | ✓ | R4.8 |
+| `ext-foreign-toplevel-list-v1` | – (private) | ✓ | R4.8 |
 | `ext-data-control-v1` | ✓ | ✗ | R5 |
-| `ext-image-copy-capture-v1` | – | ✗ | R5 |
+| `ext-image-copy-capture-v1` | – | ✓ | R5 |
 | `ext-transient-seat-v1` | ✗ | ✗ | R4.3 / R6 |
-| `ext-background-effect-v1` | ✓ | ✗ | R6 |
-| `wp-fractional-scale-v1` | ✓ | ✗ | R4.5 / R6 |
+| `ext-background-effect-v1` | ✓ | ✗ | R6 (needs a wlroots bump) |
+| `wp-fractional-scale-v1` | ✓ | ✗ | R4.5 / R6 (client backing-store M8) |
 | `wp-color-management-v1` | ✓ | ✗ | R6 |
 | `wp-color-representation-v1` | ✓ | ✗ | R6 |
-| `wp-content-type-v1` | ✓ | ✗ | R6 |
-| `wp-cursor-shape-v1` | ✓ | ✗ | **R4.7** |
+| `wp-content-type-v1` | ✓ | ✓ | R4.5 |
+| `wp-cursor-shape-v1` | ✓ | ✓ | R4.7 |
 | `wp-drm-lease-v1` | ✓ | ✗ | R6 |
-| `wp-fifo-v1` | ✓ | ✗ | R6 |
-| `wp-single-pixel-buffer-v1` | ✓ | ✗ | R6 |
-| `wp-tearing-control-v1` | ✓ | ✗ | R6 |
-| `wp-alpha-modifier-v1` | ✓ | ✗ | R6 |
-| `wp-pointer-warp-v1` | ✓ | ✗ | R5 |
+| `wp-fifo-v1` | ✓ | ✗ | R6 (needs a wlroots bump) |
+| `wp-single-pixel-buffer-v1` | ✓ | ✓ | R6 (landed) |
+| `wp-tearing-control-v1` | ✓ | ✓ | R4.5 |
+| `wp-alpha-modifier-v1` | ✓ | ✓ | R6 (landed) |
+| `wp-pointer-warp-v1` | ✓ | ✗ | R5 (needs a wlroots bump) |
 | `wp-pointer-constraints-v1` | ✓ | ✗ | R5 |
 | `wp-pointer-gestures-v1` | ✓ | ✗ | R5 |
-| `wp-relative-pointer-v1` | ✓ | ✗ | R5 |
-| `wp-primary-selection-v1` | ✓ | ✗ | R5 |
-| `wp-keyboard-shortcuts-inhibit-v1` | ✓ | ✗ | R5 |
+| `wp-relative-pointer-v1` | ✓ | ✓ | R5 |
+| `wp-primary-selection-v1` | ✓ | ✓ | R5 |
+| `wp-keyboard-shortcuts-inhibit-v1` | ✓ | ✓ | R5 |
 | `wp-linux-drm-syncobj-v1` | ✓ | ✗ | R6 |
 | `xdpip` (`xx-pip-v1`) | ✓ (private) | ✗ | R6 (private) |
 

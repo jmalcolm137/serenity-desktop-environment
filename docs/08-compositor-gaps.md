@@ -87,8 +87,8 @@ table.
 - **Focus/attention (G3, G7).** `xdg-activation-v1` (raise/attention tokens) is
   served; launching from the Taskbar uses it.
 - **Sandbox & portal interop (G7).** `xdg-foreign` v1/v2 (toplevel import, used by
-  portals and XWayland) are served; `xdg-toplevel-drag` and `xdg-system-bell`
-  remain.
+  portals and XWayland) and `xdg-wm-dialog-v1` are served; `xdg-toplevel-drag`
+  (needs a wlroots bump) and `xdg-system-bell` remain.
 - **Clipboard completeness (G4).** `set_selection` and **primary selection**
   (`zwp_primary_selection_device_manager_v1`) are served; missing
   `wlr-data-control`/`ext-data-control` and full **drag-and-drop** (gestures, drag
@@ -96,10 +96,13 @@ table.
 - **Input protocols (G3, G7).** `keyboard-shortcuts-inhibit` and
   `relative-pointer` are served; `pointer-constraints` and `pointer-gestures`
   remain — needed for games and remote desktop.
-- **Presentation & scaling (N3, N5).** `wp-viewporter`, `content-type-v1` and
-  `tearing-control` are served. Still missing: `presentation-time`,
-  `fractional-scale-v1` (needs the preferred-scale plumbing), `wp-single-pixel-buffer`,
-  `commit-timing`/`fifo`, and dmabuf feedback/explicit sync.
+- **Presentation & scaling (N3, N5).** `wp-viewporter`, `content-type-v1`,
+  `tearing-control`, `wp-single-pixel-buffer`, `wp-alpha-modifier` and
+  **`presentation-time`** are served (`wp_presentation v2`; the compositor feeds
+  wlroots' presentation object from `output_frame`, so clients get "presented"
+  events). Still missing: `fractional-scale-v1` (the client backing-store scale,
+  M8), `commit-timing`/`fifo` (needs a wlroots bump), and dmabuf
+  feedback/explicit sync (`wp-linux-drm-syncobj`).
 - **Portals (G7).** No `xdg-desktop-portal` strategy. The project's *Serenity*
   portals (`/tmp/session/<id>/portal/…`) are unrelated to the freedesktop
   `xdg-desktop-portal`. Needed: a backend selection for a wlroots compositor

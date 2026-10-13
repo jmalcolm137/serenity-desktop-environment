@@ -85,6 +85,12 @@ check zxdg_importer_v1
 check zxdg_exporter_v2
 check zxdg_importer_v2
 
+echo "=== R6 additions (quick wins + presentation-time) ==="
+check wp_single_pixel_buffer_manager_v1
+check wp_alpha_modifier_v1
+check xdg_wm_dialog_v1
+check wp_presentation
+
 echo "=== portals / capture / session (pre-existing) ==="
 check wl_output
 check zwp_idle_inhibit_manager_v1

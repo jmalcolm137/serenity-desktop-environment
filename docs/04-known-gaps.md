@@ -328,6 +328,15 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 
 ## Recently resolved (kept so we don't re-chase them)
 
+- **More protocols: single-pixel-buffer, alpha-modifier, xdg-dialog, presentation-time
+  (R6).** The compositor now advertises `wp_single_pixel_buffer_manager_v1`,
+  `wp_alpha_modifier_v1` and `xdg_wm_dialog_v1` (wlroots implements them; announcing
+  them is all that is needed). **`presentation-time`** is served too
+  (`wp_presentation v2`): `output_frame` marks the surfaces the frame displays via
+  `wlr_presentation_surface_textured_on_output`, so clients receive `presented`
+  events. Covered by `run-protocol-matrix-test.sh` (globals) and
+  `run-headless-test.sh` (`native-app-test --presentation`).
+
 - **Multi-seat & VT-switch polish (R4.3/R6).** `scripts/sde-seat.sh` derives and
   exports `XDG_SEAT` (default `seat0`) and `XDG_VTNR` (logind, else the active
   VT), and the session namespaces its runtime **per seat**: the Wayland socket
