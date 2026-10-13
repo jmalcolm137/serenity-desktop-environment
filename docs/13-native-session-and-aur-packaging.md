@@ -297,6 +297,12 @@ fractional supported:
   the logical size.
 - **Filtering.** Integer scales use `WLR_SCALE_FILTER_NEAREST` (a pixel-doubling
   no-op at 1x, crisp at 2x); a fractional scale uses bilinear.
+- **Pixel-art chrome (R6).** The classic style painter drew radio buttons (the
+  circle and the selection dot) and tab corners with `Painter::set_pixel`, which
+  takes **physical** coordinates — so at 2x the pixel-art landed in the wrong place
+  and a selected radio appeared blank. Those pixels now go through
+  `fill_rect({p,{1,1}})`, which honours the backing-store scale (libgui-wayland
+  patch `0043`).
 - **Logical sizing:** the compositor sizes its own surfaces from
   `wlr_output_effective_resolution()` (logical), and a saved size with no matching
   mode requests a **custom mode** (so a headless capture can be, e.g., 2560x1440).
