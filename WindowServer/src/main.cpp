@@ -185,6 +185,7 @@ static void reconfigure_lock_surface(Server& server, wlr_output* output);
 static void spawn_lock_client();
 
 static void toplevel_update_frame(Toplevel&);
+static void toplevel_begin_interactive(Toplevel&, CursorMode, uint32_t edges);
 static bool handle_frame_press(Server&, uint32_t button, uint32_t time);
 static void handle_frame_release(Server&, uint32_t button);
 static void close_window_menu(Server&);
@@ -200,9 +201,13 @@ static Output* output_for(Server&, wlr_output*);
 static void output_manager_send_configuration(Server&);
 static void persist_screen_layout(Server&);
 static void schedule_persist_screen_layout(Server&);
+static bool cycle_keyboard_layout(Server&);
 static i32 g_next_wm_id { 1 };
 static u64 g_focus_order_counter { 0 };
 static Gfx::Palette* g_palette { nullptr };
+// The active entry in [Keyboard] Layouts (Alt+Shift cycles it); the keymap is
+// rebuilt with the list rotated by this offset. Reset when the config reloads.
+static size_t s_layout_offset { 0 };
 
 struct FrameIcons {
     RefPtr<Gfx::Bitmap> close;
@@ -602,6 +607,15 @@ static void keyboard_key(wl_listener* listener, void* data)
     if (!inhibited && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
         // R4.4: configured keybindings (defaults match the historical bindings).
         u32 const config_mods = config_modifiers(modifiers);
+        // SerenityOS: Alt+Shift switches the keyboard layout (KeymapSwitcher).
+        if (config_mods == (Config::ModAlt | Config::ModShift)) {
+            for (int i = 0; i < syms_count; ++i) {
+                if (syms[i] == XKB_KEY_Shift_L || syms[i] == XKB_KEY_Shift_R || syms[i] == XKB_KEY_Alt_L || syms[i] == XKB_KEY_Alt_R) {
+                    handled |= cycle_keyboard_layout(server);
+                    break;
+                }
+            }
+        }
         for (int i = 0; i < syms_count; ++i) {
             if (auto action = Config::action_for(syms[i], config_mods); action.has_value())
                 handled |= perform_key_action(server, action.value());
@@ -1064,6 +1078,54 @@ static void maybe_dismiss_layer_menus(Server& server)
     }
 }
 
+// SerenityOS lets you grab a window anywhere to move it (Super+left-drag) or
+// resize it (Super+right-drag), without reaching for the titlebar or an edge;
+// the resize direction is the window's 3x3 hot area under the cursor.
+static bool handle_super_drag_press(Server& server, uint32_t button)
+{
+    if (button != BTN_LEFT && button != BTN_RIGHT)
+        return false;
+    auto* keyboard = wlr_seat_get_keyboard(server.seat);
+    if (!keyboard || !(wlr_keyboard_get_modifiers(keyboard) & WLR_MODIFIER_LOGO))
+        return false;
+
+    wlr_surface* surface = nullptr;
+    double sx = 0;
+    double sy = 0;
+    auto* toplevel = toplevel_at(server, server.cursor->x, server.cursor->y, &surface, &sx, &sy);
+    if (!toplevel || toplevel->fullscreen)
+        return false;
+
+    if (button == BTN_LEFT) {
+        focus_toplevel(server, toplevel);
+        toplevel_begin_interactive(*toplevel, CursorMode::Move, 0);
+        return true;
+    }
+
+    int width = toplevel->frame_size.width() > 0 ? toplevel->frame_size.width() : toplevel->xdg_toplevel->base->geometry.width;
+    int height = toplevel->frame_size.height() > 0 ? toplevel->frame_size.height() : toplevel->xdg_toplevel->base->geometry.height;
+    if (width <= 0 || height <= 0)
+        return false;
+    auto* node = &toplevel->scene_tree->node;
+    double relative_x = (server.cursor->x - node->x) / width;
+    double relative_y = (server.cursor->y - node->y) / height;
+    uint32_t edges = 0;
+    if (relative_x < 1.0 / 3.0)
+        edges |= WLR_EDGE_LEFT;
+    else if (relative_x > 2.0 / 3.0)
+        edges |= WLR_EDGE_RIGHT;
+    if (relative_y < 1.0 / 3.0)
+        edges |= WLR_EDGE_TOP;
+    else if (relative_y > 2.0 / 3.0)
+        edges |= WLR_EDGE_BOTTOM;
+    if (edges == 0)
+        return false;
+
+    focus_toplevel(server, toplevel);
+    toplevel_begin_interactive(*toplevel, CursorMode::Resize, edges);
+    return true;
+}
+
 static void cursor_button(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
@@ -1121,6 +1183,11 @@ static void cursor_button(wl_listener* listener, void* data)
             // Opening the window menu is not an interactive frame grab.
             if (!server->window_menu.open)
                 server->frame_grab = true;
+            return;
+        }
+        // SerenityOS: Super+LMB moves and Super+RMB resizes, from anywhere.
+        if (handle_super_drag_press(*server, event->button)) {
+            server->frame_grab = true;
             return;
         }
     } else if (server->frame_grab) {
@@ -1221,6 +1288,24 @@ static void seat_request_set_selection(wl_listener* listener, void* data)
 
 // --- input device configuration (R4.6) ------------------------------------
 
+// The configured layouts rotated so `offset` is first, so Alt+Shift can switch
+// the active layout by rebuilding the keymap (xkb's group order follows the
+// layout list). A single layout is returned unchanged.
+static ByteString rotated_layouts(ByteString const& layouts, size_t offset)
+{
+    auto parts = layouts.split(',');
+    if (parts.size() < 2 || offset == 0)
+        return layouts;
+    offset %= parts.size();
+    StringBuilder builder;
+    for (size_t i = 0; i < parts.size(); ++i) {
+        if (i > 0)
+            builder.append(',');
+        builder.append(parts[(i + offset) % parts.size()].trim_whitespace());
+    }
+    return builder.to_byte_string();
+}
+
 // Build the xkb keymap from the configured layouts/variant/model/options and
 // apply it (with repeat info) to every keyboard, falling back to the default
 // keymap when the configuration does not compile.
@@ -1228,7 +1313,7 @@ static void apply_keyboard_input(Server& server)
 {
     auto const& settings = Config::input().keyboard;
     auto model = settings.model;
-    auto layout = settings.layouts;
+    auto layout = rotated_layouts(settings.layouts, s_layout_offset);
     auto variant = settings.variant;
     auto options = settings.options;
     xkb_rule_names names {
@@ -1256,6 +1341,20 @@ static void apply_keyboard_input(Server& server)
     // in-flight repeat if the rate was turned off.
     if (settings.repeat_rate <= 0)
         stop_key_repeat();
+}
+
+// Alt+Shift: advance to the next configured keyboard layout (SerenityOS's
+// KeymapSwitcher). Rebuilds the keymap with the layout list rotated; a no-op with
+// a single layout (so the chord still reaches the focused client).
+static bool cycle_keyboard_layout(Server& server)
+{
+    auto layouts = Config::input().keyboard.layouts.split(',');
+    if (layouts.size() < 2)
+        return false;
+    s_layout_offset = (s_layout_offset + 1) % layouts.size();
+    apply_keyboard_input(server);
+    dbgln("WindowServer: keyboard layout -> '{}'", layouts[s_layout_offset].trim_whitespace());
+    return true;
 }
 
 // Apply the mouse settings to every libinput pointer: acceleration profile and
@@ -1290,6 +1389,7 @@ static void apply_mouse_input(Server& server)
 // change.
 static void apply_input_settings(Server& server)
 {
+    s_layout_offset = 0;
     apply_keyboard_input(server);
     apply_mouse_input(server);
     dbgln("WindowServer: applied input settings (accel {}, natural-scroll {}, buttons-switched {}, left-handed {}, layouts '{}')",
@@ -2085,6 +2185,20 @@ static void toplevel_begin_interactive(Toplevel& toplevel, CursorMode mode, uint
     server.grabbed_toplevel = &toplevel;
     server.cursor_mode = mode;
     if (mode == CursorMode::Move) {
+        // SerenityOS: dragging a maximized window restores its size, keeping the
+        // cursor at the same horizontal fraction of the window.
+        if (toplevel.maximized && !toplevel.restore_size.is_empty()) {
+            int spanned_width = max(1, toplevel.frame_size.width());
+            double fraction_x = clamp((server.cursor->x - toplevel.scene_tree->node.x) / spanned_width, 0.0, 1.0);
+            toplevel.maximized = false;
+            wlr_xdg_toplevel_set_maximized(toplevel.xdg_toplevel, false);
+            wlr_xdg_toplevel_set_size(toplevel.xdg_toplevel, toplevel.restore_size.width(), toplevel.restore_size.height());
+            if (toplevel.foreign_handle)
+                wlr_foreign_toplevel_handle_v1_set_maximized(toplevel.foreign_handle, false);
+            double new_x = server.cursor->x - fraction_x * toplevel.restore_size.width();
+            wlr_scene_node_set_position(&toplevel.scene_tree->node, new_x, toplevel.scene_tree->node.y);
+            toplevel_report_position(toplevel);
+        }
         server.grab_x = server.cursor->x - toplevel.scene_tree->node.x;
         server.grab_y = server.cursor->y - toplevel.scene_tree->node.y;
     } else {
