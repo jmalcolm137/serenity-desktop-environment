@@ -303,6 +303,14 @@ void load()
         if (!trimmed.is_empty())
             g_applet_order.append(trimmed);
     }
+    // SDE owns the Battery applet, which is not in the SerenityOS default order.
+    // Applets are laid out right-to-left by descending order index (the *last*
+    // entry is rightmost), so put Battery at the end unless the user placed it.
+    if (!g_applet_order.is_empty()) {
+        auto battery = ByteString { "Battery"sv };
+        if (!g_applet_order.contains_slow(battery))
+            g_applet_order.append(move(battery));
+    }
 
     // [Placement] Windows - initial window geometry rules (see Config.h).
     g_placement_rules.clear();

@@ -4385,6 +4385,8 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
         WindowManager::load_workspaces(*server);
         // R6 HiDPI: a live [Output] DefaultScale edit re-scales the outputs.
         apply_output_scale(*server);
+        // A live [Applet] Order edit re-lays out the applet area.
+        AppletManager::relayout(*server);
     });
     // R4.5: apply monitor-layout edits (screenlayout.ini) to the live outputs.
     Config::watch_outputs([&] { apply_loaded_screen_layout(*server); });
