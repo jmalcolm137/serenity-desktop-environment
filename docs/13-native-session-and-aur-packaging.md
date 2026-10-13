@@ -5,9 +5,10 @@
 
 This document plans how to run SDE **natively** (DRM/KMS + libinput, no host
 compositor underneath) and how to **package it for Arch/EndeavourOS (AUR)** so a
-display manager lists it as a session. It is a plan, not an implementation: it
-records the package split, the install layout, the packaging traps we have
-verified against the current build, and the order to bring it up safely.
+display manager lists it as a session. The **session entry + installer** (§6) are
+implemented; the AUR packaging (§3–§5, §9) is still a plan. It records the package
+split, the install layout, the packaging traps we have verified against the
+current build, and the order to bring it up safely.
 
 > **Scope note.** Packaging is nominally **R6** ("Hardening & packaging",
 > [`01-objectives.md`](01-objectives.md) §11) and is not started. This plan pulls
@@ -116,36 +117,54 @@ apps sit in `…/sde/bin` and libs in `…/sde/lib`; and a single
 
 ---
 
-## 6. Session entry and wrapper
+## 6. Session entry and wrapper (implemented)
 
-`/usr/share/wayland-sessions/sde.desktop` (SDDM lists any `wayland-sessions`
-entry):
+A **display manager session entry** + launcher, so SDDM/GDM list *Serenity Desktop
+Environment* at the login screen. Two templates and an installer live in the repo:
+
+```
+session/sde.desktop.in        the wayland-sessions entry (@EXEC@ substituted)
+session/sde-session.in        the launcher (@SDE_ROOT@ substituted)
+scripts/install-session.sh    installs both (or --uninstall / --dry-run)
+```
+
+Install (system-wide; needs root — SDDM scans `/usr/share/wayland-sessions`):
+
+```sh
+sudo scripts/install-session.sh
+#   /usr/local/bin/sde-session               -> execs this checkout's
+#                                               scripts/start-sde-session.sh
+#   /usr/share/wayland-sessions/sde.desktop  -> the entry SDDM lists
+sudo scripts/install-session.sh --uninstall
+```
+
+This is a **dev install**: the launcher `exec`s `scripts/start-sde-session.sh` from
+the checkout (rebuild before logging in). `--bin-dir`/`--sessions-dir`/`--repo`
+override the paths (used by `scripts/run-session-entry-test.sh`).
+
+The entry:
 
 ```ini
 [Desktop Entry]
 Name=Serenity Desktop Environment
 Comment=The SerenityOS desktop experience on Wayland
-Exec=/usr/lib/sde/bin/sde-session
+Exec=/usr/local/bin/sde-session
 Type=Application
 DesktopNames=SDE
 ```
 
-`/usr/lib/sde/bin/sde-session` (thin wrapper; the supervisor does the real work):
-
-```sh
-#!/bin/sh
-export SERENITY_RES_ROOT=/usr/lib/sde/share/res
-export SDE_APP_BIN_DIR=/usr/lib/sde/bin
-export LD_LIBRARY_PATH=/usr/lib/sde/lib
-export XDG_CURRENT_DESKTOP=SDE
-export SDE_LOCK_CMD=swaylock            # if installed
-exec /usr/lib/sde/share/sde/sde-session.sh
-```
-
-The supervisor (`scripts/sde-session.sh`) already sets `XDG_SESSION_TYPE`,
-`XDG_CURRENT_DESKTOP`, `WAYLAND_DISPLAY=sde`, runs XDG autostart, starts/stops
-session services, and restarts the compositor on fault. The compositor runs as
+`Exec` is the launcher, which runs the supervisor (`scripts/sde-session.sh`); the
+supervisor sets `XDG_SESSION_TYPE`, `XDG_CURRENT_DESKTOP` (from `DesktopNames`),
+`WAYLAND_DISPLAY=sde`, runs XDG autostart, starts/stops the session services, and
+restarts the compositor on fault. The compositor runs as
 `WindowServer -n sde -s "Taskbar & FileManager -d & TextEditor"`.
+
+**Logout.** A display manager ends a session by sending SIGTERM. `start-sde-session.sh`
+now runs the supervisor in the background and forwards SIGTERM to it, then waits for
+it to exit, so logging out stops the compositor and the services cleanly (no
+orphaned `WindowServer` holding the VT). Verified by
+`scripts/run-session-entry-test.sh` (entry/launcher/install) and a headless launch +
+SIGTERM check.
 
 ---
 

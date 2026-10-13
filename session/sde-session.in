@@ -1,0 +1,8 @@
+#!/bin/sh
+# SDE session launcher — installed by scripts/install-session.sh.
+#
+# A display manager (SDDM, GDM, ...) runs this as a Wayland session. It must stay
+# the session's process: start-sde-session.sh starts the supervisor (which runs the
+# compositor, the services and idle-to-lock) and stops everything on SIGTERM, which
+# is what the display manager sends on logout.
+exec "@SDE_ROOT@/scripts/start-sde-session.sh" "$@"

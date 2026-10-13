@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Serenity Desktop Environment
+Comment=The SerenityOS desktop experience on Wayland
+Exec=@EXEC@
+Type=Application
+DesktopNames=SDE

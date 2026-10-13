@@ -102,6 +102,22 @@ DRM+libinput backend and `libseat` grants DRM master. The launcher starts the
 compositor on socket `sde`, serves the WindowManagerServer on `/tmp/portal/wm`,
 and starts the Taskbar and a TextEditor.
 
+**Display manager (SDDM, GDM, ...).** Install the session entry so the login
+screen lists **Serenity Desktop Environment**:
+
+```sh
+sudo scripts/install-session.sh    # /usr/local/bin/sde-session + /usr/share/wayland-sessions/sde.desktop
+# ... then log out and pick it at the login screen.
+# Remove it with: sudo scripts/install-session.sh --uninstall
+```
+
+This is a *dev* install: the launcher execs `scripts/start-sde-session.sh` from
+this checkout, so rebuild the compositor first (`scripts/build-window-server.sh`)
+and keep another session plus a spare VT (`Ctrl+Alt+F2`) as an escape hatch. Under
+SDDM the session is registered with `logind`, so `libseat` grants DRM master and
+handles VT switching; the launcher stops the compositor and services on the
+SIGTERM the display manager sends on logout.
+
 **Desktop background.** The compositor paints the theme's `DesktopBackground`
 colour behind everything (SerenityOS's default). Set `SDE_WALLPAPER` to an
 absolute path, or to a name under `/res/wallpapers` (e.g. `sunset-retro.png`),

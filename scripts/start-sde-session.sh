@@ -176,8 +176,22 @@ export SDE_SESSION_COMPOSITOR="$COMP -n $SESSION_DISPLAY -s \"$STARTUP\""
 # R6/N4: if the compositor keeps failing, the supervisor drops to safe mode with
 # this minimal shell instead of ending the session.
 export SDE_SESSION_COMPOSITOR_SAFE="$COMP -n $SESSION_DISPLAY -s \"$SAFE_STARTUP\""
-"$SDE_ROOT/scripts/sde-session.sh"
+
+# Run the supervisor in the background so a display manager's logout (SIGTERM to
+# the session) stops it cleanly here rather than leaving it orphaned: the trap
+# forwards the signal, and we wait for it to actually exit.
+"$SDE_ROOT/scripts/sde-session.sh" &
+SUPERVISOR_PID=$!
+stopping=0
+# shellcheck disable=SC2064
+trap 'stopping=1; kill -TERM "$SUPERVISOR_PID" 2>/dev/null || true' TERM INT
+wait "$SUPERVISOR_PID"
 status=$?
+if [[ "$stopping" -eq 1 ]]; then
+    wait "$SUPERVISOR_PID" 2>/dev/null || true
+    status=0
+fi
+trap - TERM INT
 
 if [[ -n "$LAUNCH_SERVER_PID" ]]; then
     kill "$LAUNCH_SERVER_PID" 2>/dev/null || true
