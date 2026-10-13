@@ -2150,6 +2150,9 @@ static void focus_x11_toplevel(Server& server, X11Toplevel* toplevel)
             x11_update_frame(*server.focused_x11);
     }
     server.focused_x11 = toplevel;
+    // Feed the Alt-Tab switcher's most-recently-focused ordering (see
+    // Toplevel::focus_order; X11Toplevel gained the same field).
+    toplevel->focus_order = ++g_focus_order_counter;
 
     server.keyboard_focus_layer = nullptr;
     stop_key_repeat();
@@ -2397,6 +2400,10 @@ static void x11_update_frame(X11Toplevel& toplevel)
     toplevel.titlebar_icon_rect = theme.titlebar_icon_rect(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette);
     Gfx::IntRect leftmost_button = buttons.is_empty() ? Gfx::IntRect { } : buttons.last();
     auto state = toplevel.frame_active ? Gfx::WindowTheme::WindowState::Active : Gfx::WindowTheme::WindowState::Inactive;
+    // The Alt-Tab switcher draws the highlighted window in the theme's
+    // Highlighted state (WindowSwitcher), like the xdg path in toplevel_update_frame.
+    if (&toplevel == WindowSwitcher::highlighted_x11())
+        state = Gfx::WindowTheme::WindowState::Highlighted;
     StringView title { xsurface->title ? xsurface->title : "", xsurface->title ? strlen(xsurface->title) : 0 };
     theme.paint_normal_frame(painter, state, Gfx::WindowTheme::WindowMode::Other, content_rect, title, icon, *g_palette, leftmost_button, 0, false);
 
@@ -6272,7 +6279,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
         warnln("WindowServer: could not listen on {}", wm_portal);
     // Let the window manager call back into the compositor's focus/menu code.
     WindowManager::set_host_hooks({ focus_toplevel, open_window_menu, primary_usable_area, toplevel_report_position, toplevel_begin_interactive, current_palette, update_ext_workspace_active, set_toplevel_minimized, hook_focus_x11, hook_set_minimized_x11 });
-    WindowSwitcher::set_host_hooks({ current_palette, focus_toplevel, WindowManager::switch_workspace, overlay_shadow_hook, toplevel_update_frame });
+    WindowSwitcher::set_host_hooks({ current_palette, focus_toplevel, WindowManager::switch_workspace, overlay_shadow_hook, toplevel_update_frame, hook_focus_x11, hook_set_minimized_x11, x11_update_frame });
     AppletManager::set_host_hooks({ WindowManager::tell_wms_applet_area_size_changed, primary_usable_area, layer_report_position });
     // Bring the workspace grid up from the config, and follow later edits.
     WindowManager::load_workspaces(*server);

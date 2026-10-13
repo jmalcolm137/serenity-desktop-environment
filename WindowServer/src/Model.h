@@ -381,6 +381,9 @@ struct X11Toplevel {
     i32 wm_id { 0 };
     // The window title (kept here so the WM module needs no wlroots types).
     ByteString title;
+    // Monotonic focus sequence (like Toplevel::focus_order), so the Alt-Tab
+    // switcher can list X11 and xdg windows together most-recently-focused first.
+    u64 focus_order { 0 };
     int hovered_button { -1 };
     int pressed_button { -1 };
     wl_listener associate { };
@@ -392,6 +395,20 @@ struct X11Toplevel {
     wl_listener request_close { };
     wl_listener request_activate { };
     wl_listener set_title { };
+};
+
+// A reference to a window: it is either an xdg toplevel or an X11 (Xwayland)
+// window. The window-manager policy paths that must treat both kinds alike (the
+// Alt-Tab switcher, and later workspace visibility and window icons) go through
+// this so the xdg-only ones stay simple. See docs/20-xwayland-next-steps.md.
+// The accessors (title/rect/focus/...) live next to their consumers, since they
+// read wlroots types this header only forward-declares.
+struct WindowRef {
+    Toplevel* xdg { nullptr };
+    X11Toplevel* x11 { nullptr };
+
+    bool is_valid() const { return xdg != nullptr || x11 != nullptr; }
+    bool is_x11() const { return x11 != nullptr; }
 };
 
 // A switch device (lid, tablet-mode, ...).

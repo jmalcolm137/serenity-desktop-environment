@@ -32,6 +32,11 @@ struct HostHooks {
     Gfx::Bitmap const* (*overlay_shadow)() { nullptr };
     // Repaint a toplevel's frame (used to show/hide the highlight state).
     void (*update_frame)(Toplevel&) { nullptr };
+    // X11 (Xwayland) windows join the same list: focus, minimize and re-render
+    // their frame (the Highlighted state). See docs/20-xwayland-next-steps.md.
+    void (*focus_x11)(Server&, X11Toplevel*) { nullptr };
+    void (*set_minimized_x11)(Server&, X11Toplevel&, bool minimized) { nullptr };
+    void (*update_x11_frame)(X11Toplevel&) { nullptr };
 };
 void set_host_hooks(HostHooks);
 
@@ -40,6 +45,8 @@ bool is_visible();
 // The toplevel currently highlighted in the switcher (drawn in the theme's
 // "Highlighted" window state, as in SerenityOS), or null.
 Toplevel* highlighted();
+// The X11 window currently highlighted, or null (the switcher lists both kinds).
+X11Toplevel* highlighted_x11();
 
 // Pointer input while the switcher is open (hover highlights, click selects).
 // Return true when consumed (the switcher grabs the pointer while visible).

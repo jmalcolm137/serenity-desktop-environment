@@ -15,6 +15,26 @@ command -v xmessage >/dev/null || { echo "SKIP: no xmessage (X11 client)"; exit 
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 
+# The virtual-input harness (a virtual keyboard) so we can drive Alt+Tab.
+WLROOTS_SRC="${WLROOTS_SRC:-$SDE_ROOT/third_party/wlroots}"
+TOOLS_BUILD="$SDE_ROOT/build/xwayland-test"
+VIT="$TOOLS_BUILD/virtual-input-test"
+VK_XML="$WLROOTS_SRC/protocol/virtual-keyboard-unstable-v1.xml"
+VP_XML="$WLROOTS_SRC/protocol/wlr-virtual-pointer-unstable-v1.xml"
+if [[ -f "$VK_XML" && -f "$VP_XML" ]] && command -v wayland-scanner >/dev/null && command -v cc >/dev/null; then
+    mkdir -p "$TOOLS_BUILD"
+    wayland-scanner client-header "$VK_XML" "$TOOLS_BUILD/virtual-keyboard-unstable-v1-client-protocol.h"
+    wayland-scanner private-code  "$VK_XML" "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c"
+    wayland-scanner client-header "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-client-protocol.h"
+    wayland-scanner private-code  "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c"
+    cc -O2 -I "$TOOLS_BUILD" \
+        "$SDE_ROOT/tools/virtual-input-test.c" \
+        "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c" \
+        "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c" \
+        $(pkg-config --cflags --libs wayland-client xkbcommon) \
+        -o "$VIT" 2>/dev/null || true
+fi
+
 fail=0
 
 run_case() {
@@ -35,25 +55,45 @@ run_case() {
     local DISP=""
     [[ -f "$R/xwayland-display" ]] && DISP="$(cat "$R/xwayland-display")"
     if [[ -n "$DISP" ]]; then
-        env -u WAYLAND_DISPLAY DISPLAY="$DISP" timeout 6 xmessage -name xwayland-test "hello" >/dev/null 2>&1 &
+        env -u WAYLAND_DISPLAY DISPLAY="$DISP" timeout 20 xmessage -name xwayland-test "hello" >/dev/null 2>&1 &
         sleep 3
     fi
-    echo "$R $CP $DISP"
+    echo "$R $CP $DISP $SOCK"
 }
 
 echo "=== enabled (default) ==="
-read -r R CP DISP <<<"$(run_case on "")"
+read -r R CP DISP SOCK <<<"$(run_case on "")"
 if grep -q "Xwayland enabled" "$R/comp.log"; then echo "  ok: Xwayland enabled (DISPLAY=$DISP)"; else echo "  FAIL: Xwayland not enabled"; fail=1; fi
 if grep -q "Xwayland ready" "$R/comp.log"; then echo "  ok: Xwayland started"; else echo "  FAIL: Xwayland never started"; fail=1; fi
 if grep -q "X11 window mapped 'xwayland-test'" "$R/comp.log"; then echo "  ok: the X11 client mapped a window"; else echo "  FAIL: no X11 window mapped"; fail=1; fi
 if grep -q "X11 frame 'xwayland-test'" "$R/comp.log"; then echo "  ok: the X11 window got a server-side decoration frame"; else echo "  FAIL: no X11 decoration frame"; fail=1; fi
 if grep -q "WM: X11 window" "$R/comp.log"; then echo "  ok: the X11 window was reported to the WindowManager (Taskbar)"; else echo "  FAIL: no X11 WM emission"; fail=1; fi
+# Alt+Tab must list the X11 window and activate it (WindowRef; docs/20 item 1).
+# evdev keycodes: LeftAlt=56, Tab=15. Alt+Tab opens the switcher; releasing Alt
+# activates the selection.
+if [[ -x "$VIT" ]]; then
+    env WAYLAND_DISPLAY="$SOCK" "$VIT" --extent 1280 720 \
+        --key 56 press --key 15 press --key 15 release --key 56 release >/dev/null 2>&1 || true
+    sleep 0.5
+    if grep -q "WindowSwitcher: showing 1 windows" "$R/comp.log"; then
+        echo "  ok: Alt+Tab lists the X11 window in the switcher"
+    else
+        echo "  FAIL: the X11 window was not listed by the switcher"; fail=1
+    fi
+    if grep -q "WindowSwitcher: activating X11 window wm_id=" "$R/comp.log"; then
+        echo "  ok: releasing Alt activates the X11 window"
+    else
+        echo "  FAIL: the switcher did not activate the X11 window"; fail=1
+    fi
+else
+    echo "  note: virtual-input harness unavailable; skipping the Alt-Tab check"
+fi
 if grep -qiE "SIGSEGV|Segmentation fault|ASSERTION FAILED|VERIFICATION FAILED" "$R/comp.log"; then echo "  FAIL: the compositor faulted"; fail=1; fi
 kill "$CP" 2>/dev/null || true; wait "$CP" 2>/dev/null || true
 rm -rf "$R"; rm -f "$XDG_RUNTIME_DIR"/sde-xwayland-on-$$* 2>/dev/null || true
 
 echo "=== disabled ([Compositor] XWayland=false) ==="
-read -r R CP DISP <<<"$(run_case off "[Compositor]
+read -r R CP DISP _SOCK <<<"$(run_case off "[Compositor]
 XWayland=false")"
 if grep -q "Xwayland enabled" "$R/comp.log"; then echo "  FAIL: Xwayland enabled despite XWayland=false"; fail=1; else echo "  ok: Xwayland not enabled"; fi
 if [[ -f "$R/xwayland-display" ]]; then echo "  FAIL: DISPLAY written despite XWayland=false"; fail=1; else echo "  ok: no X server / DISPLAY"; fi

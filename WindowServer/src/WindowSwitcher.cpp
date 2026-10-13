@@ -33,6 +33,10 @@ extern "C" {
 // (the theme's overlay rect shadow) listing one window per row with a 64x64 live
 // thumbnail, the window icon (when the client supplies one), the computed title,
 // and the frame rect (+ "on row:col" across workspaces) right-aligned.
+//
+// xdg toplevels and X11 (Xwayland) windows share the list via WindowRef, so an
+// X11 window is a first-class entry here (docs/20-xwayland-next-steps.md). X11
+// windows are unmanaged by the workspace grid, so they list on the current stack.
 namespace WindowSwitcher {
 
 static HostHooks g_hooks;
@@ -44,14 +48,15 @@ void set_host_hooks(HostHooks hooks)
 
 static bool s_visible { false };
 static Mode s_mode { Mode::CurrentWorkspace };
-static Vector<Toplevel*> s_windows;
+static Vector<WindowRef> s_windows;
 static Vector<RefPtr<Gfx::Bitmap>> s_thumbnails;
+static Vector<ByteString> s_titles;
 static int s_selected { 0 };
 static int s_hovered { -1 };
 static bool s_multi_stack { false };
 static Gfx::IntRect s_rect;
 static OwnPtr<ChromeNode> s_overlay;
-static Toplevel* s_highlight { nullptr };
+static WindowRef s_highlight;
 
 // SerenityOS WindowSwitcher geometry (padding()/item_padding()/item_height()).
 static int const thumbnail_size = 64;
@@ -62,24 +67,54 @@ static int item_height() { return 14 + thumbnail_size; }
 static Gfx::Font const& title_font() { return Gfx::FontDatabase::window_title_font(); }
 static Gfx::Font const& details_font() { return Gfx::FontDatabase::default_font(); }
 
-static Toplevel* selected_toplevel()
+static WindowRef selected_window()
 {
     if (s_selected < 0 || s_selected >= static_cast<int>(s_windows.size()))
-        return nullptr;
+        return {};
     return s_windows[s_selected];
 }
 
-static StringView title_for(Toplevel const& toplevel)
+// --- WindowRef accessors: an xdg toplevel or an X11 (Xwayland) window. --------
+
+static ByteString window_title(WindowRef const& window)
 {
-    if (toplevel.xdg_toplevel->title)
-        return StringView { toplevel.xdg_toplevel->title, strlen(toplevel.xdg_toplevel->title) };
-    return "Untitled"sv;
+    if (window.is_x11())
+        return window.x11->title.is_empty() ? ByteString { "Untitled" } : window.x11->title;
+    if (window.xdg->xdg_toplevel->title)
+        return ByteString { window.xdg->xdg_toplevel->title, strlen(window.xdg->xdg_toplevel->title) };
+    return ByteString { "Untitled" };
 }
 
-static Gfx::IntRect toplevel_rect(Toplevel const& toplevel)
+static Gfx::IntRect window_rect(WindowRef const& window)
 {
+    if (window.is_x11()) {
+        auto& toplevel = *window.x11;
+        auto* node = &toplevel.scene_tree->node;
+        return { static_cast<int>(node->x) - toplevel.frame_left,
+            static_cast<int>(node->y) - toplevel.frame_top,
+            toplevel.frame_size.width(), toplevel.frame_size.height() };
+    }
+    auto& toplevel = *window.xdg;
     return { toplevel.scene_tree->node.x, toplevel.scene_tree->node.y,
         toplevel.frame_size.width(), toplevel.frame_size.height() };
+}
+
+// The scene node whose region is snapshotted for the live thumbnail. For an xdg
+// window that is the content (no compositor frame); for an X11 window the whole
+// tree, so its server-side frame is included.
+static wlr_scene_node* window_thumbnail_node(WindowRef const& window)
+{
+    return window.is_x11() ? &window.x11->scene_tree->node : &window.xdg->content_tree->node;
+}
+
+static Gfx::Bitmap const* window_icon(WindowRef const& window)
+{
+    return window.is_x11() ? nullptr : window.xdg->icon.ptr();
+}
+
+static u64 window_focus_order(WindowRef const& window)
+{
+    return window.is_x11() ? window.x11->focus_order : window.xdg->focus_order;
 }
 
 static Gfx::IntRect output_rect(Server& server)
@@ -108,43 +143,73 @@ static void build_list(Server& server)
 {
     s_windows.clear();
     s_thumbnails.clear();
+    s_titles.clear();
+
+    u32 const row = WindowManager::current_workspace_row();
+    u32 const column = WindowManager::current_workspace_column();
     for (auto& toplevel : server.toplevels) {
         if (s_mode == Mode::CurrentWorkspace
-            && (toplevel->workspace_row != WindowManager::current_workspace_row()
-                || toplevel->workspace_column != WindowManager::current_workspace_column()))
+            && (toplevel->workspace_row != row || toplevel->workspace_column != column))
             continue;
-        s_windows.append(toplevel.ptr());
+        s_windows.append({ toplevel.ptr(), nullptr });
     }
+    // X11 windows are not placed on the workspace grid (docs/20 item 2), so they
+    // are always on the current stack and appear in both modes. Override-redirect
+    // windows (menus, tooltips) are unmanaged and never listed.
+    for (auto& toplevel : server.x11_toplevels) {
+        if (!toplevel->mapped || toplevel->override_redirect || toplevel->wm_id == 0)
+            continue;
+        s_windows.append({ nullptr, toplevel.ptr() });
+    }
+
     // Most-recently-focused first, so the first Alt+Tab lands on the
     // previously-focused window (Serenity's window stack order).
-    insertion_sort(s_windows, [](Toplevel* a, Toplevel* b) { return a->focus_order > b->focus_order; });
+    insertion_sort(s_windows, [](WindowRef const& a, WindowRef const& b) { return window_focus_order(a) > window_focus_order(b); });
 
+    // Multi-stack indicator: only the xdg grid has several stacks; X11 windows sit
+    // on the current one, so they never make the list "multi".
     s_multi_stack = false;
-    for (size_t i = 1; i < s_windows.size(); ++i) {
-        if (s_windows[i]->workspace_row != s_windows[0]->workspace_row
-            || s_windows[i]->workspace_column != s_windows[0]->workspace_column) {
+    bool have_xdg = false;
+    u32 first_row = 0;
+    u32 first_column = 0;
+    for (auto const& window : s_windows) {
+        if (window.is_x11())
+            continue;
+        if (!have_xdg) {
+            first_row = window.xdg->workspace_row;
+            first_column = window.xdg->workspace_column;
+            have_xdg = true;
+        } else if (window.xdg->workspace_row != first_row || window.xdg->workspace_column != first_column) {
             s_multi_stack = true;
             break;
         }
     }
 
-    for (auto* toplevel : s_windows)
-        s_thumbnails.append(snapshot_toplevel(toplevel->content_tree->node));
+    for (auto const& window : s_windows) {
+        s_titles.append(window_title(window));
+        s_thumbnails.append(snapshot_toplevel(*window_thumbnail_node(window)));
+    }
 }
 
 // Draw the selected window's frame in the theme's "Highlighted" state, like
 // SerenityOS WindowManager::set_highlight_window.
-static void update_highlight(Toplevel* next)
+static void update_highlight(WindowRef next)
 {
-    if (next == s_highlight)
+    if (next.xdg == s_highlight.xdg && next.x11 == s_highlight.x11)
         return;
-    auto* previous = s_highlight;
+    auto const previous = s_highlight;
     s_highlight = next;
-    if (g_hooks.update_frame) {
-        if (previous)
-            g_hooks.update_frame(*previous);
-        if (s_highlight)
-            g_hooks.update_frame(*s_highlight);
+    if (previous.is_x11()) {
+        if (g_hooks.update_x11_frame)
+            g_hooks.update_x11_frame(*previous.x11);
+    } else if (previous.xdg && g_hooks.update_frame) {
+        g_hooks.update_frame(*previous.xdg);
+    }
+    if (next.is_x11()) {
+        if (g_hooks.update_x11_frame)
+            g_hooks.update_x11_frame(*next.x11);
+    } else if (next.xdg && g_hooks.update_frame) {
+        g_hooks.update_frame(*next.xdg);
     }
 }
 
@@ -161,11 +226,10 @@ static void step(int delta)
 static void select_index(Server& server, int index)
 {
     s_selected = index;
-    if (s_mode == Mode::AllWorkspaces && g_hooks.switch_workspace) {
-        if (auto* toplevel = selected_toplevel())
-            g_hooks.switch_workspace(server, toplevel->workspace_row, toplevel->workspace_column, false);
-    }
-    update_highlight(selected_toplevel());
+    auto const window = selected_window();
+    if (s_mode == Mode::AllWorkspaces && g_hooks.switch_workspace && window.xdg)
+        g_hooks.switch_workspace(server, window.xdg->workspace_row, window.xdg->workspace_column, false);
+    update_highlight(window);
 }
 
 static void render(Server& server)
@@ -174,8 +238,8 @@ static void render(Server& server)
         return;
 
     int longest_title = 0;
-    for (auto* toplevel : s_windows)
-        longest_title = max(longest_title, title_font().width(title_for(*toplevel)));
+    for (auto const& title : s_titles)
+        longest_title = max(longest_title, title_font().width(title));
 
     int const space_for_window_details = 200;
     int const width = thumbnail_size + longest_title + space_for_window_details + padding * 2 + item_padding * 2;
@@ -198,6 +262,7 @@ static void render(Server& server)
     auto const& palette = g_hooks.palette(server);
     Gfx::Bitmap const* shadow = g_hooks.overlay_shadow ? g_hooks.overlay_shadow() : nullptr;
     auto const windows = s_windows;
+    auto const titles = s_titles;
     auto const thumbnails = s_thumbnails;
     int const selected = s_selected;
     int const hovered = s_hovered;
@@ -230,28 +295,29 @@ static void render(Server& server)
             item.shrink(item_padding, 0);
 
             Gfx::IntRect thumb { item.location().translated(0, 5), { thumbnail_size, thumbnail_size } };
-            auto const& toplevel = *windows[index];
+            auto const& window = windows[index];
             if (index < thumbnails.size() && thumbnails[index])
                 painter.draw_scaled_bitmap(thumb, *thumbnails[index], thumbnails[index]->rect(), 1.0f, Gfx::ScalingMode::BilinearBlend);
             else
                 painter.fill_rect(thumb, palette.base());
 
             // The window icon, bottom-right of the thumbnail (when the client supplies one).
-            if (toplevel.icon) {
+            if (auto const* icon = window_icon(window)) {
                 Gfx::IntRect icon_rect {
-                    thumb.bottom_right().translated(-toplevel.icon->width() - 1, -toplevel.icon->height() - 1),
-                    { toplevel.icon->width(), toplevel.icon->height() },
+                    thumb.bottom_right().translated(-icon->width() - 1, -icon->height() - 1),
+                    { icon->width(), icon->height() },
                 };
-                painter.blit(icon_rect.location(), *toplevel.icon, toplevel.icon->rect());
+                painter.blit(icon_rect.location(), *icon, icon->rect());
             }
 
+            auto const& title = index < titles.size() ? titles[index] : window_title(window);
             auto const title_rect = item.translated(thumbnail_size + 12, 0);
-            painter.draw_text(title_rect.translated(1, 0), title_for(toplevel), title_font(), Gfx::TextAlignment::CenterLeft, text_color.inverted());
-            painter.draw_text(title_rect, title_for(toplevel), title_font(), Gfx::TextAlignment::CenterLeft, text_color);
+            painter.draw_text(title_rect.translated(1, 0), title, title_font(), Gfx::TextAlignment::CenterLeft, text_color.inverted());
+            painter.draw_text(title_rect, title, title_font(), Gfx::TextAlignment::CenterLeft, text_color);
 
-            auto details = toplevel_rect(toplevel).to_byte_string();
-            if (multi)
-                details = ByteString::formatted("{} on {}:{}", details, toplevel.workspace_row + 1, toplevel.workspace_column + 1);
+            auto details = window_rect(window).to_byte_string();
+            if (multi && !window.is_x11())
+                details = ByteString::formatted("{} on {}:{}", details, window.xdg->workspace_row + 1, window.xdg->workspace_column + 1);
             painter.draw_text(item, details, details_font(), Gfx::TextAlignment::CenterRight, rect_text_color);
         }
     });
@@ -261,8 +327,13 @@ static void render(Server& server)
 
 static void activate(Server& server)
 {
-    if (s_selected >= 0 && s_selected < static_cast<int>(s_windows.size())) {
-        auto* toplevel = s_windows[s_selected];
+    auto const window = selected_window();
+    if (window.is_x11()) {
+        dbgln("WindowSwitcher: activating X11 window wm_id={}", window.x11->wm_id);
+        if (g_hooks.focus_x11)
+            g_hooks.focus_x11(server, window.x11);
+    } else if (window.xdg) {
+        auto* toplevel = window.xdg;
         dbgln("WindowSwitcher: activating wm_id={}", toplevel->wm_id);
         if (s_mode == Mode::AllWorkspaces && g_hooks.switch_workspace)
             g_hooks.switch_workspace(server, toplevel->workspace_row, toplevel->workspace_column, false);
@@ -301,7 +372,12 @@ bool is_visible()
 
 Toplevel* highlighted()
 {
-    return s_highlight;
+    return s_highlight.xdg;
+}
+
+X11Toplevel* highlighted_x11()
+{
+    return s_highlight.x11;
 }
 
 bool handle_pointer_motion(Server& server, double x, double y)
@@ -372,15 +448,15 @@ void refresh(Server& server)
     if (!s_visible)
         return;
     // Keep the selection on the same window across the rebuild.
-    auto* previous = selected_toplevel();
+    auto const previous = selected_window();
     build_list(server);
     if (s_windows.is_empty()) {
         hide();
         return;
     }
-    if (previous) {
+    if (previous.is_valid()) {
         for (size_t i = 0; i < s_windows.size(); ++i) {
-            if (s_windows[i] == previous) {
+            if (s_windows[i].xdg == previous.xdg && s_windows[i].x11 == previous.x11) {
                 s_selected = static_cast<int>(i);
                 break;
             }
@@ -394,11 +470,12 @@ void refresh(Server& server)
 void hide()
 {
     s_visible = false;
-    update_highlight(nullptr);
+    update_highlight({});
     if (s_overlay)
         s_overlay->set_visible(false);
     s_windows.clear();
     s_thumbnails.clear();
+    s_titles.clear();
     s_hovered = -1;
 }
 
