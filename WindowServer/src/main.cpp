@@ -238,6 +238,7 @@ static bool window_menu_handle_key(Server&, xkb_keysym_t);
 // repeat helpers below the keybinding code.
 static void stop_key_repeat();
 static void arrange_layers(Server&, wlr_output*);
+static void update_xwayland_workareas(Server&);
 static Output* output_for(Server&, wlr_output*);
 static void output_manager_send_configuration(Server&);
 static void persist_screen_layout(Server&);
@@ -2546,6 +2547,9 @@ static void xwayland_ready(wl_listener* listener, void*)
 {
     Server* server = nullptr;
     server = wl_container_of(listener, server, xwayland_ready);
+    server->xwayland_started = true;
+    // Now that xwm exists, report the workarea (panels' exclusive zones).
+    update_xwayland_workareas(*server);
     dbgln("WindowServer: Xwayland ready (DISPLAY={})", server->xwayland->display_name);
 }
 
@@ -4522,6 +4526,26 @@ static Gfx::Palette const& current_palette(Server&)
     return *g_palette;
 }
 
+// Tell Xwayland the usable area(s) (_NET_WORKAREA), so X11 clients (panels,
+// maximized windows, fullscreen) respect SDE's panels/docks. docs/20 item 8.
+static void update_xwayland_workareas(Server& server)
+{
+    if (!server.xwayland || !server.xwayland_started)
+        return;
+    Vector<wlr_box> areas;
+    for (auto& output : server.outputs) {
+        wlr_box box = output->usable_area;
+        if (wlr_box_empty(&box))
+            wlr_output_layout_get_box(server.output_layout, output->output, &box);
+        areas.append(box);
+    }
+    if (areas.is_empty())
+        return;
+    wlr_xwayland_set_workareas(server.xwayland, areas.data(), areas.size());
+    dbgln("WindowServer: reported X11 workarea ({} area(s); first {}x{} at {},{}).",
+        areas.size(), areas[0].width, areas[0].height, areas[0].x, areas[0].y);
+}
+
 static void arrange_layers(Server& server, wlr_output* output)
 {
     if (!output)
@@ -4566,6 +4590,9 @@ static void arrange_layers(Server& server, wlr_output* output)
     // The layer-shell arrange resets every node's position, so re-apply the
     // applet-area layout last (WS4).
     AppletManager::relayout(server);
+
+    // Keep X11 clients' workarea in step with the panels' exclusive zones.
+    update_xwayland_workareas(server);
 }
 
 // On_demand layer surfaces (client popups: the Wi-Fi network list and its

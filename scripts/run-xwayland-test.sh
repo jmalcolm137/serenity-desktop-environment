@@ -132,6 +132,11 @@ if [[ -x "$XICON" && -n "$DISP" ]]; then
     else
         echo "  FAIL: the _NET_WM_STATE hints were not read"; fail=1
     fi
+    if grep -q "reported X11 workarea" "$R/comp.log"; then
+        echo "  ok: the workarea was reported to Xwayland (_NET_WORKAREA)"
+    else
+        echo "  FAIL: no X11 workarea reported"; fail=1
+    fi
 else
     echo "  note: x11-icon-test unavailable; skipping the icon/class check"
 fi

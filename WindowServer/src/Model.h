@@ -585,6 +585,9 @@ struct Server {
     // XWayland (R5): X11 client support.
     wlr_compositor* compositor { nullptr };
     wlr_xwayland* xwayland { nullptr };
+    // Set when the X server is up (the xwayland "ready" event), so the compositor
+    // only calls XWM-backed APIs (e.g. set_workareas) once xwm exists.
+    bool xwayland_started { false };
     Vector<NonnullOwnPtr<X11Toplevel>> x11_toplevels;
     X11Toplevel* focused_x11 { nullptr };
     wl_listener new_xwayland_surface { };
