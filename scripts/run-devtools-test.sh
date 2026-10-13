@@ -25,7 +25,7 @@ TOOLS=(GMLPlayground SQLStudio HackStudio Profiler)
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-devtools.XXXXXX")"
 export SDE_STATE_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
-trap 'rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$ "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$.lock 2>/dev/null || true' EXIT
+trap 'rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
 
 fail=0
 echo "=== devtools are built and declared in the Development category ==="

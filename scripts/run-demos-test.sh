@@ -36,7 +36,7 @@ EXTRA=(Magnifier:Utilities)
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-demos.XXXXXX")"
 export SDE_STATE_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
-trap 'rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$ "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$.lock 2>/dev/null || true' EXIT
+trap 'rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
 
 fail=0
 echo "=== demos/Magnifier are built and in the expected menu category ==="

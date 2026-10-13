@@ -23,7 +23,7 @@ fi
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-portal-ui.XXXXXX")"
 chmod 700 "$RUNTIME"
-trap 'rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$ "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$.lock 2>/dev/null || true' EXIT
+trap 'rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
 
 SOCK="sde-pui-$$"
 env -u WAYLAND_DISPLAY -u DISPLAY \

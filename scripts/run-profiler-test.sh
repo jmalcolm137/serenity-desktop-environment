@@ -41,7 +41,7 @@ fi
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-profiler.XXXXXX")"
 export SDE_STATE_DIR="$RUNTIME"
 PERFCORE=""
-trap 'rm -rf "$RUNTIME"; { [[ -n "$PERFCORE" ]] && rm -f "$PERFCORE"; } || true; rm -f "$XDG_RUNTIME_DIR"/sde-*-$$ "$XDG_RUNTIME_DIR"/sde-*-$$.lock 2>/dev/null || true' EXIT
+trap 'rm -rf "$RUNTIME"; { [[ -n "$PERFCORE" ]] && rm -f "$PERFCORE"; } || true; rm -f "$XDG_RUNTIME_DIR"/sde-*-$$* "$XDG_RUNTIME_DIR"/sde-*-$$*.lock 2>/dev/null || true' EXIT
 
 fail=0
 

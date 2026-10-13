@@ -16,7 +16,7 @@ WS="$SDE_ROOT/build/tools/ext-workspace-test"
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-workspaces.XXXXXX")"
 chmod 700 "$RUNTIME"
-trap 'rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$ "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$.lock 2>/dev/null || true' EXIT
+trap 'rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
 export SDE_STATE_DIR="$RUNTIME"
 
 fail=0

@@ -26,7 +26,7 @@ cleanup() {
     [[ -n "$COMP_PID" ]] && kill "$COMP_PID" 2>/dev/null || true
     [[ -n "$COMP_PID" ]] && wait "$COMP_PID" 2>/dev/null || true
     # D8 (docs/03): unlink the compositor socket(s) this run created.
-    rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$ "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$.lock 2>/dev/null || true
+    rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true
     rm -rf "$RUNTIME"
 }
 trap cleanup EXIT
