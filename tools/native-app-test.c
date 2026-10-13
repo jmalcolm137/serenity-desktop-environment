@@ -6,6 +6,7 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 #define _GNU_SOURCE
+#include <poll.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,6 +27,8 @@ static struct xdg_wm_base* wm_base;
 static struct wl_surface* surface;
 static struct xdg_surface* xdg_surface;
 static struct xdg_toplevel* toplevel;
+// The toplevel title (--title), so a test can tell two instances apart.
+static char const* g_title = "SDE Native Test";
 static int width = 320;
 static int height = 200;
 static int configured;
@@ -229,6 +232,23 @@ int main(int argc, char** argv)
     int const want_presentation = argc > 1 && strcmp(argv[1], "--presentation") == 0;
     int const want_fractional = argc > 1 && strcmp(argv[1], "--fractional") == 0;
 
+    // --title <text>: a distinct title, so a test can tell two instances apart.
+    for (int i = 1; i + 1 < argc; i++) {
+        if (strcmp(argv[i], "--title") == 0) {
+            g_title = argv[i + 1];
+            break;
+        }
+    }
+    // --linger <ms>: keep the window mapped for this long before exiting, so a test
+    // can map several clients and observe how focus moves between them.
+    int linger_ms = 0;
+    for (int i = 1; i + 1 < argc; i++) {
+        if (strcmp(argv[i], "--linger") == 0) {
+            linger_ms = atoi(argv[i + 1]);
+            break;
+        }
+    }
+
     display = wl_display_connect(NULL);
     if (!display) {
         fprintf(stderr, "native-app-test: cannot connect to a compositor\n");
@@ -251,7 +271,7 @@ int main(int argc, char** argv)
     xdg_surface_add_listener(xdg_surface, &xdg_surface_listener, NULL);
     toplevel = xdg_surface_get_toplevel(xdg_surface);
     xdg_toplevel_add_listener(toplevel, &toplevel_listener, NULL);
-    xdg_toplevel_set_title(toplevel, "SDE Native Test");
+    xdg_toplevel_set_title(toplevel, g_title);
     xdg_toplevel_set_app_id(toplevel, "sde-native-test");
     wl_surface_commit(surface);
 
@@ -322,6 +342,19 @@ int main(int argc, char** argv)
             return 1;
         }
         fprintf(stderr, "native-app-test: presented refresh=%u\n", presented_refresh);
+        return 0;
+    }
+
+    if (linger_ms > 0) {
+        struct pollfd pfd = { .fd = wl_display_get_fd(display), .events = POLLIN };
+        int waited = 0;
+        while (waited < linger_ms) {
+            wl_display_dispatch_pending(display);
+            wl_display_flush(display);
+            if (poll(&pfd, 1, 50) > 0)
+                wl_display_dispatch(display);
+            waited += 50;
+        }
         return 0;
     }
 

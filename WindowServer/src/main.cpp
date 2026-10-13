@@ -427,6 +427,38 @@ static Toplevel* toplevel_from_handle(wlr_foreign_toplevel_handle_v1* handle)
     return static_cast<Toplevel*>(handle->data);
 }
 
+// Keep exactly one window active at a time: deactivate every window (xdg or X11)
+// except the one taking focus. This scans the window lists rather than trusting the
+// seat's previous focused surface, which is unreliable — the seat has no focused
+// surface when there is no keyboard (headless, or the first windows of a session),
+// and it is cleared when a layer surface (a client menu / panel) takes focus. A
+// window left active by a missed transition is therefore fixed up here, and the
+// change is reported to the WindowManagerServer so the Taskbar button follows.
+static void deactivate_other_windows(Server& server, Toplevel* keep_toplevel, X11Toplevel* keep_x11)
+{
+    for (auto& other : server.toplevels) {
+        if (other.ptr() == keep_toplevel || !other->frame_active)
+            continue;
+        other->frame_active = false;
+        wlr_xdg_toplevel_set_activated(other->xdg_toplevel, false);
+        if (other->xdg_toplevel->base->surface->mapped)
+            toplevel_update_frame(*other);
+        WindowManager::emit_window_state(*other);
+        dbgln("WindowServer: window '{}' deactivated", other->xdg_toplevel->title ? other->xdg_toplevel->title : "");
+    }
+    for (auto& other : server.x11_toplevels) {
+        if (other.ptr() == keep_x11 || !other->frame_active)
+            continue;
+        other->frame_active = false;
+        wlr_xwayland_surface_activate(other->xsurface, false);
+        if (other->frame_decorated)
+            x11_update_frame(*other);
+        if (other->wm_id != 0)
+            WindowManager::emit_window_state(*other);
+        dbgln("WindowServer: X11 window '{}' deactivated", other->title);
+    }
+}
+
 void focus_toplevel(Server& server, Toplevel* toplevel)
 {
     if (!toplevel)
@@ -434,9 +466,13 @@ void focus_toplevel(Server& server, Toplevel* toplevel)
 
     toplevel->focus_order = ++g_focus_order_counter;
 
+    // Exactly one window is active (see deactivate_other_windows). Run this even
+    // when the keyboard focus did not change, so a window left active is fixed up.
+    deactivate_other_windows(server, toplevel, nullptr);
+
     wlr_surface* previous_surface = server.seat->keyboard_state.focused_surface;
     wlr_surface* surface = toplevel->xdg_toplevel->base->surface;
-    if (previous_surface == surface)
+    if (previous_surface == surface && toplevel->frame_active)
         return;
 
     // A toplevel taking focus ends any on_demand layer surface's keyboard focus.
@@ -444,20 +480,6 @@ void focus_toplevel(Server& server, Toplevel* toplevel)
 
     // A focus change retargets the keyboard; stop repeating into the old client.
     stop_key_repeat();
-
-    if (previous_surface) {
-        if (auto* previous = wlr_xdg_toplevel_try_from_wlr_surface(previous_surface)) {
-            wlr_xdg_toplevel_set_activated(previous, false);
-            if (auto* content_tree = static_cast<wlr_scene_tree*>(previous->base->data)) {
-                if (auto* frame_tree = content_tree->node.parent) {
-                    if (auto* previous_toplevel = static_cast<Toplevel*>(frame_tree->node.data)) {
-                        previous_toplevel->frame_active = false;
-                        toplevel_update_frame(*previous_toplevel);
-                    }
-                }
-            }
-        }
-    }
 
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
 
@@ -470,6 +492,9 @@ void focus_toplevel(Server& server, Toplevel* toplevel)
     wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, true);
     toplevel->frame_active = true;
     toplevel_update_frame(*toplevel);
+    // Report the new active window so the Taskbar marks its button (and sinks the
+    // others).
+    WindowManager::emit_window_state(*toplevel);
     if (toplevel->foreign_handle)
         wlr_foreign_toplevel_handle_v1_set_activated(toplevel->foreign_handle, true);
 
@@ -2243,27 +2268,13 @@ static void focus_x11_toplevel(Server& server, X11Toplevel* toplevel)
     if (toplevel->override_redirect)
         return;
     wlr_surface* surface = toplevel->xsurface->surface;
-    if (server.seat->keyboard_state.focused_surface == surface)
+
+    // Exactly one window is active (see deactivate_other_windows).
+    deactivate_other_windows(server, nullptr, toplevel);
+
+    if (server.seat->keyboard_state.focused_surface == surface && toplevel->frame_active)
         return;
 
-    if (auto* previous = server.seat->keyboard_state.focused_surface) {
-        if (auto* xdg = wlr_xdg_toplevel_try_from_wlr_surface(previous)) {
-            wlr_xdg_toplevel_set_activated(xdg, false);
-            for (auto& other : server.toplevels) {
-                if (other->xdg_toplevel && other->xdg_toplevel->base->surface == previous) {
-                    other->frame_active = false;
-                    toplevel_update_frame(*other);
-                    break;
-                }
-            }
-        }
-    }
-    if (server.focused_x11 && server.focused_x11 != toplevel) {
-        wlr_xwayland_surface_activate(server.focused_x11->xsurface, false);
-        server.focused_x11->frame_active = false;
-        if (server.focused_x11->frame_decorated)
-            x11_update_frame(*server.focused_x11);
-    }
     server.focused_x11 = toplevel;
     // Feed the Alt-Tab switcher's most-recently-focused ordering (see
     // Toplevel::focus_order; X11Toplevel gained the same field).
