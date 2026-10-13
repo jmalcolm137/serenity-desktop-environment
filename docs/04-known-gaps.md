@@ -340,8 +340,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   server, no `DISPLAY`). Verified by `scripts/run-xwayland-test.sh`. **Alt-Tab**
   now lists X11 windows too (the `WindowRef` abstraction, `07027fc`; see
   [`20-xwayland-next-steps.md`](20-xwayland-next-steps.md)). **Still
-  missing for full parity:** **workspaces**
-  integration (X11 windows are always on the current stack), window **icons**
+  missing for full parity:** window **icons**
   (`_NET_WM_ICON`) and WM_CLASS-based grouping, override-redirect
   (menus/tooltips) polish, the X11↔Wayland **selection / clipboard bridge**,
   Xwayland **keyboard grabs**, `_NET_WM_STATE` hints

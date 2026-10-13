@@ -23,6 +23,7 @@ the compositor maps as a separate scene surface. Landed, in order:
 | `44ce17b` | **Taskbar window list**: X11 windows are reported to the WindowManagerServer by `wm_id` (map/unmap/title/focus/destroy) and the Taskbar's activate/minimize requests route back (host hooks `focus_x11` / `set_minimized_x11`). |
 | `8bba52e` | **Override-redirect**: menus/tooltips never take keyboard focus. |
 | `07027fc` | **Alt-Tab** (and the `WindowRef` abstraction). `WindowRef` (an xdg `Toplevel` **or** an `X11Toplevel`, `Model.h`) is the small window abstraction the WM policy paths share. `WindowSwitcher` lists X11 windows alongside xdg ones: title, live thumbnail, frame rect, most-recently-focused order (X11 gained `focus_order`), select → focus, and the theme's *Highlighted* frame state. X11 windows list on the current stack. |
+| `0cf1933` | **Workspaces**. `X11Toplevel` gained `workspace_row`/`workspace_column`; a mapped X11 window joins the current stack and hides/shows with it (workspace switch and grid reload), and the switcher filters/labels X11 windows by stack. |
 
 Where the code lives:
 
@@ -66,9 +67,8 @@ grid and icon paths) hoist into shared helpers as those land.
 
 1. ~~**Alt-Tab**~~ — **done** (`07027fc`): X11 windows join the `WindowSwitcher`
    list (title, live thumbnail, select → focus; the *Highlighted* frame state).
-2. **Workspaces** — assign each X11 window to the current stack grid cell and
-   apply `update_toplevel_visibility` on switch (X11 windows are currently always
-   visible, on every workspace).
+2. ~~**Workspaces**~~ — **done** (`0cf1933`): an X11 window is assigned to the
+   current stack on map and hides/shows with it (`update_x11_toplevel_visibility`).
 3. **Window icons + WM_CLASS** — fetch `_NET_WM_ICON` (`wlr_xwayland_surface_fetch_icon`
    + `xcb_ewmh_get_wm_icon_iterator`) and emit it (`emit_window_icon`), and group
    Taskbar buttons by `WM_CLASS`/`instance`.
