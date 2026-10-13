@@ -2128,6 +2128,21 @@ static bool x11_surface_at(Server& server, double lx, double ly, wlr_surface** s
     return true;
 }
 
+// Override-redirect X11 windows (menus, tooltips) are transient children; the X
+// server's stacking is not mirrored here, so keep them above their parent when
+// the parent is raised. docs/20-xwayland-next-steps.md item 4.
+static void x11_raise_overrides_above(X11Toplevel& parent)
+{
+    if (!parent.xsurface)
+        return;
+    for (auto& child : parent.server->x11_toplevels) {
+        if (!child->override_redirect || !child->mapped || !child->xsurface)
+            continue;
+        if (child->xsurface->parent == parent.xsurface)
+            wlr_scene_node_raise_to_top(&child->scene_tree->node);
+    }
+}
+
 static void focus_x11_toplevel(Server& server, X11Toplevel* toplevel)
 {
     if (!toplevel || !toplevel->xsurface || !toplevel->xsurface->surface)
@@ -2165,6 +2180,8 @@ static void focus_x11_toplevel(Server& server, X11Toplevel* toplevel)
     server.keyboard_focus_layer = nullptr;
     stop_key_repeat();
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
+    // Keep this window's override-redirect children (menus/tooltips) above it.
+    x11_raise_overrides_above(*toplevel);
     toplevel->frame_active = true;
     wlr_xwayland_surface_activate(toplevel->xsurface, true);
     if (toplevel->frame_decorated)
@@ -2226,6 +2243,9 @@ static void x11_surface_map(wl_listener* listener, void*)
             toplevel->wm_id = g_next_wm_id++;
         focus_x11_toplevel(server, toplevel);
         WindowManager::emit_window_state(*toplevel);
+    } else {
+        // They are transient and never workspace-hid (docs/20 item 4).
+        dbgln("WindowServer: X11 override-redirect window mapped '{}' at {},{}", toplevel->title, toplevel->xsurface->x, toplevel->xsurface->y);
     }
 }
 

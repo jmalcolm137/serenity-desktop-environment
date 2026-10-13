@@ -579,8 +579,9 @@ void update_x11_toplevel_visibility(X11Toplevel& toplevel)
         return;
     bool const on_current = toplevel.workspace_row == s_current_row && toplevel.workspace_column == s_current_column;
     // An X11 window that is withdrawn/minimized is already unmapped (disabled);
-    // keep it hidden regardless of the stack.
-    bool const visible = on_current && toplevel.mapped;
+    // keep it hidden regardless of the stack. Override-redirect windows (menus,
+    // tooltips) are unmanaged/transient: they are never workspace-hid.
+    bool const visible = (toplevel.override_redirect || on_current) && toplevel.mapped;
     wlr_scene_node_set_enabled(&toplevel.scene_tree->node, visible);
     dbgln("WindowServer: X11 window {} workspace {},{} visible={}", toplevel.wm_id, toplevel.workspace_row, toplevel.workspace_column, visible);
 }

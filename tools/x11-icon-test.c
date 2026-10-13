@@ -50,6 +50,16 @@ int main(void)
     xcb_change_property(connection, XCB_PROP_MODE_REPLACE, window, ewmh._NET_WM_ICON, XCB_ATOM_CARDINAL, 32, 2 + size * size, icon);
 
     xcb_map_window(connection, window);
+
+    // An override-redirect window (like a menu/tooltip): unmanaged, never listed,
+    // and it must stay visible across workspace switches.
+    xcb_window_t popup = xcb_generate_id(connection);
+    uint32_t const popup_mask = XCB_CW_BACK_PIXEL | XCB_CW_OVERRIDE_REDIRECT;
+    uint32_t const popup_values[] = { screen->white_pixel, 1 };
+    xcb_create_window(connection, XCB_COPY_FROM_PARENT, popup, screen->root, 260, 240, 80, 50, 0,
+        XCB_WINDOW_CLASS_INPUT_OUTPUT, screen->root_visual, popup_mask, popup_values);
+    xcb_map_window(connection, popup);
+
     xcb_flush(connection);
 
     // Keep the window mapped so the compositor fetches the properties.
@@ -58,6 +68,7 @@ int main(void)
         usleep(100 * 1000);
     }
 
+    xcb_destroy_window(connection, popup);
     xcb_destroy_window(connection, window);
     xcb_ewmh_connection_wipe(&ewmh);
     xcb_disconnect(connection);

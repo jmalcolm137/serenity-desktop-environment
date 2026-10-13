@@ -118,6 +118,11 @@ if [[ -x "$XICON" && -n "$DISP" ]]; then
     else
         echo "  FAIL: WM_CLASS was not read"; fail=1
     fi
+    if grep -q "X11 override-redirect window mapped" "$R/comp.log"; then
+        echo "  ok: an override-redirect X11 window mapped (menus/tooltips are unmanaged)"
+    else
+        echo "  FAIL: the override-redirect window did not map"; fail=1
+    fi
 else
     echo "  note: x11-icon-test unavailable; skipping the icon/class check"
 fi
@@ -140,6 +145,12 @@ if [[ -x "$WS" ]]; then
         echo "  ok: the X11 window hid with its workspace"
     else
         echo "  FAIL: the X11 window did not hide on a workspace switch"; fail=1
+    fi
+    # The override-redirect window (wm_id 0, unmanaged) must NOT be workspace-hid.
+    if grep -qE "X11 window 0 workspace 0,0 visible=true" "$R/comp.log"; then
+        echo "  ok: the override-redirect window stayed visible across the switch"
+    else
+        echo "  FAIL: the override-redirect window was hidden by the workspace switch"; fail=1
     fi
 else
     echo "  note: ext-workspace-test unavailable; skipping the workspace check"
