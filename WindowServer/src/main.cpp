@@ -2155,6 +2155,8 @@ static void focus_x11_toplevel(Server& server, X11Toplevel* toplevel)
     wlr_xwayland_surface_activate(toplevel->xsurface, true);
     if (toplevel->frame_decorated)
         x11_update_frame(*toplevel);
+    if (toplevel->wm_id != 0)
+        WindowManager::emit_window_state(*toplevel);
     auto* keyboard = wlr_seat_get_keyboard(server.seat);
     if (keyboard)
         wlr_seat_keyboard_notify_enter(server.seat, surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
@@ -2192,13 +2194,20 @@ static void x11_surface_map(wl_listener* listener, void*)
     toplevel = wl_container_of(listener, toplevel, surface_map);
     auto& server = *toplevel->server;
     toplevel->mapped = true;
+    toplevel->title = ByteString { toplevel->xsurface->title ? StringView { toplevel->xsurface->title, strlen(toplevel->xsurface->title) } : StringView { } };
     wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
     wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->xsurface->x, toplevel->xsurface->y);
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
     x11_update_frame(*toplevel);
     dbgln("WindowServer: X11 window mapped '{}' at {},{}", toplevel->xsurface->title ? toplevel->xsurface->title : "", toplevel->xsurface->x, toplevel->xsurface->y);
-    if (!toplevel->override_redirect)
+    // Override-redirect windows (menus, tooltips) are unmanaged: no frame, no
+    // focus, no Taskbar entry.
+    if (!toplevel->override_redirect) {
+        if (toplevel->wm_id == 0)
+            toplevel->wm_id = g_next_wm_id++;
         focus_x11_toplevel(server, toplevel);
+        WindowManager::emit_window_state(*toplevel);
+    }
 }
 
 static void x11_surface_unmap(wl_listener* listener, void*)
@@ -2207,6 +2216,8 @@ static void x11_surface_unmap(wl_listener* listener, void*)
     toplevel = wl_container_of(listener, toplevel, surface_unmap);
     toplevel->mapped = false;
     wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
+    if (toplevel->wm_id != 0)
+        WindowManager::emit_window_state(*toplevel);
 }
 
 static void x11_surface_associate(wl_listener* listener, void*)
@@ -2245,6 +2256,8 @@ static void x11_surface_destroy(wl_listener* listener, void*)
         server.grabbed_x11 = nullptr;
     if (server.pressed_button_x11 == toplevel)
         server.pressed_button_x11 = nullptr;
+    if (toplevel->wm_id != 0)
+        WindowManager::emit_window_removed(*toplevel);
     if (toplevel->frame_buffer)
         toplevel->frame_buffer = nullptr; // destroyed with the scene tree
     if (toplevel->scene_tree) {
@@ -2285,8 +2298,11 @@ static void x11_set_title(wl_listener* listener, void*)
     X11Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, set_title);
     dbgln("WindowServer: X11 window '{}'", toplevel->xsurface->title ? toplevel->xsurface->title : "");
+    toplevel->title = ByteString { toplevel->xsurface->title ? StringView { toplevel->xsurface->title, strlen(toplevel->xsurface->title) } : StringView { } };
     if (toplevel->frame_decorated)
         x11_update_frame(*toplevel);
+    if (toplevel->wm_id != 0)
+        WindowManager::emit_window_state(*toplevel);
 }
 
 static void server_new_xwayland_surface(wl_listener* listener, void* data)
@@ -2587,6 +2603,21 @@ static void update_x11_button_hover(Server& server, double x, double y)
                 x11_update_frame(*toplevel);
         }
     }
+}
+
+// WindowManager host hooks for X11 windows (Taskbar focus/minimize).
+static void hook_focus_x11(Server& server, X11Toplevel* toplevel)
+{
+    if (!toplevel)
+        return;
+    if (toplevel->xsurface->minimized)
+        wlr_xwayland_surface_set_minimized(toplevel->xsurface, false);
+    focus_x11_toplevel(server, toplevel);
+}
+
+static void hook_set_minimized_x11(Server&, X11Toplevel& toplevel, bool minimized)
+{
+    wlr_xwayland_surface_set_minimized(toplevel.xsurface, minimized);
 }
 
 static void server_new_input(wl_listener* listener, void* data)
@@ -6237,7 +6268,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     if (!wm_server->listen(wm_portal))
         warnln("WindowServer: could not listen on {}", wm_portal);
     // Let the window manager call back into the compositor's focus/menu code.
-    WindowManager::set_host_hooks({ focus_toplevel, open_window_menu, primary_usable_area, toplevel_report_position, toplevel_begin_interactive, current_palette, update_ext_workspace_active, set_toplevel_minimized });
+    WindowManager::set_host_hooks({ focus_toplevel, open_window_menu, primary_usable_area, toplevel_report_position, toplevel_begin_interactive, current_palette, update_ext_workspace_active, set_toplevel_minimized, hook_focus_x11, hook_set_minimized_x11 });
     WindowSwitcher::set_host_hooks({ current_palette, focus_toplevel, WindowManager::switch_workspace, overlay_shadow_hook, toplevel_update_frame });
     AppletManager::set_host_hooks({ WindowManager::tell_wms_applet_area_size_changed, primary_usable_area, layer_report_position });
     // Bring the workspace grid up from the config, and follow later edits.

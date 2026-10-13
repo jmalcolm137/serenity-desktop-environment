@@ -47,6 +47,7 @@ if grep -q "Xwayland enabled" "$R/comp.log"; then echo "  ok: Xwayland enabled (
 if grep -q "Xwayland ready" "$R/comp.log"; then echo "  ok: Xwayland started"; else echo "  FAIL: Xwayland never started"; fail=1; fi
 if grep -q "X11 window mapped 'xwayland-test'" "$R/comp.log"; then echo "  ok: the X11 client mapped a window"; else echo "  FAIL: no X11 window mapped"; fail=1; fi
 if grep -q "X11 frame 'xwayland-test'" "$R/comp.log"; then echo "  ok: the X11 window got a server-side decoration frame"; else echo "  FAIL: no X11 decoration frame"; fail=1; fi
+if grep -q "WM: X11 window" "$R/comp.log"; then echo "  ok: the X11 window was reported to the WindowManager (Taskbar)"; else echo "  FAIL: no X11 WM emission"; fail=1; fi
 if grep -qiE "SIGSEGV|Segmentation fault|ASSERTION FAILED|VERIFICATION FAILED" "$R/comp.log"; then echo "  FAIL: the compositor faulted"; fail=1; fi
 kill "$CP" 2>/dev/null || true; wait "$CP" 2>/dev/null || true
 rm -rf "$R"; rm -f "$XDG_RUNTIME_DIR"/sde-xwayland-on-$$* 2>/dev/null || true

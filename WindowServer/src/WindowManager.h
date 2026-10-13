@@ -43,6 +43,9 @@ struct HostHooks {
     // Minimize/restore a window (state, visibility, the foreign handle, and the
     // minimize/restore animation). main.cpp owns the visibility + animation.
     void (*set_minimized)(Server&, Toplevel&, bool minimized) { nullptr };
+    // X11 windows (R5): focus and minimize, so the Taskbar can drive them too.
+    void (*focus_x11)(Server&, X11Toplevel*) { nullptr };
+    void (*set_minimized_x11)(Server&, X11Toplevel&, bool minimized) { nullptr };
 };
 void set_host_hooks(HostHooks);
 
@@ -54,11 +57,15 @@ void emit_window_state(Toplevel&);
 void emit_window_removed(Toplevel&);
 // Tell the Taskbar (WindowManagerServer listeners) this window's icon changed.
 void emit_window_icon(Toplevel&);
+// X11 (Xwayland) windows: the same, so they appear in the Taskbar window list.
+void emit_window_state(X11Toplevel&);
+void emit_window_removed(X11Toplevel&);
 
 // Tell every Taskbar the applet-area size changed (WS4).
 void tell_wms_applet_area_size_changed(Server&, Gfx::IntSize);
 
 Toplevel* find_toplevel_by_wm_id(Server&, i32 wm_id);
+X11Toplevel* find_x11_by_wm_id(Server&, i32 wm_id);
 
 // --- workspaces (WS1) -------------------------------------------------------
 // A grid of window stacks (SerenityOS WindowManager); only the current stack is

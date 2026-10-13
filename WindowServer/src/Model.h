@@ -377,6 +377,10 @@ struct X11Toplevel {
     bool frame_active { false };
     bool maximized { false };
     Gfx::IntSize restore_size;
+    // The WindowManagerServer id, so the Taskbar can list/activate/minimize it.
+    i32 wm_id { 0 };
+    // The window title (kept here so the WM module needs no wlroots types).
+    ByteString title;
     int hovered_button { -1 };
     int pressed_button { -1 };
     wl_listener associate { };

@@ -80,6 +80,8 @@ public:
             emit_window_state(*toplevel);
             emit_window_icon(*toplevel);
         }
+        for (auto& toplevel : m_server.x11_toplevels)
+            emit_window_state(*toplevel);
         // If the applets already mapped, this WM missed the area-size-changed
         // events; tell it the current size so it reports the area position (and
         // the applets are placed on the Taskbar rather than at the fallback).
@@ -94,6 +96,10 @@ public:
             if (g_hooks.focus_toplevel)
                 g_hooks.focus_toplevel(m_server, toplevel);
             emit_window_state(*toplevel);
+        } else if (auto* x11 = find_x11_by_wm_id(m_server, window_id)) {
+            if (g_hooks.focus_x11)
+                g_hooks.focus_x11(m_server, x11);
+            emit_window_state(*x11);
         }
     }
 
@@ -102,6 +108,10 @@ public:
         if (auto* toplevel = find_toplevel_by_wm_id(m_server, window_id)) {
             set_toplevel_minimized(m_server, *toplevel, minimized);
             emit_window_state(*toplevel);
+        } else if (auto* x11 = find_x11_by_wm_id(m_server, window_id)) {
+            if (g_hooks.set_minimized_x11)
+                g_hooks.set_minimized_x11(m_server, *x11, minimized);
+            emit_window_state(*x11);
         }
     }
 
@@ -763,6 +773,37 @@ void emit_window_removed(Toplevel& toplevel)
         if (connection->manager_window_id() >= 0)
             connection->async_window_removed(connection->manager_window_id(), 0, toplevel.wm_id);
     }
+}
+
+void emit_window_state(X11Toplevel& toplevel)
+{
+    dbgln("WindowServer: WM: X11 window {} '{}' (active={}, minimized={})", toplevel.wm_id, toplevel.title, toplevel.frame_active, !toplevel.mapped);
+    bool minimized = !toplevel.mapped;
+    for (auto& connection : g_connections) {
+        if (connection->manager_window_id() < 0)
+            continue;
+        connection->async_window_state_changed(connection->manager_window_id(), 0, toplevel.wm_id, 0, 0,
+            toplevel.frame_active && !minimized, false, minimized, false,
+            static_cast<i32>(WindowServer::WindowType::Normal), toplevel.title,
+            Gfx::IntRect { 0, 0, 0, 0 }, Optional<i32> { });
+    }
+}
+
+void emit_window_removed(X11Toplevel& toplevel)
+{
+    for (auto& connection : g_connections) {
+        if (connection->manager_window_id() >= 0)
+            connection->async_window_removed(connection->manager_window_id(), 0, toplevel.wm_id);
+    }
+}
+
+X11Toplevel* find_x11_by_wm_id(Server& server, i32 wm_id)
+{
+    for (auto& toplevel : server.x11_toplevels) {
+        if (toplevel->wm_id == wm_id)
+            return toplevel.ptr();
+    }
+    return nullptr;
 }
 
 void tell_wms_applet_area_size_changed(Server&, Gfx::IntSize size)

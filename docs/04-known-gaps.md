@@ -334,12 +334,15 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   click-to-focus, close), and get **server-side decoration frames** (unless the
   client asks for no decorations via Motif hints): titlebar drag-to-move, border
   resize, and close/maximize/minimize buttons, plus Super+drag move/resize.
+  X11 windows also join the **Taskbar window list** (reported to the
+  WindowManagerServer by id, so the Taskbar can activate/minimize them).
   `[Compositor] XWayland=false` in `WindowServer.ini` disables X11 entirely (no X
   server, no `DISPLAY`). Verified by `scripts/run-xwayland-test.sh`. **Still
-  missing for full parity:** X11 windows in the **Taskbar / Alt-Tab** window list
-  (with WM_CLASS and `_NET_WM_ICON`), **workspaces / minimize** integration,
-  override-redirect (menus/tooltips) handling, the X11↔Wayland **selection /
-  clipboard bridge**, Xwayland **keyboard grabs**, `_NET_WM_STATE` hints
+  missing for full parity:** X11 windows in the **Alt-Tab** switcher, **workspaces**
+  integration (X11 windows are always on the current stack), window **icons**
+  (`_NET_WM_ICON`) and WM_CLASS-based grouping, override-redirect
+  (menus/tooltips) polish, the X11↔Wayland **selection / clipboard bridge**,
+  Xwayland **keyboard grabs**, `_NET_WM_STATE` hints
   (modal/skip-taskbar/above/urgent), transients (parent/child), `_NET_WM_STRUT`
   workarea, and X11↔Wayland **drag-and-drop**.
 - **Native-app protocol matrix (G7).** **Mostly done** — the compositor advertises
