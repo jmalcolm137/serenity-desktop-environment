@@ -328,6 +328,16 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 
 ## Recently resolved (kept so we don't re-chase them)
 
+- **Shell startup race (SDDM login: applets but no Taskbar/desktop).** The
+  compositor spawned its `-s` startup command *before* it started listening on the
+  WindowManagerServer socket. The Taskbar, WorkspacePicker and Keymap connect to
+  `/tmp/portal/wm` at startup, so on a real login one of them could lose the race
+  and abort with `VERIFICATION FAILED` in
+  `ConnectionToWindowManagerServer::the()` — leaving a session with only the
+  applets that don't use the WM connection. The compositor now calls `listen()` and
+  wires the accept handler **before** spawning the shell. Covered by
+  `scripts/run-shell-start-test.sh` (runs the session's real startup list).
+
 - **HiDPI & fractional output scaling (R6).** `[Output] DefaultScale` accepts a
   fractional value (0 = auto, 0.5–4.0) and is now applied **live** on a config
   edit (`Config::watch` → `apply_output_scale`); precedence is `SDE_OUTPUT_SCALE` >

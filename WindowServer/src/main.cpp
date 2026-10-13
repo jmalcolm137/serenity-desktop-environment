@@ -4358,8 +4358,6 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     if (!keyboard.variant.is_empty())
         setenv("XKB_DEFAULT_VARIANT", keyboard.variant.characters(), true);
 
-    spawn_startup_command(startup_command);
-
     // The WindowServer serves the WindowManagerServer protocol (the shell's
     // Taskbar protocol), just like SerenityOS's WindowServer does. The socket
     // path can be overridden so tests can run isolated from a live session.
@@ -4394,6 +4392,12 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     wm_server->on_accept = [&](NonnullOwnPtr<Core::LocalSocket> socket) {
         WindowManager::accept_connection(*server, move(socket));
     };
+
+    // Start the shell only now that the WindowManagerServer is listening and wired:
+    // the Taskbar, WorkspacePicker and Keymap connect to /tmp/portal/wm at startup
+    // and abort if the connect fails, so spawning them before listen() races on a
+    // real login (the applets that don't use the WM connection were unaffected).
+    spawn_startup_command(startup_command);
 
     // One event loop for both Wayland events (via a notifier) and the in-process
     // WindowManagerServer IPC connections.
