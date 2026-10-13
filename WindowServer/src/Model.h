@@ -384,6 +384,10 @@ struct X11Toplevel {
     // Monotonic focus sequence (like Toplevel::focus_order), so the Alt-Tab
     // switcher can list X11 and xdg windows together most-recently-focused first.
     u64 focus_order { 0 };
+    // The workspace stack this window belongs to (like Toplevel::workspace_*):
+    // X11 windows join the current stack when they map and hide/show with it.
+    u32 workspace_row { 0 };
+    u32 workspace_column { 0 };
     int hovered_button { -1 };
     int pressed_button { -1 };
     wl_listener associate { };

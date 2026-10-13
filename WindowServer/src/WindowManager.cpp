@@ -573,6 +573,26 @@ void on_toplevel_mapped(Toplevel& toplevel)
     update_toplevel_visibility(toplevel);
 }
 
+void update_x11_toplevel_visibility(X11Toplevel& toplevel)
+{
+    if (!toplevel.scene_tree)
+        return;
+    bool const on_current = toplevel.workspace_row == s_current_row && toplevel.workspace_column == s_current_column;
+    // An X11 window that is withdrawn/minimized is already unmapped (disabled);
+    // keep it hidden regardless of the stack.
+    bool const visible = on_current && toplevel.mapped;
+    wlr_scene_node_set_enabled(&toplevel.scene_tree->node, visible);
+    dbgln("WindowServer: X11 window {} workspace {},{} visible={}", toplevel.wm_id, toplevel.workspace_row, toplevel.workspace_column, visible);
+}
+
+void on_x11_toplevel_mapped(X11Toplevel& toplevel)
+{
+    // A newly mapped X11 window joins the current stack (like on_toplevel_mapped).
+    toplevel.workspace_row = s_current_row;
+    toplevel.workspace_column = s_current_column;
+    update_x11_toplevel_visibility(toplevel);
+}
+
 static void emit_workspace_changed(Server& server)
 {
     for (auto& connection : g_connections) {
@@ -589,6 +609,8 @@ void load_workspaces(Server& server)
     s_columns = static_cast<u32>(max(1, grid.columns));
     for (auto& toplevel : server.toplevels)
         update_toplevel_visibility(*toplevel);
+    for (auto& toplevel : server.x11_toplevels)
+        update_x11_toplevel_visibility(*toplevel);
     dbgln("WindowServer: workspaces {}x{}, current {},{}", s_rows, s_columns, s_current_row, s_current_column);
     if (g_hooks.workspace_changed)
         g_hooks.workspace_changed(server);
@@ -613,17 +635,33 @@ void switch_workspace(Server& server, u32 row, u32 column, bool carry_focused)
 
     for (auto& toplevel : server.toplevels)
         update_toplevel_visibility(*toplevel);
+    for (auto& toplevel : server.x11_toplevels)
+        update_x11_toplevel_visibility(*toplevel);
 
     // Focus a visible window on the new stack so the keyboard follows.
+    bool focused = false;
     for (auto& toplevel : server.toplevels) {
         if (toplevel->workspace_row == row && toplevel->workspace_column == column && !toplevel->minimized) {
             if (g_hooks.focus_toplevel)
                 g_hooks.focus_toplevel(server, toplevel.ptr());
+            focused = true;
             break;
+        }
+    }
+    if (!focused) {
+        for (auto& toplevel : server.x11_toplevels) {
+            if (toplevel->mapped && !toplevel->override_redirect
+                && toplevel->workspace_row == row && toplevel->workspace_column == column) {
+                if (g_hooks.focus_x11)
+                    g_hooks.focus_x11(server, toplevel.ptr());
+                break;
+            }
         }
     }
 
     for (auto& toplevel : server.toplevels)
+        emit_window_state(*toplevel);
+    for (auto& toplevel : server.x11_toplevels)
         emit_window_state(*toplevel);
     emit_workspace_changed(server);
     if (g_hooks.workspace_changed)

@@ -117,6 +117,16 @@ static u64 window_focus_order(WindowRef const& window)
     return window.is_x11() ? window.x11->focus_order : window.xdg->focus_order;
 }
 
+static u32 window_workspace_row(WindowRef const& window)
+{
+    return window.is_x11() ? window.x11->workspace_row : window.xdg->workspace_row;
+}
+
+static u32 window_workspace_column(WindowRef const& window)
+{
+    return window.is_x11() ? window.x11->workspace_column : window.xdg->workspace_column;
+}
+
 static Gfx::IntRect output_rect(Server& server)
 {
     wlr_box box { };
@@ -153,11 +163,14 @@ static void build_list(Server& server)
             continue;
         s_windows.append({ toplevel.ptr(), nullptr });
     }
-    // X11 windows are not placed on the workspace grid (docs/20 item 2), so they
-    // are always on the current stack and appear in both modes. Override-redirect
-    // windows (menus, tooltips) are unmanaged and never listed.
+    // X11 windows are placed on the workspace grid like xdg toplevels now
+    // (docs/20 item 2), so they honour the current-workspace filter too.
+    // Override-redirect windows (menus, tooltips) are unmanaged and never listed.
     for (auto& toplevel : server.x11_toplevels) {
         if (!toplevel->mapped || toplevel->override_redirect || toplevel->wm_id == 0)
+            continue;
+        if (s_mode == Mode::CurrentWorkspace
+            && (toplevel->workspace_row != row || toplevel->workspace_column != column))
             continue;
         s_windows.append({ nullptr, toplevel.ptr() });
     }
@@ -166,20 +179,17 @@ static void build_list(Server& server)
     // previously-focused window (Serenity's window stack order).
     insertion_sort(s_windows, [](WindowRef const& a, WindowRef const& b) { return window_focus_order(a) > window_focus_order(b); });
 
-    // Multi-stack indicator: only the xdg grid has several stacks; X11 windows sit
-    // on the current one, so they never make the list "multi".
+    // Multi-stack indicator: do the listed windows span more than one stack?
     s_multi_stack = false;
-    bool have_xdg = false;
+    bool have_window = false;
     u32 first_row = 0;
     u32 first_column = 0;
     for (auto const& window : s_windows) {
-        if (window.is_x11())
-            continue;
-        if (!have_xdg) {
-            first_row = window.xdg->workspace_row;
-            first_column = window.xdg->workspace_column;
-            have_xdg = true;
-        } else if (window.xdg->workspace_row != first_row || window.xdg->workspace_column != first_column) {
+        if (!have_window) {
+            first_row = window_workspace_row(window);
+            first_column = window_workspace_column(window);
+            have_window = true;
+        } else if (window_workspace_row(window) != first_row || window_workspace_column(window) != first_column) {
             s_multi_stack = true;
             break;
         }
@@ -227,8 +237,8 @@ static void select_index(Server& server, int index)
 {
     s_selected = index;
     auto const window = selected_window();
-    if (s_mode == Mode::AllWorkspaces && g_hooks.switch_workspace && window.xdg)
-        g_hooks.switch_workspace(server, window.xdg->workspace_row, window.xdg->workspace_column, false);
+    if (s_mode == Mode::AllWorkspaces && g_hooks.switch_workspace && window.is_valid())
+        g_hooks.switch_workspace(server, window_workspace_row(window), window_workspace_column(window), false);
     update_highlight(window);
 }
 
@@ -316,8 +326,8 @@ static void render(Server& server)
             painter.draw_text(title_rect, title, title_font(), Gfx::TextAlignment::CenterLeft, text_color);
 
             auto details = window_rect(window).to_byte_string();
-            if (multi && !window.is_x11())
-                details = ByteString::formatted("{} on {}:{}", details, window.xdg->workspace_row + 1, window.xdg->workspace_column + 1);
+            if (multi)
+                details = ByteString::formatted("{} on {}:{}", details, window_workspace_row(window) + 1, window_workspace_column(window) + 1);
             painter.draw_text(item, details, details_font(), Gfx::TextAlignment::CenterRight, rect_text_color);
         }
     });
@@ -330,6 +340,8 @@ static void activate(Server& server)
     auto const window = selected_window();
     if (window.is_x11()) {
         dbgln("WindowSwitcher: activating X11 window wm_id={}", window.x11->wm_id);
+        if (s_mode == Mode::AllWorkspaces && g_hooks.switch_workspace)
+            g_hooks.switch_workspace(server, window.x11->workspace_row, window.x11->workspace_column, false);
         if (g_hooks.focus_x11)
             g_hooks.focus_x11(server, window.x11);
     } else if (window.xdg) {

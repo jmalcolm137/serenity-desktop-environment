@@ -35,6 +35,10 @@ if [[ -f "$VK_XML" && -f "$VP_XML" ]] && command -v wayland-scanner >/dev/null &
         -o "$VIT" 2>/dev/null || true
 fi
 
+# The standard-workspace client, to switch stacks (R4.8).
+WS="$SDE_ROOT/build/tools/ext-workspace-test"
+[[ -x "$WS" ]] || "$SDE_ROOT/scripts/build-tools.sh" >/dev/null 2>&1 || true
+
 fail=0
 
 run_case() {
@@ -87,6 +91,29 @@ if [[ -x "$VIT" ]]; then
     fi
 else
     echo "  note: virtual-input harness unavailable; skipping the Alt-Tab check"
+fi
+# X11 windows join the workspace grid (docs/20 item 2): they map on the current
+# stack and hide/show with it.
+if [[ -x "$WS" ]]; then
+    if grep -qE "X11 window [0-9]+ workspace 0,0 visible=true" "$R/comp.log"; then
+        echo "  ok: the X11 window is on the current workspace (0,0)"
+    else
+        echo "  FAIL: the X11 window was not placed on the workspace grid"; fail=1
+    fi
+    env WAYLAND_DISPLAY="$SOCK" "$WS" 2 >/dev/null 2>&1 || true
+    for _ in $(seq 1 40); do grep -qF "switched to workspace 0,1" "$R/comp.log" && break; sleep 0.1; done
+    if grep -qF "switched to workspace 0,1" "$R/comp.log"; then
+        echo "  ok: switched to workspace 0,1 (ext-workspace-v1)"
+    else
+        echo "  FAIL: the workspace did not switch"; fail=1
+    fi
+    if grep -qE "X11 window [0-9]+ workspace 0,0 visible=false" "$R/comp.log"; then
+        echo "  ok: the X11 window hid with its workspace"
+    else
+        echo "  FAIL: the X11 window did not hide on a workspace switch"; fail=1
+    fi
+else
+    echo "  note: ext-workspace-test unavailable; skipping the workspace check"
 fi
 if grep -qiE "SIGSEGV|Segmentation fault|ASSERTION FAILED|VERIFICATION FAILED" "$R/comp.log"; then echo "  FAIL: the compositor faulted"; fail=1; fi
 kill "$CP" 2>/dev/null || true; wait "$CP" 2>/dev/null || true

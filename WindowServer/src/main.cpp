@@ -2201,8 +2201,10 @@ static void x11_surface_map(wl_listener* listener, void*)
     auto& server = *toplevel->server;
     toplevel->mapped = true;
     toplevel->title = ByteString { toplevel->xsurface->title ? StringView { toplevel->xsurface->title, strlen(toplevel->xsurface->title) } : StringView { } };
-    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
     wlr_scene_node_set_position(&toplevel->scene_tree->node, toplevel->xsurface->x, toplevel->xsurface->y);
+    // A newly mapped X11 window joins the current workspace stack (its scene node
+    // is enabled only if that stack is the current one).
+    WindowManager::on_x11_toplevel_mapped(*toplevel);
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
     x11_update_frame(*toplevel);
     dbgln("WindowServer: X11 window mapped '{}' at {},{}", toplevel->xsurface->title ? toplevel->xsurface->title : "", toplevel->xsurface->x, toplevel->xsurface->y);

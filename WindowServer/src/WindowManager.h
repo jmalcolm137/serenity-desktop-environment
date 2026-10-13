@@ -88,6 +88,10 @@ void switch_workspace(Server&, u32 row, u32 column, bool carry_focused);
 
 // Set a window's scene visibility from its stack and minimized state.
 void update_toplevel_visibility(Toplevel&);
+// X11 (Xwayland) windows join the workspace grid too: assign the current stack on
+// map and show/hide with it. See docs/20-xwayland-next-steps.md item 2.
+void update_x11_toplevel_visibility(X11Toplevel&);
+void on_x11_toplevel_mapped(X11Toplevel&);
 // Minimize or restore a window (state, visibility, the foreign handle, and the
 // compositor's minimize/restore animation). Used by the Taskbar, Show Desktop,
 // Super+Down and the window switcher, so every path animates the same way.
