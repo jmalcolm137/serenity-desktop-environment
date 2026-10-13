@@ -28,6 +28,7 @@ the compositor maps as a separate scene surface. Landed, in order:
 | `cb21165` | **Override-redirect polish**. Menus/tooltips stay visible across workspace switches (never workspace-hid) and are re-raised above their parent when it is focused/raised. |
 | `6c8e0c9` | **Selection bridge**. Forward `request_set_primary_selection` to the seat (`wlr_seat_set_primary_selection`); with the existing clipboard path, wlroots' XWM now bridges X11 `PRIMARY`/`CLIPBOARD` with the Wayland selection. |
 | `e20db92` | **LaunchServer DISPLAY**. The service adopts the session Xwayland `DISPLAY` (state file, with a wait + stale-file drop), so X11 apps it spawns (e.g. `xterm` from the Terminal) open in SDE, not on the host X server. |
+| `c69b1ae` | **`_NET_WM_STATE` + transients**. Read and honour `above` (always-on-top), `skip-taskbar`, `demands-attention`, `modal`, and the transient parent (a dialog stays above its parent). |
 
 Where the code lives:
 
@@ -85,11 +86,13 @@ grid and icon paths) hoist into shared helpers as those land.
    forwards `PRIMARY` selection requests to the seat and already forwarded
    `CLIPBOARD`, so wlroots' XWM bridges X11 `PRIMARY`/`CLIPBOARD` with the Wayland
    selection. (Wayland-side round-trip covered by `scripts/run-selection-test.sh`.)
-6. **Xwayland keyboard grabs** — honour X11 keyboard grabs (wlroots
-   `xwayland-keyboard-grab`), so X11 menus/screensavers that grab the keyboard work.
-7. **`_NET_WM_STATE` hints** — modal, skip-taskbar, above, demands-attention; and
-   **transients** (parent/child): children stay with their parent, transient dialogs
-   center on it.
+6. **Xwayland keyboard grabs** — **blocked on a wlroots bump**: the pinned wlroots
+   0.20 exposes no `xwayland-keyboard-grab-v1` manager (its own header notes the
+   protocol is unimplemented), so X11 keyboard grabs cannot be honoured yet.
+7. ~~**`_NET_WM_STATE` hints + transients**~~ — **done** (`c69b1ae`): `above`,
+   `skip-taskbar`, `demands-attention` and `modal` are read and honoured, and a
+   transient keeps above its parent. (Transient *centering* on the parent is left
+   to the X client, which positions override-redirect/popups itself.)
 8. **`_NET_WM_STRUT` workarea** — reserve space for X11 panels/docks and report the
    usable area (`wlr_xwayland_set_workareas`).
 9. **X11 ↔ Wayland drag-and-drop** — the XDND ↔ `wl_data_device` bridge, the X11
