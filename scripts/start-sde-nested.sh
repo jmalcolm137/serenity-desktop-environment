@@ -102,16 +102,6 @@ if [[ -n "$APPLET_CMDS" ]]; then
     STARTUP="$STARTUP & $APPLET_CMDS"
 fi
 
-# The out-of-process services LibWM spawns on demand: WebContent (the WebView
-# renderer), RequestServer (HTTP/TLS), SQLServer (Browser state) and
-# NotificationServer. They are not build dependencies of the apps that use them,
-# so ensure they exist before starting the session (scripts/build-services.sh).
-if [[ ! -x "$BUILD/bin/WebContent" || ! -x "$BUILD/bin/RequestServer" \
-    || ! -x "$BUILD/bin/SQLServer" || ! -x "$BUILD/bin/NotificationServer" ]]; then
-    "$SDE_ROOT/scripts/build-services.sh" >/dev/null 2>&1 \
-        || echo "note: session services not built; WebView apps and notifications may fail" >&2
-fi
-
 # The compositor nests on the host display; its children get the session display
 # (the compositor sets WAYLAND_DISPLAY for them).
 export WAYLAND_DISPLAY="$HOST_DISPLAY"

@@ -96,10 +96,17 @@ via `SOCKET_TAKEOVER`, and then defers — so the client's real `connect()` reac
 the listener we just set up (no startup race). This is the one place the shim, not
 the service, owns the listening socket, mirroring SystemServer.
 
-> **Status:** done. `WebContent`, `RequestServer` and `SQLServer` are built by
-> `libgui-wayland` (`src/CMakeLists.txt`) and hosted as above. Verified: `Help`
-> renders the man pages (`Audio-subsystem(7) - Help`, …), and `Browser` loads a
-> local page (its window title becomes the page's `<title>`).
+> **Status:** done. `WebContent`, `RequestServer`, `SQLServer` and
+> `NotificationServer` are built by **SDE** (the `WebContent/`, `RequestServer/`,
+> `SQLServer/` and `NotificationServer/` projects, via `scripts/build-services.sh`):
+> they are session services, so they belong with the session, not in the
+> compositor-agnostic libgui-wayland client stack. The session assembles an
+> **SDE-owned app directory** (`SDE_APP_BIN_DIR`, `scripts/sde-session.sh`) that
+> links the port's applications and overlays these services, so the shell, the
+> LaunchServer and LibWM all resolve `/bin/X` and the services from one place;
+> libgui-wayland keeps only its own fallback. Verified: `Help` renders the man
+> pages (`Audio-subsystem(7) - Help`, …), and `Browser` loads a local page (its
+> window title becomes the page's `<title>`).
 
 The session also seeds the SerenityOS skeleton user config
 (`Base/home/anon/.config`) into the session's config directory

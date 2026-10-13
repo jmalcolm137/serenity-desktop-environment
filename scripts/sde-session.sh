@@ -12,6 +12,9 @@
 # Environment seams (for embedding and tests):
 #   SDE_SESSION_COMPOSITOR   command to run as the compositor (default below)
 #   SDE_SESSION_SHELL        shell startup command (only used for the default)
+#   SDE_SESSION_APP_BIN_DIR  session app directory, where the apps and the SDE
+#                            services are resolved from (default: a per-seat dir
+#                            under XDG_RUNTIME_DIR). See the SDE_APP_BIN_DIR block.
 #   SDE_SESSION_AUTOSTART_DIR  autostart dir (default $XDG_CONFIG_HOME/autostart)
 #   SDE_SESSION_MAX_RESTARTS   restart budget on non-zero exit (default 3)
 #   SDE_SESSION_RESTART_DELAY  seconds between restarts (default 1)
@@ -265,6 +268,40 @@ EOF
 done
 export SDE_SESSION_BIN_DIR="$SESSION_BIN"
 echo "SDE session: power helpers in $SESSION_BIN (/bin shadow)"
+
+# Session app directory (SDE-owned). libgui-wayland is a compositor-agnostic
+# client stack, so it does not build the session's out-of-process services: SDE
+# builds them (WebContent, RequestServer, SQLServer, NotificationServer) and owns
+# the directory everything resolves "/bin/X" through. LibWM and the LaunchServer
+# resolve service and application binaries from SDE_APP_BIN_DIR, so it must hold
+# both: link the port's applications here and overlay the SDE services. See
+# docs/06-service-layering.md and docs/07-systemserver-roles.md (section 2.3).
+SESSION_SERVICES=(WebContent RequestServer SQLServer NotificationServer)
+missing_services=0
+for service in "${SESSION_SERVICES[@]}"; do
+    [ -x "$SDE_ROOT/build/$service/$service" ] || missing_services=1
+done
+if [ "$missing_services" = "1" ]; then
+    echo "SDE session: building the session services (${SESSION_SERVICES[*]})"
+    "$SDE_ROOT/scripts/build-services.sh" >/dev/null 2>&1 \
+        || echo "note: session services not built; WebView apps and notifications may fail" >&2
+fi
+
+APP_BIN="${SDE_SESSION_APP_BIN_DIR:-${XDG_RUNTIME_DIR:-/tmp}/sde-app-bin$SEAT_SUFFIX}"
+mkdir -p "$APP_BIN"
+for app in "$BUILD/bin"/*; do
+    [ -e "$app" ] || continue
+    name="$(basename "$app")"
+    [ -e "$APP_BIN/$name" ] || ln -s "$app" "$APP_BIN/$name"
+done
+# SDE's own services take precedence over any same-named port binary.
+for service in "${SESSION_SERVICES[@]}"; do
+    if [ -x "$SDE_ROOT/build/$service/$service" ]; then
+        ln -sf "$SDE_ROOT/build/$service/$service" "$APP_BIN/$service"
+    fi
+done
+export SDE_APP_BIN_DIR="$APP_BIN"
+echo "SDE session: session app directory $APP_BIN"
 
 restarts=0
 SAFE=0
