@@ -447,6 +447,17 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 
 ## Recently resolved (kept so we don't re-chase them)
 
+- **Exactly one window is active at a time (R3/R5).** The compositor deactivated
+  the previous window only when the seat still reported a focused surface. A seat
+  with no keyboard — headless, or a session's first windows — reports none, so
+  every window kept its active frame (and raised Taskbar button) as it mapped even
+  though it was never focused; the desktop scene showed several windows with
+  active titlebars and no window marked active in the Taskbar. Focus now scans the
+  window list (`deactivate_other_windows` in `WindowServer/src/main.cpp`) and
+  reports the change to the WindowManagerServer, so exactly one window is active
+  and the Taskbar's active/sunken button states follow. Covered by
+  `scripts/run-active-window-test.sh`.
+
 - **SerenityOS window management: drag, unmaximize-on-move, Alt+Shift, animations
   (R3).** `Super`+left-drag moves a window and `Super`+right-drag resizes it from
   anywhere (the 3×3 hot area under the cursor picks the edges); dragging a

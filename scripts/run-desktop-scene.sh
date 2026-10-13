@@ -28,7 +28,15 @@ COMP="$SDE_ROOT/build/WindowServer/WindowServer"
 
 MODE="nested"
 SCREENSHOT=""
-WALLPAPER="$SERENITY/Base/res/wallpapers/blue-grid.png"
+# The SerenityOS grid wallpaper (the reference screenshot's "blue grid"). Older
+# SerenityOS shipped it as blue-grid.png; the current tree names it grid.png.
+WALLPAPER=""
+for candidate in blue-grid.png grid.png; do
+    if [[ -f "$SERENITY/Base/res/wallpapers/$candidate" ]]; then
+        WALLPAPER="$SERENITY/Base/res/wallpapers/$candidate"
+        break
+    fi
+done
 SIZE="1280x720"
 SCALE="1"
 
@@ -238,7 +246,10 @@ EOF
         echo "==> letting the scene settle (browser startup can be slow)..."
         sleep "${SDE_SCENE_SETTLE:-12}"
         # Type `uname -a` and `df -Th` into the Terminal (so the capture shows the
-        # prompt, the commands and the output), then open the Taskbar's system menu
+        # prompt, the commands and the output), then click the File Manager (the
+        # reference screenshot has File Manager as the active window — exactly one
+        # window is active, and its Taskbar button is raised), then open the
+        # Taskbar's system menu
         # and the Development submenu, like the reference screenshot. (The menu
         # needs a mouse-down on the Taskbar, so click the start button rather than
         # using the Super key.)
@@ -277,6 +288,7 @@ EOF
             --move 200 120 --button 0x110 press --sleep 60 --button 0x110 release --sleep 500 \
             "${KEY_ARGS[@]}" \
             --sleep 300 \
+            --move $((WIDTH * 3 / 4)) 10 --button 0x110 press --sleep 60 --button 0x110 release --sleep 400 \
             --move 20 $((HEIGHT - 14)) --button 0x110 press --sleep 80 --button 0x110 release --sleep 400 \
             --move 60 $((HEIGHT - 302)) --sleep 700 >/dev/null 2>&1 || true
         sleep 0.5
