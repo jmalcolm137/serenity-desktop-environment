@@ -299,6 +299,28 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
   test.sh`. (Sampling *other* users' processes still needs `CAP_PERFMON`; with
   `perf_event_paranoid=2` a user's own processes profile fine because we exclude
   kernel samples.)
+  The **Debugger** is now Linux-native too: it drives `ptrace` directly —
+  `PTRACE_GETREGSET`/`NT_PRSTATUS` for the register set (some host kernels reject
+  `PTRACE_GETREGS` with `EFAULT`), `__WALL` for `waitpid`, and Linux single-step
+  semantics — built by the port (patches 0050/0052) and verified by
+  `scripts/run-debugger-test.sh` (breakpoint, registers, backtrace, disassembly
+  against a real host process). The **CrashReporter** GUI is built and reads a
+  native Linux ELF core dump: `LibELF` tolerates a section-table-less ELF and
+  OS-specific program headers, and `LibCoredump` has a Linux backend over the
+  standard notes (`NT_PRSTATUS`/`NT_PRPSINFO`/`NT_FILE`/`NT_SIGINFO`/`NT_AUXV`)
+  and the `PT_LOAD` segments (patch 0053; `scripts/run-crashreporter-test.sh`).
+  **Not yet wired:** *how* a crash reaches `CrashReporter`. On Linux the kernel
+  routes crashes through `kernel.core_pattern` (here
+  `|/usr/lib/systemd/systemd-coredump ...`), so nothing launches `CrashReporter`
+  automatically. The candidate designs, to be chosen later, are (a) an SDE
+  `core_pattern` pipe handler (`|…/sde-coredump`) that saves the core to a
+  per-user drop dir — the closest analogue to SerenityOS's kernel→CrashReporter
+  path, but a system-wide, privileged install; (b) a session watcher that reads
+  new cores via `coredumpctl` (works without privileges, but depends on systemd,
+  which R4.3 keeps optional); or (c) a session watcher over the drop dir, with
+  (a) feeding it so the root-side handler never has to reach into the user's
+  Wayland session. Until one is implemented, `CrashReporter <core>` reads a core
+  explicitly.
 - **Web engine / `WebContent` + `RequestServer` + `SQLServer` (W7, host).** Done —
   see "Recently resolved". **Help** (Taskbar system menu ▸ Help) renders the man
   pages; **Browser** loads pages (local `file://` and the WebContent pipeline).

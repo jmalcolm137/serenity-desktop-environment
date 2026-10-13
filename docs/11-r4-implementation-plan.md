@@ -144,7 +144,7 @@ R4 is delivered as **R4.1–R4.9**. Order is dependency-driven (see §4).
 | **R4.6** | **Input settings & keymaps** (landed) | libinput device config + keyboard layouts/keymap + MouseSettings | R4.4 |
 | **R4.7** | **Appearance, effects & fonts** (landed) | Scrollable fonts/zoom, Effects, cursor; exposed via Settings portal | R4.4 |
 | **R4.8** | **Workspaces & toplevels** (landed) | Workspaces tab drives the grid; expose `ext-workspace-v1` + `ext-foreign-toplevel-list-v1` | R4.4 |
-| **R4.9** | **Applications enablement** | Terminal, SystemMonitor, CrashReporter/Debugger feasibility | R4.1–R4.3 |
+| **R4.9** | **Applications enablement** (landed; crash delivery deferred) | Terminal, SystemMonitor (Linux-native), Debugger + CrashReporter (Linux-native) | R4.1–R4.3 |
 
 ### R4.1 — Session safety net
 
@@ -463,6 +463,16 @@ standard protocols become the primary interop surface. Pair activation with
 `Terminal` runs; make **SystemMonitor** work (`/proc` mapping), and assess
 `CrashReporter` / `Debugger` feasibility (both may need shims). Deliver what is
 reasonable; record what is not.
+
+> **Landed (R4.9).** `Terminal`, `SystemMonitor`, `Debugger` and `CrashReporter`
+> are all built by the port. Where the plan anticipated "shims", the answer turned
+> out to be **Linux-native ports** (as for `SystemMonitor`): `Debugger` drives
+> `ptrace` directly (`PTRACE_GETREGSET`, `__WALL`, Linux single-step; patches
+> 0050/0052, `scripts/run-debugger-test.sh`) and `CrashReporter` reads a native
+> ELF core dump via a Linux `LibCoredump` backend (patch 0053,
+> `scripts/run-crashreporter-test.sh`). **Deferred:** the *delivery* of a crash to
+> `CrashReporter` — on Linux that is `kernel.core_pattern`, and the candidate
+> designs are recorded in [`04-known-gaps.md`](04-known-gaps.md) (R4.9).
 
 **Interop (P8).** Prefer `xdg-desktop-portal` interfaces over SDE-private
 services where an app expects a portal (e.g. OpenURI/FileChooser via `-gtk`).
