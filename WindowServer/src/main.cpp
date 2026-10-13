@@ -349,6 +349,9 @@ void focus_toplevel(Server& server, Toplevel* toplevel)
     if (previous_surface == surface)
         return;
 
+    // A toplevel taking focus ends any on_demand layer surface's keyboard focus.
+    server.keyboard_focus_layer = nullptr;
+
     // A focus change retargets the keyboard; stop repeating into the old client.
     stop_key_repeat();
 
@@ -2766,6 +2769,43 @@ static void arrange_layers(Server& server, wlr_output* output)
     AppletManager::relayout(server);
 }
 
+// On_demand layer surfaces (client popups: the Wi-Fi network list and its
+// passphrase field, ComboBox dropdowns, …) take keyboard focus while they are
+// mapped, so their text fields can be typed into. Panels, the desktop and
+// applets use KEYBOARD_INTERACTIVITY_NONE and never steal focus.
+static bool layer_takes_keyboard(LayerSurface* layer)
+{
+    return layer->layer_surface->current.keyboard_interactive != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE;
+}
+
+static void focus_layer_surface(Server& server, LayerSurface* layer)
+{
+    auto* surface = layer->layer_surface->surface;
+    if (!surface || server.seat->keyboard_state.focused_surface == surface)
+        return;
+    stop_key_repeat();
+    server.keyboard_focus_layer = layer;
+    auto* keyboard = wlr_seat_get_keyboard(server.seat);
+    if (keyboard)
+        wlr_seat_keyboard_notify_enter(server.seat, surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+}
+
+// Give keyboard focus back to the topmost normal window (or clear it) when an
+// on_demand layer surface stops being focused.
+static void restore_keyboard_focus(Server& server)
+{
+    if (server.keyboard_focus_layer)
+        server.keyboard_focus_layer = nullptr;
+    stop_key_repeat();
+    for (auto it = server.toplevels.rbegin(); it != server.toplevels.rend(); ++it) {
+        if (!(*it)->minimized) {
+            focus_toplevel(server, it->ptr());
+            return;
+        }
+    }
+    wlr_seat_keyboard_notify_clear_focus(server.seat);
+}
+
 static void layer_surface_commit(wl_listener* listener, void*)
 {
     LayerSurface* layer = nullptr;
@@ -2791,6 +2831,13 @@ static void layer_surface_commit(wl_listener* listener, void*)
         || previous.margin_bottom != state.margin.bottom
         || previous.margin_left != state.margin.left
         || previous.layer != static_cast<uint32_t>(state.layer);
+    // Keyboard focus follows on_demand interactivity (a client may toggle it).
+    if (layer->layer_surface->surface && layer->layer_surface->surface->mapped) {
+        if (layer_takes_keyboard(layer))
+            focus_layer_surface(*layer->server, layer);
+        else if (layer->server->keyboard_focus_layer == layer)
+            restore_keyboard_focus(*layer->server);
+    }
     if (!arrange_relevant)
         return;
 
@@ -2816,6 +2863,10 @@ static void layer_surface_map(wl_listener* listener, void*)
     layer = wl_container_of(listener, layer, map);
     wlr_scene_node_set_enabled(&layer->scene->tree->node, true);
     arrange_layers(*layer->server, layer->output);
+    // A mapped on_demand surface (a client popup) takes keyboard focus, so its
+    // text fields work.
+    if (layer_takes_keyboard(layer))
+        focus_layer_surface(*layer->server, layer);
 }
 
 static void layer_surface_unmap(wl_listener* listener, void*)
@@ -2823,7 +2874,10 @@ static void layer_surface_unmap(wl_listener* listener, void*)
     LayerSurface* layer = nullptr;
     layer = wl_container_of(listener, layer, unmap);
     wlr_scene_node_set_enabled(&layer->scene->tree->node, false);
+    bool const had_focus = layer->server->keyboard_focus_layer == layer;
     arrange_layers(*layer->server, layer->output);
+    if (had_focus)
+        restore_keyboard_focus(*layer->server);
 }
 
 static void layer_surface_destroy(wl_listener* listener, void*)
@@ -2836,8 +2890,11 @@ static void layer_surface_destroy(wl_listener* listener, void*)
     wl_list_remove(&layer->destroy.link);
     auto* server = layer->server;
     auto* output = layer->output;
+    bool const had_focus = server->keyboard_focus_layer == layer;
     remove_owned(server->layer_surfaces, layer);
     arrange_layers(*server, output);
+    if (had_focus)
+        restore_keyboard_focus(*server);
 }
 
 static void server_new_layer_surface(wl_listener* listener, void* data)

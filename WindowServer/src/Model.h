@@ -382,6 +382,10 @@ struct Server {
     Vector<NonnullOwnPtr<Toplevel>> toplevels;
     Vector<NonnullOwnPtr<Popup>> popups;
     Vector<NonnullOwnPtr<LayerSurface>> layer_surfaces;
+    // The on_demand layer surface that currently holds keyboard focus (a client
+    // popup such as the Wi-Fi network list or its passphrase field), if any, so
+    // focus can be restored when it unmaps.
+    LayerSurface* keyboard_focus_layer { nullptr };
     Vector<NonnullOwnPtr<Keyboard>> keyboards;
     // Pointer devices, so input.ini's libinput settings can be (re)applied when
     // the config changes. See R4.6.
