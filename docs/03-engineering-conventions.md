@@ -106,6 +106,12 @@ we commit to:
   mismatches print the real sizes.
 - **`AK::SourceLocation`** as a defaulted argument (`= SourceLocation::current()`) for debug
   instrumentation, instead of preprocessor macros.
+- **WindowServer IPC methods are append-only.** `WindowServer.ipc`'s `MessageID` is
+  *positional* (an enum generated from the interface order), so a new method — e.g. SDE's
+  `set_output_scale` (patch `0042`) — must be added at the **end** of the interface.
+  Inserting one mid-file shifts every later id and breaks already-built apps ("Failed to
+  parse IPC message") until the whole userland is rebuilt. `scripts/run-apps-smoke-test.sh`
+  guards this.
 
 ## D7 — Verify UI by screenshot (the gold standard), not by bespoke instrumentation
 
