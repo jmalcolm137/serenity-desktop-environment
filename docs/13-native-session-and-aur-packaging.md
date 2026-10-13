@@ -281,9 +281,10 @@ fractional supported:
   coordinates and captures a 2560x1440 *physical* image; `--scale 1.5` captures
   1920x1080.
 
-**Known limit:** Serenity's own `DisplaySettings` Monitor tab is **display-only**
-in this port (libgui-wayland patch `0020`): the host does not implement Serenity's
-output-configuration IPC, and its `ScreenLayout` `ScaleFactor` is an integer, so
-it cannot express a fractional scale. Set the scale with `[Output] DefaultScale` /
-`sde-config` (or SDE's own settings surface); exposing a fractional control in
-`DisplaySettings` is future work.
+**DisplaySettings.** The Monitor tab's **Display scale** control offers
+**1x / 1.25x / 1.5x / 2x** and applies immediately: it sends the exact scale (as
+v120) over a `set_output_scale` WindowServer-IPC method (libgui-wayland patch
+`0042`), the shim writes `[Output] DefaultScale`, and the compositor re-scales the
+outputs live. v120 is used because Serenity's `ScreenLayout` `ScaleFactor` is an
+integer and cannot carry `1.5`. (The tab's Apply button remains inert for
+mode/position: the host does not implement Serenity's output-configuration IPC.)

@@ -338,8 +338,10 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   (host M8 resolved — verified: a Serenity client presents `@2x` on a 2x/1.5x
   output). A saved size with no matching mode requests a **custom mode**, so
   `scripts/run-desktop-scene.sh --headless --scale 2` captures a 2560x1440 HiDPI
-  scene. Serenity's `DisplaySettings` Monitor tab stays display-only (patch
-  `0020`; integer `ScaleFactor`), so fractional scale is set via the config.
+  scene. `DisplaySettings`' Monitor tab offers a **Display scale** control
+  (1x/1.25x/1.5x/2x) that applies immediately — it sends the exact scale over a
+  new `set_output_scale` IPC method (libgui-wayland patch `0042`) and the shim
+  writes `[Output] DefaultScale` (verified end-to-end).
 
 - **Suspend/resume hooks (R4.3/R6).** `scripts/sde-sleep.sh` watches logind's
   `PrepareForSleep` signal (portable: `gdbus` or `dbus-monitor`, a no-op without
