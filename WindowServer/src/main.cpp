@@ -2036,15 +2036,20 @@ static void toplevel_update_frame(Toplevel& toplevel)
 // schedules a configure, so it only runs once the surface is initialized.
 static void apply_toplevel_decoration(Toplevel& toplevel)
 {
-    bool client_side = !toplevel.decoration
-        || toplevel.decoration->requested_mode != WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE;
-    if (toplevel.client_side_decorations != client_side) {
-        toplevel.client_side_decorations = client_side;
-        if (toplevel.xdg_toplevel->base->surface->mapped)
-            toplevel_update_frame(toplevel);
-    }
     if (!toplevel.decoration || !toplevel.xdg_toplevel->base->initialized)
         return;
+
+    bool client_side = toplevel.decoration->requested_mode != WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE;
+    // set_mode() schedules a configure, so only send it when we have not yet, or
+    // when the client changed its mind — never on every commit (that would
+    // configure-storm the client, which then repaints forever).
+    if (toplevel.decoration_mode_applied && toplevel.client_side_decorations == client_side)
+        return;
+
+    toplevel.client_side_decorations = client_side;
+    toplevel.decoration_mode_applied = true;
+    if (toplevel.xdg_toplevel->base->surface->mapped)
+        toplevel_update_frame(toplevel);
     wlr_xdg_toplevel_decoration_v1_set_mode(toplevel.decoration,
         client_side ? WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE
                     : WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);

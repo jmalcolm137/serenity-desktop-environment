@@ -196,6 +196,10 @@ struct Toplevel {
     // client that explicitly requests server-side decorations (the LibGUI/
     // Serenity apps do) gets the compositor frame instead.
     bool client_side_decorations { true };
+    // Whether we have already sent a decoration configure. set_mode() schedules
+    // a configure, so it must run only when the mode actually changes — not on
+    // every commit (that would configure-storm the client).
+    bool decoration_mode_applied { false };
     bool menubar_visible { true };
     // The window stack (workspace grid cell) this window belongs to. WS1.
     u32 workspace_row { 0 };
