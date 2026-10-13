@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="serenity_virtual_input">
+
+  <copyright>
+    Copyright (c) 2026, Serenity Desktop Environment contributors.
+
+    SPDX-License-Identifier: BSD-2-Clause
+  </copyright>
+
+  <!--
+    serenity_virtual_input: a test-only injection protocol, so the headless
+    harness can drive touch and pen/tablet input. wlroots offers virtual
+    keyboard and pointer devices (wlr-virtual-keyboard / wlr-virtual-pointer),
+    but no virtual touch or tablet, and its headless backend has no libinput. The
+    compositor feeds these requests into the same paths as real input.
+
+    This is SDE-private and test-only: not a public surface.
+  -->
+
+  <interface name="serenity_virtual_input_manager_v1" version="1">
+    <description summary="virtual touch/tablet factory">
+      The manager global. One per compositor.
+    </description>
+
+    <request name="create_touch">
+      <description summary="create a virtual touch device"/>
+      <arg name="id" type="new_id" interface="serenity_virtual_touch_v1"/>
+    </request>
+
+    <request name="create_tablet">
+      <description summary="create a virtual tablet tool"/>
+      <arg name="id" type="new_id" interface="serenity_virtual_tablet_v1"/>
+    </request>
+  </interface>
+
+  <interface name="serenity_virtual_touch_v1" version="1">
+    <description summary="a virtual touch device; coordinates are layout coordinates">
+    </description>
+
+    <request name="down">
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="touch_id" type="int"/>
+      <arg name="x" type="fixed"/>
+      <arg name="y" type="fixed"/>
+    </request>
+
+    <request name="motion">
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="touch_id" type="int"/>
+      <arg name="x" type="fixed"/>
+      <arg name="y" type="fixed"/>
+    </request>
+
+    <request name="up">
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="touch_id" type="int"/>
+    </request>
+
+    <request name="cancel">
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+    </request>
+
+    <request name="destroy" type="destructor"/>
+  </interface>
+
+  <interface name="serenity_virtual_tablet_v1" version="1">
+    <description summary="a virtual tablet tool; coordinates are layout coordinates">
+    </description>
+
+    <request name="proximity_in">
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="x" type="fixed"/>
+      <arg name="y" type="fixed"/>
+    </request>
+
+    <request name="proximity_out">
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+    </request>
+
+    <request name="tip_down">
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+    </request>
+
+    <request name="tip_up">
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+    </request>
+
+    <request name="motion">
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="x" type="fixed"/>
+      <arg name="y" type="fixed"/>
+    </request>
+
+    <request name="axis">
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="pressure" type="fixed"/>
+      <arg name="distance" type="fixed"/>
+      <arg name="tilt_x" type="fixed"/>
+      <arg name="tilt_y" type="fixed"/>
+      <arg name="rotation" type="fixed"/>
+      <arg name="slider" type="fixed"/>
+      <arg name="wheel" type="fixed"/>
+    </request>
+
+    <request name="button">
+      <arg name="time" type="uint" summary="timestamp in milliseconds"/>
+      <arg name="button" type="uint"/>
+      <arg name="pressed" type="uint" summary="1 when pressed, 0 when released"/>
+    </request>
+
+    <request name="destroy" type="destructor"/>
+  </interface>
+</protocol>

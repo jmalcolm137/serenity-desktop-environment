@@ -13,12 +13,23 @@
 //   --axis DX DY          scroll (axis) delta; fractional values are allowed
 //   --button BTN press|release   (BTN is numeric: 0x110 left, 0x111 right, ...)
 //   --key CODE press|release     (raw evdev keycode)
+//   --touch X Y                  touch down (id 0) at layout X,Y
+//   --touch-motion X Y           move the touch point
+//   --touch-up                   lift the touch point
+//   --touch-cancel               cancel all touch points
+//   --tablet-proximity X Y       pen enters proximity at layout X,Y
+//   --tablet-proximity-out       pen leaves proximity
+//   --tablet-tip-down / --tablet-tip-up
+//   --tablet-motion X Y          move the pen
+//   --tablet-axis P D TX TY R S W  pen axis values (as fixed points)
+//   --tablet-button BTN press|release
 //   --sleep MS
 //   --linger MS                   keep the connection open for MS after the ops
 //                                 (e.g. to keep a virtual keyboard present)
 //
 // A virtual pointer is always created; a virtual keyboard when the compositor
-// offers one.
+// offers one. Touch and tablet use the SDE test-only serenity-virtual-input
+// protocol (wlroots offers no virtual touch/tablet).
 
 #define _GNU_SOURCE
 
@@ -34,6 +45,23 @@
 
 #include "virtual-keyboard-unstable-v1-client-protocol.h"
 #include "wlr-virtual-pointer-unstable-v1-client-protocol.h"
+#if defined(SDE_HAVE_VIRTUAL_INPUT)
+#    include "serenity-virtual-input-client-protocol.h"
+#else
+// Scripts that only need pointer/keyboard do not generate the SDE virtual-input
+// protocol; the touch/tablet ops then compile to no-ops.
+#    define serenity_virtual_touch_v1_down(...) ((void)0)
+#    define serenity_virtual_touch_v1_motion(...) ((void)0)
+#    define serenity_virtual_touch_v1_up(...) ((void)0)
+#    define serenity_virtual_touch_v1_cancel(...) ((void)0)
+#    define serenity_virtual_tablet_v1_proximity_in(...) ((void)0)
+#    define serenity_virtual_tablet_v1_proximity_out(...) ((void)0)
+#    define serenity_virtual_tablet_v1_tip_down(...) ((void)0)
+#    define serenity_virtual_tablet_v1_tip_up(...) ((void)0)
+#    define serenity_virtual_tablet_v1_motion(...) ((void)0)
+#    define serenity_virtual_tablet_v1_axis(...) ((void)0)
+#    define serenity_virtual_tablet_v1_button(...) ((void)0)
+#endif
 
 struct state {
     struct wl_display* display;
@@ -43,6 +71,15 @@ struct state {
     struct zwp_virtual_keyboard_v1* keyboard;
     struct zwlr_virtual_pointer_manager_v1* pointer_manager;
     struct zwlr_virtual_pointer_v1* pointer;
+#if defined(SDE_HAVE_VIRTUAL_INPUT)
+    struct serenity_virtual_input_manager_v1* virtual_input;
+    struct serenity_virtual_touch_v1* touch;
+    struct serenity_virtual_tablet_v1* tablet;
+#else
+    void* virtual_input;
+    void* touch;
+    void* tablet;
+#endif
     uint32_t x_extent;
     uint32_t y_extent;
 };
@@ -57,6 +94,10 @@ static void registry_global(void* data, struct wl_registry* registry, uint32_t n
         s->keyboard_manager = wl_registry_bind(registry, name, &zwp_virtual_keyboard_manager_v1_interface, 1);
     else if (!strcmp(interface, zwlr_virtual_pointer_manager_v1_interface.name))
         s->pointer_manager = wl_registry_bind(registry, name, &zwlr_virtual_pointer_manager_v1_interface, 2);
+#if defined(SDE_HAVE_VIRTUAL_INPUT)
+    else if (!strcmp(interface, serenity_virtual_input_manager_v1_interface.name))
+        s->virtual_input = wl_registry_bind(registry, name, &serenity_virtual_input_manager_v1_interface, 1);
+#endif
 }
 
 static void registry_global_remove(void* data, struct wl_registry* registry, uint32_t name)
@@ -119,6 +160,14 @@ int main(int argc, char** argv)
         wl_display_roundtrip(s.display);
     }
 
+#if defined(SDE_HAVE_VIRTUAL_INPUT)
+    if (s.virtual_input) {
+        s.touch = serenity_virtual_input_manager_v1_create_touch(s.virtual_input);
+        s.tablet = serenity_virtual_input_manager_v1_create_tablet(s.virtual_input);
+        wl_display_roundtrip(s.display);
+    }
+#endif
+
     for (int i = 1; i < argc;) {
         if (!strcmp(argv[i], "--extent") && i + 2 < argc) {
             s.x_extent = (uint32_t)atoi(argv[i + 1]);
@@ -148,6 +197,45 @@ int main(int argc, char** argv)
             uint32_t state = !strcmp(argv[i + 2], "press") ? WL_KEYBOARD_KEY_STATE_PRESSED : WL_KEYBOARD_KEY_STATE_RELEASED;
             if (s.keyboard)
                 zwp_virtual_keyboard_v1_key(s.keyboard, now_ms(), code, state);
+            i += 3;
+        } else if (!strcmp(argv[i], "--touch") && i + 2 < argc && s.touch) {
+            serenity_virtual_touch_v1_down(s.touch, now_ms(), 0, wl_fixed_from_int(atoi(argv[i + 1])), wl_fixed_from_int(atoi(argv[i + 2])));
+            i += 3;
+        } else if (!strcmp(argv[i], "--touch-motion") && i + 2 < argc && s.touch) {
+            serenity_virtual_touch_v1_motion(s.touch, now_ms(), 0, wl_fixed_from_int(atoi(argv[i + 1])), wl_fixed_from_int(atoi(argv[i + 2])));
+            i += 3;
+        } else if (!strcmp(argv[i], "--touch-up") && s.touch) {
+            serenity_virtual_touch_v1_up(s.touch, now_ms(), 0);
+            i += 1;
+        } else if (!strcmp(argv[i], "--touch-cancel") && s.touch) {
+            serenity_virtual_touch_v1_cancel(s.touch, now_ms());
+            i += 1;
+        } else if (!strcmp(argv[i], "--tablet-proximity") && i + 2 < argc && s.tablet) {
+            serenity_virtual_tablet_v1_proximity_in(s.tablet, now_ms(), wl_fixed_from_int(atoi(argv[i + 1])), wl_fixed_from_int(atoi(argv[i + 2])));
+            i += 3;
+        } else if (!strcmp(argv[i], "--tablet-proximity-out") && s.tablet) {
+            serenity_virtual_tablet_v1_proximity_out(s.tablet, now_ms());
+            i += 1;
+        } else if (!strcmp(argv[i], "--tablet-tip-down") && s.tablet) {
+            serenity_virtual_tablet_v1_tip_down(s.tablet, now_ms());
+            i += 1;
+        } else if (!strcmp(argv[i], "--tablet-tip-up") && s.tablet) {
+            serenity_virtual_tablet_v1_tip_up(s.tablet, now_ms());
+            i += 1;
+        } else if (!strcmp(argv[i], "--tablet-motion") && i + 2 < argc && s.tablet) {
+            serenity_virtual_tablet_v1_motion(s.tablet, now_ms(), wl_fixed_from_int(atoi(argv[i + 1])), wl_fixed_from_int(atoi(argv[i + 2])));
+            i += 3;
+        } else if (!strcmp(argv[i], "--tablet-axis") && i + 7 < argc && s.tablet) {
+            serenity_virtual_tablet_v1_axis(s.tablet, now_ms(),
+                wl_fixed_from_double(strtod(argv[i + 1], NULL)), wl_fixed_from_double(strtod(argv[i + 2], NULL)),
+                wl_fixed_from_double(strtod(argv[i + 3], NULL)), wl_fixed_from_double(strtod(argv[i + 4], NULL)),
+                wl_fixed_from_double(strtod(argv[i + 5], NULL)), wl_fixed_from_double(strtod(argv[i + 6], NULL)),
+                wl_fixed_from_double(strtod(argv[i + 7], NULL)));
+            i += 8;
+        } else if (!strcmp(argv[i], "--tablet-button") && i + 2 < argc && s.tablet) {
+            uint32_t button = (uint32_t)strtoul(argv[i + 1], NULL, 0);
+            uint32_t pressed = !strcmp(argv[i + 2], "press") ? 1 : 0;
+            serenity_virtual_tablet_v1_button(s.tablet, now_ms(), button, pressed);
             i += 3;
         } else if (!strcmp(argv[i], "--sleep") && i + 1 < argc) {
             usleep((useconds_t)atoi(argv[i + 1]) * 1000);

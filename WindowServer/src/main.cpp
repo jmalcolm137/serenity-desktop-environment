@@ -136,6 +136,7 @@ extern "C" {
 
 // Generated from WindowServer/protocol/serenity-window.xml.
 #include "serenity-window-server-protocol.h"
+#include "serenity-virtual-input-server-protocol.h"
 }
 
 namespace {
@@ -679,6 +680,8 @@ static void update_seat_capabilities(Server& server)
     uint32_t capabilities = WL_SEAT_CAPABILITY_POINTER;
     if (!server.keyboards.is_empty())
         capabilities |= WL_SEAT_CAPABILITY_KEYBOARD;
+    if (!server.touch_devices.is_empty() || server.virtual_touch_count > 0)
+        capabilities |= WL_SEAT_CAPABILITY_TOUCH;
     wlr_seat_set_capabilities(server.seat, capabilities);
 }
 
@@ -1046,22 +1049,16 @@ static void seat_request_start_drag(wl_listener* listener, void* data)
     Server* server = nullptr;
     server = wl_container_of(listener, server, seat_request_start_drag);
     auto* event = static_cast<wlr_seat_request_start_drag_event*>(data);
-    // Validate the grab serial: a client must not be able to start a drag at will.
-    if (event->drag->grab_type == WLR_DRAG_GRAB_KEYBOARD_TOUCH) {
-        wlr_touch_point* point = nullptr;
-        if (!wlr_seat_validate_touch_grab_serial(server->seat, event->origin, event->serial, &point)) {
-            if (event->drag->source)
-                wlr_data_source_destroy(event->drag->source);
-            return;
-        }
+    // The client uses the same start_drag request for pointer and touch, so the
+    // serial (a recent pointer grab or touch point) decides which grab to start;
+    // and it proves the client may start a drag at all.
+    wlr_touch_point* point = nullptr;
+    if (wlr_seat_validate_touch_grab_serial(server->seat, event->origin, event->serial, &point)) {
         wlr_seat_start_touch_drag(server->seat, event->drag, event->serial, point);
-    } else {
-        if (!wlr_seat_validate_pointer_grab_serial(server->seat, event->origin, event->serial)) {
-            if (event->drag->source)
-                wlr_data_source_destroy(event->drag->source);
-            return;
-        }
+    } else if (wlr_seat_validate_pointer_grab_serial(server->seat, event->origin, event->serial)) {
         wlr_seat_start_pointer_drag(server->seat, event->drag, event->serial);
+    } else if (event->drag->source) {
+        wlr_data_source_destroy(event->drag->source);
     }
 }
 
@@ -1244,9 +1241,50 @@ static void cursor_motion_absolute(wl_listener* listener, void* data)
     notify_activity(*server);
 }
 
-// Touch input. wlroots routes touch through the cursor; the compositor maps the
-// normalised touch coordinates to the layout, finds the surface under the point
-// and hands it to the seat. During a touch drag the icon follows the finger.
+// Touch routing, shared by real touch devices (via the cursor) and the harness's
+// virtual touch (serenity-virtual-input). Coordinates are in the output layout.
+static void handle_touch_down(Server& server, uint32_t time_msec, int32_t touch_id, double lx, double ly)
+{
+    double sx = 0;
+    double sy = 0;
+    wlr_surface* surface = nullptr;
+    if (auto* toplevel = toplevel_at(server, lx, ly, &surface, &sx, &sy))
+        focus_toplevel(server, toplevel);
+    if (surface)
+        wlr_seat_touch_notify_down(server.seat, surface, time_msec, touch_id, sx, sy);
+    notify_activity(server);
+}
+
+static void handle_touch_motion(Server& server, uint32_t time_msec, int32_t touch_id, double lx, double ly)
+{
+    // A touch drag's icon follows the finger (the pointer cursor does not move).
+    if (server.active_drag && server.drag_icon_node)
+        wlr_scene_node_set_position(server.drag_icon_node, static_cast<int>(lx), static_cast<int>(ly));
+    double sx = 0;
+    double sy = 0;
+    wlr_surface* surface = nullptr;
+    toplevel_at(server, lx, ly, &surface, &sx, &sy);
+    if (surface)
+        wlr_seat_touch_notify_motion(server.seat, time_msec, touch_id, sx, sy);
+    notify_activity(server);
+}
+
+static void handle_touch_up(Server& server, uint32_t time_msec, int32_t touch_id)
+{
+    wlr_seat_touch_notify_up(server.seat, time_msec, touch_id);
+    notify_activity(server);
+}
+
+static void handle_touch_cancel(Server& server)
+{
+    // A device-level cancel: send wl_touch.cancel to every client with touch points.
+    wlr_seat_client* seat_client = nullptr;
+    wl_list_for_each(seat_client, &server.seat->clients, link) {
+        if (!wl_list_empty(&seat_client->touches))
+            wlr_seat_touch_notify_cancel(server.seat, seat_client);
+    }
+}
+
 static void cursor_touch_down(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
@@ -1255,14 +1293,7 @@ static void cursor_touch_down(wl_listener* listener, void* data)
     double lx = 0;
     double ly = 0;
     wlr_cursor_absolute_to_layout_coords(server->cursor, &event->touch->base, event->x, event->y, &lx, &ly);
-    double sx = 0;
-    double sy = 0;
-    wlr_surface* surface = nullptr;
-    if (auto* toplevel = toplevel_at(*server, lx, ly, &surface, &sx, &sy))
-        focus_toplevel(*server, toplevel);
-    if (surface)
-        wlr_seat_touch_notify_down(server->seat, surface, event->time_msec, event->touch_id, sx, sy);
-    notify_activity(*server);
+    handle_touch_down(*server, event->time_msec, event->touch_id, lx, ly);
 }
 
 static void cursor_touch_motion(wl_listener* listener, void* data)
@@ -1273,16 +1304,7 @@ static void cursor_touch_motion(wl_listener* listener, void* data)
     double lx = 0;
     double ly = 0;
     wlr_cursor_absolute_to_layout_coords(server->cursor, &event->touch->base, event->x, event->y, &lx, &ly);
-    // A touch drag's icon follows the finger (the pointer cursor does not move).
-    if (server->active_drag && server->drag_icon_node)
-        wlr_scene_node_set_position(server->drag_icon_node, static_cast<int>(lx), static_cast<int>(ly));
-    double sx = 0;
-    double sy = 0;
-    wlr_surface* surface = nullptr;
-    toplevel_at(*server, lx, ly, &surface, &sx, &sy);
-    if (surface)
-        wlr_seat_touch_notify_motion(server->seat, event->time_msec, event->touch_id, sx, sy);
-    notify_activity(*server);
+    handle_touch_motion(*server, event->time_msec, event->touch_id, lx, ly);
 }
 
 static void cursor_touch_up(wl_listener* listener, void* data)
@@ -1290,8 +1312,7 @@ static void cursor_touch_up(wl_listener* listener, void* data)
     Server* server = nullptr;
     server = wl_container_of(listener, server, touch_up);
     auto* event = static_cast<wlr_touch_up_event*>(data);
-    wlr_seat_touch_notify_up(server->seat, event->time_msec, event->touch_id);
-    notify_activity(*server);
+    handle_touch_up(*server, event->time_msec, event->touch_id);
 }
 
 static void cursor_touch_cancel(wl_listener* listener, void* data)
@@ -1299,12 +1320,7 @@ static void cursor_touch_cancel(wl_listener* listener, void* data)
     Server* server = nullptr;
     server = wl_container_of(listener, server, touch_cancel);
     (void)data;
-    // A device-level cancel: send wl_touch.cancel to every client with touch points.
-    wlr_seat_client* seat_client = nullptr;
-    wl_list_for_each(seat_client, &server->seat->clients, link) {
-        if (!wl_list_empty(&seat_client->touches))
-            wlr_seat_touch_notify_cancel(server->seat, seat_client);
-    }
+    handle_touch_cancel(*server);
 }
 
 // Client menus opened from layer surfaces (the Taskbar/Desktop) are overlay layer
@@ -1817,37 +1833,97 @@ static void tablet_tool_layout_position(Server& server, double x, double y, doub
     *ly = box.y + y * box.height;
 }
 
+// Tablet routing, shared by real pen/tablet devices (via the cursor) and the
+// harness's virtual tablet. Coordinates are in the output layout.
+static void handle_tablet_proximity(Server& server, wlr_tablet* tablet, wlr_tablet_tool* tool, bool in, double lx, double ly)
+{
+    auto* v2_tool = v2_tablet_tool_for(server, tool);
+    if (!v2_tool)
+        return;
+    // wlroots' proximity_in dereferences the surface, so only send it when the
+    // pen is over a client surface; otherwise the tool stays out of proximity.
+    wlr_surface* surface = nullptr;
+    if (in) {
+        double sx = 0;
+        double sy = 0;
+        if (auto* toplevel = toplevel_at(server, lx, ly, &surface, &sx, &sy))
+            focus_toplevel(server, toplevel);
+    }
+
+    if (in && surface) {
+        wlr_tablet_v2_tablet_tool_notify_proximity_in(v2_tool, v2_tablet_for(server, tablet), surface);
+        dbgln("WindowServer: tablet tool in proximity");
+    } else {
+        wlr_tablet_v2_tablet_tool_notify_proximity_out(v2_tool);
+        dbgln("WindowServer: tablet tool out of proximity");
+    }
+    notify_activity(server);
+}
+
+static void handle_tablet_motion(Server& server, wlr_tablet_tool* tool, double lx, double ly)
+{
+    auto* v2_tool = v2_tablet_tool_for(server, tool);
+    if (!v2_tool)
+        return;
+    double sx = 0;
+    double sy = 0;
+    wlr_surface* surface = nullptr;
+    toplevel_at(server, lx, ly, &surface, &sx, &sy);
+    wlr_tablet_v2_tablet_tool_notify_motion(v2_tool, sx, sy);
+    notify_activity(server);
+}
+
+static void handle_tablet_axis(Server& server, wlr_tablet_tool* tool, double pressure, double distance, double tilt_x, double tilt_y, double rotation, double slider, double wheel)
+{
+    auto* v2_tool = v2_tablet_tool_for(server, tool);
+    if (!v2_tool)
+        return;
+    wlr_tablet_v2_tablet_tool_notify_pressure(v2_tool, pressure);
+    wlr_tablet_v2_tablet_tool_notify_distance(v2_tool, distance);
+    wlr_tablet_v2_tablet_tool_notify_tilt(v2_tool, tilt_x, tilt_y);
+    wlr_tablet_v2_tablet_tool_notify_rotation(v2_tool, rotation);
+    wlr_tablet_v2_tablet_tool_notify_slider(v2_tool, slider);
+    if (wheel != 0)
+        wlr_tablet_v2_tablet_tool_notify_wheel(v2_tool, wheel, 0);
+    notify_activity(server);
+}
+
+static void handle_tablet_tip(Server& server, wlr_tablet_tool* tool, bool down)
+{
+    auto* v2_tool = v2_tablet_tool_for(server, tool);
+    if (!v2_tool)
+        return;
+    if (down)
+        wlr_tablet_v2_tablet_tool_notify_down(v2_tool);
+    else
+        wlr_tablet_v2_tablet_tool_notify_up(v2_tool);
+    notify_activity(server);
+}
+
+static void handle_tablet_button(Server& server, wlr_tablet_tool* tool, uint32_t button, bool pressed)
+{
+    auto* v2_tool = v2_tablet_tool_for(server, tool);
+    if (!v2_tool)
+        return;
+    wlr_tablet_v2_tablet_tool_notify_button(v2_tool, button,
+        pressed ? ZWP_TABLET_PAD_V2_BUTTON_STATE_PRESSED : ZWP_TABLET_PAD_V2_BUTTON_STATE_RELEASED);
+    notify_activity(server);
+}
+
 static void tablet_tool_axis(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
     server = wl_container_of(listener, server, tablet_tool_axis);
     auto* event = static_cast<wlr_tablet_tool_axis_event*>(data);
-    auto* tool = v2_tablet_tool_for(*server, event->tool);
-    if (!tool)
-        return;
-    if (event->updated_axes & (WLR_TABLET_TOOL_AXIS_X | WLR_TABLET_TOOL_AXIS_Y)) {
-        double lx = 0;
-        double ly = 0;
-        tablet_tool_layout_position(*server, event->x, event->y, &lx, &ly);
-        double sx = 0;
-        double sy = 0;
-        wlr_surface* surface = nullptr;
-        toplevel_at(*server, lx, ly, &surface, &sx, &sy);
-        wlr_tablet_v2_tablet_tool_notify_motion(tool, sx, sy);
-    }
-    if (event->updated_axes & WLR_TABLET_TOOL_AXIS_PRESSURE)
-        wlr_tablet_v2_tablet_tool_notify_pressure(tool, event->pressure);
-    if (event->updated_axes & WLR_TABLET_TOOL_AXIS_DISTANCE)
-        wlr_tablet_v2_tablet_tool_notify_distance(tool, event->distance);
-    if (event->updated_axes & (WLR_TABLET_TOOL_AXIS_TILT_X | WLR_TABLET_TOOL_AXIS_TILT_Y))
-        wlr_tablet_v2_tablet_tool_notify_tilt(tool, event->tilt_x, event->tilt_y);
-    if (event->updated_axes & WLR_TABLET_TOOL_AXIS_ROTATION)
-        wlr_tablet_v2_tablet_tool_notify_rotation(tool, event->rotation);
-    if (event->updated_axes & WLR_TABLET_TOOL_AXIS_SLIDER)
-        wlr_tablet_v2_tablet_tool_notify_slider(tool, event->slider);
-    if (event->updated_axes & WLR_TABLET_TOOL_AXIS_WHEEL)
-        wlr_tablet_v2_tablet_tool_notify_wheel(tool, event->wheel_delta, 0);
-    notify_activity(*server);
+    double lx = 0;
+    double ly = 0;
+    tablet_tool_layout_position(*server, event->x, event->y, &lx, &ly);
+    if (event->updated_axes & (WLR_TABLET_TOOL_AXIS_X | WLR_TABLET_TOOL_AXIS_Y))
+        handle_tablet_motion(*server, event->tool, lx, ly);
+    if (event->updated_axes & (WLR_TABLET_TOOL_AXIS_PRESSURE | WLR_TABLET_TOOL_AXIS_DISTANCE
+            | WLR_TABLET_TOOL_AXIS_TILT_X | WLR_TABLET_TOOL_AXIS_TILT_Y
+            | WLR_TABLET_TOOL_AXIS_ROTATION | WLR_TABLET_TOOL_AXIS_SLIDER | WLR_TABLET_TOOL_AXIS_WHEEL))
+        handle_tablet_axis(*server, event->tool, event->pressure, event->distance, event->tilt_x, event->tilt_y, event->rotation, event->slider, event->wheel_delta);
 }
 
 static void tablet_tool_proximity(wl_listener* listener, void* data)
@@ -1855,23 +1931,10 @@ static void tablet_tool_proximity(wl_listener* listener, void* data)
     Server* server = nullptr;
     server = wl_container_of(listener, server, tablet_tool_proximity);
     auto* event = static_cast<wlr_tablet_tool_proximity_event*>(data);
-    auto* tool = v2_tablet_tool_for(*server, event->tool);
-    if (!tool)
-        return;
-    if (event->state == WLR_TABLET_TOOL_PROXIMITY_IN) {
-        double lx = 0;
-        double ly = 0;
-        tablet_tool_layout_position(*server, event->x, event->y, &lx, &ly);
-        double sx = 0;
-        double sy = 0;
-        wlr_surface* surface = nullptr;
-        if (auto* toplevel = toplevel_at(*server, lx, ly, &surface, &sx, &sy))
-            focus_toplevel(*server, toplevel);
-        wlr_tablet_v2_tablet_tool_notify_proximity_in(tool, v2_tablet_for(*server, event->tablet), surface);
-    } else {
-        wlr_tablet_v2_tablet_tool_notify_proximity_out(tool);
-    }
-    notify_activity(*server);
+    double lx = 0;
+    double ly = 0;
+    tablet_tool_layout_position(*server, event->x, event->y, &lx, &ly);
+    handle_tablet_proximity(*server, event->tablet, event->tool, event->state == WLR_TABLET_TOOL_PROXIMITY_IN, lx, ly);
 }
 
 static void tablet_tool_tip(wl_listener* listener, void* data)
@@ -1879,14 +1942,7 @@ static void tablet_tool_tip(wl_listener* listener, void* data)
     Server* server = nullptr;
     server = wl_container_of(listener, server, tablet_tool_tip);
     auto* event = static_cast<wlr_tablet_tool_tip_event*>(data);
-    auto* tool = v2_tablet_tool_for(*server, event->tool);
-    if (!tool)
-        return;
-    if (event->state == WLR_TABLET_TOOL_TIP_DOWN)
-        wlr_tablet_v2_tablet_tool_notify_down(tool);
-    else
-        wlr_tablet_v2_tablet_tool_notify_up(tool);
-    notify_activity(*server);
+    handle_tablet_tip(*server, event->tool, event->state == WLR_TABLET_TOOL_TIP_DOWN);
 }
 
 static void tablet_tool_button(wl_listener* listener, void* data)
@@ -1894,13 +1950,7 @@ static void tablet_tool_button(wl_listener* listener, void* data)
     Server* server = nullptr;
     server = wl_container_of(listener, server, tablet_tool_button);
     auto* event = static_cast<wlr_tablet_tool_button_event*>(data);
-    auto* tool = v2_tablet_tool_for(*server, event->tool);
-    if (!tool)
-        return;
-    wlr_tablet_v2_tablet_tool_notify_button(tool, event->button,
-        event->state == WLR_BUTTON_PRESSED ? ZWP_TABLET_PAD_V2_BUTTON_STATE_PRESSED
-                                           : ZWP_TABLET_PAD_V2_BUTTON_STATE_RELEASED);
-    notify_activity(*server);
+    handle_tablet_button(*server, event->tool, event->button, event->state == WLR_BUTTON_PRESSED);
 }
 
 // zwp-tablet-pad-v2: express keys and ring/strip controls.
@@ -4307,6 +4357,195 @@ static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t
     server.serenity_window_managers.append(resource);
 }
 
+// --- serenity-virtual-input (test harness) ---------------------------------
+// The headless harness has no libinput and wlroots offers no virtual touch or
+// tablet, so the compositor exposes a private injection protocol; requests feed
+// the same routing as real input (see handle_touch_* / handle_tablet_*).
+static void virtual_touch_down(wl_client*, wl_resource* resource, uint32_t time, int32_t touch_id, wl_fixed_t x, wl_fixed_t y)
+{
+    auto& server = *static_cast<Server*>(wl_resource_get_user_data(resource));
+    handle_touch_down(server, time, touch_id, wl_fixed_to_double(x), wl_fixed_to_double(y));
+}
+
+static void virtual_touch_motion(wl_client*, wl_resource* resource, uint32_t time, int32_t touch_id, wl_fixed_t x, wl_fixed_t y)
+{
+    auto& server = *static_cast<Server*>(wl_resource_get_user_data(resource));
+    handle_touch_motion(server, time, touch_id, wl_fixed_to_double(x), wl_fixed_to_double(y));
+}
+
+static void virtual_touch_up(wl_client*, wl_resource* resource, uint32_t time, int32_t touch_id)
+{
+    auto& server = *static_cast<Server*>(wl_resource_get_user_data(resource));
+    handle_touch_up(server, time, touch_id);
+}
+
+static void virtual_touch_cancel(wl_client*, wl_resource* resource, uint32_t)
+{
+    auto& server = *static_cast<Server*>(wl_resource_get_user_data(resource));
+    handle_touch_cancel(server);
+}
+
+static void virtual_touch_destroy_request(wl_client*, wl_resource* resource)
+{
+    wl_resource_destroy(resource);
+}
+
+static struct serenity_virtual_touch_v1_interface const virtual_touch_implementation = {
+    .down = virtual_touch_down,
+    .motion = virtual_touch_motion,
+    .up = virtual_touch_up,
+    .cancel = virtual_touch_cancel,
+    .destroy = virtual_touch_destroy_request,
+};
+
+static void virtual_touch_resource_destroy(wl_resource* resource)
+{
+    auto& server = *static_cast<Server*>(wl_resource_get_user_data(resource));
+    if (server.virtual_touch_count > 0)
+        --server.virtual_touch_count;
+    update_seat_capabilities(server);
+}
+
+static void virtual_input_manager_create_touch(wl_client* client, wl_resource* resource, uint32_t id)
+{
+    auto& server = *static_cast<Server*>(wl_resource_get_user_data(resource));
+    auto* touch = wl_resource_create(client, &serenity_virtual_touch_v1_interface, 1, id);
+    if (!touch) {
+        wl_client_post_no_memory(client);
+        return;
+    }
+    // Advertise the touch capability while a virtual touch device exists, so
+    // clients can bind wl_touch and receive the injected events.
+    ++server.virtual_touch_count;
+    update_seat_capabilities(server);
+    wl_resource_set_implementation(touch, &virtual_touch_implementation, &server, virtual_touch_resource_destroy);
+}
+
+// A hand-built tablet device + pen tool. wlr_tablet_from_input_device() is a
+// cast, so the v2 wrappers accept these; kept alive with the resource.
+struct VirtualTabletDevice {
+    Server* server { nullptr };
+    wlr_tablet tablet { };
+    wlr_tablet_tool tool { };
+};
+
+static void virtual_tablet_proximity_in(wl_client*, wl_resource* resource, uint32_t time, wl_fixed_t x, wl_fixed_t y)
+{
+    auto* device = static_cast<VirtualTabletDevice*>(wl_resource_get_user_data(resource));
+    handle_tablet_proximity(*device->server, &device->tablet, &device->tool, true, wl_fixed_to_double(x), wl_fixed_to_double(y));
+}
+
+static void virtual_tablet_proximity_out(wl_client*, wl_resource* resource, uint32_t)
+{
+    auto* device = static_cast<VirtualTabletDevice*>(wl_resource_get_user_data(resource));
+    handle_tablet_proximity(*device->server, &device->tablet, &device->tool, false, 0, 0);
+}
+
+static void virtual_tablet_tip_down(wl_client*, wl_resource* resource, uint32_t)
+{
+    auto* device = static_cast<VirtualTabletDevice*>(wl_resource_get_user_data(resource));
+    handle_tablet_tip(*device->server, &device->tool, true);
+}
+
+static void virtual_tablet_tip_up(wl_client*, wl_resource* resource, uint32_t)
+{
+    auto* device = static_cast<VirtualTabletDevice*>(wl_resource_get_user_data(resource));
+    handle_tablet_tip(*device->server, &device->tool, false);
+}
+
+static void virtual_tablet_motion(wl_client*, wl_resource* resource, uint32_t, wl_fixed_t x, wl_fixed_t y)
+{
+    auto* device = static_cast<VirtualTabletDevice*>(wl_resource_get_user_data(resource));
+    handle_tablet_motion(*device->server, &device->tool, wl_fixed_to_double(x), wl_fixed_to_double(y));
+}
+
+static void virtual_tablet_axis(wl_client*, wl_resource* resource, uint32_t, wl_fixed_t pressure, wl_fixed_t distance, wl_fixed_t tilt_x, wl_fixed_t tilt_y, wl_fixed_t rotation, wl_fixed_t slider, wl_fixed_t wheel)
+{
+    auto* device = static_cast<VirtualTabletDevice*>(wl_resource_get_user_data(resource));
+    handle_tablet_axis(*device->server, &device->tool, wl_fixed_to_double(pressure), wl_fixed_to_double(distance),
+        wl_fixed_to_double(tilt_x), wl_fixed_to_double(tilt_y), wl_fixed_to_double(rotation), wl_fixed_to_double(slider), wl_fixed_to_double(wheel));
+}
+
+static void virtual_tablet_button(wl_client*, wl_resource* resource, uint32_t, uint32_t button, uint32_t pressed)
+{
+    auto* device = static_cast<VirtualTabletDevice*>(wl_resource_get_user_data(resource));
+    handle_tablet_button(*device->server, &device->tool, button, pressed != 0);
+}
+
+static void virtual_tablet_destroy_request(wl_client*, wl_resource* resource)
+{
+    wl_resource_destroy(resource);
+}
+
+static struct serenity_virtual_tablet_v1_interface const virtual_tablet_implementation = {
+    .proximity_in = virtual_tablet_proximity_in,
+    .proximity_out = virtual_tablet_proximity_out,
+    .tip_down = virtual_tablet_tip_down,
+    .tip_up = virtual_tablet_tip_up,
+    .motion = virtual_tablet_motion,
+    .axis = virtual_tablet_axis,
+    .button = virtual_tablet_button,
+    .destroy = virtual_tablet_destroy_request,
+};
+
+static void virtual_tablet_resource_destroy(wl_resource* resource)
+{
+    auto* device = static_cast<VirtualTabletDevice*>(wl_resource_get_user_data(resource));
+    if (!device)
+        return;
+    auto& server = *device->server;
+    // Tear down the v2 wrappers (they listen on these synthetic signals), then
+    // drop the map entries and free.
+    if (server.tablet_tool_map.contains(reinterpret_cast<u64>(&device->tool))) {
+        wl_signal_emit_mutable(&device->tool.events.destroy, &device->tool);
+        server.tablet_tool_map.remove(reinterpret_cast<u64>(&device->tool));
+    }
+    if (server.tablet_map.contains(reinterpret_cast<u64>(&device->tablet))) {
+        wl_signal_emit_mutable(&device->tablet.base.events.destroy, &device->tablet.base);
+        server.tablet_map.remove(reinterpret_cast<u64>(&device->tablet));
+    }
+    free(device->tablet.base.name);
+    delete device;
+}
+
+static void virtual_input_manager_create_tablet(wl_client* client, wl_resource* resource, uint32_t id)
+{
+    auto& server = *static_cast<Server*>(wl_resource_get_user_data(resource));
+    auto* device = new VirtualTabletDevice();
+    device->server = &server;
+    device->tablet.base.type = WLR_INPUT_DEVICE_TABLET;
+    device->tablet.base.name = strdup("sde-virtual-tablet");
+    wl_signal_init(&device->tablet.base.events.destroy);
+    device->tablet.width_mm = 100;
+    device->tablet.height_mm = 100;
+    device->tool.type = WLR_TABLET_TOOL_TYPE_PEN;
+    wl_signal_init(&device->tool.events.destroy);
+
+    auto* tablet = wl_resource_create(client, &serenity_virtual_tablet_v1_interface, 1, id);
+    if (!tablet) {
+        delete device;
+        wl_client_post_no_memory(client);
+        return;
+    }
+    wl_resource_set_implementation(tablet, &virtual_tablet_implementation, device, virtual_tablet_resource_destroy);
+}
+
+static struct serenity_virtual_input_manager_v1_interface const virtual_input_manager_implementation = {
+    .create_touch = virtual_input_manager_create_touch,
+    .create_tablet = virtual_input_manager_create_tablet,
+};
+
+static void virtual_input_manager_bind(wl_client* client, void* data, uint32_t version, uint32_t id)
+{
+    auto& server = *static_cast<Server*>(data);
+    auto* resource = wl_resource_create(client, &serenity_virtual_input_manager_v1_interface, min(version, 1u), id);
+    if (!resource) {
+        wl_client_post_no_memory(client);
+        return;
+    }
+    wl_resource_set_implementation(resource, &virtual_input_manager_implementation, &server, nullptr);
+}
+
 // --- session safety net (R4.1) --------------------------------------------
 // Idle notification (ext-idle-notify-v1), idle inhibition (zwp_idle_inhibit_v1)
 // and DPMS (wlr-output-power-management). See docs/11-r4-implementation-plan.md.
@@ -4777,6 +5016,8 @@ static ErrorOr<void> initialize(Server& server)
 
     server.foreign_toplevel_manager = wlr_foreign_toplevel_manager_v1_create(server.display);
     wl_global_create(server.display, &serenity_window_manager_interface, 1, &server, serenity_window_manager_bind);
+    // Test harness: virtual touch/tablet injection (see serenity-virtual-input).
+    wl_global_create(server.display, &serenity_virtual_input_manager_v1_interface, 1, &server, virtual_input_manager_bind);
     SessionManager::initialize(server);
     // R5: InputCapture portal support (compositor-hosted EIS; docs/17).
     InputCapture::initialize(server);

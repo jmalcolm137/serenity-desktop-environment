@@ -347,7 +347,10 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   `pointer-gestures` and **touch** input (routed through the cursor with the drag
   icon following a touch point) are served, along with **switch** devices
   (lid/tablet-mode), **pen/tablet** (`zwp-tablet-v2`) and **tablet-pad**
-  (`zwp-tablet-pad-v2`).
+  (`zwp-tablet-pad-v2`). The headless harness injects touch and pen through an
+  SDE test-only protocol (`serenity-virtual-input`);
+  `scripts/run-virtual-touch-test.sh` covers touch routing and the touch-drag
+  path.
   **Explicit drag-and-drop between windows is now
   served** (compositor-routed data-device DnD with a drag icon), and the port
   bridges LibGUI's `DragOperation` onto it both ways, so SerenityOS applications

@@ -495,6 +495,9 @@ struct Server {
     // the config changes. See R4.6.
     Vector<wlr_input_device*> pointer_devices;
     Vector<wlr_input_device*> touch_devices;
+    // Live virtual touch devices (serenity-virtual-input); the seat advertises
+    // the touch capability while any exists.
+    int virtual_touch_count { 0 };
     Vector<NonnullOwnPtr<Pointer>> pointer_objects;
     Vector<NonnullOwnPtr<SwitchDevice>> switch_objects;
     // wp-pointer-gestures-v1: touchpad swipe/pinch/hold.

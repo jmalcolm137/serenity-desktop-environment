@@ -27,6 +27,7 @@ static struct wl_compositor* compositor;
 static struct wl_shm* shm;
 static struct wl_seat* seat;
 static struct wl_pointer* pointer;
+static struct wl_touch* touch;
 static struct wl_data_device_manager* data_device_manager;
 static struct wl_data_device* data_device;
 static struct xdg_wm_base* wm_base;
@@ -179,17 +180,11 @@ static void pointer_motion(void* d, struct wl_pointer* p, uint32_t time, wl_fixe
 {
     (void)d; (void)p; (void)time; (void)x; (void)y;
 }
-static void pointer_button(void* d, struct wl_pointer* p, uint32_t serial, uint32_t time, uint32_t button, uint32_t state)
+// Start a data-device drag from serial/origin, with an icon. Shared by the
+// pointer (button press) and touch (down) paths.
+static void start_drag(uint32_t serial, struct wl_surface* origin)
 {
-    (void)d;
-    (void)p;
-    (void)time;
-    printf("pointer-button button=0x%x state=%u serial=%u\n", button, state, serial);
-    fflush(stdout);
-    if (state != WL_POINTER_BUTTON_STATE_PRESSED || button != 0x110 /* BTN_LEFT */ || dragging)
-        return;
     dragging = 1;
-
     struct wl_data_source* source = wl_data_device_manager_create_data_source(data_device_manager);
     wl_data_source_offer(source, "text/plain;charset=utf-8");
     wl_data_source_add_listener(source, &source_listener, NULL);
@@ -201,11 +196,55 @@ static void pointer_button(void* d, struct wl_pointer* p, uint32_t serial, uint3
     wl_surface_damage_buffer(icon, 0, 0, 16, 16);
     wl_surface_commit(icon);
 
-    wl_data_device_start_drag(data_device, source, surface, icon, serial);
+    wl_data_device_start_drag(data_device, source, origin, icon, serial);
     wl_display_flush(display);
     printf("drag-started\n");
     fflush(stdout);
 }
+
+static void pointer_button(void* d, struct wl_pointer* p, uint32_t serial, uint32_t time, uint32_t button, uint32_t state)
+{
+    (void)d;
+    (void)p;
+    (void)time;
+    printf("pointer-button button=0x%x state=%u serial=%u\n", button, state, serial);
+    fflush(stdout);
+    if (state != WL_POINTER_BUTTON_STATE_PRESSED || button != 0x110 /* BTN_LEFT */ || dragging)
+        return;
+    start_drag(serial, surface);
+}
+
+static void touch_down(void* d, struct wl_touch* t, uint32_t serial, uint32_t time, struct wl_surface* s, int32_t id, wl_fixed_t x, wl_fixed_t y)
+{
+    (void)d;
+    (void)t;
+    (void)time;
+    (void)id;
+    printf("touch-down %f %f\n", wl_fixed_to_double(x), wl_fixed_to_double(y));
+    fflush(stdout);
+    if (dragging)
+        return;
+    start_drag(serial, s);
+}
+static void touch_up(void* d, struct wl_touch* t, uint32_t serial, uint32_t time, int32_t id)
+{
+    (void)d; (void)t; (void)serial; (void)time; (void)id;
+    printf("touch-up\n");
+    fflush(stdout);
+}
+static void touch_motion(void* d, struct wl_touch* t, uint32_t time, int32_t id, wl_fixed_t x, wl_fixed_t y)
+{
+    (void)d; (void)t; (void)time; (void)id;
+    printf("touch-motion %f %f\n", wl_fixed_to_double(x), wl_fixed_to_double(y));
+    fflush(stdout);
+}
+static void touch_frame(void* d, struct wl_touch* t) { (void)d; (void)t; }
+static void touch_cancel(void* d, struct wl_touch* t) { (void)d; (void)t; }
+static void touch_shape(void* d, struct wl_touch* t, int32_t id, wl_fixed_t major, wl_fixed_t minor) { (void)d; (void)t; (void)id; (void)major; (void)minor; }
+static void touch_orientation(void* d, struct wl_touch* t, int32_t id, wl_fixed_t orientation) { (void)d; (void)t; (void)id; (void)orientation; }
+static struct wl_touch_listener const touch_listener = {
+    touch_down, touch_up, touch_motion, touch_frame, touch_cancel, touch_shape, touch_orientation
+};
 static void pointer_axis(void* d, struct wl_pointer* p, uint32_t time, uint32_t axis, wl_fixed_t value)
 {
     (void)d; (void)p; (void)time; (void)axis; (void)value;
@@ -277,13 +316,21 @@ static struct wl_data_device_listener const device_listener = {
 static void seat_capabilities(void* d, struct wl_seat* s, uint32_t caps)
 {
     (void)d;
+    printf("seat-caps 0x%x\n", caps);
+    fflush(stdout);
     if ((caps & WL_SEAT_CAPABILITY_POINTER) && !pointer) {
         pointer = wl_seat_get_pointer(s);
         wl_pointer_add_listener(pointer, &pointer_listener, NULL);
-        if (!data_device) {
-            data_device = wl_data_device_manager_get_data_device(data_device_manager, s);
-            wl_data_device_add_listener(data_device, &device_listener, NULL);
-        }
+    }
+    if ((caps & WL_SEAT_CAPABILITY_TOUCH) && !touch) {
+        touch = wl_seat_get_touch(s);
+        wl_touch_add_listener(touch, &touch_listener, NULL);
+        printf("bound-wl-touch\n");
+        fflush(stdout);
+    }
+    if (!data_device) {
+        data_device = wl_data_device_manager_get_data_device(data_device_manager, s);
+        wl_data_device_add_listener(data_device, &device_listener, NULL);
     }
 }
 static void seat_name(void* d, struct wl_seat* s, char const* name) { (void)d; (void)s; (void)name; }

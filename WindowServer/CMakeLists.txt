@@ -62,6 +62,20 @@ add_custom_command(
     VERBATIM
 )
 
+# serenity-virtual-input: a test-only protocol so the headless harness can inject
+# touch and pen/tablet (wlroots has no virtual touch/tablet, and the headless
+# backend has no libinput).
+set(SERENITY_VIRTUAL_INPUT_XML "${CMAKE_CURRENT_SOURCE_DIR}/protocol/serenity-virtual-input.xml")
+add_custom_command(
+    OUTPUT
+        "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-virtual-input-server-protocol.h"
+        "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-virtual-input-protocol.c"
+    COMMAND "${WAYLAND_SCANNER}" server-header "${SERENITY_VIRTUAL_INPUT_XML}" "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-virtual-input-server-protocol.h"
+    COMMAND "${WAYLAND_SCANNER}" private-code "${SERENITY_VIRTUAL_INPUT_XML}" "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-virtual-input-protocol.c"
+    DEPENDS "${SERENITY_VIRTUAL_INPUT_XML}"
+    VERBATIM
+)
+
 # xdg-session-management-v1: let apps restore their toplevels across a restart
 # (R4.2). Standard protocol; wlroots 0.20 has no manager for it, so we generate
 # and implement the server side (see src/SessionManager.cpp). The protocol
@@ -97,6 +111,7 @@ add_executable(WindowServer
     src/WindowSwitcher.cpp
     "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-window-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-input-capture-protocol.c"
+    "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-virtual-input-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-shell-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-session-management-v1-protocol.c")
 

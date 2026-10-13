@@ -105,7 +105,11 @@ table.
   follows a touch point), and **switch** devices (lid/tablet-mode/keypad-slide)
   are tracked. **Pen/tablet** is served as `zwp-tablet-v2` (proximity, tip,
   motion, pressure/tilt/rotation/slider/wheel, tool buttons) and **tablet-pad**
-  as `zwp-tablet-pad-v2` (express buttons, ring and strip).
+  as `zwp-tablet-pad-v2` (express buttons, ring and strip). Because wlroots has
+  no virtual touch/tablet and the headless backend has no libinput, the harness
+  injects them through an SDE test-only protocol (`serenity-virtual-input`,
+  `scripts/run-virtual-touch-test.sh`), which also drives the touch-drag path
+  (the drag icon follows the touch point).
 - **Presentation & scaling (N3, N5) — largely done.** `wp-viewporter`,
   `content-type-v1`, `tearing-control`, `wp-single-pixel-buffer`,
   `wp-alpha-modifier`, **`presentation-time`** (`wp_presentation v2`; the
