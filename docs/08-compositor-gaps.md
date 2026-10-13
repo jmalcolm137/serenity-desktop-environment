@@ -94,9 +94,10 @@ table.
   (`zwlr_data_control_manager_v1`, `ext_data_control_manager_v1` — for clipboard
   managers such as the ClipboardHistory applet) are served; full **drag-and-drop**
   (gestures, drag icon, enter/leave choreography) remains.
-- **Input protocols (G3, G7).** `keyboard-shortcuts-inhibit` and
-  `relative-pointer` are served; `pointer-constraints` and `pointer-gestures`
-  remain — needed for games and remote desktop.
+- **Input protocols (G3, G7).** `keyboard-shortcuts-inhibit`, `relative-pointer`
+  and `pointer-constraints` (lock/confine, enforced in the cursor-motion path) are
+  served; `pointer-gestures` remains — needed for touchpad gestures and remote
+  desktop.
 - **Presentation & scaling (N3, N5) — largely done.** `wp-viewporter`,
   `content-type-v1`, `tearing-control`, `wp-single-pixel-buffer`,
   `wp-alpha-modifier`, **`presentation-time`** (`wp_presentation v2`; the

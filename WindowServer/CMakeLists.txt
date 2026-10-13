@@ -22,6 +22,8 @@ pkg_check_modules(XKBCOMMON REQUIRED xkbcommon)
 pkg_check_modules(DRM REQUIRED libdrm)
 # R4.6: input device configuration (accel, tap-to-click, natural scroll, ...).
 pkg_check_modules(LIBINPUT REQUIRED libinput)
+# pixman: pointer-constraints region tests (zwp-pointer-constraints-v1).
+pkg_check_modules(PIXMAN REQUIRED pixman-1)
 # R5 InputCapture (docs/17-input-capture.md): the compositor owns the EIS
 # implementation via libeis. Optional: a build without libeis simply does not
 # offer the serenity_input_capture protocol.
@@ -132,6 +134,7 @@ target_link_libraries(WindowServer PRIVATE
     ${XKBCOMMON_LIBRARIES}
     ${DRM_LIBRARIES}
     ${LIBINPUT_LIBRARIES}
+    ${PIXMAN_LIBRARIES}
     ${LAGOM_ak}
     ${LAGOM_coreminimal}
     ${LAGOM_corebasic}

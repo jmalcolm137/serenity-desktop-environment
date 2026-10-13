@@ -340,9 +340,11 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   `content-type`, `tearing-control`, `cursor-shape`, `xdg-wm-dialog`,
   single-pixel-buffer and alpha-modifier, alongside the workspace / foreign-
   toplevel / capture globals. Verified by `scripts/run-protocol-matrix-test.sh`.
-  **Still absent:** `pointer-constraints` (mouse lock/confine for games — the
-  manager is not created and the cursor-motion path does not enforce a
-  constraint region); `xdg-toplevel-drag` (not present in the pinned wlroots);
+  `pointer-constraints` (mouse lock/confine for games) is served too: the
+  compositor activates the constraint of the surface under the cursor and enforces
+  it in the cursor-motion path (locked to the client's hint, or confined to its
+  region) — the only part wlroots leaves to the compositor.
+  **Still absent:** `xdg-toplevel-drag` (not present in the pinned wlroots);
   `pointer-gestures`; compositor-mediated drag-and-drop *between* windows;
   `text-input-v3`/`input-method-v2` (IME); and accessibility (AT-SPI).
 - **`xdg-desktop-portal` (G7).** Phase 1 landed: **`xdg-desktop-portal-serenity`**

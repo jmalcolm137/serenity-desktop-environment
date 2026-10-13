@@ -90,6 +90,7 @@ extern "C" {
 #include <wlr/types/wlr_fractional_scale_v1.h>
 #include <wlr/types/wlr_relative_pointer_v1.h>
 #include <wlr/types/wlr_keyboard_shortcuts_inhibit_v1.h>
+#include <wlr/types/wlr_pointer_constraints_v1.h>
 #include <wlr/types/wlr_xdg_foreign_registry.h>
 #include <wlr/types/wlr_xdg_foreign_v1.h>
 #include <wlr/types/wlr_xdg_foreign_v2.h>
@@ -933,6 +934,54 @@ static void move_cursor_highlight(Server& server)
     s_cursor_highlight->set_rect({ static_cast<int>(server.cursor->x) - radius, static_cast<int>(server.cursor->y) - radius, radius * 2, radius * 2 });
 }
 
+// zwp-pointer-constraints-v1 (R5). wlroots advertises the protocol; the
+// compositor owns enforcement. It activates the constraint of the surface under
+// the pointer and, while active, keeps the cursor locked to the client's hint or
+// confined to its region.
+struct PointerConstraintListener {
+    wl_listener destroy;
+    Server* server { nullptr };
+};
+
+static void pointer_constraint_destroy(wl_listener* listener, void* data)
+{
+    auto* constraint = static_cast<wlr_pointer_constraint_v1*>(data);
+    PointerConstraintListener* entry = nullptr;
+    entry = wl_container_of(listener, entry, destroy);
+    if (entry->server->active_pointer_constraint == constraint)
+        entry->server->active_pointer_constraint = nullptr;
+    wl_list_remove(&listener->link);
+    delete entry;
+}
+
+static void new_pointer_constraint(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, new_pointer_constraint);
+    auto* constraint = static_cast<wlr_pointer_constraint_v1*>(data);
+    auto* entry = new PointerConstraintListener { {}, server };
+    entry->destroy.notify = pointer_constraint_destroy;
+    wl_signal_add(&constraint->events.destroy, &entry->destroy);
+}
+
+// The layout-space origin of a surface, for a constraint on an xdg toplevel (the
+// case games use). Returns false for other surfaces.
+static bool surface_global_origin(Server& server, wlr_surface* surface, double* out_x, double* out_y)
+{
+    for (auto& toplevel : server.toplevels) {
+        if (!toplevel->xdg_toplevel || toplevel->xdg_toplevel->base->surface != surface)
+            continue;
+        int lx = 0;
+        int ly = 0;
+        if (!wlr_scene_node_coords(&toplevel->content_tree->node, &lx, &ly))
+            return false;
+        *out_x = lx;
+        *out_y = ly;
+        return true;
+    }
+    return false;
+}
+
 static void process_cursor_motion(Server& server, uint32_t time)
 {
     // While the session is locked, only the lock surface receives input.
@@ -989,6 +1038,43 @@ static void process_cursor_motion(Server& server, uint32_t time)
     wlr_surface* surface = nullptr;
     if (hit.region == FrameRegion::None)
         toplevel_at(server, server.cursor->x, server.cursor->y, &surface, &sx, &sy);
+
+    // Pointer constraints: activate the constraint of the surface under the
+    // cursor and, while one is active, keep the cursor locked or confined.
+    if (server.pointer_constraints) {
+        wlr_pointer_constraint_v1* constraint = surface
+            ? wlr_pointer_constraints_v1_constraint_for_surface(server.pointer_constraints, surface, server.seat)
+            : nullptr;
+        if (constraint != server.active_pointer_constraint) {
+            if (server.active_pointer_constraint)
+                wlr_pointer_constraint_v1_send_deactivated(server.active_pointer_constraint);
+            server.active_pointer_constraint = constraint;
+            if (constraint)
+                wlr_pointer_constraint_v1_send_activated(constraint);
+        }
+        if (auto* active = server.active_pointer_constraint) {
+            double origin_x = 0;
+            double origin_y = 0;
+            if (surface_global_origin(server, active->surface, &origin_x, &origin_y)) {
+                if (active->type == WLR_POINTER_CONSTRAINT_V1_LOCKED) {
+                    if (active->current.cursor_hint.enabled)
+                        wlr_cursor_warp_closest(server.cursor, nullptr, origin_x + active->current.cursor_hint.x, origin_y + active->current.cursor_hint.y);
+                } else if (active->type == WLR_POINTER_CONSTRAINT_V1_CONFINED && (active->current.committed & WLR_POINTER_CONSTRAINT_V1_STATE_REGION)) {
+                    double const local_x = server.cursor->x - origin_x;
+                    double const local_y = server.cursor->y - origin_y;
+                    if (!pixman_region32_contains_point(&active->current.region, local_x, local_y, nullptr)) {
+                        auto const* box = pixman_region32_extents(&active->current.region);
+                        double const clamped_x = min(max(local_x, static_cast<double>(box->x1)), static_cast<double>(box->x2));
+                        double const clamped_y = min(max(local_y, static_cast<double>(box->y1)), static_cast<double>(box->y2));
+                        wlr_cursor_warp_closest(server.cursor, nullptr, origin_x + clamped_x, origin_y + clamped_y);
+                    }
+                }
+                // Recompute surface-local coordinates for the (possibly warped) cursor.
+                sx = server.cursor->x - origin_x;
+                sy = server.cursor->y - origin_y;
+            }
+        }
+    }
 
     if (surface) {
         if (server.seat->pointer_state.focused_surface != surface)
@@ -4282,6 +4368,9 @@ static ErrorOr<void> initialize(Server& server)
     wlr_fractional_scale_manager_v1_create(server.display, 1);
     server.relative_pointer_manager = wlr_relative_pointer_manager_v1_create(server.display);
     server.keyboard_shortcuts_inhibit = wlr_keyboard_shortcuts_inhibit_v1_create(server.display);
+    server.pointer_constraints = wlr_pointer_constraints_v1_create(server.display);
+    server.new_pointer_constraint.notify = new_pointer_constraint;
+    wl_signal_add(&server.pointer_constraints->events.new_constraint, &server.new_pointer_constraint);
     auto* foreign_registry = wlr_xdg_foreign_registry_create(server.display);
     wlr_xdg_foreign_v1_create(server.display, foreign_registry);
     wlr_xdg_foreign_v2_create(server.display, foreign_registry);

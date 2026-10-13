@@ -58,6 +58,8 @@ struct wlr_output_power_manager_v1;
 struct wlr_renderer;
 struct wlr_relative_pointer_manager_v1;
 struct wlr_keyboard_shortcuts_inhibit_manager_v1;
+struct wlr_pointer_constraints_v1;
+struct wlr_pointer_constraint_v1;
 struct wlr_scene;
 struct wlr_scene_buffer;
 struct wlr_scene_layer_surface_v1;
@@ -380,6 +382,12 @@ struct Server {
     // need a little compositor glue — relative motion and shortcut inhibition).
     wlr_relative_pointer_manager_v1* relative_pointer_manager { nullptr };
     wlr_keyboard_shortcuts_inhibit_manager_v1* keyboard_shortcuts_inhibit { nullptr };
+    // zwp-pointer-constraints-v1: pointer lock/confine for games. The active
+    // constraint (for the focused pointer surface) is enforced in
+    // process_cursor_motion(); null when none applies.
+    wlr_pointer_constraints_v1* pointer_constraints { nullptr };
+    wlr_pointer_constraint_v1* active_pointer_constraint { nullptr };
+    wl_listener new_pointer_constraint { };
     // Virtual input (wlr virtual-keyboard / virtual-pointer), so headless tests
     // can script keyboard and pointer events. See docs/09 §2.4.
     wlr_virtual_keyboard_manager_v1* virtual_keyboard_manager { nullptr };
