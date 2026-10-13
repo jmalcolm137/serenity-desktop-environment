@@ -6,8 +6,10 @@
 
 #pragma once
 
+#include <AK/ByteString.h>
 #include <AK/NonnullOwnPtr.h>
 #include <AK/NonnullRefPtr.h>
+#include <AK/Optional.h>
 #include <AK/OwnPtr.h>
 #include <AK/RefPtr.h>
 #include <AK/Vector.h>
@@ -154,6 +156,23 @@ struct Output {
     wl_listener commit { };
 };
 
+// The inputs that determine a server-side decoration frame's pixels. Cached on
+// the toplevel so a client's content commit only re-renders (bitmap alloc,
+// theme gradient titlebar, buffer upload) when the decoration actually changed.
+struct FrameCache {
+    int content_width { 0 };
+    int content_height { 0 };
+    bool active { true };
+    bool maximized { false };
+    bool rolled_up { false };
+    bool highlighted { false };
+    int hovered_button { -1 };
+    int pressed_button { -1 };
+    Gfx::Bitmap const* icon { nullptr };
+    int scale { 1 };
+    ByteString title;
+};
+
 struct Toplevel {
     Server* server { nullptr };
     wlr_xdg_toplevel* xdg_toplevel { nullptr };
@@ -170,6 +189,8 @@ struct Toplevel {
     // (SerenityOS clients supply one over the WindowServer protocol).
     RefPtr<Gfx::Bitmap> icon;
     Vector<Gfx::IntRect> button_rects;
+    // The inputs of the last rendered frame, if any (see FrameCache).
+    Optional<FrameCache> frame_cache;
     Gfx::IntSize restore_size;
     Gfx::IntPoint restore_position;
     bool frame_active { true };

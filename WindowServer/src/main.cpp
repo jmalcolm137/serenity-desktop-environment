@@ -1910,6 +1910,7 @@ static void toplevel_update_frame(Toplevel& toplevel)
         toplevel.frame_bottom = 0;
         toplevel.frame_size = { content_width, content_height };
         toplevel.button_rects.clear_with_capacity();
+        toplevel.frame_cache.clear();
         if (toplevel.frame_buffer)
             wlr_scene_node_set_enabled(&toplevel.frame_buffer->node, false);
         wlr_scene_node_set_position(&toplevel.content_tree->node, 0, 0);
@@ -1925,6 +1926,7 @@ static void toplevel_update_frame(Toplevel& toplevel)
         toplevel.frame_bottom = 0;
         toplevel.frame_size = { content_width, content_height };
         toplevel.button_rects.clear_with_capacity();
+        toplevel.frame_cache.clear();
         if (toplevel.frame_buffer)
             wlr_scene_node_set_enabled(&toplevel.frame_buffer->node, false);
         wlr_scene_node_set_position(&toplevel.content_tree->node, 0, 0);
@@ -1951,6 +1953,29 @@ static void toplevel_update_frame(Toplevel& toplevel)
     toplevel.frame_bottom = frame_size.height() - frame_content_height - toplevel.frame_top;
     toplevel.frame_size = frame_size;
 
+    // The layout above is cheap and always kept current. Rendering the pixels is
+    // not: a client commits new content every frame, but its decoration only
+    // changes when one of these inputs does. Without this cache an idle window
+    // re-rendered (and re-uploaded) its whole frame on every commit, which kept
+    // the compositor's main thread busy even when nothing on screen changed.
+    StringView const title_view = xdg_toplevel->title ? StringView { xdg_toplevel->title, strlen(xdg_toplevel->title) } : StringView { };
+    bool const highlighted = &toplevel == WindowSwitcher::highlighted();
+    bool const frame_dump_requested = getenv("WINDOWSERVER_DUMP_FRAME") != nullptr;
+    auto const& frame_cache = toplevel.frame_cache;
+    if (!frame_dump_requested && frame_cache.has_value()
+        && frame_cache->content_width == content_width
+        && frame_cache->content_height == content_height
+        && frame_cache->active == toplevel.frame_active
+        && frame_cache->maximized == toplevel.maximized
+        && frame_cache->rolled_up == toplevel.rolled_up
+        && frame_cache->highlighted == highlighted
+        && frame_cache->hovered_button == toplevel.hovered_button
+        && frame_cache->pressed_button == toplevel.pressed_button
+        && frame_cache->icon == toplevel.icon.ptr()
+        && frame_cache->scale == output_scale()
+        && frame_cache->title == title_view)
+        return;
+
     // Render the frame at the output scale so it stays crisp on HiDPI panels.
     auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, frame_size, output_scale()).release_value_but_fixme_should_propagate_errors();
     Gfx::Painter painter(*bitmap);
@@ -1970,12 +1995,9 @@ static void toplevel_update_frame(Toplevel& toplevel)
     auto state = toplevel.frame_active ? Gfx::WindowTheme::WindowState::Active : Gfx::WindowTheme::WindowState::Inactive;
     // While the Alt+Tab switcher is open, draw the selected window in the theme's
     // highlighted state (SerenityOS WindowManager::set_highlight_window).
-    if (&toplevel == WindowSwitcher::highlighted())
+    if (highlighted)
         state = Gfx::WindowTheme::WindowState::Highlighted;
-    StringView title;
-    if (xdg_toplevel->title)
-        title = StringView { xdg_toplevel->title, strlen(xdg_toplevel->title) };
-    theme.paint_normal_frame(painter, state, Gfx::WindowTheme::WindowMode::Other, content_rect, title, icon, *g_palette, leftmost_button, 0, false);
+    theme.paint_normal_frame(painter, state, Gfx::WindowTheme::WindowMode::Other, content_rect, title_view, icon, *g_palette, leftmost_button, 0, false);
 
     toplevel.button_rects.clear_with_capacity();
     float icon_opacity = toplevel.frame_active ? 1.0f : (g_palette->window_title_button_inactive_alpha() / 255.0f);
@@ -2027,6 +2049,21 @@ static void toplevel_update_frame(Toplevel& toplevel)
     wlr_scene_buffer_set_dest_size(toplevel.frame_buffer, frame_size.width(), frame_size.height());
     use_nearest_filter(&toplevel.frame_buffer->node);
     wlr_buffer_drop(buffer);
+
+    // Remember what produced these pixels so identical commits skip the render.
+    toplevel.frame_cache = FrameCache {
+        .content_width = content_width,
+        .content_height = content_height,
+        .active = toplevel.frame_active,
+        .maximized = toplevel.maximized,
+        .rolled_up = toplevel.rolled_up,
+        .highlighted = highlighted,
+        .hovered_button = toplevel.hovered_button,
+        .pressed_button = toplevel.pressed_button,
+        .icon = toplevel.icon.ptr(),
+        .scale = output_scale(),
+        .title = ByteString { title_view },
+    };
 }
 
 // Decide and apply a toplevel's decoration mode. Wayland-first (P8): a client
@@ -4348,6 +4385,8 @@ static void apply_theme_path(Server& server, ByteString const& theme_path)
     g_palette = new Gfx::Palette(Gfx::PaletteImpl::create_with_anonymous_buffer(theme.value()));
     load_overlay_shadow();
     for (auto& toplevel : server.toplevels)
+        toplevel->frame_cache.clear();
+    for (auto& toplevel : server.toplevels)
         toplevel_update_frame(*toplevel);
     for (auto& output : server.outputs) {
         output->background_size = { };
@@ -4405,6 +4444,10 @@ static void apply_font_queries(Server& server, ByteString const& default_query, 
         Gfx::FontDatabase::set_fixed_width_font_query(fixed_width_query);
     if (!window_title_query.is_empty())
         Gfx::FontDatabase::set_window_title_font_query(window_title_query);
+    // The titlebar text is drawn from the title font, so a font change must
+    // re-render frames the cache would otherwise consider unchanged.
+    for (auto& toplevel : server.toplevels)
+        toplevel->frame_cache.clear();
     for (auto& toplevel : server.toplevels)
         toplevel_update_frame(*toplevel);
     dbgln("WindowServer: applied system fonts (default '{}')", default_query);
