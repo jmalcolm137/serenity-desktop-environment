@@ -22,6 +22,7 @@
 #endif
 
 #include "remote-desktop.h"
+#include "introspection.h"
 
 #include <AK/Format.h>
 #include <AK/Random.h>
@@ -351,7 +352,8 @@ void register_interface(Portal::Service& service)
                 return Portal::Value::make_uint32(2);
             return {};
         },
-        Vector<ByteString> { "version"sv });
+        Vector<ByteString> { "version"sv },
+        Portal::interface_introspection_xml(remote_desktop_interface).value_or(StringView {}));
 }
 
 }

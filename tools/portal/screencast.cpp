@@ -30,6 +30,7 @@
 #define _GNU_SOURCE
 
 #include "screencast.h"
+#include "introspection.h"
 
 #include <AK/HashMap.h>
 #include <AK/Random.h>
@@ -1945,7 +1946,8 @@ void register_interface(Portal::Service& service)
                 return Portal::Value::make_uint32(6);
             return {};
         },
-        Vector<ByteString> { "version"sv });
+        Vector<ByteString> { "version"sv },
+        Portal::interface_introspection_xml(screencast_interface).value_or(StringView {}));
 }
 
 void store_restore_token(ByteString const& token, u32 types, u32 cursor_mode, ByteString const& source_id)

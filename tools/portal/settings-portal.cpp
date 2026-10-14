@@ -26,6 +26,7 @@
 #include <LibMain/Main.h>
 
 #include "dbus.h"
+#include "introspection.h"
 
 namespace {
 
@@ -193,7 +194,8 @@ ErrorOr<int> serenity_main(Main::Arguments)
                 return Portal::Value::make_uint32(2);
             return {};
         },
-        Vector<ByteString> { "version"sv });
+        Vector<ByteString> { "version"sv },
+        Portal::interface_introspection_xml(settings_interface).value_or(StringView {}));
 
     // Re-read the theme broker when the session switches themes.
     auto watcher = TRY(Core::FileWatcher::create());

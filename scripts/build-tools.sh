@@ -108,6 +108,7 @@ PORTAL_FLAGS=(-std=c++26 -fno-exceptions -Wno-literal-suffix -O2 -Wall "${PORTAL
 c++ "${PORTAL_FLAGS[@]}" \
     $(pkg-config --cflags dbus-1) \
     "$SDE_ROOT/tools/portal/dbus.cpp" \
+    "$SDE_ROOT/tools/portal/introspection.cpp" \
     "$SDE_ROOT/tools/portal/settings-portal.cpp" \
     "${LAGOM_LIBS[@]}" $(pkg-config --libs dbus-1) -lpthread \
     -Wl,-rpath,"$SERENITY_BUILD_DIR/lib" \
@@ -164,6 +165,7 @@ done
 c++ "${PORTAL_FLAGS[@]}" \
     $(pkg-config --cflags dbus-1 wayland-client libpipewire-0.3 xkbcommon gbm libdrm) \
     "$SDE_ROOT/tools/portal/dbus.cpp" \
+    "$SDE_ROOT/tools/portal/introspection.cpp" \
     "$SDE_ROOT/tools/portal/backend.cpp" \
     "$SDE_ROOT/tools/portal/screencast.cpp" \
     "$SDE_ROOT/tools/portal/remote-desktop.cpp" \

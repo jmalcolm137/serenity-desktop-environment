@@ -26,6 +26,7 @@
 // asynchronously through the Core::Notifier.
 
 #include "input-capture.h"
+#include "introspection.h"
 #include "screencast.h"
 
 #include <AK/Format.h>
@@ -555,5 +556,6 @@ void InputCapture::register_interface(Portal::Service& service)
                 return Portal::Value::make_uint32(supported_capabilities);
             return {};
         },
-        Vector<ByteString> { "version"sv, "SupportedCapabilities"sv });
+        Vector<ByteString> { "version"sv, "SupportedCapabilities"sv },
+        Portal::interface_introspection_xml(input_capture_interface).value_or(StringView {}));
 }

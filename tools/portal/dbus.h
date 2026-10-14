@@ -225,7 +225,9 @@ public:
     // Returns the property value, or an empty Optional for an unknown property.
     using PropertyHandler = Function<Optional<Value>(StringView property)>;
 
-    void register_interface(ByteString name, MethodHandler, PropertyHandler = {}, Vector<ByteString> property_names = {});
+    // `introspection_xml` is the interface's `<interface>` fragment, served over
+    // org.freedesktop.DBus.Introspectable.
+    void register_interface(ByteString name, MethodHandler, PropertyHandler = {}, Vector<ByteString> property_names = {}, StringView introspection_xml = {});
 
     // Emits a signal on `interface`. `arguments` are appended in order.
     void emit_signal(StringView interface, StringView name, Vector<Value> const& arguments = {});
@@ -238,11 +240,13 @@ private:
         MethodHandler method_handler;
         PropertyHandler property_handler;
         Vector<ByteString> property_names;
+        StringView introspection_xml;
     };
 
     static DBusHandlerResult filter(DBusConnection*, DBusMessage*, void*);
     void on_socket_readable();
     void handle_message(DBusMessage*);
+    void handle_introspect(MethodCall&);
 
     Interface* interface_named(StringView name);
 
