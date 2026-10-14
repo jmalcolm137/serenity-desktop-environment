@@ -34,8 +34,11 @@ backend is split into `tools/portal/backend.cpp` (the non-capture interfaces)
 plus `screencast.cpp`, `remote-desktop.cpp`, `input-capture.cpp` and
 `global-shortcuts.cpp`, each registering its own interface on the shared
 `Portal::Service`. Image decoding/encoding (wallpaper, screenshots, colour
-sampling) uses **LibGfx** — there is no gdk-pixbuf. The R4.4 Settings portal is
-the standalone `tools/portal/settings-portal.cpp` binary.
+sampling) uses **LibGfx** — there is no gdk-pixbuf. The service also answers
+`org.freedesktop.DBus.Introspectable` from the interfaces' definitions
+(`tools/portal/introspection.cpp`), so `gdbus introspect`, `busctl introspect`
+and `d-feet` work (and clients type their arguments from it). The R4.4 Settings
+portal is the standalone `tools/portal/settings-portal.cpp` binary.
 
 ## 2. Interfaces
 

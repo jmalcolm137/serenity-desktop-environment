@@ -584,17 +584,14 @@ Value const* MethodCall::argument(size_t index) const
 
 ByteString MethodCall::string_argument(size_t index) const
 {
-    // Accept an object path or a signature where a string is expected: a client
-    // that does not introspect us (e.g. `gdbus call`) may send a `s` for an `o`
-    // argument, and vice versa.
-    if (auto const* value = argument(index); value && (value->is(Value::Type::String) || value->is(Value::Type::ObjectPath)))
+    if (auto const* value = argument(index); value && value->is(Value::Type::String))
         return value->as_string();
     return {};
 }
 
 ByteString MethodCall::object_path_argument(size_t index) const
 {
-    if (auto const* value = argument(index); value && (value->is(Value::Type::ObjectPath) || value->is(Value::Type::String)))
+    if (auto const* value = argument(index); value && value->is(Value::Type::ObjectPath))
         return value->as_object_path();
     return {};
 }
@@ -700,9 +697,9 @@ Service::Interface* Service::interface_named(StringView name)
     return nullptr;
 }
 
-void Service::register_interface(ByteString name, MethodHandler method_handler, PropertyHandler property_handler, Vector<ByteString> property_names)
+void Service::register_interface(ByteString name, MethodHandler method_handler, PropertyHandler property_handler, Vector<ByteString> property_names, StringView introspection_xml)
 {
-    m_interfaces.append({ move(name), move(method_handler), move(property_handler), move(property_names) });
+    m_interfaces.append({ move(name), move(method_handler), move(property_handler), move(property_names), introspection_xml });
 }
 
 void Service::emit_signal(StringView interface, StringView name, Vector<Value> const& arguments)
@@ -745,6 +742,15 @@ void Service::handle_message(DBusMessage* message)
             call.reply(Vector<Value> { Value::make_string("00000000000000000000000000000000") });
         else
             call.reply_error(ErrorName::UnknownMethod, "unknown Peer method"sv);
+        return;
+    }
+
+    if (interface == "org.freedesktop.DBus.Introspectable"sv) {
+        if (call.member() == "Introspect"sv) {
+            handle_introspect(call);
+            return;
+        }
+        call.reply_error(ErrorName::UnknownMethod, "unknown Introspectable method"sv);
         return;
     }
 
@@ -791,6 +797,20 @@ void Service::handle_message(DBusMessage* message)
     }
 
     call.reply_error(ErrorName::UnknownInterface, "unknown interface"sv);
+}
+
+void Service::handle_introspect(MethodCall& call)
+{
+    StringBuilder builder;
+    builder.append("<node>"sv);
+    for (auto const& interface : m_interfaces) {
+        if (interface.introspection_xml.is_empty())
+            continue;
+        builder.append('\n');
+        builder.append(interface.introspection_xml);
+    }
+    builder.append("\n</node>"sv);
+    call.reply(Vector<Value> { Value::make_string(builder.to_byte_string()) });
 }
 
 void Service::on_socket_readable()

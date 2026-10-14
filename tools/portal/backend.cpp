@@ -46,6 +46,7 @@
 
 #include "dbus.h"
 #include "global-shortcuts.h"
+#include "introspection.h"
 #include "input-capture.h"
 #include "remote-desktop.h"
 #include "screencast.h"
@@ -84,6 +85,15 @@ constexpr u32 response_cancelled = to_underlying(Portal::Response::Cancelled);
 constexpr u32 response_other_error = to_underlying(Portal::Response::OtherError);
 
 // --- environment & state ----------------------------------------------------
+
+// Registers a portal interface and, alongside it, its introspection XML so the
+// service can answer org.freedesktop.DBus.Introspectable.
+void register_portal_interface(Portal::Service& service, StringView name, Portal::Service::MethodHandler method,
+    Portal::Service::PropertyHandler property = {}, Vector<ByteString> property_names = {})
+{
+    service.register_interface(name.to_byte_string(), move(method), move(property), move(property_names),
+        Portal::interface_introspection_xml(name).value_or(StringView {}));
+}
 
 Optional<ByteString> environment(StringView name)
 {
@@ -1131,19 +1141,19 @@ ErrorOr<int> serenity_main(Main::Arguments)
 
     auto service = TRY(Portal::Service::create(bus_name.to_byte_string(), object_path.to_byte_string()));
 
-    service->register_interface(
+    register_portal_interface(*service,
         settings_interface.to_byte_string(),
         [](Portal::MethodCall& call) { handle_settings(call); },
         [](StringView property) { return generic_version_property(property, 2); },
         Vector<ByteString> { "version"sv });
 
-    service->register_interface(
+    register_portal_interface(*service,
         account_interface.to_byte_string(),
         [](Portal::MethodCall& call) { handle_account(call); },
         [](StringView property) { return generic_version_property(property, 1); },
         Vector<ByteString> { "version"sv });
 
-    service->register_interface(
+    register_portal_interface(*service,
         lockdown_interface.to_byte_string(),
         {},
         [](StringView property) -> Optional<Portal::Value> {
@@ -1163,7 +1173,7 @@ ErrorOr<int> serenity_main(Main::Arguments)
         },
         Vector<ByteString> { "disable_application_handlers"sv, "disable_commandline"sv, "disable_printing"sv, "disable_save_to_disk"sv, "disable_location"sv, "disable_user_switching"sv });
 
-    service->register_interface(
+    register_portal_interface(*service,
         background_interface.to_byte_string(),
         [](Portal::MethodCall& call) {
             if (call.member() == "SetStatus"sv) {
@@ -1196,50 +1206,50 @@ ErrorOr<int> serenity_main(Main::Arguments)
         },
         Vector<ByteString> { "version"sv, "ApplicationName"sv, "ApplicationID"sv });
 
-    service->register_interface(
+    register_portal_interface(*service,
         appchooser_interface.to_byte_string(),
         [](Portal::MethodCall& call) { handle_appchooser(call); },
         [](StringView property) { return generic_version_property(property, 1); },
         Vector<ByteString> { "version"sv });
 
-    service->register_interface(
+    register_portal_interface(*service,
         email_interface.to_byte_string(),
         [](Portal::MethodCall& call) { handle_email(call); },
         [](StringView property) { return generic_version_property(property, 1); },
         Vector<ByteString> { "version"sv });
 
-    service->register_interface(
+    register_portal_interface(*service,
         location_interface.to_byte_string(),
         [](Portal::MethodCall& call) {
             // No location provider: report "not available" (response 2).
             call.reply_response(response_other_error, {});
         });
 
-    service->register_interface(
+    register_portal_interface(*service,
         proxyresolver_interface.to_byte_string(),
         [](Portal::MethodCall& call) { handle_proxyresolver(call); },
         [](StringView property) { return generic_version_property(property, 1); },
         Vector<ByteString> { "version"sv });
 
-    service->register_interface(
+    register_portal_interface(*service,
         openuri_interface.to_byte_string(),
         [](Portal::MethodCall& call) { handle_openuri(call); },
         [](StringView property) { return generic_version_property(property, 3); },
         Vector<ByteString> { "version"sv });
 
-    service->register_interface(
+    register_portal_interface(*service,
         notification_interface.to_byte_string(),
         [service = service.ptr()](Portal::MethodCall& call) { handle_notification(*service, call); },
         [](StringView property) { return generic_version_property(property, 1); },
         Vector<ByteString> { "version"sv });
 
-    service->register_interface(
+    register_portal_interface(*service,
         realtime_interface.to_byte_string(),
         [](Portal::MethodCall& call) { handle_realtime(call); },
         [](StringView property) { return generic_version_property(property, 1); },
         Vector<ByteString> { "version"sv });
 
-    service->register_interface(
+    register_portal_interface(*service,
         powerprofile_interface.to_byte_string(),
         {},
         [](StringView property) -> Optional<Portal::Value> {
@@ -1253,61 +1263,61 @@ ErrorOr<int> serenity_main(Main::Arguments)
         },
         Vector<ByteString> { "version"sv, "power-saver-enabled"sv });
 
-    service->register_interface(
+    register_portal_interface(*service,
         gamemode_interface.to_byte_string(),
         [](Portal::MethodCall& call) { handle_gamemode(call); },
         [](StringView property) { return generic_version_property(property, 1); },
         Vector<ByteString> { "version"sv });
 
-    service->register_interface(
+    register_portal_interface(*service,
         memorymonitor_interface.to_byte_string(),
         {},
         [](StringView property) { return generic_version_property(property, 1); },
         Vector<ByteString> { "version"sv });
 
-    service->register_interface(
+    register_portal_interface(*service,
         filechooser_interface.to_byte_string(),
         [](Portal::MethodCall& call) { handle_filechooser(call); },
         [](StringView property) { return generic_version_property(property, 3); }, // OpenFile, SaveFile, SaveFiles
         Vector<ByteString> { "version"sv });
 
-    service->register_interface(
+    register_portal_interface(*service,
         screenshot_interface.to_byte_string(),
         [](Portal::MethodCall& call) { handle_screenshot(call); },
         [](StringView property) { return generic_version_property(property, 2); }, // Screenshot, PickColor
         Vector<ByteString> { "version"sv });
 
-    service->register_interface(
+    register_portal_interface(*service,
         print_interface.to_byte_string(),
         [](Portal::MethodCall& call) { handle_print(call); },
         [](StringView property) { return generic_version_property(property, 1); },
         Vector<ByteString> { "version"sv });
 
-    service->register_interface(
+    register_portal_interface(*service,
         wallpaper_interface.to_byte_string(),
         [](Portal::MethodCall& call) { handle_wallpaper(call); },
         [](StringView property) { return generic_version_property(property, 1); },
         Vector<ByteString> { "version"sv });
 
-    service->register_interface(
+    register_portal_interface(*service,
         secret_interface.to_byte_string(),
         [](Portal::MethodCall& call) { handle_secret(call); },
         [](StringView property) { return generic_version_property(property, 1); },
         Vector<ByteString> { "version"sv });
 
-    service->register_interface(
+    register_portal_interface(*service,
         usb_interface.to_byte_string(),
         [](Portal::MethodCall& call) { handle_usb(call); },
         [](StringView property) { return generic_version_property(property, 1); },
         Vector<ByteString> { "version"sv });
 
-    service->register_interface(
+    register_portal_interface(*service,
         dynamiclauncher_interface.to_byte_string(),
         [](Portal::MethodCall& call) { handle_dynamic_launcher(call); },
         [](StringView property) { return generic_version_property(property, 1); },
         Vector<ByteString> { "version"sv });
 
-    service->register_interface(
+    register_portal_interface(*service,
         access_interface.to_byte_string(),
         [](Portal::MethodCall& call) { handle_access(call); },
         [](StringView property) { return generic_version_property(property, 1); },

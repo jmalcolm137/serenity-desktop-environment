@@ -28,6 +28,7 @@
 #include <sys/stat.h>
 
 #include "global-shortcuts.h"
+#include "introspection.h"
 
 namespace {
 
@@ -319,5 +320,6 @@ void GlobalShortcuts::register_interface(Portal::Service& service)
                 return Portal::Value::make_uint32(1);
             return {};
         },
-        Vector<ByteString> { "version"sv });
+        Vector<ByteString> { "version"sv },
+        Portal::interface_introspection_xml(interface_name).value_or(StringView {}));
 }
