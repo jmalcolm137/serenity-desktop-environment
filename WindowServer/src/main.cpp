@@ -1509,10 +1509,15 @@ static void maybe_dismiss_layer_menus(Server& server)
     if (focused && wl_resource_get_client(focused->resource) == owner_client)
         return;
 
+    bool dismissed = false;
     for (auto* manager : server.serenity_window_managers) {
-        if (wl_resource_get_client(manager) == owner_client)
+        if (wl_resource_get_client(manager) == owner_client) {
             serenity_window_manager_send_dismiss_menus(manager);
+            dismissed = true;
+        }
     }
+    if (dismissed)
+        dbgln("WindowServer: dismissing client menus on an outside press");
 }
 
 // SerenityOS lets you grab a window anywhere to move it (Super+left-drag) or
@@ -4953,6 +4958,8 @@ static void layer_surface_map(wl_listener* listener, void*)
     layer = wl_container_of(listener, layer, map);
     wlr_scene_node_set_enabled(&layer->scene->tree->node, true);
     arrange_layers(*layer->server, layer->output);
+    if (layer->is_menu)
+        dbgln("WindowServer: client menu opened");
     // A mapped on_demand surface (a client popup) takes keyboard focus, so its
     // text fields work.
     if (layer_takes_keyboard(layer))
@@ -4964,6 +4971,8 @@ static void layer_surface_unmap(wl_listener* listener, void*)
     LayerSurface* layer = nullptr;
     layer = wl_container_of(listener, layer, unmap);
     wlr_scene_node_set_enabled(&layer->scene->tree->node, false);
+    if (layer->is_menu)
+        dbgln("WindowServer: client menu closed");
     bool const had_focus = layer->server->keyboard_focus_layer == layer;
     arrange_layers(*layer->server, layer->output);
     if (had_focus)
