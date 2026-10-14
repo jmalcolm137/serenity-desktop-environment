@@ -5613,6 +5613,13 @@ static ByteString host_settings_blob()
         add("cursor.highlight_radius"sv, ByteString::number(cursor.value()->read_num_entry("Highlight"sv, "Radius"sv, 0)));
         add("cursor.highlight_color"sv, cursor.value()->read_entry("Highlight"sv, "Color"sv, "#000000"sv));
     }
+    // The output layout (R4.5): "main=<i>;<Mode>,<Device>,<Left>,<Top>,<W>,<H>,<Scale>;...".
+    StringBuilder layout;
+    layout.appendff("main={}", Config::main_screen_index());
+    for (auto const& output : Config::outputs())
+        layout.appendff(";{},{},{},{},{},{},{}", output.mode, output.device, output.left, output.top, output.width, output.height, output.scale);
+    add("screenlayout"sv, layout.string_view());
+    add("wallpaper.mode"sv, g_wallpaper_mode);
     return builder.to_byte_string();
 }
 
@@ -5627,9 +5634,81 @@ static void broadcast_host_settings(Server& server)
 
 // set_host_setting: the application changed a setting the desktop owns. Apply and
 // persist it in our own configuration (the shim does not touch our files).
+// set_wallpaper: the application set a wallpaper. The desktop owns it: store the
+// pixels and show them (the shim does not touch our state).
+static void serenity_window_manager_set_wallpaper(wl_client*, wl_resource* resource, int32_t width, int32_t height, int32_t pitch, uint32_t format, int32_t fd)
+{
+    auto* server = static_cast<Server*>(wl_resource_get_user_data(resource));
+    if (fd < 0 || width <= 0 || height <= 0 || pitch <= 0) {
+        g_wallpaper = nullptr;
+        write_sde_wallpaper(nullptr);
+    } else {
+        auto size = static_cast<size_t>(pitch) * static_cast<size_t>(height);
+        auto* mapped = mmap(nullptr, size, PROT_READ, MAP_SHARED, fd, 0);
+        if (mapped != MAP_FAILED) {
+            if (auto bitmap = Gfx::Bitmap::create(static_cast<Gfx::BitmapFormat>(format), { width, height }); !bitmap.is_error()) {
+                auto& created = *bitmap.value();
+                auto const row_bytes = min(static_cast<size_t>(pitch), static_cast<size_t>(created.pitch()));
+                for (int y = 0; y < height; ++y)
+                    memcpy(created.scanline(y), static_cast<u8 const*>(mapped) + static_cast<size_t>(y) * static_cast<size_t>(pitch), row_bytes);
+                g_wallpaper = bitmap.release_value();
+                write_sde_wallpaper(g_wallpaper);
+            }
+            munmap(mapped, size);
+        }
+        ::close(fd);
+    }
+    load_wallpaper_state();
+    dbgln("WindowServer: wallpaper set by a client ({}x{})", width, height);
+    if (server)
+        broadcast_host_settings(*server);
+}
+
 static void serenity_window_manager_set_host_setting(wl_client*, wl_resource* resource, char const* key, char const* value)
 {
     auto* server = static_cast<Server*>(wl_resource_get_user_data(resource));
+    // State-file settings and the output layout are not ini entries.
+    if (StringView { key, strlen(key) } == "screenlayout"sv) {
+        Vector<Config::OutputSettings> outputs;
+        unsigned main_screen = 0;
+        for (auto field : StringView { value, strlen(value) }.split_view(';')) {
+            if (field.starts_with("main="sv)) {
+                main_screen = field.substring_view(5).to_number<unsigned>().value_or(0);
+                continue;
+            }
+            auto parts = field.split_view(',');
+            if (parts.size() < 7)
+                continue;
+            Config::OutputSettings output;
+            output.mode = parts[0];
+            output.device = parts[1];
+            output.left = parts[2].to_number<int>().value_or(0);
+            output.top = parts[3].to_number<int>().value_or(0);
+            output.width = parts[4].to_number<int>().value_or(0);
+            output.height = parts[5].to_number<int>().value_or(0);
+            output.scale = parts[6].to_number<int>().value_or(1);
+            outputs.append(move(output));
+        }
+        Config::set_outputs(move(outputs), main_screen);
+        dbgln("WindowServer: screen layout set by a client ({} screens)", Config::outputs().size());
+        if (server)
+            broadcast_host_settings(*server);
+        return;
+    }
+    if (StringView { key, strlen(key) } == "wallpaper.mode"sv) {
+        Config::write_state("wallpaper.mode"sv, StringView { value, strlen(value) }.bytes());
+        load_wallpaper_state();
+        if (server)
+            broadcast_host_settings(*server);
+        return;
+    }
+    if (StringView { key, strlen(key) } == "wallpaper.color"sv) {
+        Config::write_state("wallpaper.color"sv, StringView { value, strlen(value) }.bytes());
+        load_wallpaper_state();
+        if (server)
+            broadcast_host_settings(*server);
+        return;
+    }
 
     auto location = host_setting_location(StringView { key, strlen(key) });
     if (!location.has_value()) {
@@ -5652,6 +5731,30 @@ static void serenity_window_manager_set_host_setting(wl_client*, wl_resource* re
         broadcast_host_settings(*server);
 }
 
+// The wallpaper as a memfd the client can map (fd = -1 when there is none).
+static int wallpaper_fd(RefPtr<Gfx::Bitmap> const& bitmap)
+{
+    if (!bitmap)
+        return -1;
+    auto name = ByteString::formatted("sde-wallpaper-{}", getpid());
+    int fd = memfd_create(name.characters(), 0);
+    if (fd < 0)
+        return -1;
+    auto size = static_cast<size_t>(bitmap->pitch()) * bitmap->height();
+    if (ftruncate(fd, static_cast<off_t>(size)) != 0) {
+        ::close(fd);
+        return -1;
+    }
+    auto* mapped = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (mapped == MAP_FAILED) {
+        ::close(fd);
+        return -1;
+    }
+    memcpy(mapped, bitmap->scanline(0), size);
+    munmap(mapped, size);
+    return fd;
+}
+
 static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t version, uint32_t id)
 {
     auto& server = *static_cast<Server*>(data);
@@ -5662,6 +5765,7 @@ static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t
     }
     static struct serenity_window_manager_interface const implementation = {
         .set_host_setting = serenity_window_manager_set_host_setting,
+        .set_wallpaper = serenity_window_manager_set_wallpaper,
         .get_toplevel = serenity_window_manager_get_toplevel,
     };
     wl_resource_set_implementation(resource, &implementation, &server, serenity_window_manager_resource_destroy);
@@ -5671,6 +5775,15 @@ static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t
     // (the workspace grid and the input-setting bounds); hand it to the shim so it
     // answers those requests without reading our config file. See docs/24.
     serenity_window_manager_send_host_settings(resource, host_settings_blob().characters());
+    // Only when there is one: a client with no wallpaper keeps none.
+    if (g_wallpaper) {
+        int wallpaper = wallpaper_fd(g_wallpaper);
+        if (wallpaper >= 0) {
+            serenity_window_manager_send_wallpaper(resource, g_wallpaper->width(), g_wallpaper->height(),
+                g_wallpaper->pitch(), static_cast<uint32_t>(g_wallpaper->format()), wallpaper);
+            ::close(wallpaper);
+        }
+    }
     serenity_window_manager_send_host_config(resource,
         static_cast<uint32_t>(Config::workspaces().rows), static_cast<uint32_t>(Config::workspaces().columns),
         wl_fixed_from_double(Config::input_ranges().accel_min), wl_fixed_from_double(Config::input_ranges().accel_max),
