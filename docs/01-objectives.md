@@ -90,7 +90,7 @@ Together these make a Serenity app (`Calculator`, `TextEditor`, `PDFViewer`,
 |---|---|---|
 | **N1** | **Fidelity to Serenity look & feel, and to Serenity code conventions.** | AK types, `ErrorOr`/`TRY`, `dbgln`, snake_case, west `const`, 4-space indent. Our code should read as if it belonged in `Userland/`. |
 | **N2** | **Maximise reuse of unmodified Serenity source** at protocol boundaries. | Prefer a shim over a patch; any patch should be small, general, and upstreamable. |
-| **N3** | **Performance.** Low, predictable input latency; smooth 60 Hz; a software compositor fallback. | Client rendering in LibGUI/LibGfx is CPU by construction; the compositor composites `wl_shm` with a GPU renderer and keeps a Pixman fallback. |
+| **N3** | **Performance.** Low, predictable input latency; smooth 60 Hz; a software compositor fallback. | Client rendering in LibGUI/LibGfx is CPU by construction; the compositor composites `wl_shm` with a GPU renderer and keeps a Pixman fallback. The budget, meters and the enforcing test are in [`25-performance.md`](25-performance.md). |
 | **N4** | **Robustness.** A shell/WM fault should not take down running applications or lose the session where avoidable. | Fault isolation is a design input to the compositor decision. |
 | **N5** | **Portability.** Multi-output, HiDPI (integer and fractional), common GPUs, headless for CI. | Follows the "compositor is the source of truth" principle. |
 | **N6** | **Maintainability for a small team.** Lean on proven libraries for plumbing; own only what defines the experience. | A one- or two-person effort must be able to keep this alive. |

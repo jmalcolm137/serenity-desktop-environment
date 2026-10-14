@@ -172,9 +172,11 @@ table.
   profiles.
 - **Capture & leasing (G3).** Only the R3 switcher needs capture; there is no
   general screencopy/`ext-image-copy-capture` or `wp-drm-lease` (VR) plan.
-- **Performance budget & instrumentation (N3).** N3 sets "low predictable input
-  latency, smooth 60 Hz" but there is no latency budget, frame-pacing plan, or
-  measurement — and no perf-regression test.
+- **Performance budget & instrumentation (N3) — done.** The compositor meters
+  its own frame time and the input → present interval; the budget, the method and
+  the reference numbers are in [`25-performance.md`](25-performance.md), and
+  `scripts/run-perf-test.sh` enforces it headless on the software renderer
+  (including "no frames while idle").
 - **Multi-output / hotplug (N5) — coarse.** The compositor handles several
   outputs and a saved layout, but per-output mode/scale and hotplug behaviour is
   basic. **HiDPI** itself is done — fractional output scale, the client backing

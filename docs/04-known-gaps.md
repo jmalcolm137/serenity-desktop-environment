@@ -424,9 +424,14 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   renderer instead of ending the session; a full software mode is
   `SDE_RENDERER=pixman` + `LIBGL_GPU_DRIVER=softgpu`. Covered by
   `scripts/run-headless-test.sh`.
-- **Performance budget & latency instrumentation (N3).** No budget, frame-pacing
-  plan or perf-regression test, despite N3 targeting "low predictable input
-  latency, 60 Hz".
+- **Performance budget & latency instrumentation (N3) — done.** The compositor
+  meters its frame time and the input → present interval (always on; reported via
+  `SDE_PERF_STATS`/`SDE_PERF_LOG`), the budget is documented in
+  [`25-performance.md`](25-performance.md), and `scripts/run-perf-test.sh`
+  enforces it headless with the **software (pixman)** renderer: frame time p95 and
+  max inside 16.6 ms (60 Hz), input → present p95 inside 20 ms, and **no frames
+  while idle** (rendering on damage only). Frame pacing across a hardware matrix
+  and input-to-photon on a real DRM output remain future work (see §6 of the doc).
 - **Crash recovery / watchdog / safe mode (N4) — done.** The R4.2 supervisor
   restarts a *crashed* compositor; R6 adds a **watchdog** for a *wedged* one (the
   compositor writes a liveness heartbeat, `SDE_HEARTBEAT_FILE`; the supervisor

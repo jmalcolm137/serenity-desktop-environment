@@ -40,6 +40,7 @@ The stack is split across a small family of repositories:
 - [`docs/22-input-method.md`](docs/22-input-method.md) — text input / IME (`wp_text_input_v3` + `zwp_input_method_v2`): the compositor as relay, and how it is tested.
 - [`docs/23-wayland-protocols.md`](docs/23-wayland-protocols.md) — the complete list of Wayland protocols the SDE compositor advertises and supports.
 - [`docs/24-libgui-wayland-sde-boundary.md`](docs/24-libgui-wayland-sde-boundary.md) — keeping the SDE out of libgui-wayland: what is SDE-specific in the application framework and the work to move it back across the line.
+- [`docs/25-performance.md`](docs/25-performance.md) — the performance & latency budget (N3): what is measured, the reference numbers, how to run it, and what keeps the compositor inside 60 Hz.
 
 ## Status
 
