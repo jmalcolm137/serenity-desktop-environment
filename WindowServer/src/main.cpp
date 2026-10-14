@@ -5535,6 +5535,123 @@ static void serenity_window_manager_resource_destroy(wl_resource* resource)
         server->serenity_window_managers.remove_first_matching([&](auto* candidate) { return candidate == resource; });
 }
 
+// Where a semantic setting lives in the desktop's configuration. The desktop
+// owns the layout, so this table is here, not in the application framework.
+struct HostSettingLocation {
+    char const* file;
+    char const* section;
+    char const* entry;
+};
+
+static Optional<HostSettingLocation> host_setting_location(StringView key)
+{
+    static auto* table = [] {
+        auto* map = new HashMap<ByteString, HostSettingLocation>;
+        auto add = [&](StringView name, char const* file, char const* section, char const* entry) {
+            map->set(ByteString { name }, HostSettingLocation { file, section, entry });
+        };
+        add("mouse.acceleration"sv, "input.ini", "Mouse", "Acceleration");
+        add("mouse.scroll_step_size"sv, "input.ini", "Mouse", "ScrollStepSize");
+        add("mouse.double_click_speed"sv, "input.ini", "Mouse", "DoubleClickSpeed");
+        add("mouse.buttons_switched"sv, "input.ini", "Mouse", "ButtonsSwitched");
+        add("mouse.natural_scroll"sv, "input.ini", "Mouse", "NaturalScroll");
+        add("mouse.tap_to_click"sv, "input.ini", "Mouse", "TapToClick");
+        add("mouse.left_handed"sv, "input.ini", "Mouse", "LeftHanded");
+        add("mouse.accel_profile"sv, "input.ini", "Mouse", "AccelProfile");
+        add("keyboard.layouts"sv, "input.ini", "Keyboard", "Layouts");
+        add("keyboard.variant"sv, "input.ini", "Keyboard", "Variant");
+        add("keyboard.model"sv, "input.ini", "Keyboard", "Model");
+        add("keyboard.options"sv, "input.ini", "Keyboard", "Options");
+        add("cursor.theme"sv, "cursor.ini", "Cursor", "Theme");
+        add("cursor.highlight_radius"sv, "cursor.ini", "Highlight", "Radius");
+        add("cursor.highlight_color"sv, "cursor.ini", "Highlight", "Color");
+        add("workspaces.rows"sv, "WindowServer.ini", "Workspaces", "Rows");
+        add("workspaces.columns"sv, "WindowServer.ini", "Workspaces", "Columns");
+        add("theme.name"sv, "WindowServer.ini", "Theme", "Name");
+        add("theme.path"sv, "WindowServer.ini", "Theme", "Path");
+        add("effects.show_geometry"sv, "WindowServer.ini", "Effects", "ShowGeometry");
+        add("effects.tile_window"sv, "WindowServer.ini", "Effects", "TileWindow");
+        add("output.default_scale"sv, "WindowServer.ini", "Output", "DefaultScale");
+        return map;
+    }();
+    if (auto it = table->find(ByteString { key }); it != table->end())
+        return it->value;
+    // The per-effect flags are dynamic: effects.<SystemEffects name>.
+    if (key.starts_with("effects."sv))
+        return HostSettingLocation { "WindowServer.ini", "Effects", nullptr };
+    return {};
+}
+
+// The settings the shim answers from, as key=value lines (see the protocol).
+static ByteString host_settings_blob()
+{
+    StringBuilder builder;
+    auto add = [&](StringView key, StringView value) {
+        builder.appendff("{}={}\n", key, value);
+    };
+    auto const& input = Config::input();
+    add("mouse.acceleration"sv, ByteString::formatted("{}", input.mouse.acceleration));
+    add("mouse.scroll_step_size"sv, ByteString::number(input.mouse.scroll_step_size));
+    add("mouse.double_click_speed"sv, ByteString::number(input.mouse.double_click_speed));
+    add("mouse.buttons_switched"sv, input.mouse.buttons_switched ? "true"sv : "false"sv);
+    add("mouse.natural_scroll"sv, input.mouse.natural_scroll ? "true"sv : "false"sv);
+    add("mouse.tap_to_click"sv, input.mouse.tap_to_click ? "true"sv : "false"sv);
+    add("mouse.left_handed"sv, input.mouse.left_handed ? "true"sv : "false"sv);
+    add("mouse.accel_profile"sv, input.mouse.accel_profile);
+    add("keyboard.layouts"sv, input.keyboard.layouts);
+    add("keyboard.variant"sv, input.keyboard.variant);
+    add("keyboard.model"sv, input.keyboard.model);
+    add("keyboard.options"sv, input.keyboard.options);
+    add("theme.name"sv, Config::theme().name);
+    add("theme.path"sv, Config::theme().path);
+    add("effects.show_geometry"sv, Config::effects().show_geometry);
+    add("effects.tile_window"sv, Config::effects().tile_window);
+    add("workspaces.rows"sv, ByteString::number(Config::workspaces().rows));
+    add("workspaces.columns"sv, ByteString::number(Config::workspaces().columns));
+    if (auto cursor = Core::ConfigFile::open(ByteString::formatted("{}/cursor.ini", Config::state_directory())); !cursor.is_error()) {
+        add("cursor.theme"sv, cursor.value()->read_entry("Cursor"sv, "Theme"sv, "Default"sv));
+        add("cursor.highlight_radius"sv, ByteString::number(cursor.value()->read_num_entry("Highlight"sv, "Radius"sv, 0)));
+        add("cursor.highlight_color"sv, cursor.value()->read_entry("Highlight"sv, "Color"sv, "#000000"sv));
+    }
+    return builder.to_byte_string();
+}
+
+static void broadcast_host_settings(Server& server)
+{
+    auto blob = host_settings_blob();
+    for (auto* manager : server.serenity_window_managers) {
+        if (manager)
+            serenity_window_manager_send_host_settings(manager, blob.characters());
+    }
+}
+
+// set_host_setting: the application changed a setting the desktop owns. Apply and
+// persist it in our own configuration (the shim does not touch our files).
+static void serenity_window_manager_set_host_setting(wl_client*, wl_resource* resource, char const* key, char const* value)
+{
+    auto* server = static_cast<Server*>(wl_resource_get_user_data(resource));
+
+    auto location = host_setting_location(StringView { key, strlen(key) });
+    if (!location.has_value()) {
+        dbgln("WindowServer: unknown host setting '{}'", key);
+        return;
+    }
+    ByteString const entry = location->entry ? ByteString { location->entry }
+        : ByteString { StringView { key, strlen(key) }.substring_view(strlen("effects.")) };
+    ByteString path = ByteString::formatted("{}/{}", Config::state_directory(), location->file);
+    auto config = Core::ConfigFile::open(path, Core::ConfigFile::AllowWriting::Yes);
+    if (config.is_error()) {
+        dbgln("WindowServer: could not open '{}' for host setting '{}'", path, key);
+        return;
+    }
+    config.value()->write_entry(ByteString { location->section }, entry, ByteString { value, strlen(value) });
+    (void)config.value()->sync();
+    dbgln("WindowServer: host setting {}={} ({} [{}/{}])", key, value, location->file, location->section, entry);
+    // Our config watcher reloads; tell every shim so its answers stay current.
+    if (server)
+        broadcast_host_settings(*server);
+}
+
 static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t version, uint32_t id)
 {
     auto& server = *static_cast<Server*>(data);
@@ -5544,6 +5661,7 @@ static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t
         return;
     }
     static struct serenity_window_manager_interface const implementation = {
+        .set_host_setting = serenity_window_manager_set_host_setting,
         .get_toplevel = serenity_window_manager_get_toplevel,
     };
     wl_resource_set_implementation(resource, &implementation, &server, serenity_window_manager_resource_destroy);
@@ -5552,6 +5670,7 @@ static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t
     // The desktop owns the window-server configuration an application asks for
     // (the workspace grid and the input-setting bounds); hand it to the shim so it
     // answers those requests without reading our config file. See docs/24.
+    serenity_window_manager_send_host_settings(resource, host_settings_blob().characters());
     serenity_window_manager_send_host_config(resource,
         static_cast<uint32_t>(Config::workspaces().rows), static_cast<uint32_t>(Config::workspaces().columns),
         wl_fixed_from_double(Config::input_ranges().accel_min), wl_fixed_from_double(Config::input_ranges().accel_max),
