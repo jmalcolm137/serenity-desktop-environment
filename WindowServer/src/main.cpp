@@ -55,6 +55,7 @@
 #include <LibIPC/Connection.h>
 #include <LibMain/Main.h>
 #include <WindowServer/WindowType.h>
+#include <WindowServer/WindowMode.h>
 
 #include <ctime>
 #include <drm_fourcc.h>
@@ -459,6 +460,18 @@ static void deactivate_other_windows(Server& server, Toplevel* keep_toplevel, X1
     }
 }
 
+// Keep a transient (a dialog) above its parent, so raising the parent never
+// covers its children (SerenityOS stacks a transient on top of its parent).
+static void raise_transients_above(Server& server, Toplevel* parent)
+{
+    for (auto& candidate : server.toplevels) {
+        if (candidate->mapped && candidate->transient_parent == parent) {
+            wlr_scene_node_raise_to_top(&candidate->scene_tree->node);
+            raise_transients_above(server, candidate.ptr());
+        }
+    }
+}
+
 void focus_toplevel(Server& server, Toplevel* toplevel)
 {
     if (!toplevel)
@@ -489,6 +502,8 @@ void focus_toplevel(Server& server, Toplevel* toplevel)
             wlr_scene_node_raise_to_top(&candidate->scene_tree->node);
     }
 
+    // A dialog/transient stays above its parent.
+    raise_transients_above(server, toplevel);
     wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, true);
     toplevel->frame_active = true;
     toplevel_update_frame(*toplevel);
@@ -834,8 +849,12 @@ static Toplevel* toplevel_at(Server& server, double lx, double ly, wlr_surface**
     wlr_scene_tree* tree = node->parent;
     while (tree) {
         for (auto& toplevel : server.toplevels) {
-            if (toplevel->scene_tree == tree)
+            if (toplevel->scene_tree == tree) {
+                // Input behind a blocking modal is blocked.
+                if (WindowManager::is_toplevel_blocked(server, *toplevel))
+                    return nullptr;
                 return toplevel.ptr();
+            }
         }
         tree = tree->node.parent;
     }
@@ -2235,6 +2254,9 @@ static bool x11_surface_at(Server& server, double lx, double ly, wlr_surface** s
     if (!scene_surface || !wlr_xwayland_surface_try_from_wlr_surface(scene_surface->surface))
         return false;
     *surface = scene_surface->surface;
+    // Input behind a blocking modal is blocked.
+    if (auto* x11 = x11_toplevel_for_wlr_surface(server, *surface); x11 && WindowManager::is_x11_toplevel_blocked(server, *x11))
+        return false;
     return true;
 }
 
@@ -3095,6 +3117,9 @@ static void hook_focus_x11(Server& server, X11Toplevel* toplevel)
 
 static void hook_set_minimized_x11(Server&, X11Toplevel& toplevel, bool minimized)
 {
+    // A blocking modal dialog cannot be minimized (SerenityOS Window::is_modal()).
+    if (minimized && toplevel.modal)
+        return;
     wlr_xwayland_surface_set_minimized(toplevel.xsurface, minimized);
 }
 
@@ -3857,6 +3882,7 @@ static void toplevel_map(wl_listener* listener, void*)
         toplevel->xdg_toplevel->title ? toplevel->xdg_toplevel->title : "",
         toplevel->xdg_toplevel->app_id ? toplevel->xdg_toplevel->app_id : "");
     wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
+    toplevel->mapped = true;
     toplevel->frame_active = true;
     apply_toplevel_decoration(*toplevel);
     toplevel_update_frame(*toplevel);
@@ -3885,6 +3911,7 @@ static void toplevel_unmap(wl_listener* listener, void*)
 {
     Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, unmap);
+    toplevel->mapped = false;
     // Hide the compositor-drawn frame along with the client's surface. The frame
     // buffer is a child of this tree and isn't tied to the wl_surface lifetime.
     wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
@@ -5416,9 +5443,42 @@ static void serenity_toplevel_set_icon(wl_client*, wl_resource* resource, int32_
     toplevel_update_frame(*toplevel);
 }
 
+// set_window_mode: the client's SerenityOS WindowMode (0 modeless, 1 passive,
+// 2 render-above, 3 blocking). A blocking window is a modal dialog: it preempts
+// its modal chain, so input behind it is blocked and it cannot be minimized
+// (SerenityOS Window::blocking_modal_window()).
+static void serenity_toplevel_set_window_mode(wl_client*, wl_resource* resource, uint32_t mode)
+{
+    auto* chrome = static_cast<SerenityChrome*>(wl_resource_get_user_data(resource));
+    Toplevel* toplevel = chrome ? chrome->toplevel : nullptr;
+    if (!toplevel)
+        return;
+
+    toplevel->modal = mode == static_cast<uint32_t>(WindowServer::WindowMode::Blocking);
+    // The transient parent is the xdg toplevel's parent (set by the client).
+    toplevel->transient_parent = nullptr;
+    if (toplevel->xdg_toplevel && toplevel->xdg_toplevel->parent) {
+        for (auto& other : toplevel->server->toplevels) {
+            if (other->xdg_toplevel == toplevel->xdg_toplevel->parent) {
+                toplevel->transient_parent = other.ptr();
+                break;
+            }
+        }
+    }
+    dbgln("WindowServer: toplevel wm_id={} window mode {} (modal={}, transient={})",
+        toplevel->wm_id, mode, toplevel->modal, toplevel->transient_parent ? toplevel->transient_parent->wm_id : 0);
+    // A dialog sits above its parent.
+    if (toplevel->transient_parent)
+        wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
+    // A modal blocks (or unblocks) the other windows: re-report them all.
+    for (auto& other : toplevel->server->toplevels)
+        WindowManager::emit_window_state(*other);
+}
+
 static struct serenity_toplevel_interface const s_serenity_toplevel_implementation = {
     .set_icon = serenity_toplevel_set_icon,
     .destroy = serenity_toplevel_request_destroy,
+    .set_window_mode = serenity_toplevel_set_window_mode,
 };
 
 static void serenity_window_manager_get_toplevel(wl_client* client, wl_resource* resource, uint32_t id, wl_resource* surface_resource)

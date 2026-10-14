@@ -50,6 +50,10 @@ void set_host_hooks(HostHooks hooks)
 
 void set_toplevel_minimized(Server& server, Toplevel& toplevel, bool minimized)
 {
+    // A blocking modal dialog cannot be minimized (SerenityOS Window menubar
+    // keeps minimize disabled for modal windows).
+    if (minimized && toplevel.modal)
+        return;
     if (g_hooks.set_minimized)
         g_hooks.set_minimized(server, toplevel, minimized);
     else {
@@ -770,6 +774,88 @@ bool handle_super_key(Server& server, u32 keysym, u32 modifiers, bool pressed)
     return false;
 }
 
+// --- modal chain (SerenityOS WindowMode) ------------------------------------
+//
+// A blocking window (a modal dialog) preempts interaction with the rest of its
+// modal chain: everything except its own transient descendants and sibling
+// blockers is blocked (SerenityOS Window::blocking_modal_window()). It is used to
+// block input behind a modal, refuse to minimize a blocking window and keep a
+// transient above its parent.
+
+static bool is_transient_descendant_of(Toplevel const* window, Toplevel const* ancestor)
+{
+    for (auto* w = window; w; w = w->transient_parent) {
+        if (w == ancestor)
+            return true;
+    }
+    return false;
+}
+
+static bool is_x11_transient_descendant_of(X11Toplevel const* window, X11Toplevel const* ancestor)
+{
+    for (auto* w = window; w; w = w->transient_parent) {
+        if (w == ancestor)
+            return true;
+    }
+    return false;
+}
+
+static bool blocks(Toplevel const& blocker, Toplevel const& window)
+{
+    if (!blocker.modal || &blocker == &window || !blocker.mapped || blocker.minimized)
+        return false;
+    if (blocker.workspace_row != window.workspace_row || blocker.workspace_column != window.workspace_column)
+        return false;
+    // A dialog's own children, and sibling blockers (modals sharing a parent),
+    // are not blocked by it.
+    if (is_transient_descendant_of(&window, &blocker))
+        return false;
+    if (window.modal && window.transient_parent == blocker.transient_parent)
+        return false;
+    return true;
+}
+
+bool is_toplevel_blocked(Server& server, Toplevel const& window)
+{
+    if (!window.mapped || window.minimized)
+        return false;
+    for (auto& entry : server.toplevels) {
+        if (blocks(*entry, window))
+            return true;
+    }
+    return false;
+}
+
+static bool blocks(X11Toplevel const& blocker, X11Toplevel const& window)
+{
+    // An X11 window is minimized when it is unmapped, so an unmapped blocker is
+    // not on screen.
+    if (!blocker.modal || &blocker == &window || !blocker.mapped)
+        return false;
+    if (blocker.workspace_row != window.workspace_row || blocker.workspace_column != window.workspace_column)
+        return false;
+    if (is_x11_transient_descendant_of(&window, &blocker))
+        return false;
+    if (window.modal && window.transient_parent == blocker.transient_parent)
+        return false;
+    return true;
+}
+
+bool is_x11_toplevel_blocked(Server& server, X11Toplevel const& window)
+{
+    // Override-redirect menus/tooltips are transient UI: never blocked.
+    if (window.override_redirect)
+        return false;
+    // A minimized X11 window is unmapped.
+    if (!window.mapped)
+        return false;
+    for (auto& entry : server.x11_toplevels) {
+        if (blocks(*entry, window))
+            return true;
+    }
+    return false;
+}
+
 void emit_window_state(Toplevel& toplevel)
 {
     StringView title;
@@ -784,7 +870,7 @@ void emit_window_state(Toplevel& toplevel)
         // Chrome windows (the panel, applets, the desktop) are layer surfaces,
         // not toplevels, so nothing reported here is chrome.
         connection->async_window_state_changed(connection->manager_window_id(), 0, toplevel.wm_id, toplevel.workspace_row, toplevel.workspace_column,
-            toplevel.frame_active && !toplevel.minimized, false, toplevel.minimized, false,
+            toplevel.frame_active && !toplevel.minimized, is_toplevel_blocked(*toplevel.server, toplevel), toplevel.minimized, false,
             static_cast<i32>(WindowServer::WindowType::Normal), ByteString { title },
             Gfx::IntRect { 0, 0, 0, 0 }, Optional<i32> { }, ByteString { app_id });
     }
@@ -832,7 +918,7 @@ void emit_window_state(X11Toplevel& toplevel)
         if (connection->manager_window_id() < 0)
             continue;
         connection->async_window_state_changed(connection->manager_window_id(), 0, toplevel.wm_id, 0, 0,
-            toplevel.frame_active && !minimized, toplevel.demands_attention, minimized, false,
+            toplevel.frame_active && !minimized, is_x11_toplevel_blocked(*toplevel.server, toplevel), minimized, false,
             static_cast<i32>(WindowServer::WindowType::Normal), toplevel.title,
             Gfx::IntRect { 0, 0, 0, 0 }, Optional<i32> { }, app_id);
     }
