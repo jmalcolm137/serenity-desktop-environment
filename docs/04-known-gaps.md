@@ -440,11 +440,17 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   the same way (RSS, high-water, per-second growth) and guarded by the test's
   memory phase; `auto` no longer initialises software GL when there is no DRM
   device, which saves ~84 MB (~70 %) idle on a headless session. The meter also
-  reports **per-client PSS** — the session's "who is using memory" report (the
-  Taskbar, the Desktop and the applets: ~2 MB each), enforced by
-  `scripts/run-session-memory-test.sh`; the Audio applet's ~9 MB extra (it links
-  libpulse via LibAudio for a backend it never uses) is recorded there as the next
-  item (see §4 of the doc).
+  reports **per-process PSS** — the session's "who is using memory" report: the
+  Taskbar, the Desktop and the applets at ~2.2 MB each and the services it spawns
+  (the AudioServer at ~0.3 MB), enforced by `scripts/run-session-memory-test.sh`.
+  The Audio applet's old ~9 MB came from two things, both fixed: it linked
+  liblagom-audio (→ libpulse + libsndfile) for a backend it never used, so SDE now
+  builds a protocol-only `SDEAudioClient` for it; and, the larger half, the shim
+  substituted the *screen size* for its unsized window, so it allocated three
+  1280×720 buffers before being reconfigured to 16×16 — the placeholder now
+  depends on the window type. The SDE's AudioServer is PipeWire-only too (it linked
+  liblagom-audio for three header-only helpers). Session PSS: 53.9 → 46.6 MB (see
+  §4 of the doc).
 - **Crash recovery / watchdog / safe mode (N4) — done.** The R4.2 supervisor
   restarts a *crashed* compositor; R6 adds a **watchdog** for a *wedged* one (the
   compositor writes a liveness heartbeat, `SDE_HEARTBEAT_FILE`; the supervisor
