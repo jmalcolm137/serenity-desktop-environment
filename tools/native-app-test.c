@@ -19,6 +19,7 @@
 #include "serenity-window-client-protocol.h"
 #include "presentation-time-client-protocol.h"
 #include "fractional-scale-v1-client-protocol.h"
+#include "xdg-decoration-client-protocol.h"
 
 static struct wl_display* display;
 static struct wl_compositor* compositor;
@@ -27,6 +28,13 @@ static struct xdg_wm_base* wm_base;
 static struct wl_surface* surface;
 static struct xdg_surface* xdg_surface;
 static struct xdg_toplevel* toplevel;
+
+// --server-side-decorations: ask the compositor to draw the window frame. Without
+// it the client gets client-side decorations (the compositor's default), so there
+// is no compositor titlebar to interact with.
+static int want_server_side_decorations;
+static struct zxdg_decoration_manager_v1* decoration_manager;
+static struct zxdg_toplevel_decoration_v1* toplevel_decoration;
 // The toplevel title (--title), so a test can tell two instances apart.
 static char const* g_title = "SDE Native Test";
 static int width = 320;
@@ -215,6 +223,8 @@ static void registry_global(void* data, struct wl_registry* registry, uint32_t n
         presentation = wl_registry_bind(registry, name, &wp_presentation_interface, 1);
     } else if (strcmp(interface, wp_fractional_scale_manager_v1_interface.name) == 0) {
         fractional_scale_manager = wl_registry_bind(registry, name, &wp_fractional_scale_manager_v1_interface, 1);
+    } else if (strcmp(interface, zxdg_decoration_manager_v1_interface.name) == 0 && want_server_side_decorations) {
+        decoration_manager = wl_registry_bind(registry, name, &zxdg_decoration_manager_v1_interface, 1);
     }
 }
 
@@ -231,6 +241,10 @@ int main(int argc, char** argv)
 {
     int const want_presentation = argc > 1 && strcmp(argv[1], "--presentation") == 0;
     int const want_fractional = argc > 1 && strcmp(argv[1], "--fractional") == 0;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--server-side-decorations") == 0)
+            want_server_side_decorations = 1;
+    }
 
     // --title <text>: a distinct title, so a test can tell two instances apart.
     for (int i = 1; i + 1 < argc; i++) {
@@ -273,6 +287,12 @@ int main(int argc, char** argv)
     xdg_toplevel_add_listener(toplevel, &toplevel_listener, NULL);
     xdg_toplevel_set_title(toplevel, g_title);
     xdg_toplevel_set_app_id(toplevel, "sde-native-test");
+    // --server-side-decorations: ask for a compositor-drawn frame. Without it the
+    // default is client-side decorations, so there is no titlebar to click/drag.
+    if (want_server_side_decorations && decoration_manager) {
+        toplevel_decoration = zxdg_decoration_manager_v1_get_toplevel_decoration(decoration_manager, toplevel);
+        zxdg_toplevel_decoration_v1_set_mode(toplevel_decoration, ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+    }
     wl_surface_commit(surface);
 
     wl_display_roundtrip(display);
