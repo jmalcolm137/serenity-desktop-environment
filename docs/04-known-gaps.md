@@ -436,7 +436,11 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   requires **no frames while idle** (rendering on damage only). One ~5 ms frame in
   a 244-frame drag on the software-GL path is the remaining item before an
   unconditional 240 Hz claim there; a per-hardware/refresh CI matrix and
-  input-to-photon on a real DRM output remain future work (see §6 of the doc).
+  input-to-photon on a real DRM output remain future work. **Memory** is metered
+  the same way (RSS, high-water, per-second growth) and guarded by the test's
+  memory phase; `auto` no longer initialises software GL when there is no DRM
+  device, which saves ~84 MB (~70 %) idle on a headless session (see §4 of the
+  doc).
 - **Crash recovery / watchdog / safe mode (N4) — done.** The R4.2 supervisor
   restarts a *crashed* compositor; R6 adds a **watchdog** for a *wedged* one (the
   compositor writes a liveness heartbeat, `SDE_HEARTBEAT_FILE`; the supervisor
