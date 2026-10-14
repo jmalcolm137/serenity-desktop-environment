@@ -34,6 +34,8 @@ LATENCY_BUDGET_MS="${SDE_PERF_LATENCY_BUDGET_MS:-20}"   # compositor + client, n
 IDLE_FRAME_LIMIT="${SDE_PERF_IDLE_FRAME_LIMIT:-3}"      # frames a second while idle
 RENDERER="${SDE_PERF_RENDERER:-pixman}"                 # the software fallback
 PERF_FAST_MS="${SDE_PERF_FAST_MS:-2}"                   # gross-regression guard
+AGGRESSIVE_MS="${SDE_PERF_AGGRESSIVE_MS:-4.167}"        # 240 Hz frame interval
+AGGRESSIVE_HZ=240
 
 WIDTH=1280
 HEIGHT=720
@@ -52,30 +54,45 @@ trap cleanup EXIT
 
 PERF="$RUNTIME/perf"
 SOCK="sde-perf-$$"
-setsid env -u WAYLAND_DISPLAY -u DISPLAY \
-    WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 SDE_OUTPUT_SCALE=1 \
-    SDE_STATE_DIR="$RUNTIME" \
-    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-    LD_LIBRARY_PATH="$BUILD/lib" \
-    SDE_RENDERER="$RENDERER" \
-    SDE_PERF_STATS="$PERF" \
-    "$COMP" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
-COMP_PID=$!
-for _ in $(seq 1 80); do
-    [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SOCK" ]] && break
-    sleep 0.1
-done
 
-# Wait for the first report, so every phase reads a complete summary.
-for _ in $(seq 1 50); do
-    [[ -s "$PERF" ]] && break
-    sleep 0.1
-done
-if [[ ! -s "$PERF" ]]; then
-    echo "==> perf test FAILED (the compositor wrote no $PERF)"
-    tail -20 "$RUNTIME/comp.log"
-    exit 1
-fi
+# Start the compositor at a given output refresh ($1; empty = the output's own).
+start_compositor() {
+    rm -f "$PERF"
+    setsid env -u WAYLAND_DISPLAY -u DISPLAY \
+        WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 SDE_OUTPUT_SCALE=1 \
+        ${1:+SDE_OUTPUT_REFRESH="$1"} \
+        SDE_STATE_DIR="$RUNTIME" \
+        SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
+        LD_LIBRARY_PATH="$BUILD/lib" \
+        SDE_RENDERER="$RENDERER" \
+        SDE_PERF_STATS="$PERF" \
+        "$COMP" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
+    COMP_PID=$!
+    for _ in $(seq 1 80); do
+        [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SOCK" ]] && break
+        sleep 0.1
+    done
+    # Wait for the first report, so every phase reads a complete summary.
+    for _ in $(seq 1 50); do
+        [[ -s "$PERF" ]] && break
+        sleep 0.1
+    done
+    if [[ ! -s "$PERF" ]]; then
+        echo "==> perf test FAILED (the compositor wrote no $PERF)"
+        tail -20 "$RUNTIME/comp.log"
+        exit 1
+    fi
+}
+stop_compositor() {
+    [[ -n "$COMP_PID" ]] && kill -TERM -- "-$COMP_PID" 2>/dev/null || true
+    [[ -n "$COMP_PID" ]] && kill -TERM "$COMP_PID" 2>/dev/null || true
+    wait "$COMP_PID" 2>/dev/null || true
+    COMP_PID=""
+    rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SOCK"{,.lock}
+    sleep 0.3
+}
+
+start_compositor
 
 stat_value() { sed -n "s/^$1=//p" "$PERF" | head -1; }
 
@@ -115,6 +132,7 @@ F_P50="$(stat_value frame_ms_p50)"
 F_P95="$(stat_value frame_ms_p95)"
 F_MAX="$(stat_value frame_ms_max)"
 F_OVER="$(stat_value frame_ms_over_budget)"
+F_P99="$(stat_value frame_ms_p99)"
 SLOW="$(stat_value slow_frames)"
 L_P50="$(stat_value input_to_present_ms_p50)"
 L_P95="$(stat_value input_to_present_ms_p95)"
@@ -129,6 +147,7 @@ check "frame time p50 is inside the budget" "$F_P50" "<" "$FRAME_BUDGET_MS"
 check "frame time p50 has headroom" "$F_P50" "<" "$PERF_FAST_MS"
 check "frame time p95 is inside the budget" "$F_P95" "<" "$FRAME_BUDGET_MS"
 check "frame time max is inside the budget" "$F_MAX" "<" "$FRAME_BUDGET_MS"
+check "frame time p99 is inside a 240 Hz interval" "$F_P99" "<" "$AGGRESSIVE_MS"
 check "no frame exceeded the budget" "$F_OVER" "==" 0
 check "input latency p95 is inside the budget" "$L_P95" "<" "$LATENCY_BUDGET_MS"
 check "input latency p50 is inside the budget" "$L_P50" "<" "$LATENCY_BUDGET_MS"
@@ -156,11 +175,49 @@ D_P50="$(stat_value frame_ms_p50)"
 D_P95="$(stat_value frame_ms_p95)"
 D_MAX="$(stat_value frame_ms_max)"
 D_OVER="$(stat_value frame_ms_over_budget)"
+D_P99="$(stat_value frame_ms_p99)"
 echo "  frame p50/p95/max: $D_P50/$D_P95/$D_MAX ms (over budget $D_OVER)"
 check "the drag's frame time p50 has headroom" "$D_P50" "<" "$PERF_FAST_MS"
 check "the drag's frame time p95 is inside the budget" "$D_P95" "<" "$FRAME_BUDGET_MS"
+check "the drag's frame time p99 is inside a 240 Hz interval" "$D_P99" "<" "$AGGRESSIVE_MS"
 check "the drag's frame time max is inside the budget" "$D_MAX" "<" "$FRAME_BUDGET_MS"
 check "no dragged frame exceeded the budget" "$D_OVER" "==" 0
+
+echo "=== (D) a 240 Hz output: the compositor keeps the cadence ==="
+stop_compositor
+start_compositor "$AGGRESSIVE_HZ"
+REFRESH="$(stat_value output_refresh_hz)"
+BUDGET="$(stat_value frame_ms_budget)"
+echo "  output refresh: ${REFRESH} Hz, derived frame budget: ${BUDGET} ms"
+check "the output runs at $AGGRESSIVE_HZ Hz" "$REFRESH" "==" "$AGGRESSIVE_HZ"
+check "the budget is derived from the refresh" "$BUDGET" "<=" "$AGGRESSIVE_MS"
+
+# Damage faster than the refresh: the compositor must pace at ~4.17 ms, with the
+# per-frame work inside that interval.
+HZ_ARGS=()
+for i in $(seq 1 300); do
+    HZ_ARGS+=(--move $(( 100 + (i * 7) % 1100 )) $(( 100 + (i * 3) % 500 )) --sleep 4)
+done
+env WAYLAND_DISPLAY="$SOCK" "$VI" --extent "$WIDTH" "$HEIGHT" "${HZ_ARGS[@]}" --linger 100 >/dev/null 2>&1
+sleep 1.3
+
+HFRAMES="$(stat_value frames)"
+H_P50="$(stat_value frame_ms_p50)"
+H_P95="$(stat_value frame_ms_p95)"
+H_P99="$(stat_value frame_ms_p99)"
+H_MAX="$(stat_value frame_ms_max)"
+H_OVER="$(stat_value frame_ms_over_budget)"
+HI_P50="$(stat_value frame_interval_ms_p50)"
+HI_P95="$(stat_value frame_interval_ms_p95)"
+echo "  frames: $HFRAMES, interval p50/p95: $HI_P50/$HI_P95 ms (target ~4.17)"
+echo "  frame p50/p95/p99/max: $H_P50/$H_P95/$H_P99/$H_MAX ms (over budget $H_OVER)"
+check "the compositor sustained the 240 Hz cadence" "$HI_P50" "<" "4.5"
+check "the frame interval p95 holds the cadence" "$HI_P95" "<" "6"
+check "frame time p50 is inside the 240 Hz interval" "$H_P50" "<" "$AGGRESSIVE_MS"
+check "frame time p95 is inside the 240 Hz interval" "$H_P95" "<" "$AGGRESSIVE_MS"
+check "frame time p99 is inside the 240 Hz interval" "$H_P99" "<" "$AGGRESSIVE_MS"
+check "frame time max is inside the 240 Hz interval" "$H_MAX" "<" "$AGGRESSIVE_MS"
+check "no frame missed the 240 Hz interval" "$H_OVER" "==" 0
 
 if [[ "$fail" -ne 0 ]]; then
     echo "--- perf stats ---"; cat "$PERF"
