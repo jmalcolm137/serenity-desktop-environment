@@ -378,7 +378,8 @@ compositor, not the client:
   plumb the output's device scale into `LibGUI`'s backing store (the existing
   `Window::create_backing_store` FIXME / LibWindowServer M8) so apps rasterise at native
   resolution and the compositor presents 1:1; the renderer does fractional-scale
-  filtering only when it must.
+  filtering only when it must. *(Done — M8 landed; see
+  [`13-native-session-and-aur-packaging.md`](13-native-session-and-aur-packaging.md).)*
 - `LibGPU`/`LibSoftGPU`/`LibGL` remain out of scope *for the desktop shell*;
   they matter only if an application (e.g. WebGL in the browser) chooses to use
   them, and that still surfaces through LibGUI as a bitmap.
@@ -537,8 +538,8 @@ match to Serenity screenshots.
 
 **Phase 4 — session and settings.**
 Login/autostart/lock/power; display/input/appearance/cursor backends;
-Terminal + SystemMonitor; HiDPI (close LibWindowServer M8); XWayland. **Exit:** a complete
-session.
+Terminal + SystemMonitor; HiDPI (close LibWindowServer M8 — **done**); XWayland.
+**Exit:** a complete session.
 
 **Phase 5 — hardening.**
 Multi-GPU/multi-output, fractional scaling, packaging, CI matrix, docs.

@@ -170,9 +170,6 @@ that SDE does **not** reproduce yet.
 - **The window-stack-switch overlay.** SerenityOS briefly shows the workspace-grid
   overlay when switching stacks (`switch_to_window_stack(..., show_overlay)`); SDE
   switches silently. (The tile-preview and geometry overlays *are* implemented.)
-- **Drag-and-drop between windows.** SDE creates the data-device manager but never
-  wires `request_start_drag` / `start_drag`, so a drag from one window does not
-  reach another (also tracked under R5).
 - **`Super+H` to toggle the cursor highlight.** SDE has the cursor highlight
   (R4.7, set from Mouse Settings) but no shortcut for it.
 - **`Ctrl+Super+Shift+I`** (reload icon bitmaps after a scale change) — an
@@ -413,9 +410,11 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 
 Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.md) §5–7.
 
-- **HiDPI (integer/fractional) and multi-output** — not done (LibWindowServer M8
-  soft-fractional-scaling issue still open — a host dependency, not compositor
-  code).
+- **Multi-output / hotplug** — coarse: the compositor handles several outputs
+  (`server_new_output`, `wlr_output_layout`, per-output scale) and applies a saved
+  layout, but per-output mode/scale and hotplug behaviour is basic (see
+  [`13`](13-native-session-and-aur-packaging.md)). **HiDPI — integer and fractional
+  output scaling — is done**; see "Recently resolved" below.
 - **Multi-GPU / render-device selection; color management; direct scanout.**
 - **Renderer selection & fallback (N2/N5) — done.** `[Output] Renderer`
   (`auto`/`gles2`/`vulkan`/`pixman`, with the `SDE_RENDERER` override) selects the
