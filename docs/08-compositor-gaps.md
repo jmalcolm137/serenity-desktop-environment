@@ -175,12 +175,11 @@ table.
 - **Performance budget & instrumentation (N3).** N3 sets "low predictable input
   latency, smooth 60 Hz" but there is no latency budget, frame-pacing plan, or
   measurement — and no perf-regression test.
-- **HiDPI is cross-repo (N5, host).** R6 lists it, but the real blocker is the
-  LibWindowServer client backing-store scale (host M8), not compositor code; the
-  dependency must be stated explicitly. An **integer output-scale stopgap** now
-  makes high-DPI panels usable (nearest-filtered 2x; see
-  [`13-native-session-and-aur-packaging.md`](13-native-session-and-aur-packaging.md)
-  Appendix A); the backing-store scale remains the real fix.
+- **Multi-output / hotplug (N5) — coarse.** The compositor handles several
+  outputs and a saved layout, but per-output mode/scale and hotplug behaviour is
+  basic. **HiDPI** itself is done — fractional output scale, the client backing
+  store and host M8 all landed (see the scaling section above and
+  [`13-native-session-and-aur-packaging.md`](13-native-session-and-aur-packaging.md)).
 
 ## 6. Architecture, observability & docs (R6)
 

@@ -287,8 +287,10 @@ risks are:
   `04-known-gaps.md`.
 - **Small-team sustainability** — mitigated by owning only the differentiated
   layers and renting the rest, and by keeping the shell protocol-portable.
-- **HiDPI and multi-output** — the known soft-fractional-scaling issue in LibWindowServer
-  (M8) must be closed for a credible daily driver.
+- **Multi-output / hotplug** — coarse (HiDPI itself is done: the fractional
+  output scale and the client backing store both landed). Per-output mode/scale
+  and hotplug are basic, and multi-GPU / colour management / direct scanout are
+  not done — see `04-known-gaps.md`.
 
 ## 13. Glossary
 

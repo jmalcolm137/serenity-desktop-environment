@@ -45,9 +45,9 @@ Diffing `master` (0.21-dev) against `0.20.2`, and checking the pinned headers:
 
 ## 3. Order of work
 
-1. **Now (0.20.2):** implement `xdg-toplevel-icon-v1` (Wayland clients' window
-   icons — pairs with the X11 `_NET_WM_ICON` work in `docs/20` item 3) and
-   `xdg-system-bell-v1` (advertise the global; ring handling).
+1. ~~**Now (0.20.2):** implement `xdg-toplevel-icon-v1` (Wayland clients' window
+   icons) and `xdg-system-bell-v1`.~~ **Done** (`e47d098`): both globals are served;
+   the icons pair with the X11 `_NET_WM_ICON` work in `docs/20` item 3.
 2. **When wlroots 0.21 releases (≈ early 2027, Arch within days):** bump the pin
    from 0.20.2 to 0.21 and pick up **XDND + `ext-background-effect-v1` +
    `wp-pointer-warp-v1`** together. Re-check the parity table then.
