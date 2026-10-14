@@ -121,6 +121,62 @@ tools to go deeper:
 | pixman (the fallback) | **35.9 MB** | 35.9 MB (no growth) |
 | `SDE_RENDERER=gles2` (forced GL, i.e. llvmpipe here) | 119.7 MB | — |
 
+### Per-client (session) memory
+
+The meter also reports every Wayland client: `clients`, `client_pss_kb`,
+`session_pss_kb` (compositor + clients) and a `client_memory=` breakdown of the
+eight largest by PSS, labelled by the process name (the shell's clients are
+panels and applets — layer surfaces with no toplevel to name them by). That makes
+the compositor's own stats file the session's "who is using memory" report, and
+`scripts/run-session-memory-test.sh` asserts it on the session's real startup
+list (Taskbar + Desktop + applets + BatteryApplet).
+
+Measured headless (1280×720), PSS in kB:
+
+| Client | PSS | RSS |
+|---|---|---|
+| WindowServer | 18 096 | 43 964 |
+| **Audio** applet | **11 043** | 32 184 |
+| FileManager (Desktop) | 8 159 | 34 124 |
+| Taskbar | 4 040 | 24 028 |
+| ClipboardHistory | 2 291 | 21 876 |
+| ResourceGraph | 2 141 | 21 248 |
+| Network | 2 131 | 21 496 |
+| BatteryApplet | 2 093 | 20 868 |
+| WorkspacePicker | 2 088 | 21 004 |
+| **session total** | **54 154** | **262 140** |
+
+Read the two columns together: **RSS says the session uses 256 MB; PSS says
+53 MB.** Ten clients each "use" the whole shared Lagom stack, so RSS multiplies
+it. Every ordinary applet costs ~2 MB — the 21 MB RSS figure is shared library
+pages counted ten times.
+
+### A known item: the Audio applet pays ~9 MB for an audio backend it never uses
+
+The Audio applet is the one outlier (11.0 MB PSS against ~2.1 MB for the others).
+It links `liblagom-audio` — for `Audio::ConnectionToManagerServer`, the
+AudioServer client protocol — and that library has
+`target_link_libraries(LibAudio PRIVATE pulse)`, so it **DT_NEEDs libpulse**
+(+ libpulsecommon + libsndfile). Those are mapped only by this process, so their
+resident pages are private to it, and the dynamic linker's relocation/constructor
+work at startup makes them resident: ~9 MB for a dependency the applet never
+calls (it talks to the SDE AudioServer over IPC).
+
+Two fixes, both in `libgui-wayland` (the framework repo) and *not* done yet:
+
+1. **Split the backend out**: move `PlaybackStreamPulseAudio.cpp` +
+   `PulseAudioWrappers.{h,cpp}` into their own Lagom library, so
+   `liblagom-audio` no longer DT_NEEDs libpulse. `PlaybackStream::create()` has to
+   move with it (it names the platform implementation), and LibWeb's
+   `AudioCodecPluginAgnostic` — the only in-tree user of a direct stream — links
+   both. The cleanest split, but it changes an upstream file layout.
+2. **Load libpulse lazily**: the 499-line `PulseAudioWrappers` already wrap the
+   API, so resolving its functions through `dlopen` removes the DT_NEEDED and
+   keeps every caller unchanged. More code churn, no API/structure change.
+
+Until one lands, the client PSS budget (16 MB) records the outlier rather than
+hiding it.
+
 ### The first fruit: `auto` no longer loads software GL for nothing
 
 `auto` used to hand the headless backend to wlroots' GL path, which on a machine
@@ -181,6 +237,18 @@ The knobs (`SDE_PERF_FRAME_BUDGET_MS`, `SDE_PERF_LATENCY_BUDGET_MS`,
 `SDE_PERF_RENDERER`) let a slower machine or a stricter CI gate be expressed
 without editing the script.
 
+The session's memory budget is enforced separately, on the session's real startup
+list (Taskbar + Desktop + applets + BatteryApplet):
+
+```sh
+scripts/run-session-memory-test.sh
+```
+
+It asserts the client count, the compositor's PSS, the session's PSS, each
+client's PSS, and that an idle session does not grow
+(`SDE_SESSION_PSS_LIMIT_KB`, `SDE_COMPOSITOR_PSS_LIMIT_KB`,
+`SDE_CLIENT_PSS_LIMIT_KB`, `SDE_SESSION_PSS_GROWTH_KB`).
+
 To watch a live session:
 
 ```sh
@@ -204,6 +272,7 @@ watch -n1 cat /tmp/sde-perf
 - **Device memory.** The RSS meter covers the host heap; GPU/VRAM and dma-buf
   usage on the GL path (and a per-output memory budget) would need the driver's
   own counters.
-- **Client-side cost.** For Serenity apps the window contents are drawn on the
-  CPU by LibGUI/LibGfx; this budget measures the *compositor's* share, and a slow
-  client shows up as a low frame rate rather than as frame time.
+- **Client-side render cost.** For Serenity apps the window contents are drawn on
+  the CPU by LibGUI/LibGfx; the frame budget measures the *compositor's* share, so
+  a slow client shows up as a low frame rate rather than as frame time. Client
+  *memory* is metered (above), but a client's own CPU time is not.
