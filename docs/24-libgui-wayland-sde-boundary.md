@@ -55,29 +55,43 @@ the port's copy is redundant and is not part of any port build target list.
 
 **Fix:** drop the port's target; keep the SDE's.
 
-### 3. The SDE config/state schema is baked into the framework
+### 3. The SDE config/state schema is baked into the framework — **partly done**
 
-`libgui-wayland/src/WindowServerConnection.cpp` knows the SDE's config layout:
+`libgui-wayland/src/WindowServerConnection.cpp` knows the SDE's config layout. The
+config **file stays** — it is the desktop's — but the code that reads and writes
+it belongs to the desktop, not the framework: the compositor owns the file and
+serves the values over the WindowServer protocol.
 
-- `sde_state_dir()` — `SDE_STATE_DIR`, else `$XDG_CONFIG_HOME/sde`, else
-  `~/.config/sde`;
-- `windowserver_ini_path()` — reads `[Workspaces]` (grid), `[Input]` (ranges) from
-  `WindowServer.ini`, and **writes `[Effects]` back**;
-- `SDE_APP_BIN_DIR` in `LibWM.cpp` (`service_binary_path`) and
-  `LaunchServerConnection.h` (`/bin/X` resolution).
+**Done:** the shim no longer reads `WindowServer.ini`. The compositor sends the
+values it owns over `serenity-window`:
 
-An app framework should not know the desktop's config file or its environment
-names. The compositor already serves much of this over the WindowServer protocol
-(screen layout, effects, theme at greet), so the values can be served rather than
-read from a file. The session app directory is a generic idea (a session-provided
-app dir / `/bin` shadow) whose name and contract should not be SDE's.
+- `serenity_window_manager.host_config(...)` (sent on bind) carries the workspace
+  grid and the input-setting bounds; the shim's greet and its
+  `get_mouse_acceleration_min`/`…_max`, `get_scroll_step_size_min`,
+  `get_double_click_speed_min`/`…_max` answers come from it.
+  `LibWM: host config: workspaces 3x4, …` shows the flow.
 
-Related: `patches/0019-libgui-desktop-wallpaper-state.patch` (the desktop
-wallpaper state the compositor owns).
+The session app-directory variable is also generalised: the framework reads
+`LIBWM_APP_BIN_DIR` (generic) and still honours `SDE_APP_BIN_DIR` as its older
+name, in `LibWM.cpp` and `LaunchServerConnection.h`.
 
-**Fix:** serve `[Workspaces]`/`[Input]`/`[Effects]` over the protocol (or isolate
-the file schema behind an SDE-supplied seam), and generalise the app-dir
-environment name.
+**Remaining** (the same shape, a second pass):
+
+- **Reads** — `input.ini` (mouse/keyboard values), `cursor.ini` (cursor theme /
+  highlight), `screenlayout.ini` (the outputs), the wallpaper
+  (`wallpaper.raw`/`.mode`/`.color`). Extend `host_config` (or add a settings
+  channel) and have the compositor send them; they must not be read here.
+- **Writes** — `set_system_effects` (`[Effects]`), `set_output_scale`
+  (`[Output] DefaultScale`), the input/cursor setters, `apply_workspace_settings`
+  (`[Workspaces]`), `set_theme`. These currently write the desktop's files; they
+  need a request that hands the value to the compositor, which applies and
+  persists it in its own config.
+- `patches/0019-libgui-desktop-wallpaper-state.patch` (the wallpaper state the
+  compositor owns) goes with the wallpaper read above.
+
+The design: one settings channel — the compositor sends the values the shim must
+answer with, and accepts the values the application sets. The keys are the
+desktop's business; the shim only passes semantic settings across.
 
 ### 4. SDE-specific patches in the port's patch set — **done**
 
@@ -121,9 +135,12 @@ the compositor serves it, not LibWM — so that separation is done.
       no longer adds the Taskbar target; the SDE builds it via
       `scripts/build-taskbar.sh` (which applies the SDE patches first), the
       scripts that need it use that, and `sde-session.sh` builds it if missing.
-- [ ] **3. Stop reading the SDE config from the framework** — serve
-      `[Workspaces]`/`[Input]`/`[Effects]` over the WindowServer protocol (or
-      isolate the schema), and generalise `SDE_APP_BIN_DIR`.
+- [ ] **3. Stop reading the SDE config from the framework.** *Partly done:* the
+      compositor now **serves the workspace grid and the input-setting bounds**
+      over `serenity-window` (`serenity_window_manager.host_config`), and the
+      session app-directory variable is generalised (`LIBWM_APP_BIN_DIR`, with
+      `SDE_APP_BIN_DIR` still honoured). The input/cursor/screenlayout/wallpaper
+      reads and the config **writes** remain — see §3.
 - [x] **4. Move the SDE-specific patches** into this repo's patch set — the
       Taskbar ones and the `LibSerenitySystem` links (see §4).
 - [x] **5. Decide test ownership** — the SDE owns the SDE-driven payloads;
