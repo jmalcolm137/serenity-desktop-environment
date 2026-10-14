@@ -9,10 +9,10 @@ SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
 SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
 BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
-TEST="$BUILD/bin/libwm-launch-exec-test"
+TEST="$SDE_ROOT/build/test/libwm-launch-exec-test"
 
 echo "== building prerequisite =="
-ninja -C "$BUILD" libwm-launch-exec-test >/dev/null
+"$SDE_ROOT/scripts/build-tests.sh" libwm-launch-exec-test >/dev/null 2>&1 || true
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-launch-exec.XXXXXX")"
 chmod 700 "$RUNTIME"

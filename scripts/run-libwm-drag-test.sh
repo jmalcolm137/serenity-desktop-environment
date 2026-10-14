@@ -14,11 +14,11 @@ BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
 COMP="$SDE_ROOT/build/WindowServer/WindowServer"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 
-if [[ ! -x "$BUILD/bin/libwm-drag-test" ]]; then
+if [[ ! -x "$SDE_ROOT/build/test/libwm-drag-test" ]]; then
     echo "building libwm-drag-test..."
-    ninja -C "$BUILD" libwm-drag-test >/dev/null 2>&1 || true
+    "$SDE_ROOT/scripts/build-tests.sh" libwm-drag-test >/dev/null 2>&1 || true
 fi
-[[ -x "$BUILD/bin/libwm-drag-test" ]] || { echo "SKIP: $BUILD/bin/libwm-drag-test is missing"; exit 0; }
+[[ -x "$SDE_ROOT/build/test/libwm-drag-test" ]] || { echo "SKIP: $SDE_ROOT/build/test/libwm-drag-test is missing"; exit 0; }
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 VI="$("$SDE_ROOT/scripts/build-virtual-input.sh" 2>/dev/null | tail -1)"
@@ -54,7 +54,7 @@ sleep 0.4
 env WAYLAND_DISPLAY="$SOCK" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-    "$BUILD/bin/libwm-drag-test" > "$RUNTIME/client.log" 2>&1 &
+    "$SDE_ROOT/build/test/libwm-drag-test" > "$RUNTIME/client.log" 2>&1 &
 CLIENT_PID=$!
 for _ in $(seq 1 80); do
     grep -q "toplevel mapped.*LibWM Drag Test" "$RUNTIME/comp.log" 2>/dev/null && break

@@ -142,7 +142,7 @@ neither forks the decoder.
 - **Stand-alone (no SDE) is unchanged** — the in-process fallback answers.
 
 Covered by a headless test: `scripts/run-services-test.sh` runs the same client
-(libgui-wayland's `libwm-services-test`) twice — once with no external service and
+(the SDE's `libwm-services-test`, `test/`) twice — once with no external service and
 once with the SDE `LaunchServer` and `ImageDecoder` running — and asserts that the
 in-process fallback answers in the first case and LibWM **defers** to the services
 in the second, for both the launch and image portals. It needs no compositor and

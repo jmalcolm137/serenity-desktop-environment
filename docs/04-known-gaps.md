@@ -299,7 +299,7 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
   replacing SerenityOS's `profiling_enable(pid, mask)` + `/proc/<pid>/
   perf_events`. Timestamps are milliseconds, matching `Profile::length_in_ms()`.
   `Profiler` itself is wired to it under `SDE_ROOT` (the Terminal precedent;
-  patch 0040) and is built by the port. Verified by `scripts/run-profiler-
+  SDE patch 0004-profiler-libserenitysystem) and is built by the port. Verified by `scripts/run-profiler-
   test.sh`. (Sampling *other* users' processes still needs `CAP_PERFMON`; with
   `perf_event_paranoid=2` a user's own processes profile fine because we exclude
   kernel samples.)
@@ -603,7 +603,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   equivalent, so `LibSerenitySystem::Profiling` samples with `perf_event_open`
   (user callchains, mmap/comm/fork/exit records, `/proc/<pid>/maps` seeding) and
   writes the same perfcore JSON that `Profiler` parses. Wired under `SDE_ROOT`
-  (patch 0040); covered by `scripts/run-profiler-test.sh`. Timestamps must be
+  (SDE patch 0004-profiler-libserenitysystem); covered by `scripts/run-profiler-test.sh`. Timestamps must be
   **milliseconds** (`Profile::length_in_ms()` is a raw difference used as a
   bucket count) — nanoseconds ballooned RSS to several GiB.
 

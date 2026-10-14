@@ -12,11 +12,11 @@ LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
 SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
 BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
 COMP="$SDE_ROOT/build/WindowServer/WindowServer"
-TEST="$BUILD/bin/libwm-combo-test"
+TEST="$SDE_ROOT/build/test/libwm-combo-test"
 
 echo "== building prerequisites =="
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
-ninja -C "$BUILD" libwm-combo-test >/dev/null
+"$SDE_ROOT/scripts/build-tests.sh" libwm-combo-test >/dev/null 2>&1 || true
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-combo.XXXXXX")"
 export SDE_STATE_DIR="$RUNTIME"

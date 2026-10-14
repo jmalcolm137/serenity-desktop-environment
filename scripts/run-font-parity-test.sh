@@ -9,10 +9,10 @@ SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
 SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
 BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
-TEST="$BUILD/bin/libwm-font-parity-test"
+TEST="$SDE_ROOT/build/test/libwm-font-parity-test"
 
 echo "== building prerequisite =="
-ninja -C "$BUILD" libwm-font-parity-test >/dev/null
+"$SDE_ROOT/scripts/build-tests.sh" libwm-font-parity-test >/dev/null 2>&1 || true
 
 echo "=== font-parity test ==="
 env SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \

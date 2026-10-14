@@ -79,25 +79,27 @@ wallpaper state the compositor owns).
 the file schema behind an SDE-supplied seam), and generalise the app-dir
 environment name.
 
-### 4. SDE-specific patches in the port's patch set
+### 4. SDE-specific patches in the port's patch set — **done**
 
-- **Shell:** `0014-taskbar-system-menu`, `0039-taskbar-resolve-app-paths` and
-  `0055-taskbar-window-grouping` are all Taskbar (shell) behaviour.
-- **The SDE's own library:** `0015-terminal-shell-environment` and
-  `0040-profiler-libserenitysystem` make the Lagom `Terminal` and `Profiler`
-  targets depend on `${SDE_ROOT}/src/LibSerenitySystem` — the port's build knows
-  about, and links, an SDE library. (`0014` also carries a "Serenity Desktop
-  Environment host compat" tweak.)
+Five patches that only existed for this desktop used to live in
+`libgui-wayland/patches`: the Taskbar ones (`0014-taskbar-system-menu`,
+`0039-taskbar-resolve-app-paths`, `0055-taskbar-window-grouping`) and two that
+make the Lagom `Terminal` and `Profiler` targets link the SDE's
+`src/LibSerenitySystem` (`0015-terminal-shell-environment`,
+`0040-profiler-libserenitysystem`).
 
-**Fix:** move these into the SDE patch set, as was done for the Taskbar build.
+They now live in this repo's `patches/` as `0001`–`0005`, applied before the
+SDE's own patches (they were generated against the state before them), and are
+verified to apply in order after the port's patch stack.
 
-### 5. Tests whose drivers live in the SDE
+### 5. Tests whose drivers live in the SDE — **done**
 
-`libgui-wayland/src/test/{Notification,Tooltip,FontParity,BinPath,ComboBox,ProcStat}Test.cpp`
-are payloads in the port, but every driver is an SDE script
-(`scripts/run-*-test.sh` in this repo), so the port's suite cannot be exercised
-without the SDE. Decide ownership: the port's own tests should be self-contained
-in `libgui-wayland`; SDE-behaviour tests belong here.
+The `libgui-wayland/src/test/*` payloads whose *only* driver is an SDE script
+(`libwm-{binpath,combo,drag,font-parity,launch-exec,notify,procstat,services,tooltip}-test`)
+now live here, in `test/`, and build via `scripts/build-tests.sh`. That is the
+rule: a test belongs with the repo that owns its expectation. The port keeps the
+payloads it drives itself (`libwm-{test-window,clipboard,about,fullscreen,submenu}-test`,
+plus `appfile`/`hidpi-detail`).
 
 ## Not SDE-specific (leave in the port)
 
@@ -122,7 +124,7 @@ the compositor serves it, not LibWM — so that separation is done.
 - [ ] **3. Stop reading the SDE config from the framework** — serve
       `[Workspaces]`/`[Input]`/`[Effects]` over the WindowServer protocol (or
       isolate the schema), and generalise `SDE_APP_BIN_DIR`.
-- [ ] **4. Move the SDE-specific patches** — the Taskbar ones (`0014`, `0039`,
-      `0055`) and the `LibSerenitySystem` links (`0015`, `0040`) — into the SDE
-      patch set.
-- [ ] **5. Decide test ownership** (port self-contained vs SDE-driven).
+- [x] **4. Move the SDE-specific patches** into this repo's patch set — the
+      Taskbar ones and the `LibSerenitySystem` links (see §4).
+- [x] **5. Decide test ownership** — the SDE owns the SDE-driven payloads;
+      they moved to `test/` (`scripts/build-tests.sh`). See §5.
