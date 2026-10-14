@@ -81,10 +81,12 @@ grid and icon paths) hoist into shared helpers as those land.
    current stack on map and hides/shows with it (`update_x11_toplevel_visibility`).
 3. **Window icons** — **done** (`b3ac13a`): `_NET_WM_ICON` is fetched
    (`wlr_xwayland_surface_fetch_icon` + `xcb_ewmh`) and emitted
-   (`emit_window_icon`). **WM_CLASS grouping** is read onto the toplevel
-   (`wm_class`/`wm_instance`) but the Taskbar still keys buttons per
-   `WindowIdentifier{client_id, window_id}` (one button per window) and has no
-   app-grouping mode, so grouping needs a Taskbar-side change (in the port).
+   (`emit_window_icon`). **WM_CLASS grouping** — **done, opt-in**: the app id (an
+   xdg `app_id` / an X11 `WM_CLASS`) is carried in the window state and the
+   Taskbar collapses the windows of one application into a single button when
+   `[Taskbar] GroupWindows` is on (default **off** — SerenityOS's Taskbar has one
+   button per window). See `docs/14`; verified by
+   `scripts/run-taskbar-grouping-test.sh`.
 4. ~~**Override-redirect polish**~~ — **done** (`cb21165`): menus/tooltips are
    never workspace-hid and stay above their parent.
 5. ~~**Selection / clipboard bridge**~~ — **done** (`6c8e0c9`): the compositor

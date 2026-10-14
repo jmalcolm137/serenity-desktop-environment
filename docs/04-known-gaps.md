@@ -346,12 +346,14 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   honoured (`c69b1ae`); and the **workarea** (`_NET_WORKAREA`) is reported
   (`47f794f`). An exiting X11 client no longer aborts the compositor (the destroy
   handler detaches its `wlr_xwayland_surface` listeners — `2d557e2`), and iconless
-  X11 clients report the default "X" icon to the Taskbar/switcher. See
+  X11 clients report the default "X" icon to the Taskbar/switcher. X11 windows
+  carry their **`WM_CLASS`** to the Taskbar, which can **group** a button per
+  application when `[Taskbar] GroupWindows` is on (default off — SerenityOS's
+  Taskbar has one button per window; see `docs/14`). See
   [`20-xwayland-next-steps.md`](20-xwayland-next-steps.md).
-  **Still missing for full parity:** WM_CLASS-based Taskbar **grouping** (needs a
-  Taskbar-side change), Xwayland **keyboard grabs** (in no wlroots release),
-  **XDND** drag-and-drop (wlroots 0.21), and focus-stealing prevention (wlroots
-  gives no timestamp) — see
+  **Still missing for full parity:** Xwayland **keyboard grabs** (in no wlroots
+  release), **XDND** drag-and-drop (wlroots 0.21), and focus-stealing prevention
+  (wlroots gives no timestamp) — see
   [`21-r5-protocol-parity-plan.md`](21-r5-protocol-parity-plan.md).
 - **Native-app protocol matrix (G7).** **Mostly done** — the compositor advertises
   (and wlroots implements) `xdg-activation`, `xdg-foreign` (v1 + v2), primary

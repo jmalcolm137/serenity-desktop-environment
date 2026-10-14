@@ -34,6 +34,7 @@
 //                Renderer              name      (auto|gles2|vulkan|pixman; R6/N5)
 //   [Log]        Level                 name      (error|warn|info|debug; R6/N8)
 //   [Compositor] XWayland              bool      (run X11 clients via Xwayland; default true)
+//   [Taskbar]    GroupWindows          bool      (group a Taskbar button per app id; default false)
 //   [Keybindings] <Action>              combo(s)  (e.g. Ctrl+Alt+Left; see Action)
 //
 // Invalid values are rejected (the previous value is kept) and reported through
@@ -103,6 +104,15 @@ struct Compositor {
     bool xwayland { true };
 };
 
+// [Taskbar] - Taskbar app behaviour the compositor conveys to the Taskbar.
+struct Taskbar {
+    // Group a window's Taskbar button with the other windows of the same
+    // application (its app id: an xdg app_id / an X11 WM_CLASS). Off by default,
+    // matching SerenityOS's Taskbar (one button per window); a Plasma-style
+    // opt-in. Pushed to the Taskbar over the WindowManagerServer protocol.
+    bool group_windows { false };
+};
+
 // A persisted screen entry (screenlayout.ini in the state directory). This is
 // the Serenity WindowServer ScreenLayout format ([Screens] MainScreen, then
 // [Screen0] Mode/Device/Left/Top/Width/Height/ScaleFactor) so the port's
@@ -145,6 +155,7 @@ Effects const& effects();
 Output const& output();
 Log const& log();
 Compositor const& compositor();
+Taskbar const& taskbar();
 
 // The persisted screen layout (R4.5), in the Serenity ScreenLayout format
 // (screenlayout.ini). outputs() is the desired layout; set_outputs() replaces it
