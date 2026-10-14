@@ -167,6 +167,7 @@ SDE is packaged for a systemd host, the substitutes above map onto
   in a supervisor's order.
 - **No confinement.** `pledge`/`unveil` are no-ops on Linux.
 - **Services still absent:** `WebDriver`, and full
-  `AudioServer`/`AudioManager` (audio is served by `libserenity-audio`). The
+  `AudioServer`/`AudioManager` (audio is served by the SDE `AudioServer`
+  service, spawned on the audio portal). The
   unmodified `NotificationServer` **is** hosted (spawned on the notify portal,
   WS5).

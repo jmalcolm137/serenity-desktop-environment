@@ -47,6 +47,13 @@ A session service can take over one of those paths by listening there itself;
 `make_portal()` then **passes the client through** to it instead of the
 in-process fallback. That is the single hook the rule needs.
 
+Some services are never served in-process because they are too heavy to embed in
+every application: `LibWM` **spawns** them from the session app directory on
+demand (`WebContent`, `RequestServer`, `SQLServer`, `NotificationServer`, and the
+SDE's **`AudioServer`**, which serves the audio + audiomanager portals from one
+process). Those reach the client the same way — the app connects to the portal,
+`LibWM` spawns the service and hands it the listening socket.
+
 ## 3. Applied to `LaunchServer`
 
 - **`libgui-wayland` (fallback):** the in-process `LaunchServerConnection` keeps

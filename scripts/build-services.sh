@@ -26,7 +26,7 @@ SERENITY_SRC="${SERENITY_SRC:-$LIBGUI_WAYLAND_ROOT/serenity}"
 SERENITY_BUILD_DIR="${SERENITY_BUILD_DIR:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
 JOBS="${JOBS:-$(nproc)}"
 
-SERVICES=(WebContent RequestServer SQLServer NotificationServer)
+SERVICES=(WebContent RequestServer SQLServer NotificationServer AudioServer)
 
 if [[ ! -f "$SERENITY_BUILD_DIR/lib/liblagom-ak.so" ]]; then
     echo "error: Serenity userland libraries not found in $SERENITY_BUILD_DIR" >&2

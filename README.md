@@ -13,7 +13,7 @@ The stack is split across a small family of repositories:
 | Repository | Role |
 |---|---|
 | [`SerenityOS/serenity`](https://github.com/SerenityOS/serenity) | Upstream source of LibGUI / LibGfx / applications / themes / fonts. Consumed **unmodified** wherever possible. |
-| [`jmalcolm137/libgui-wayland`](https://github.com/jmalcolm137/libgui-wayland) | **LibWindowServer** — runs unmodified Serenity `LibGUI`/`LibGfx` apps natively on Wayland by implementing the WindowServer protocol in-process (plus **LibSerenityAudio** for `LibAudio` ↔ PipeWire). |
+| [`jmalcolm137/libgui-wayland`](https://github.com/jmalcolm137/libgui-wayland) | **LibWindowServer** — runs unmodified Serenity `LibGUI`/`LibGfx` apps natively on Wayland by implementing the WindowServer protocol in-process. |
 | **this repo** | The **system side**: `WindowServer` (a [reasonably complete](docs/23-wayland-protocols.md) wlroots-based Wayland compositor) and the session that runs the **unmodified SerenityOS shell apps** (Taskbar, applets, Desktop, Settings) as Wayland clients, plus services/settings and the integration that turns LibWindowServer-powered apps into a coherent desktop session. |
 
 ## Documents

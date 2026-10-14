@@ -276,7 +276,7 @@ echo "SDE session: power helpers in $SESSION_BIN (/bin shadow)"
 # resolve service and application binaries from SDE_APP_BIN_DIR, so it must hold
 # both: link the port's applications here and overlay the SDE services. See
 # docs/06-service-layering.md and docs/07-systemserver-roles.md (section 2.3).
-SESSION_SERVICES=(WebContent RequestServer SQLServer NotificationServer)
+SESSION_SERVICES=(WebContent RequestServer SQLServer NotificationServer AudioServer)
 missing_services=0
 for service in "${SESSION_SERVICES[@]}"; do
     [ -x "$SDE_ROOT/build/$service/$service" ] || missing_services=1

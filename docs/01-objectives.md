@@ -36,9 +36,9 @@ service**.
 platform surface is that protocol, you can keep `LibGUI`, `LibGfx`, and the
 applications **byte-for-byte unmodified** and replace the *far side* of the
 protocol — the WindowServer — with a library (`LibWindowServer`) that speaks the
-WindowServer protocol on one side and Wayland on the other. That project also
-provides `LibSerenityAudio` (the `AudioServer` protocol ↔ PipeWire) and now runs
-44 of the 49 applications in `Userland/Applications`.
+WindowServer protocol on one side and Wayland on the other. That project runs
+44 of the 49 applications in `Userland/Applications`; the SDE adds the
+out-of-process services they need (the `AudioServer`, docs/06).
 
 What LibWindowServer explicitly does **not** do — because on Wayland it is the
 compositor's job — is everything *global*: window management, the shell, the
@@ -77,7 +77,7 @@ Together these make a Serenity app (`Calculator`, `TextEditor`, `PDFViewer`,
 | # | Goal | Notes |
 |---|---|---|
 | **G1** | **Faithful shell chrome — the same widgets and behaviour as SerenityOS.** Reuse the real shell applications: `Userland/Services/Taskbar` (system-menu/start button, quick-launch, window list, applet area, clock, show-desktop), its applets, the Desktop and Settings. | Structural and behavioural parity from the actual SerenityOS code, not a bespoke panel. Widget painting comes from the `LibGfx` `WindowTheme`; window frames are compositor-drawn. |
-| **G2** | **Run unmodified Serenity applications — including the shell apps.** Reuse `libgui-wayland` (LibWindowServer + LibSerenityAudio) and run the real `Taskbar`, applets and settings; add the remaining service shims the deferred apps need. | Preserve the "keep Serenity code unmodified" property end-to-end, shell included. |
+| **G2** | **Run unmodified Serenity applications — including the shell apps.** Reuse `libgui-wayland` (LibWindowServer) and run the real `Taskbar`, applets and settings; add the remaining service shims the deferred apps need. | Preserve the "keep Serenity code unmodified" property end-to-end, shell included. |
 | **G3** | **Serenity window-management semantics.** Stacking, focus, minimize/maximize/zoom, close, fullscreen, window snapping, workspaces, keyboard and mouse chording. | Server-side frames by default, with per-client `xdg-decoration` negotiation. |
 | **G4** | **System services.** Clipboard, Config, Launch, Notification, FileSystemAccess, ImageDecoder, Audio(Manager), pty/Terminal, and the pieces `SystemMonitor`/`MouseSettings`/`Debugger`/`CrashReporter` need where feasible. | Serve the Serenity protocol; implement against Linux/native APIs underneath. |
 | **G5** | **Settings and appearance.** Serenity theme/color-scheme/fonts; MouseSettings; display configuration (mode/scale/rotation); input/pointer settings; cursor theme/size; wallpaper. | Write paths sit behind a per-compositor backend interface. |
@@ -123,7 +123,8 @@ These extend and are consistent with LibWindowServer's existing principles.
   seat, clipboard or window state; query the real compositor and share state
   back. Placeholder constants are scaffolding only.
 - **P2 — Shim at protocol boundaries; keep Serenity code unmodified.** The
-  WindowServer and AudioServer shims are the model. This includes the shell: the
+  The WindowServer in-process shim and the out-of-process AudioServer service are
+  the model. This includes the shell: the
   `Taskbar` and its applets are SerenityOS applications we run, not panel widgets
   we reimplement. Add a shim before a patch; keep any patch tiny and
   upstreamable.
@@ -169,7 +170,7 @@ These extend and are consistent with LibWindowServer's existing principles.
  ├───────────────────────────────────────────────────────────────────────────┤
  │ Userland compatibility layer                                              │
  │   LibGUI / LibGfx (unmodified)  ── LibWindowServer (WindowServer→Wayland)            │
- │   LibAudio (unmodified)         ── LibSerenityAudio (AudioServer→PipeWire) │
+ │   LibAudio (unmodified)         ── SDE AudioServer service (→PipeWire)    │
  │   service clients → in-process shims: Config, Launch, Clipboard, Notify,   │
  │   FileSystemAccess, ImageDecoder, …                                        │
  ├───────────────────────────────────────────────────────────────────────────┤
@@ -292,7 +293,8 @@ risks are:
 ## 13. Glossary
 
 - **LibWindowServer** — the in-process WindowServer-protocol shim from `libgui-wayland`.
-- **LibSerenityAudio** — the in-process AudioServer-protocol shim.
+- **AudioServer** — the SDE service serving the SerenityOS AudioServer/AudioManager
+  protocols over the session portals, backed by PipeWire.
 - **SSD / CSD** — server-side / client-side decorations.
 - **WindowManagerServer** — the Serenity service the Taskbar and window
   switcher use to observe and control windows.
