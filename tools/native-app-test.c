@@ -182,6 +182,9 @@ static struct wl_keyboard* keyboard;
 // The serenity-window chrome handle, so we can send the compositor our icon.
 static struct serenity_window_manager* window_manager;
 static struct serenity_toplevel* serenity_toplevel_handle;
+// --launch-origin x y w h: report the rect we were "launched" from, so the
+// compositor animates the window out of it (SerenityOS start_launch_animation).
+static int g_launch_origin[4] = { 0, 0, 0, 0 };
 
 static void keyboard_keymap(void* d, struct wl_keyboard* k, uint32_t format, int32_t fd, uint32_t size) { (void)d; (void)k; (void)format; (void)size; close(fd); }
 static void keyboard_enter(void* d, struct wl_keyboard* k, uint32_t serial, struct wl_surface* s, struct wl_array* keys) { (void)d; (void)k; (void)serial; (void)s; (void)keys; }
@@ -258,6 +261,14 @@ int main(int argc, char** argv)
             break;
         }
     }
+    // --launch-origin <x> <y> <w> <h>: the rect this window was launched from.
+    for (int i = 1; i + 4 < argc; i++) {
+        if (strcmp(argv[i], "--launch-origin") == 0) {
+            for (int k = 0; k < 4; k++)
+                g_launch_origin[k] = atoi(argv[i + 1 + k]);
+            break;
+        }
+    }
     // --linger <ms>: keep the window mapped for this long before exiting, so a test
     // can map several clients and observe how focus moves between them.
     int linger_ms = 0;
@@ -292,6 +303,14 @@ int main(int argc, char** argv)
     xdg_toplevel_add_listener(toplevel, &toplevel_listener, NULL);
     xdg_toplevel_set_title(toplevel, g_title);
     xdg_toplevel_set_app_id(toplevel, "sde-native-test");
+    // --launch-origin: report the launch rect *before* the window maps, since the
+    // compositor starts the launch animation when the toplevel appears.
+    if (window_manager && g_launch_origin[2] > 0 && g_launch_origin[3] > 0) {
+        struct serenity_toplevel* launch_chrome = serenity_window_manager_get_toplevel(window_manager, surface);
+        if (launch_chrome)
+            serenity_toplevel_set_launch_origin(launch_chrome,
+                g_launch_origin[0], g_launch_origin[1], g_launch_origin[2], g_launch_origin[3]);
+    }
     // --server-side-decorations: ask for a compositor-drawn frame. Without it the
     // default is client-side decorations, so there is no titlebar to click/drag.
     if (want_server_side_decorations && decoration_manager) {

@@ -212,6 +212,12 @@ static void dismiss_fragile_windows(Server& server, StringView reason);
 static void update_ext_workspace_active(Server& server);
 // SerenityOS: Super+H toggles the cursor highlight (R4.7).
 static void toggle_cursor_highlight(Server& server);
+// SerenityOS Window::start_launch_animation (R3): grow the window out of the rect
+// the launcher handed the application.
+static void start_launch_animation(Server& server, Toplevel& toplevel);
+// SerenityOS Ctrl+Super+Shift+I: re-render the scale-dependent icon/frame bitmaps.
+static void reload_icon_bitmaps_after_scale_change(Server& server);
+static void render_cursor_highlight(Server& server);
 // X11 (Xwayland) window helpers (R5).
 static X11Toplevel* x11_toplevel_for_wlr_surface(Server& server, wlr_surface* surface);
 static bool x11_surface_at(Server& server, double lx, double ly, wlr_surface** surface, double* sx, double* sy);
@@ -605,7 +611,32 @@ static bool handle_keybinding(Server& server, xkb_keysym_t sym, uint32_t modifie
         toggle_cursor_highlight(server);
         return true;
     }
+    // SerenityOS: Ctrl+Super+Shift+I reloads the icon bitmaps after a scale change.
+    if (config_modifiers(modifiers) == (Config::ModCtrl | Config::ModSuper | Config::ModShift) && (sym == XKB_KEY_I || sym == XKB_KEY_i)) {
+        reload_icon_bitmaps_after_scale_change(server);
+        return true;
+    }
     return false;
+}
+
+// SerenityOS WindowManager::reload_icon_bitmaps_after_scale_change(): re-read the
+// config and re-render the chrome bitmaps, which are drawn at the output scale
+// (the window frames carry the titlebar icon). The window icons are re-reported so
+// the Taskbar refreshes its buttons too.
+static void reload_icon_bitmaps_after_scale_change(Server& server)
+{
+    Config::load();
+    for (auto& toplevel : server.toplevels) {
+        toplevel_update_frame(*toplevel);
+        WindowManager::emit_window_icon(*toplevel);
+    }
+    for (auto& toplevel : server.x11_toplevels) {
+        x11_update_frame(*toplevel);
+        WindowManager::emit_window_icon(*toplevel);
+    }
+    render_cursor_highlight(server);
+    dbgln("WindowServer: reloaded icon bitmaps ({} toplevels, {} x11 windows)",
+        server.toplevels.size(), server.x11_toplevels.size());
 }
 
 // --- key repeat -----------------------------------------------------------
@@ -3995,6 +4026,8 @@ static void toplevel_map(wl_listener* listener, void*)
         wlr_foreign_toplevel_handle_v1_output_enter(toplevel->foreign_handle, toplevel->server->primary_output);
     focus_toplevel(*toplevel->server, toplevel);
     WindowManager::emit_window_state(*toplevel);
+    // SerenityOS: the window grows out of the rect it was launched from (R3).
+    start_launch_animation(*toplevel->server, *toplevel);
     // A new window means a new running application to restore (R4.2).
     SessionManager::update_running_apps(*toplevel->server);
 }
@@ -4160,15 +4193,19 @@ static void toplevel_close(Toplevel& toplevel)
 // animation). We draw the same outline (a ChromeNode in the overlay tree) over
 // 150 ms, gated on [Effects] AnimateWindows, using the button rect the Taskbar
 // reports over the WindowManagerServer (set_window_taskbar_rect).
-struct MinimizeAnimation {
+// A short outline drawn over the desktop: minimize/restore interpolate between
+// the window and its Taskbar button, and a launch grows the outline out of the
+// rect the window was launched from (SerenityOS's Window animations).
+struct OutlineAnimation {
     Gfx::IntRect from;
     Gfx::IntRect to;
+    Gfx::Color color { Gfx::Color::Black };
     i64 start_ms { 0 };
     OwnPtr<ChromeNode> node;
 };
-static Vector<MinimizeAnimation> s_minimize_animations;
+static Vector<OutlineAnimation> s_outline_animations;
 static RefPtr<Core::Timer> s_animation_timer;
-static constexpr int minimize_animation_duration_ms = 150;
+static constexpr int outline_animation_duration_ms = 150;
 
 static Core::ElapsedTimer& animation_clock()
 {
@@ -4184,35 +4221,53 @@ static Gfx::IntRect interpolate_rect(Gfx::IntRect const& a, Gfx::IntRect const& 
     return { lerp(a.x(), b.x()), lerp(a.y(), b.y()), lerp(a.width(), b.width()), lerp(a.height(), b.height()) };
 }
 
-static void tick_minimize_animations()
+static void tick_outline_animations()
 {
     i64 const now = animation_clock().elapsed_milliseconds();
     bool any_active = false;
-    for (auto& animation : s_minimize_animations) {
-        float t = clamp(static_cast<float>(now - animation.start_ms) / minimize_animation_duration_ms, 0.0f, 1.0f);
+    for (auto& animation : s_outline_animations) {
+        float t = clamp(static_cast<float>(now - animation.start_ms) / outline_animation_duration_ms, 0.0f, 1.0f);
         float eased = 1.0f - (1.0f - t) * (1.0f - t); // ease-out
         auto rect = interpolate_rect(animation.from, animation.to, eased);
-        if (g_palette && animation.node && rect.width() > 0 && rect.height() > 0) {
-            auto color = g_palette->selection();
+        if (animation.node && rect.width() > 0 && rect.height() > 0) {
             animation.node->set_visible(true);
             animation.node->set_rect(rect);
             animation.node->render([&](Gfx::Painter& painter) {
-                painter.draw_rect_with_thickness({ 0, 0, rect.width(), rect.height() }, color, 2);
+                painter.draw_rect_with_thickness({ 0, 0, rect.width(), rect.height() }, animation.color, 2);
             });
         }
         if (t < 1.0f)
             any_active = true;
     }
     if (!any_active) {
-        s_minimize_animations.clear(); // destroys the ChromeNodes (hides them)
+        s_outline_animations.clear(); // destroys the ChromeNodes (hides them)
         if (s_animation_timer)
             s_animation_timer->stop();
     }
 }
 
+static void start_outline_animation(Server& server, Gfx::IntRect const& from, Gfx::IntRect const& to, Gfx::Color color)
+{
+    if (!server.overlay_tree || from.is_empty() || to.is_empty())
+        return;
+
+    OutlineAnimation animation;
+    animation.from = from;
+    animation.to = to;
+    animation.color = color;
+    animation.start_ms = animation_clock().elapsed_milliseconds();
+    animation.node = make<ChromeNode>(*server.overlay_tree);
+    animation.node->set_rect(from);
+    s_outline_animations.append(move(animation));
+
+    if (!s_animation_timer)
+        s_animation_timer = Core::Timer::create_repeating(15, tick_outline_animations);
+    s_animation_timer->start();
+}
+
 static void start_minimize_animation(Server& server, Toplevel& toplevel, Gfx::IntRect const& window_rect, bool minimizing)
 {
-    if (!server.overlay_tree || !Config::effects().animate_windows || window_rect.is_empty())
+    if (!Config::effects().animate_windows || window_rect.is_empty())
         return;
 
     Gfx::IntRect target = toplevel.taskbar_rect;
@@ -4226,21 +4281,40 @@ static void start_minimize_animation(Server& server, Toplevel& toplevel, Gfx::In
         target = { area.right() - 24, area.bottom() - 24, 4, 4 };
     }
 
-    MinimizeAnimation animation;
-    animation.from = minimizing ? window_rect : target;
-    animation.to = minimizing ? target : window_rect;
-    animation.start_ms = animation_clock().elapsed_milliseconds();
-    animation.node = make<ChromeNode>(*server.overlay_tree);
-    animation.node->set_rect(animation.from);
-    s_minimize_animations.append(move(animation));
+    auto from = minimizing ? window_rect : target;
+    auto to = minimizing ? target : window_rect;
+    start_outline_animation(server, from, to, g_palette ? g_palette->selection() : Gfx::Color::Black);
     dbgln("WindowServer: {} animation {}x{}+{},{} -> {}x{}+{},{}",
         minimizing ? "minimize" : "restore",
-        animation.from.width(), animation.from.height(), animation.from.x(), animation.from.y(),
-        animation.to.width(), animation.to.height(), animation.to.x(), animation.to.y());
+        from.width(), from.height(), from.x(), from.y(),
+        to.width(), to.height(), to.x(), to.y());
+}
 
-    if (!s_animation_timer)
-        s_animation_timer = Core::Timer::create_repeating(15, tick_minimize_animations);
-    s_animation_timer->start();
+// SerenityOS Window::start_launch_animation(): the window grows out of the rect
+// the launcher handed the application (the launcher sets
+// __libgui_launch_origin_rect, GUI::Window forwards it over
+// serenity_toplevel.set_launch_origin).
+static void start_launch_animation(Server& server, Toplevel& toplevel)
+{
+    if (toplevel.launch_origin.is_empty() || !Config::effects().animate_windows)
+        return;
+    // Like SerenityOS, only animate a window that appears on the visible stack.
+    if (toplevel.workspace_row != WindowManager::current_workspace_row() || toplevel.workspace_column != WindowManager::current_workspace_column())
+        return;
+
+    Gfx::IntRect frame {
+        toplevel.scene_tree->node.x, toplevel.scene_tree->node.y,
+        toplevel.frame_size.width(), toplevel.frame_size.height()
+    };
+    if (frame.is_empty())
+        frame = { toplevel.scene_tree->node.x, toplevel.scene_tree->node.y, toplevel.xdg_toplevel->base->geometry.width, toplevel.xdg_toplevel->base->geometry.height };
+    if (frame.is_empty())
+        return;
+
+    start_outline_animation(server, toplevel.launch_origin, frame, g_palette ? g_palette->selection() : Gfx::Color::Black);
+    dbgln("WindowServer: launch animation {}x{}+{},{} -> {}x{}+{},{}",
+        toplevel.launch_origin.width(), toplevel.launch_origin.height(), toplevel.launch_origin.x(), toplevel.launch_origin.y(),
+        frame.width(), frame.height(), frame.x(), frame.y());
 }
 
 // Minimize/restore a window: state, visibility, the foreign handle, and the
@@ -5574,10 +5648,27 @@ static void serenity_toplevel_set_window_mode(wl_client*, wl_resource* resource,
         WindowManager::emit_window_state(*other);
 }
 
+// set_launch_origin: the rect the launcher handed the application (SerenityOS's
+// __libgui_launch_origin_rect). The compositor animates the window out of it when
+// the toplevel maps (Window::start_launch_animation).
+static void serenity_toplevel_set_launch_origin(wl_client*, wl_resource* resource, int32_t x, int32_t y, int32_t width, int32_t height)
+{
+    auto* chrome = static_cast<SerenityChrome*>(wl_resource_get_user_data(resource));
+    Toplevel* toplevel = chrome ? chrome->toplevel : nullptr;
+    if (!toplevel)
+        return;
+    if (width <= 0 || height <= 0) {
+        toplevel->launch_origin = {};
+        return;
+    }
+    toplevel->launch_origin = { x, y, width, height };
+}
+
 static struct serenity_toplevel_interface const s_serenity_toplevel_implementation = {
     .set_icon = serenity_toplevel_set_icon,
     .destroy = serenity_toplevel_request_destroy,
     .set_window_mode = serenity_toplevel_set_window_mode,
+    .set_launch_origin = serenity_toplevel_set_launch_origin,
 };
 
 static void serenity_window_manager_get_toplevel(wl_client* client, wl_resource* resource, uint32_t id, wl_resource* surface_resource)

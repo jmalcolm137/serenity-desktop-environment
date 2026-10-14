@@ -53,7 +53,7 @@ click was already handled and returned earlier).
   Taskbar, or closing a listed window (stress-tested; all clean). Reopen with a
   reproduction if it is seen again.
 
-## R3 — Serenity look & behaviours (chrome done, rest pending)
+## R3 — Serenity look & behaviours (done)
 
 - **Window switcher with live thumbnails** — done (WS3). Alt+Tab (current
   workspace) / Super+Tab (all workspaces), Shift reverses, activate on modifier
@@ -139,19 +139,22 @@ click was already handled and returned earlier).
   set wallpaper stays and covers the colour. This is intentional parity, not a
   bug.
 
-### SerenityOS window-manager behaviours not yet implemented
+### SerenityOS window-manager behaviours
 
-The window chrome and the core interactions are done — titlebar buttons, the
-window menu (minimize / maximize / restore / move / roll-up / menu bar / always
-on top / close), the icon-click menu, double-click-titlebar maximize, move and
-resize by the frame, **`Super`+left-drag to move / `Super`+right-drag to resize
-from anywhere**, **unmaximize-on-move**, **`Alt+Shift` keyboard-layout
-switching**, **minimize/restore animations**, snapping, tiling (`Super`+arrows,
+The window chrome and the interactions are done — titlebar buttons, the window
+menu (minimize / maximize / restore / move / roll-up / menu bar / always on top /
+close), the icon-click menu, double-click-titlebar maximize, move and resize by
+the frame, **`Super`+left-drag to move / `Super`+right-drag to resize from
+anywhere**, **unmaximize-on-move**, **`Alt+Shift` keyboard-layout switching**,
+**minimize/restore/launch animations and the window-stack transition**, the
+window-stack-switch overlay, `Super+H` (cursor highlight),
+`Ctrl+Super+Shift+I` (reload icon bitmaps), snapping, tiling (`Super`+arrows,
 `Super+Alt` horizontal / vertical maximize), the Alt+Tab / Super+Tab switcher
-with live thumbnails, the workspace grid (with carry) and the `Super`-key events
-forwarded to the WindowManagerServer. What follows are behaviours present in
-SerenityOS's `Userland/Services/WindowServer/{WindowManager,Window,Compositor}.cpp`
-that SDE does **not** reproduce yet.
+with live thumbnails, the workspace grid (with carry), fragile-window dismissal
+and the `Super`-key events forwarded to the WindowManagerServer. What follows are
+the behaviours from SerenityOS's
+`Userland/Services/WindowServer/{WindowManager,Window,Compositor}.cpp` that SDE
+still does **not** reproduce in full.
 
 - **Modal and transient (parent/child) windows** — **done.** The client's
   SerenityOS `WindowMode` reaches the compositor over `serenity-window`
@@ -171,16 +174,6 @@ that SDE does **not** reproduce yet.
   set on a press and cleared when the last button is released, mirroring
   SerenityOS's `process_ongoing_active_input_mouse_event`); SerenityOS's
   multi-window tracking and its `did_popup_a_menu` reset are not reproduced.
-- **The window-stack-switch overlay.** SerenityOS briefly shows the workspace-grid
-  overlay when switching stacks (`switch_to_window_stack(..., show_overlay)`); SDE
-  switches silently. (The tile-preview and geometry overlays *are* implemented.)
-- **`Ctrl+Super+Shift+I`** (reload icon bitmaps after a scale change) — an
-  internal SerenityOS hotkey with no SDE equivalent (SDE reloads icons on demand).
-- **The remaining window animations.** Minimize/restore landed (see "Recently
-  resolved"); SerenityOS also animates a window's **launch** (an outline from the
-  launch origin, `start_launch_animation`, which needs the launcher to hand over
-  an origin rect) and the **window-stack transition**
-  (`Compositor::m_window_stack_transition_animation`). Neither is implemented.
 
 Not gaps, for the record: SDE's drag-to-edge snapping is an *addition* over stock
 SerenityOS (which tiles only through `Super`+arrows), and the minimal
@@ -455,6 +448,21 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   on this path ([`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md) §6).
 
 ## Recently resolved (kept so we don't re-chase them)
+
+- **R3 finished: launch/stack animations, the stack-switch overlay, and the
+  icon-reload hotkey.** `serenity_toplevel.set_launch_origin` carries the rect the
+  launcher handed the app (SerenityOS's `__libgui_launch_origin_rect`, read by
+  `GUI::Window` and now forwarded by the LibWM shim), and the compositor grows the
+  window out of it (`start_launch_animation`); switching stacks slides the
+  outgoing/incoming stacks (`Compositor`'s transition) and briefly shows the
+  workspace grid with the current stack highlighted (the
+  `WindowStackSwitchOverlay`); and `Ctrl+Super+Shift+I` reloads the
+  output-scale-dependent chrome/icon bitmaps
+  (`WindowManager::reload_icon_bitmaps_after_scale_change`). All are gated on
+  `[Effects] AnimateWindows` (except the overlay, which SerenityOS always shows),
+  and minimise/restore now share one outline-animation helper. Covered by
+  `scripts/run-launch-animation-test.sh`, `run-stack-overlay-test.sh`,
+  `run-stack-transition-test.sh` and `run-icon-reload-test.sh`.
 
 - **Full session restore (R4.2): the user's applications are relaunched.** The
   compositor already served `xdg-session-management-v1` and persisted a
