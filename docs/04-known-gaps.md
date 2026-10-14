@@ -153,11 +153,16 @@ forwarded to the WindowManagerServer. What follows are behaviours present in
 SerenityOS's `Userland/Services/WindowServer/{WindowManager,Window,Compositor}.cpp`
 that SDE does **not** reproduce yet.
 
-- **Modal and transient (parent/child) windows.** SerenityOS enforces
-  `blocking_modal_window()` (input to the window behind a modal is blocked, the
-  modal cannot be minimized, blockers are lowered) and stacks a transient above
-  its parent. SDE has no modal/transient semantics (dialogs render, but nothing
-  blocks).
+- **Modal and transient (parent/child) windows** — **done.** The client's
+  SerenityOS `WindowMode` reaches the compositor over `serenity-window`
+  (`serenity_toplevel.set_window_mode`), and its `xdg_toplevel.parent` marks the
+  transient parent. A **blocking** modal preempts its modal chain: input behind
+  it is blocked (the hit-test skips a blocked window, so a click does not focus
+  it), the modal cannot be minimized, and a transient stays above its parent
+  (SerenityOS `Window::blocking_modal_window()`). The blocked state is reported
+  to the Taskbar. Covered by `scripts/run-modal-test.sh`.
+  (Not yet: cross-client modal chains — an X11 modal blocking an xdg window and
+  vice versa — and SerenityOS's explicit "lower the blockers" pass.)
 - **Fragile windows** — SerenityOS closes them on focus loss / certain actions
   (`request_close_fragile_windows`). SDE: none.
 - **Automatic cursor tracking windows** (a tracked window, e.g. a client menu,

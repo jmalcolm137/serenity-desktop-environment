@@ -35,6 +35,9 @@ static struct xdg_toplevel* toplevel;
 static int want_server_side_decorations;
 static struct zxdg_decoration_manager_v1* decoration_manager;
 static struct zxdg_toplevel_decoration_v1* toplevel_decoration;
+// --blocking: report SerenityOS WindowMode::Blocking (a modal dialog) over
+// serenity-window, so the compositor blocks the windows behind it.
+static int want_blocking;
 // The toplevel title (--title), so a test can tell two instances apart.
 static char const* g_title = "SDE Native Test";
 static int width = 320;
@@ -244,6 +247,8 @@ int main(int argc, char** argv)
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--server-side-decorations") == 0)
             want_server_side_decorations = 1;
+        else if (strcmp(argv[i], "--blocking") == 0)
+            want_blocking = 1;
     }
 
     // --title <text>: a distinct title, so a test can tell two instances apart.
@@ -302,6 +307,9 @@ int main(int argc, char** argv)
     // the titlebar and the Alt+Tab switcher (a 16x16 ARGB8888 green square).
     if (window_manager) {
         serenity_toplevel_handle = serenity_window_manager_get_toplevel(window_manager, surface);
+        // --blocking: report SerenityOS WindowMode::Blocking (a modal dialog).
+        if (want_blocking)
+            serenity_toplevel_set_window_mode(serenity_toplevel_handle, 3);
         int const iw = 16, ih = 16, istride = iw * 4;
         int ifd = memfd_create("native-app-icon", 0);
         if (ifd >= 0 && ftruncate(ifd, istride * ih) == 0) {

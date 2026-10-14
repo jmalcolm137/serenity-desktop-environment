@@ -62,6 +62,12 @@ void emit_window_state(X11Toplevel&);
 void emit_window_removed(X11Toplevel&);
 void emit_window_icon(X11Toplevel&);
 
+// Modal chain (SerenityOS WindowMode): true when a blocking modal preempts this
+// window. Input behind a modal is blocked (the hit-test skips it) and a blocking
+// window cannot be minimized (SerenityOS Window::blocking_modal_window()).
+bool is_toplevel_blocked(Server&, Toplevel const&);
+bool is_x11_toplevel_blocked(Server&, X11Toplevel const&);
+
 // Tell every Taskbar the applet-area size changed (WS4).
 void tell_wms_applet_area_size_changed(Server&, Gfx::IntSize);
 

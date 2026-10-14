@@ -221,6 +221,7 @@ struct Toplevel {
     Gfx::IntSize restore_size;
     Gfx::IntPoint restore_position;
     bool frame_active { true };
+    bool mapped { false };
     bool maximized { false };
     bool minimized { false };
     WindowTileType tile_type { WindowTileType::None };
@@ -267,6 +268,12 @@ struct Toplevel {
     // Monotonic focus sequence, so the window switcher can list windows
     // most-recently-focused first (mirroring Serenity's window stack). WS3.
     u64 focus_order { 0 };
+    // Modal chain (SerenityOS WindowMode, via serenity-window set_window_mode):
+    // `modal` is a blocking dialog; `transient_parent` is the window it belongs
+    // to (xdg_toplevel.parent). A blocking window preempts its chain and must
+    // stay above its parent.
+    bool modal { false };
+    Toplevel* transient_parent { nullptr };
     wlr_foreign_toplevel_handle_v1* foreign_handle { nullptr };
     // R4.8: the ext-foreign-toplevel-list handle (title/app_id), if exposed.
     wlr_ext_foreign_toplevel_handle_v1* ext_foreign_handle { nullptr };
