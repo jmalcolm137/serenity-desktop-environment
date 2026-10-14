@@ -5,8 +5,9 @@
 #
 # sde_applet_startup_commands <sde-root> prints the shell fragment that launches
 # them, to splice into the compositor's startup command. The set and the
-# arguments mirror SerenityOS's Base/etc/SystemServerUser.ini, minus the applets
-# whose host-side support is not wired yet (Audio needs an audio manager).
+# arguments mirror SerenityOS's Base/etc/SystemServerUser.ini. The Audio applet is
+# the AudioManager (mixer) client; the SDE AudioServer service serves that
+# protocol over the audiomanager portal (see the AudioServer/ service).
 sde_applet_startup_commands() {
     local root="$1"
     local applets="$root/build/Applets"
@@ -16,6 +17,7 @@ sde_applet_startup_commands() {
     [[ -x "$applets/ResourceGraph" ]] && cmds+=("$applets/ResourceGraph --cpu=CPUGraph,#00bb00 --memory=MemoryGraph,#00bbbb --network=NetworkGraph,#bbbb00")
     [[ -x "$applets/Network" ]] && cmds+=("$applets/Network --name=Network")
     [[ -x "$applets/ClipboardHistory" ]] && cmds+=("$applets/ClipboardHistory")
+    [[ -x "$applets/Audio" ]] && cmds+=("$applets/Audio")
     [[ -x "$applets/Keymap" ]] && cmds+=("$applets/Keymap")
 
     local out=""

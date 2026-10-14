@@ -4,10 +4,11 @@
 # The SerenityOS AudioServer / AudioManager protocols are served by an SDE
 # *service* (AudioServer), spawned on demand by LibWM the first time an
 # application connects to /tmp/session/<sid>/portal/audio. This runs a headless
-# compositor + two unmodified Serenity audio clients — Piano (playback; starts a
-# PipeWire stream) and SoundPlayer (an AudioServer client too, with a media/UI
-# workload) — and checks the service is spawned and serves both; the PipeWire
-# output stream is checked when a PipeWire server is reachable.
+# compositor + three unmodified Serenity clients — Piano (playback; starts a
+# PipeWire stream), SoundPlayer (another AudioServer client, with a media/UI
+# workload) and the Audio applet (an AudioManager/mixer client) — and checks the
+# service is spawned and serves both protocols; the PipeWire output stream is
+# checked when a PipeWire server is reachable.
 #
 # See docs/06-service-layering.md.
 set -euo pipefail
@@ -20,10 +21,13 @@ COMP="$SDE_ROOT/build/WindowServer/WindowServer"
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 "$SDE_ROOT/scripts/build-services.sh" >/dev/null 2>&1 || true
+"$SDE_ROOT/scripts/build-applets.sh" >/dev/null 2>&1 || true
 ninja -C "$BUILD" Piano SoundPlayer >/dev/null 2>&1 || true
 [[ -x "$BUILD/bin/Piano" ]] || { echo "SKIP: Piano not built"; exit 0; }
 [[ -x "$BUILD/bin/SoundPlayer" ]] || { echo "SKIP: SoundPlayer not built"; exit 0; }
 [[ -x "$SDE_ROOT/build/AudioServer/AudioServer" ]] || { echo "SKIP: AudioServer not built"; exit 0; }
+APPLET="$SDE_ROOT/build/Applets/Audio"
+[[ -x "$APPLET" ]] || { echo "SKIP: Audio applet not built"; exit 0; }
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-audio.XXXXXX")"
 chmod 700 "$RUNTIME"
@@ -55,7 +59,7 @@ setsid env -u WAYLAND_DISPLAY -u DISPLAY \
     PIPEWIRE_RUNTIME_DIR="${PW_RUNTIME:-$RUNTIME}" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
-    "$COMP" -n "$SOCK" -s "$APP_BIN/Piano & $APP_BIN/SoundPlayer" > "$RUNTIME/comp.log" 2>&1 &
+    "$COMP" -n "$SOCK" -s "$APP_BIN/Piano & $APP_BIN/SoundPlayer & $APPLET" > "$RUNTIME/comp.log" 2>&1 &
 COMP_PID=$!
 for _ in $(seq 1 80); do
     [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SOCK" ]] && break
@@ -69,12 +73,14 @@ fail=0
 check() { if eval "$2"; then echo "  ok: $1"; else echo "  MISSING: $1"; fail=1; fi; }
 
 echo "=== audio service ==="
-grep -E "spawned AudioServer|client connected|PipeWire" "$RUNTIME/comp.log" | head || true
+grep -E "spawned AudioServer|client connected|serenity-applet:Audio|PipeWire" "$RUNTIME/comp.log" | head || true
 
 check "LibWM spawned the AudioServer service" "grep -q 'LibWM: spawned AudioServer' \"$RUNTIME/comp.log\""
 check "Piano mapped its window" "grep -q \"toplevel mapped title='Piano\" \"$RUNTIME/comp.log\""
 check "SoundPlayer mapped its window" "grep -q \"toplevel mapped title='Sound Player'\" \"$RUNTIME/comp.log\""
 check "the AudioServer served both audio clients" "[[ \$(grep -c 'AudioServer: audio client connected' \"$RUNTIME/comp.log\") -ge 2 ]]"
+check "the Audio applet mapped its layer surface" "grep -q \"layer surface namespace='serenity-applet:Audio'\" \"$RUNTIME/comp.log\""
+check "the AudioServer served the mixer (manager) client" "grep -q 'AudioServer: manager client connected' \"$RUNTIME/comp.log\""
 if [[ -n "$PW_RUNTIME" ]]; then
     check "the PipeWire output stream started" "grep -q 'PipeWire output stream started' \"$RUNTIME/comp.log\""
 else
