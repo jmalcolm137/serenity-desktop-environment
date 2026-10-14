@@ -1,6 +1,6 @@
 # xdg-desktop-portal-serenity (R5)
 
-**Status:** Phase 1 + Phase 2 landed. Metadata cursor mode and zero-copy DMA-BUF are in place and verified on a live TTY; Camera works via the frontend (§6). InputCapture is landed (P1–P5, [`17-input-capture.md`](17-input-capture.md)). Remaining: a real USB broker ·
+**Status:** Phase 1 + Phase 2 landed. Metadata cursor mode and zero-copy DMA-BUF are in place and verified on a live TTY; Camera works via the frontend (§6); InputCapture is landed (P1–P5, [`17-input-capture.md`](17-input-capture.md)); the USB portal's backend is a real broker (§6.5). ·
 **Related:** [`08-compositor-gaps.md`](08-compositor-gaps.md) §3,
 [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §R5,
 `contrib/xdg-desktop-portal/`
@@ -67,7 +67,7 @@ portal is the standalone `tools/portal/settings-portal.cpp` binary.
 | `GlobalShortcuts` (v1) | `CreateSession`/`BindShortcuts`/`ListShortcuts`. Shortcuts are stored in the SDE **config system** (`global-shortcuts.ini`, `[ShortcutN] Session/Id/Trigger`) for the compositor to bind like any other keybinding; activations are reported over a session FIFO (`sde-global-shortcuts.fifo`) and emitted as the `Activated` signal. |
 | `Wallpaper` (v1) | `SetWallpaper` decodes the image and writes the compositor's wallpaper state (`wallpaper.raw`/`.mode`), so a sandboxed app can set the desktop background. |
 | `Secret` (v1) | `RetrieveSecret` returns a stable per-app 64-byte secret, generated once and kept under `secrets/` in the state directory. |
-| `USB` (v1) | `ListDevices`/`AcquireDevices`/`ReleaseDevices` — no device broker yet, so an empty device list (standards-compliant). |
+| `Usb` (v1) | `AcquireDevices` — the **broker**. The frontend enumerates the devices with udev and opens the device node for the app; this backend decides whether it may have it: `SDE_PORTAL_USB` is `ask` (default — prompt once through the Access dialog, then remember the grant in `usb-permissions` in the state directory), `allow` or `deny`, and the results carry the granted subset as `a(sa{sv})`. Covered by `scripts/run-usb-portal-test.sh`. |
 | `DynamicLauncher` (v1) | `RequestInstallToken` (random token), `PrepareInstall` (echoes the name), `Launch` (launches the desktop file). |
 | `Access` (v1) | `AccessDialog` through the LibGUI **AccessDialog** app (`SDE_PORTAL_ACCESS_DIALOG`); returns allowed (0) / denied (1). |
 
@@ -265,9 +265,11 @@ code in the usual sense:
   `org.freedesktop.portal.Usb` (the frontend has no `Device` interface at all).
   The USB portal is the frontend plus a backend implementing
   `org.freedesktop.impl.portal.Usb` (`AcquireDevices`); there is no external
-  daemon. Our backend already answers with a standards-compliant empty device
-  list; a *real* USB broker (enumerate devices, prompt via Access, grant/revoke)
-  is backend code we would write here.
+  daemon, and the frontend does the enumeration (udev) and the fd passing. Our
+  backend is the broker: it applies the `SDE_PORTAL_USB` policy, prompts through
+  the Access dialog, remembers grants in `usb-permissions` (deleting a line
+  revokes it) and answers with the granted subset — see `tools/portal/usb.cpp`
+  and `scripts/run-usb-portal-test.sh`.
 - **Camera** is implemented **inside the frontend** (`desktop-portal/camera.c`):
   it tracks the camera nodes PipeWire exposes, and for access it uses the
   **Access** backend (`org.freedesktop.impl.portal.Access`) and the **Lockdown**

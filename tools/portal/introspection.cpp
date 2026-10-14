@@ -635,32 +635,18 @@ constexpr InterfaceIntrospection s_interfaces[] = {
       </signal>
       <property name='version' type='u' access='read'/>
       </interface>)XML"sv },
-    { "org.freedesktop.impl.portal.USB"sv,
-      R"XML(<interface name='org.freedesktop.impl.portal.USB'>
-      <property name='version' type='u' access='read'/>
-      <method name='ListDevices'>
-      <arg type='a{sv}' name='options' direction='in'/>
-      <arg type='u' name='response' direction='out'/>
-      <arg type='a{sv}' name='results' direction='out'/>
-      </method>
+    { "org.freedesktop.impl.portal.Usb"sv,
+      R"XML(<interface name='org.freedesktop.impl.portal.Usb'>
       <method name='AcquireDevices'>
       <arg type='o' name='handle' direction='in'/>
-      <arg type='o' name='session_handle' direction='in'/>
-      <arg type='s' name='app_id' direction='in'/>
       <arg type='s' name='parent_window' direction='in'/>
-      <arg type='a(ua{sv})' name='devices' direction='in'/>
+      <arg type='s' name='app_id' direction='in'/>
+      <arg type='a(sa{sv}a{sv})' name='devices' direction='in'/>
       <arg type='a{sv}' name='options' direction='in'/>
       <arg type='u' name='response' direction='out'/>
       <arg type='a{sv}' name='results' direction='out'/>
       </method>
-      <method name='ReleaseDevices'>
-      <arg type='o' name='handle' direction='in'/>
-      <arg type='o' name='session_handle' direction='in'/>
-      <arg type='a(ua{sv})' name='devices' direction='in'/>
-      <arg type='a{sv}' name='options' direction='in'/>
-      <arg type='u' name='response' direction='out'/>
-      <arg type='a{sv}' name='results' direction='out'/>
-      </method>
+      <property name='version' type='u' access='read'/>
       </interface>)XML"sv },
     { "org.freedesktop.impl.portal.Wallpaper"sv,
       R"XML(<interface name='org.freedesktop.impl.portal.Wallpaper'>

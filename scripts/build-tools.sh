@@ -166,11 +166,13 @@ c++ "${PORTAL_FLAGS[@]}" \
     $(pkg-config --cflags dbus-1 wayland-client libpipewire-0.3 xkbcommon gbm libdrm) \
     "$SDE_ROOT/tools/portal/dbus.cpp" \
     "$SDE_ROOT/tools/portal/introspection.cpp" \
+    "$SDE_ROOT/tools/portal/host.cpp" \
     "$SDE_ROOT/tools/portal/backend.cpp" \
     "$SDE_ROOT/tools/portal/screencast.cpp" \
     "$SDE_ROOT/tools/portal/remote-desktop.cpp" \
     "$SDE_ROOT/tools/portal/input-capture.cpp" \
     "$SDE_ROOT/tools/portal/global-shortcuts.cpp" \
+    "$SDE_ROOT/tools/portal/usb.cpp" \
     "${PORTAL_OBJECTS[@]}" \
     "${PORTAL_LAGOM_LIBS[@]}" \
     $(pkg-config --libs dbus-1 wayland-client libpipewire-0.3 xkbcommon gbm libdrm) \
