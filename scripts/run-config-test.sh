@@ -32,7 +32,7 @@ check() {
 echo "=== (A) defaults ==="
 defaults="$(sde_config list)"
 check "Rows=2" "$defaults"
-check "EdgeThreshold=48" "$defaults"
+check "EdgeThreshold=16" "$defaults"
 check "FollowsMouse=false" "$defaults"
 check "WindowGeometry=true" "$defaults"
 check "DefaultScale=0" "$defaults"

@@ -75,7 +75,10 @@ click was already handled and returned earlier).
   (maximize/minimize/tile, Super+Alt horizontal/vertical maximize), drag-to-edge
   snapping with a LibGfx tile preview, `xdg_toplevel` tiled/maximized state, a
   geometry HUD (a `ChromeNode` size readout shown while moving/resizing), and
-  `start_window_resize` routed through the interactive resize.
+  `start_window_resize` routed through the interactive resize. Snapping only arms
+  when the pointer is close to the edge (`[Tiling] EdgeThreshold`, default 16px)
+  and is disabled entirely by `[Tiling] DragToEdge=false`; covered by
+  `scripts/run-edge-snap-test.sh`.
 - **Workspaces** — done (WS1). The stack grid comes from `[Workspaces]` in
   `WindowServer.ini`; `set_workspace`/`workspace_changed` and the real `(row,
   column)` in `window_state_changed` drive the Taskbar; Ctrl+Alt+arrows switch
