@@ -3614,6 +3614,7 @@ struct PerfStats {
     // Resident memory (kB): current, high-water, and the change since the last
     // report — the cheap shape of a leak.
     size_t rss_kb { 0 };
+    size_t pss_kb { 0 };
     size_t rss_high_kb { 0 };
     i64 rss_delta_kb { 0 };
     size_t rss_previous_kb { 0 };
@@ -3653,27 +3654,120 @@ static double perf_frame_budget_ms(int refresh_mhz)
     return 16.667; // 60 Hz, when the output does not report a refresh
 }
 
-// Resident set size in kB, from /proc/self/statm (cheap: no smaps walk). Read once
-// per report, not per frame.
-static size_t perf_rss_kb()
+// A process's memory, in kB: resident set size (statm — cheap) and proportional
+// set size (smaps_rollup). PSS is the honest per-client number: RSS counts a
+// shared library's pages once per process, so ten clients each "use" the whole
+// Lagom stack — the applets look like 21 MB each when they cost ~2 MB.
+struct ProcessMemory {
+    size_t rss_kb { 0 };
+    size_t pss_kb { 0 };
+};
+
+static ProcessMemory perf_process_memory(pid_t pid)
 {
-    auto file = Core::File::open("/proc/self/statm"sv, Core::File::OpenMode::Read);
-    if (file.is_error())
-        return 0;
-    auto contents = file.value()->read_until_eof();
-    if (contents.is_error())
-        return 0;
-    auto bytes = contents.release_value();
-    StringView text { reinterpret_cast<char const*>(bytes.data()), bytes.size() };
-    auto fields = text.split_view(' ');
-    if (fields.size() < 2)
-        return 0;
-    auto pages = fields[1].to_number<size_t>().value_or(0);
-    auto const page_kb = static_cast<size_t>(sysconf(_SC_PAGESIZE)) / 1024;
-    return pages * page_kb;
+    ProcessMemory memory;
+
+    auto statm = Core::File::open(ByteString::formatted("/proc/{}/statm", pid), Core::File::OpenMode::Read);
+    if (!statm.is_error()) {
+        if (auto contents = statm.value()->read_until_eof(); !contents.is_error()) {
+            auto bytes = contents.release_value();
+            StringView text { reinterpret_cast<char const*>(bytes.data()), bytes.size() };
+            auto fields = text.split_view(' ');
+            if (fields.size() >= 2) {
+                auto const page_kb = static_cast<size_t>(sysconf(_SC_PAGESIZE)) / 1024;
+                memory.rss_kb = fields[1].to_number<size_t>().value_or(0) * page_kb;
+            }
+        }
+    }
+
+    auto rollup = Core::File::open(ByteString::formatted("/proc/{}/smaps_rollup", pid), Core::File::OpenMode::Read);
+    if (!rollup.is_error()) {
+        if (auto contents = rollup.value()->read_until_eof(); !contents.is_error()) {
+            auto bytes = contents.release_value();
+            StringView text { reinterpret_cast<char const*>(bytes.data()), bytes.size() };
+            for (auto line : text.split_view('\n')) {
+                if (!line.starts_with("Pss:"sv))
+                    continue;
+                auto value = line.substring_view(4).trim_whitespace();
+                if (auto space = value.find(' '); space.has_value())
+                    value = value.substring_view(0, space.value());
+                memory.pss_kb = value.to_number<size_t>().value_or(0);
+                break;
+            }
+        }
+    }
+
+    // A kernel without smaps_rollup (or a process we may not read): fall back.
+    if (memory.pss_kb == 0)
+        memory.pss_kb = memory.rss_kb;
+    return memory;
 }
 
-static ByteString perf_summary()
+// One entry per Wayland client, biggest first: the "who is using memory" list.
+struct ClientMemory {
+    ByteString label;
+    pid_t pid { 0 };
+    size_t rss_kb { 0 };
+    size_t pss_kb { 0 };
+};
+
+static Vector<ClientMemory> perf_client_memory(Server& server)
+{
+    Vector<ClientMemory> clients;
+    if (!server.display)
+        return clients;
+
+    wl_client* client = nullptr;
+    wl_client_for_each(client, wl_display_get_client_list(server.display)) {
+        pid_t pid = 0;
+        wl_client_get_credentials(client, &pid, nullptr, nullptr);
+        if (pid <= 0)
+            continue;
+
+        ClientMemory entry;
+        entry.pid = pid;
+        entry.label = ByteString::formatted("pid{}", pid);
+        // The executable name is the label the user would use ("Taskbar",
+        // "Audio"): the shell's clients are panels and applets — layer surfaces
+        // with no toplevel to name them by. Take it from argv[0] rather than
+        // /proc/<pid>/comm, which the kernel truncates to 15 characters.
+        if (auto cmdline = Core::File::open(ByteString::formatted("/proc/{}/cmdline", pid), Core::File::OpenMode::Read); !cmdline.is_error()) {
+            if (auto contents = cmdline.value()->read_until_eof(); !contents.is_error()) {
+                auto bytes = contents.release_value();
+                size_t length = 0;
+                while (length < bytes.size() && bytes[length] != '\0')
+                    ++length;
+                StringView argv0 { reinterpret_cast<char const*>(bytes.data()), length };
+                if (auto slash = argv0.find_last('/'); slash.has_value())
+                    argv0 = argv0.substring_view(slash.value() + 1);
+                if (!argv0.is_empty())
+                    entry.label = argv0.to_byte_string();
+            }
+        }
+        // A windowed client is better named by its app id (or title).
+        for (auto& toplevel : server.toplevels) {
+            if (!toplevel->xdg_toplevel || !toplevel->xdg_toplevel->base || !toplevel->xdg_toplevel->base->surface)
+                continue;
+            if (wl_resource_get_client(toplevel->xdg_toplevel->base->surface->resource) != client)
+                continue;
+            if (auto const* app_id = toplevel->xdg_toplevel->app_id; app_id && *app_id != '\0')
+                entry.label = app_id;
+            else if (auto const* title = toplevel->xdg_toplevel->title; title && *title != '\0')
+                entry.label = title;
+            break;
+        }
+
+        auto const memory = perf_process_memory(pid);
+        entry.rss_kb = memory.rss_kb;
+        entry.pss_kb = memory.pss_kb;
+        clients.append(move(entry));
+    }
+
+    quick_sort(clients, [](ClientMemory const& a, ClientMemory const& b) { return a.pss_kb > b.pss_kb; });
+    return clients;
+}
+
+static ByteString perf_summary(Server& server)
 {
     double const seconds = max(0.001, (perf_now_ms() - s_perf.started_ms) / 1000.0);
     StringBuilder out;
@@ -3700,8 +3794,31 @@ static ByteString perf_summary()
     out.appendff("input_to_present_ms_over_budget={}\n", s_perf.input_to_present_ms.over_budget);
     out.appendff("input_to_present_samples={}\n", s_perf.input_to_present_ms.total);
     out.appendff("rss_kb={}\n", s_perf.rss_kb);
+    out.appendff("pss_kb={}\n", s_perf.pss_kb);
     out.appendff("rss_high_kb={}\n", s_perf.rss_high_kb);
     out.appendff("rss_delta_kb={}\n", s_perf.rss_delta_kb);
+
+    // The session: the compositor plus every client (the Taskbar, the applets,
+    // the apps). PSS is what "who uses memory" needs; RSS is kept for continuity.
+    auto const clients = perf_client_memory(server);
+    size_t client_rss_kb = 0;
+    size_t client_pss_kb = 0;
+    StringBuilder breakdown;
+    for (size_t i = 0; i < clients.size(); ++i) {
+        client_rss_kb += clients[i].rss_kb;
+        client_pss_kb += clients[i].pss_kb;
+        if (i >= 8)
+            continue;
+        if (i > 0)
+            breakdown.append(',');
+        breakdown.appendff("{}:{}", clients[i].label, clients[i].pss_kb);
+    }
+    out.appendff("clients={}\n", clients.size());
+    out.appendff("client_rss_kb={}\n", client_rss_kb);
+    out.appendff("client_pss_kb={}\n", client_pss_kb);
+    out.appendff("client_memory={}\n", breakdown.to_byte_string());
+    out.appendff("session_pss_kb={}\n", s_perf.pss_kb + client_pss_kb);
+    out.appendff("session_rss_kb={}\n", s_perf.rss_kb + client_rss_kb);
     return out.to_byte_string();
 }
 
@@ -7715,16 +7832,19 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
         bool const log = getenv("SDE_PERF_LOG") && *getenv("SDE_PERF_LOG");
         s_perf.started_ms = perf_now_ms();
         static RefPtr<Core::Timer> perf_timer;
-        perf_timer = Core::Timer::create_repeating(1000, [path, log] {
+        auto* perf_server = server.ptr();
+        perf_timer = Core::Timer::create_repeating(1000, [path, log, perf_server] {
             // Resident memory: current, high-water, and the change since the last
             // report, so growth (a leak) is visible in the same stream as latency.
-            auto const rss = perf_rss_kb();
+            auto const memory = perf_process_memory(getpid());
+            auto const rss = memory.rss_kb;
+            s_perf.pss_kb = memory.pss_kb;
             s_perf.rss_delta_kb = s_perf.rss_previous_kb == 0 ? 0 : static_cast<i64>(rss) - static_cast<i64>(s_perf.rss_previous_kb);
             s_perf.rss_previous_kb = rss;
             s_perf.rss_kb = rss;
             s_perf.rss_high_kb = max(s_perf.rss_high_kb, rss);
             if (auto file = Core::File::open(path, Core::File::OpenMode::Write | Core::File::OpenMode::Truncate); !file.is_error())
-                (void)file.value()->write_until_depleted(perf_summary());
+                (void)file.value()->write_until_depleted(perf_summary(*perf_server));
             if (log)
                 dbgln("WindowServer: perf: frames={} fps={:.1} frame p50/p95/max={:.2}/{:.2}/{:.2} ms slow={} input->present p50/p95={:.2}/{:.2} ms",
                     s_perf.frames, static_cast<double>(s_perf.frames) / max(0.001, (perf_now_ms() - s_perf.started_ms) / 1000.0),

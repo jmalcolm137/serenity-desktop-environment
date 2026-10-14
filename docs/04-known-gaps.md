@@ -439,8 +439,12 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   input-to-photon on a real DRM output remain future work. **Memory** is metered
   the same way (RSS, high-water, per-second growth) and guarded by the test's
   memory phase; `auto` no longer initialises software GL when there is no DRM
-  device, which saves ~84 MB (~70 %) idle on a headless session (see §4 of the
-  doc).
+  device, which saves ~84 MB (~70 %) idle on a headless session. The meter also
+  reports **per-client PSS** — the session's "who is using memory" report (the
+  Taskbar, the Desktop and the applets: ~2 MB each), enforced by
+  `scripts/run-session-memory-test.sh`; the Audio applet's ~9 MB extra (it links
+  libpulse via LibAudio for a backend it never uses) is recorded there as the next
+  item (see §4 of the doc).
 - **Crash recovery / watchdog / safe mode (N4) — done.** The R4.2 supervisor
   restarts a *crashed* compositor; R6 adds a **watchdog** for a *wedged* one (the
   compositor writes a liveness heartbeat, `SDE_HEARTBEAT_FILE`; the supervisor
