@@ -3611,6 +3611,12 @@ struct PerfStats {
     size_t slow_frames { 0 };
     double started_ms { 0 };
     int refresh_mhz { 0 };
+    // Resident memory (kB): current, high-water, and the change since the last
+    // report — the cheap shape of a leak.
+    size_t rss_kb { 0 };
+    size_t rss_high_kb { 0 };
+    i64 rss_delta_kb { 0 };
+    size_t rss_previous_kb { 0 };
 };
 static PerfStats s_perf;
 static double s_perf_last_frame_ms { 0 };
@@ -3647,6 +3653,26 @@ static double perf_frame_budget_ms(int refresh_mhz)
     return 16.667; // 60 Hz, when the output does not report a refresh
 }
 
+// Resident set size in kB, from /proc/self/statm (cheap: no smaps walk). Read once
+// per report, not per frame.
+static size_t perf_rss_kb()
+{
+    auto file = Core::File::open("/proc/self/statm"sv, Core::File::OpenMode::Read);
+    if (file.is_error())
+        return 0;
+    auto contents = file.value()->read_until_eof();
+    if (contents.is_error())
+        return 0;
+    auto bytes = contents.release_value();
+    StringView text { reinterpret_cast<char const*>(bytes.data()), bytes.size() };
+    auto fields = text.split_view(' ');
+    if (fields.size() < 2)
+        return 0;
+    auto pages = fields[1].to_number<size_t>().value_or(0);
+    auto const page_kb = static_cast<size_t>(sysconf(_SC_PAGESIZE)) / 1024;
+    return pages * page_kb;
+}
+
 static ByteString perf_summary()
 {
     double const seconds = max(0.001, (perf_now_ms() - s_perf.started_ms) / 1000.0);
@@ -3673,6 +3699,9 @@ static ByteString perf_summary()
     out.appendff("input_to_present_ms_max={:.3}\n", s_perf.input_to_present_ms.maximum);
     out.appendff("input_to_present_ms_over_budget={}\n", s_perf.input_to_present_ms.over_budget);
     out.appendff("input_to_present_samples={}\n", s_perf.input_to_present_ms.total);
+    out.appendff("rss_kb={}\n", s_perf.rss_kb);
+    out.appendff("rss_high_kb={}\n", s_perf.rss_high_kb);
+    out.appendff("rss_delta_kb={}\n", s_perf.rss_delta_kb);
     return out.to_byte_string();
 }
 
@@ -6879,8 +6908,22 @@ static ErrorOr<void> initialize(Server& server)
     else
         requested_renderer_storage = Config::output().renderer;
     char const* requested_renderer = requested_renderer_storage.is_empty() ? "auto" : requested_renderer_storage.characters();
+    // An explicit WLR_RENDERER in the environment is a hard request (wlroots-level,
+    // used to exercise a specific path); the "auto" rule below must not override it.
+    bool const wlr_renderer_forced = getenv("WLR_RENDERER") != nullptr;
     if (!requested_renderer_storage.is_empty())
         setenv("WLR_RENDERER", requested_renderer, true);
+
+    // On "auto" with no DRM device (the headless backend, a VM without one) any GL
+    // is a software implementation — llvmpipe — which costs ~85 MB of RSS (Mesa's
+    // gallium/LLVM footprint) and is no faster than the pixman renderer for the
+    // damage patterns we render. Take pixman directly, so the GL stack is never
+    // even touched; SDE_RENDERER=gles2 still forces the GL path.
+    bool used_software_auto = false;
+    if (strcmp(requested_renderer, "auto") == 0 && !wlr_renderer_forced && wlr_backend_get_drm_fd(server.backend) < 0) {
+        setenv("WLR_RENDERER", "pixman", true);
+        used_software_auto = true;
+    }
 
     bool used_software_fallback = false;
     server.renderer = wlr_renderer_autocreate(server.backend);
@@ -6899,6 +6942,8 @@ static ErrorOr<void> initialize(Server& server)
         return Error::from_string_literal("failed to create wlr_renderer");
     if (used_software_fallback)
         dbgln("WindowServer: renderer 'pixman' (software fallback from '{}')", requested_renderer);
+    else if (used_software_auto)
+        dbgln("WindowServer: renderer 'pixman' (auto: no DRM device, so any GL would be software)");
     else
         dbgln("WindowServer: renderer '{}'", requested_renderer);
     wlr_renderer_init_wl_display(server.renderer, server.display);
@@ -7671,6 +7716,13 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
         s_perf.started_ms = perf_now_ms();
         static RefPtr<Core::Timer> perf_timer;
         perf_timer = Core::Timer::create_repeating(1000, [path, log] {
+            // Resident memory: current, high-water, and the change since the last
+            // report, so growth (a leak) is visible in the same stream as latency.
+            auto const rss = perf_rss_kb();
+            s_perf.rss_delta_kb = s_perf.rss_previous_kb == 0 ? 0 : static_cast<i64>(rss) - static_cast<i64>(s_perf.rss_previous_kb);
+            s_perf.rss_previous_kb = rss;
+            s_perf.rss_kb = rss;
+            s_perf.rss_high_kb = max(s_perf.rss_high_kb, rss);
             if (auto file = Core::File::open(path, Core::File::OpenMode::Write | Core::File::OpenMode::Truncate); !file.is_error())
                 (void)file.value()->write_until_depleted(perf_summary());
             if (log)

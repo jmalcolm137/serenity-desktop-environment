@@ -56,8 +56,9 @@ code path being measured (there is no "profiling build").
 Each metric keeps a ring of the last 600 samples (~10 s at 60 Hz — fixed memory,
 so a long session cannot grow) plus cumulative totals. The summary carries
 `output_refresh_hz`, the derived `frame_ms_budget`, p50/p95/p99/max and the
-over-budget count for frame time, the frame interval at p50/p95/p99, and the
-input → present percentiles with a sample count.
+over-budget count for frame time, the frame interval at p50/p95/p99, the
+input → present percentiles with a sample count, and **resident memory**
+(`rss_kb`, the high-water mark, and the change since the last report) — see §4.
 
 ### How the frames are paced
 
@@ -85,6 +86,7 @@ pixman unless stated); times in milliseconds, from `scripts/run-perf-test.sh`:
 | Idle (2 s) | — | — | — | — | — | 0 frames rendered |
 | Pointer motion (60 Hz output) | 0.03 | 0.06 | 0.11 | 0.25 | 0 | 16.1 (60 Hz) |
 | Drag a decorated window (60 Hz output) | 0.04 | 0.60 | 0.80 | 2.07 | 0 | 16.1 |
+| Drag a decorated window (GLES forced) | 0.03 | 0.73 | 1.02 | 4.80 | 1 | 16.1 |
 | **240 Hz output, motion at 4 ms** | **0.024** | **0.048** | **0.067** | **0.124** | **0** | **4.06** |
 | **240 Hz output, drag at 4 ms** | **0.52** | **0.72** | **0.94** | **2.70** | **0** | **4.59** |
 | 240 Hz output, drag at 4 ms (GLES/llvmpipe) | 0.52 | 0.73 | 1.02 | 5.20 | **1** | 4.59 |
@@ -101,7 +103,46 @@ interval. It is a one-off at the start of the drag (buffer import / first frame
 after the grab); the p99 is 1.02 ms. Until it is fixed, a 240 Hz panel is met
 sustained and at p99, but not unconditionally on the GLES fallback.
 
-## 4. What keeps it inside the budget
+## 4. Memory
+
+The same meter reports resident memory (see §2), and the SDE already carries the
+tools to go deeper:
+
+| Tool | What it gives |
+|---|---|
+| `SDE_PERF_STATS` — `rss_kb` / `rss_high_kb` / `rss_delta_kb` | A live RSS trace of the compositor, with the high-water mark and per-second growth: the cheap shape of a leak. Phase (E) of the test enforces it. |
+| **Profiler** (`SerenitySystem::Profiling`, `scripts/run-profiler-test.sh`) | `perf_event_open` sampling into the perfcore JSON the SerenityOS Profiler app reads — CPU samples with the process's **mappings** (`mmap`/`mmap2` records plus a mapping snapshot), so `/proc` and library contributions are visible alongside time. |
+| **SystemMonitor** | Process list and CPU/memory graphs, and a **memory-map window per process** (reads `/proc/<pid>/smaps`) — the same view a user has. |
+
+### Reference numbers (headless, 1280×720)
+
+| Configuration | Idle RSS | After 50 window open/close cycles |
+|---|---|---|
+| pixman (the fallback) | **35.9 MB** | 35.9 MB (no growth) |
+| `SDE_RENDERER=gles2` (forced GL, i.e. llvmpipe here) | 119.7 MB | — |
+
+### The first fruit: `auto` no longer loads software GL for nothing
+
+`auto` used to hand the headless backend to wlroots' GL path, which on a machine
+with no DRM device can only be **software GL (llvmpipe)**: **119.5 MB** idle,
+against 35.6 MB for pixman, for a *frame time that is the same or slightly
+worse* (p95 0.73 ms vs 0.60 ms while dragging). Almost all of that is Mesa's
+gallium/LLVM footprint ([heap] alone was 13.3 MB, plus libgallium and libLLVM)
+that pixman never touches.
+
+`auto` now checks `wlr_backend_get_drm_fd()`: **with no DRM device it takes
+pixman directly**, so the GL stack is never initialised — **84 MB, ~70 %, saved**
+on a headless session with no behaviour change. An explicit `WLR_RENDERER` in the
+environment still wins (the fallback path stays exercised), and
+`SDE_RENDERER=gles2` still forces the GL path for a job that wants to test it.
+
+### The guard
+
+Phase (E) of `scripts/run-perf-test.sh` asserts the idle footprint is inside
+`SDE_PERF_RSS_LIMIT_KB` (default 80 MB) and that **50 window open/close cycles do
+not grow it** beyond `SDE_PERF_RSS_GROWTH_KB` (default 4 MB). Measured growth: 0.
+
+## 5. What keeps it inside the budget
 
 - **Render on damage only.** `wlr_scene_output_commit()` is driven by damage; the
   compositor has no repaint tick (the animation timers only run while an animation
@@ -120,19 +161,20 @@ sustained and at p99, but not unconditionally on the GLES fallback.
   the animation ends), the key-repeat timer is a single `Core::Timer`, and the
   session's watchdog heartbeat is a 1 s file write.
 
-## 5. Running it
+## 6. Running it
 
 ```sh
 scripts/run-perf-test.sh                     # the software fallback (pixman)
 SDE_PERF_RENDERER=auto scripts/run-perf-test.sh
 ```
 
-Four phases: **(A)** idle pacing — nothing changes, so nothing may render;
+Five phases: **(A)** idle pacing — nothing changes, so nothing may render;
 **(B)** 60 Hz pointer motion — frame time and input → present inside the budget,
 with the p99 held to the 240 Hz interval; **(C)** dragging a decorated window,
 the heaviest path we own; **(D)** a **240 Hz output** (the compositor is
 restarted with `SDE_OUTPUT_REFRESH=240`) with a 4 ms damage stream, where the
-cadence itself is asserted (~4.17 ms) along with the work fitting inside it.
+cadence itself is asserted (~4.17 ms) along with the work fitting inside it;
+**(E)** memory — the idle footprint and that 50 window cycles do not grow it.
 
 The knobs (`SDE_PERF_FRAME_BUDGET_MS`, `SDE_PERF_LATENCY_BUDGET_MS`,
 `SDE_PERF_IDLE_FRAME_LIMIT`, `SDE_PERF_FAST_MS`, `SDE_PERF_AGGRESSIVE_MS`,
@@ -146,7 +188,7 @@ SDE_PERF_STATS=/tmp/sde-perf SDE_PERF_LOG=1 loginctl terminate-session "$XDG_SES
 watch -n1 cat /tmp/sde-perf
 ```
 
-## 6. Not covered yet
+## 7. Not covered yet
 
 - **A Monitor-tab refresh control.** `SDE_OUTPUT_REFRESH` exists (and a saved
   layout keeps the output's current refresh); choosing a refresh rate from
@@ -159,6 +201,9 @@ watch -n1 cat /tmp/sde-perf
 - **A per-hardware/GPU matrix.** The budget is enforced on one headless
   configuration plus the renderer knob; R6's CI matrix would run it per renderer,
   per output scale and per refresh.
+- **Device memory.** The RSS meter covers the host heap; GPU/VRAM and dma-buf
+  usage on the GL path (and a per-output memory budget) would need the driver's
+  own counters.
 - **Client-side cost.** For Serenity apps the window contents are drawn on the
   CPU by LibGUI/LibGfx; this budget measures the *compositor's* share, and a slow
   client shows up as a low frame rate rather than as frame time.

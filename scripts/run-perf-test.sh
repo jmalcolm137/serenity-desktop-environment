@@ -36,6 +36,8 @@ RENDERER="${SDE_PERF_RENDERER:-pixman}"                 # the software fallback
 PERF_FAST_MS="${SDE_PERF_FAST_MS:-2}"                   # gross-regression guard
 AGGRESSIVE_MS="${SDE_PERF_AGGRESSIVE_MS:-4.167}"        # 240 Hz frame interval
 AGGRESSIVE_HZ=240
+RSS_LIMIT_KB="${SDE_PERF_RSS_LIMIT_KB:-81920}"          # idle resident memory (80 MB)
+RSS_GROWTH_KB="${SDE_PERF_RSS_GROWTH_KB:-4096}"         # growth across window cycles
 
 WIDTH=1280
 HEIGHT=720
@@ -218,6 +220,20 @@ check "frame time p95 is inside the 240 Hz interval" "$H_P95" "<" "$AGGRESSIVE_M
 check "frame time p99 is inside the 240 Hz interval" "$H_P99" "<" "$AGGRESSIVE_MS"
 check "frame time max is inside the 240 Hz interval" "$H_MAX" "<" "$AGGRESSIVE_MS"
 check "no frame missed the 240 Hz interval" "$H_OVER" "==" 0
+
+echo "=== (E) memory: idle footprint, and no growth across window cycles ==="
+RSS_BASE="$(stat_value rss_kb)"
+for i in $(seq 1 50); do
+    env WAYLAND_DISPLAY="$SOCK" "$SDE_ROOT/build/tools/native-app-test" \
+        --title "mem$i" --linger 40 >/dev/null 2>&1 || true
+done
+sleep 1.5
+RSS_AFTER="$(stat_value rss_kb)"
+RSS_HIGH="$(stat_value rss_high_kb)"
+GROWTH=$((RSS_AFTER - RSS_BASE))
+echo "  rss: $RSS_BASE -> $RSS_AFTER kB (high $RSS_HIGH) over 50 window open/close cycles"
+check "the idle footprint is within the limit" "$RSS_BASE" "<" "$RSS_LIMIT_KB"
+check "repeated window cycles do not grow the footprint" "$GROWTH" "<" "$RSS_GROWTH_KB"
 
 if [[ "$fail" -ne 0 ]]; then
     echo "--- perf stats ---"; cat "$PERF"
