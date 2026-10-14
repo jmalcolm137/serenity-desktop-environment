@@ -8,7 +8,12 @@ project(AudioServer CXX)
 # session app directory (SDE_APP_BIN_DIR) when an application connects to
 # /tmp/session/<sid>/portal/audio. Applications that speak the AudioServer
 # protocol directly (Piano, SoundPlayer, aplay, the Audio applet) reach it there.
-# LibAudio itself stays a compositor/desktop-agnostic client library.
+# LibAudio itself stays a compositor/desktop-agnostic client library — with its
+# PulseAudio backend (docs/24-libgui-wayland-sde-boundary.md). This service must
+# not link it: it needs only LibAudio's headers (Resampler.h, Queue.h, Sample.h
+# are header-only) and its own PipeWire backend. Linking liblagom-audio would
+# pull libpulse/libpulsecommon/libsndfile into a process that is PipeWire-only,
+# for ~9 MB resident (docs/25-performance.md §4).
 #
 # See ../docs/06-service-layering.md and ../docs/07-systemserver-roles.md.
 
@@ -23,7 +28,7 @@ endif()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(PIPEWIRE REQUIRED IMPORTED_TARGET libpipewire-0.3)
 
-foreach(_lib ak coreminimal corebasic core ipc threading main audio)
+foreach(_lib ak coreminimal corebasic core ipc threading main)
     find_library(LAGOM_${_lib} NAMES lagom-${_lib} PATHS "${SERENITY_BUILD_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
 endforeach()
 
@@ -60,7 +65,6 @@ target_link_libraries(AudioServer PRIVATE
     ${LAGOM_core}
     ${LAGOM_ipc}
     ${LAGOM_threading}
-    ${LAGOM_audio}
     ${LAGOM_main}
     PkgConfig::PIPEWIRE)
 

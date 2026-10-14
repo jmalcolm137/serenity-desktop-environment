@@ -15,6 +15,7 @@
 #include <AK/Error.h>
 #include <AK/Format.h>
 #include <AK/StringBuilder.h>
+#include <LibCore/Directory.h>
 #include <AK/LexicalPath.h>
 #include <AK/NonnullOwnPtr.h>
 #include <AK/QuickSort.h>
@@ -3703,7 +3704,7 @@ static ProcessMemory perf_process_memory(pid_t pid)
     return memory;
 }
 
-// One entry per Wayland client, biggest first: the "who is using memory" list.
+// One entry per session process, biggest first: the "who is using memory" list.
 struct ClientMemory {
     ByteString label;
     pid_t pid { 0 };
@@ -3763,6 +3764,67 @@ static Vector<ClientMemory> perf_client_memory(Server& server)
         clients.append(move(entry));
     }
 
+    // Second: the rest of the session's processes — the services LibWM spawns on
+    // demand (the AudioServer, the NotificationServer) and the shell's launcher.
+    // They share the compositor's process group (the session supervisor runs it
+    // with setsid) but never connect as clients, so the client list above misses
+    // them. A service's own children are their own business; this is one level.
+    auto const group = getpgid(0);
+    if (group > 0) {
+        (void)Core::Directory::for_each_entry("/proc"sv, Core::DirIterator::SkipDots, [&](Core::DirectoryEntry const& entry, Core::Directory const&) -> ErrorOr<AK::IterationDecision> {
+            auto pid = entry.name.to_number<pid_t>().value_or(0);
+            if (pid <= 0 || pid == getpid())
+                return AK::IterationDecision::Continue;
+            bool already_listed = false;
+            for (auto const& client : clients) {
+                if (client.pid == pid) {
+                    already_listed = true;
+                    break;
+                }
+            }
+            if (already_listed)
+                return AK::IterationDecision::Continue;
+            auto stat = Core::File::open(ByteString::formatted("/proc/{}/stat", pid), Core::File::OpenMode::Read);
+            if (stat.is_error())
+                return AK::IterationDecision::Continue;
+            auto contents = stat.value()->read_until_eof();
+            if (contents.is_error())
+                return AK::IterationDecision::Continue;
+            auto bytes = contents.release_value();
+            StringView text { reinterpret_cast<char const*>(bytes.data()), bytes.size() };
+            // "<pid> (<comm>) <state> <ppid> <pgrp> ...": comm may contain spaces,
+            // so skip past the last ')'.
+            auto close_paren = text.find_last(')');
+            if (!close_paren.has_value())
+                return AK::IterationDecision::Continue;
+            auto fields = text.substring_view(close_paren.value() + 1).trim_whitespace().split_view(' ');
+            if (fields.size() < 3 || fields[2].to_number<pid_t>().value_or(0) != group)
+                return AK::IterationDecision::Continue;
+
+            ClientMemory service;
+            service.pid = pid;
+            service.label = ByteString::formatted("pid{}", pid);
+            if (auto cmdline = Core::File::open(ByteString::formatted("/proc/{}/cmdline", pid), Core::File::OpenMode::Read); !cmdline.is_error()) {
+                if (auto cmd = cmdline.value()->read_until_eof(); !cmd.is_error()) {
+                    auto cmd_bytes = cmd.release_value();
+                    size_t length = 0;
+                    while (length < cmd_bytes.size() && cmd_bytes[length] != '\0')
+                        ++length;
+                    StringView argv0 { reinterpret_cast<char const*>(cmd_bytes.data()), length };
+                    if (auto slash = argv0.find_last('/'); slash.has_value())
+                        argv0 = argv0.substring_view(slash.value() + 1);
+                    if (!argv0.is_empty())
+                        service.label = argv0.to_byte_string();
+                }
+            }
+            auto const memory = perf_process_memory(pid);
+            service.rss_kb = memory.rss_kb;
+            service.pss_kb = memory.pss_kb;
+            clients.append(move(service));
+            return AK::IterationDecision::Continue;
+        });
+    }
+
     quick_sort(clients, [](ClientMemory const& a, ClientMemory const& b) { return a.pss_kb > b.pss_kb; });
     return clients;
 }
@@ -3807,7 +3869,7 @@ static ByteString perf_summary(Server& server)
     for (size_t i = 0; i < clients.size(); ++i) {
         client_rss_kb += clients[i].rss_kb;
         client_pss_kb += clients[i].pss_kb;
-        if (i >= 8)
+        if (i >= 12)
             continue;
         if (i > 0)
             breakdown.append(',');

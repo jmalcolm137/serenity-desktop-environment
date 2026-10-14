@@ -33,6 +33,14 @@ RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-audio.XXXXXX")"
 chmod 700 "$RUNTIME"
 trap 'rm -rf "$RUNTIME"' EXIT
 
+# A private per-session runtime directory (see the SDE_SESSION_DIR seam), so the
+# fixed "/tmp/session/0/portal/..." paths of a live session are left alone: LibWM
+# *defers* to a service that is already listening there, so without this the test
+# would be answered by the live session's AudioServer instead of spawning its own.
+SESSION_DIR="$RUNTIME/session"
+mkdir -p "$SESSION_DIR/portal"
+export SDE_SESSION_DIR="$SESSION_DIR"
+
 # The session app directory LibWM resolves services and applications from.
 APP_BIN="$RUNTIME/app-bin"
 mkdir -p "$APP_BIN"
@@ -56,6 +64,7 @@ setsid env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 SDE_OUTPUT_SCALE=1 \
     SDE_STATE_DIR="$RUNTIME" \
     SDE_APP_BIN_DIR="$APP_BIN" \
+    SDE_SESSION_DIR="$SESSION_DIR" \
     PIPEWIRE_RUNTIME_DIR="${PW_RUNTIME:-$RUNTIME}" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \

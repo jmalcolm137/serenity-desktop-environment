@@ -15,12 +15,37 @@ if (NOT DEFINED SERENITY_SRC OR NOT DEFINED SERENITY_BUILD_DIR OR NOT DEFINED LI
     message(FATAL_ERROR "SERENITY_SRC, SERENITY_BUILD_DIR, LIBGUI_WAYLAND_SRC and SDE_ROOT must be set")
 endif()
 
-foreach(_lib ak coreminimal corebasic core gfx gui ipc threading main config keyboard audio)
+foreach(_lib ak coreminimal corebasic core gfx gui ipc threading main config keyboard)
     find_library(LAGOM_${_lib} NAMES lagom-${_lib} PATHS "${SERENITY_BUILD_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
 endforeach()
 find_library(WINDOWSERVER NAMES windowserver PATHS "${SERENITY_BUILD_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
 
 set(APPLETS_SRC "${SERENITY_SRC}/Userland/Applets")
+
+# SDE's audio client: the AudioServer / AudioManager *protocol* client, and
+# nothing else.
+#
+# libgui-wayland's LibAudio keeps its PulseAudio backend (see
+# ../docs/24-libgui-wayland-sde-boundary.md), but the desktop's clients talk to
+# the SDE AudioServer, which is PipeWire-backed — so they must not drag
+# libpulse/libpulsecommon/libsndfile in. Merely *linking* those costs ~9 MB
+# resident, because the dynamic linker relocates them at startup and, being
+# mapped by one process only, their pages count as private to it (measured:
+# docs/25-performance.md §4). liblagom-audio does `target_link_libraries(LibAudio
+# PRIVATE pulse)`, so linking it pulls the whole backend in; this builds the one
+# translation unit the applets actually need instead.
+add_library(SDEAudioClient STATIC
+    "${SERENITY_SRC}/Userland/Libraries/LibAudio/ConnectionToManagerServer.cpp")
+target_include_directories(SDEAudioClient PUBLIC
+    "${SERENITY_SRC}"
+    "${SERENITY_SRC}/Userland"
+    "${SERENITY_SRC}/Userland/Libraries"
+    "${SERENITY_SRC}/Userland/Services"
+    "${SERENITY_BUILD_DIR}"
+    "${SERENITY_BUILD_DIR}/Userland"
+    "${SERENITY_BUILD_DIR}/Userland/Libraries"
+    "${SERENITY_BUILD_DIR}/Userland/Services")
+target_compile_options(SDEAudioClient PRIVATE -Wno-literal-suffix -fno-exceptions)
 
 # add_sde_applet(<Name> SOURCES a.cpp b.cpp [LIBS lib1 lib2])
 #
@@ -75,5 +100,5 @@ add_sde_applet(WorkspacePicker SOURCES DesktopStatusWindow.cpp main.cpp)
 add_sde_applet(Network SOURCES main.cpp)
 add_sde_applet(ResourceGraph SOURCES main.cpp)
 add_sde_applet(Keymap SOURCES KeymapStatusWindow.cpp KeymapStatusWidget.cpp main.cpp LIBS ${LAGOM_keyboard})
-add_sde_applet(Audio SOURCES main.cpp LIBS ${LAGOM_audio} ${LAGOM_config})
+add_sde_applet(Audio SOURCES main.cpp LIBS SDEAudioClient ${LAGOM_config})
 add_sde_applet(ClipboardHistory SOURCES ClipboardHistoryModel.cpp main.cpp LIBS ${LAGOM_config})

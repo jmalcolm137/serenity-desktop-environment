@@ -123,59 +123,76 @@ tools to go deeper:
 
 ### Per-client (session) memory
 
-The meter also reports every Wayland client: `clients`, `client_pss_kb`,
-`session_pss_kb` (compositor + clients) and a `client_memory=` breakdown of the
-eight largest by PSS, labelled by the process name (the shell's clients are
-panels and applets — layer surfaces with no toplevel to name them by). That makes
-the compositor's own stats file the session's "who is using memory" report, and
+The meter reports every Wayland client, and then the rest of the session's
+processes — the services LibWM spawns on demand (the AudioServer, the
+NotificationServer) that share the compositor's process group but never connect
+as clients. The summary carries `clients`, `client_pss_kb`, `session_pss_kb`
+(compositor + clients + services) and a `client_memory=` breakdown of the twelve
+largest by PSS, labelled by the process name (the shell's clients are panels and
+applets — layer surfaces with no toplevel to name them by). That makes the
+compositor's own stats file the session's "who is using memory" report, and
 `scripts/run-session-memory-test.sh` asserts it on the session's real startup
 list (Taskbar + Desktop + applets + BatteryApplet).
 
 Measured headless (1280×720), PSS in kB:
 
-| Client | PSS | RSS |
+| Session process | PSS | RSS |
 |---|---|---|
-| WindowServer | 18 096 | 43 964 |
-| **Audio** applet | **11 043** | 32 184 |
-| FileManager (Desktop) | 8 159 | 34 124 |
-| Taskbar | 4 040 | 24 028 |
-| ClipboardHistory | 2 291 | 21 876 |
-| ResourceGraph | 2 141 | 21 248 |
-| Network | 2 131 | 21 496 |
-| BatteryApplet | 2 093 | 20 868 |
-| WorkspacePicker | 2 088 | 21 004 |
-| **session total** | **54 154** | **262 140** |
+| WindowServer | 17 975 | 44 000 |
+| FileManager (Desktop) | 8 165 | 30 800 |
+| Taskbar | 4 101 | 23 500 |
+| **Audio applet** | **2 429** | 5 600 |
+| ClipboardHistory | 2 421 | 21 900 |
+| ResourceGraph | 2 299 | 21 200 |
+| Network | 2 277 | 21 500 |
+| Keymap | 2 207 | 21 000 |
+| WorkspacePicker | 2 188 | 21 000 |
+| BatteryApplet | 2 150 | 20 900 |
+| **AudioServer** (service) | **~301** | ~3 000 |
+| **session total** | **46 609** | **258 608** |
 
-Read the two columns together: **RSS says the session uses 256 MB; PSS says
-53 MB.** Ten clients each "use" the whole shared Lagom stack, so RSS multiplies
-it. Every ordinary applet costs ~2 MB — the 21 MB RSS figure is shared library
-pages counted ten times.
+Read the two columns together: **RSS says the session uses 253 MB; PSS says
+45 MB.** Ten clients each "use" the whole shared Lagom stack, so RSS multiplies
+it. Every applet now costs ~2.2 MB.
 
-### A known item: the Audio applet pays ~9 MB for an audio backend it never uses
+### What that measurement found, and the three fixes
 
-The Audio applet is the one outlier (11.0 MB PSS against ~2.1 MB for the others).
-It links `liblagom-audio` — for `Audio::ConnectionToManagerServer`, the
-AudioServer client protocol — and that library has
-`target_link_libraries(LibAudio PRIVATE pulse)`, so it **DT_NEEDs libpulse**
-(+ libpulsecommon + libsndfile). Those are mapped only by this process, so their
-resident pages are private to it, and the dynamic linker's relocation/constructor
-work at startup makes them resident: ~9 MB for a dependency the applet never
-calls (it talks to the SDE AudioServer over IPC).
+The Audio applet used to be the outlier at 11.0 MB PSS. Neither of the two causes
+was the one we expected:
 
-Two fixes, both in `libgui-wayland` (the framework repo) and *not* done yet:
+1. **An audio backend it never used** (~1.5 MB). The applet links
+   `liblagom-audio` for `Audio::ConnectionToManagerServer` — the AudioServer
+   *protocol* client — and that library does
+   `target_link_libraries(LibAudio PRIVATE pulse)`, so it DT_NEEDs libpulse
+   (+ libpulsecommon + libsndfile), mapped by this process alone and made
+   resident by the dynamic linker at startup. The desktop's audio path is
+   PipeWire (the AudioServer service), so SDE now builds **`SDEAudioClient`**
+   (`Applets/CMakeLists.txt`) from the one LibAudio translation unit the applets
+   need, and the applet links that. libgui-wayland's LibAudio keeps its
+   PulseAudio backend, as it should.
+2. **A screen-sized placeholder for an unsized window** (~7 MB — the real cost).
+   The applet is the only one that `show()`s a window without setting a size
+   (Keymap calls `resize(16, 16)` first), and the shim substituted *the screen
+   size* for an empty size, so the applet allocated three 1280×720 buffers
+   (`1280×720×4` of memfd — exactly three 3.5 MB mappings) and threw them away
+   when the compositor reconfigured it to 16×16. The placeholder now depends on
+   the window type: a panel or applet — which the compositor lays out from its
+   applet area — gets a 16×16 placeholder, and only a window that will fill the
+   output (fullscreen, or the Desktop, anchored to every edge) assumes the screen
+   size.
+3. **The service's own backend** (~9 MB — 0.3 MB now). The SDE's **AudioServer**
+   also linked `liblagom-audio` → libpulse + libpulsecommon + libsndfile, for
+   three header-only helpers (`Resampler.h`, `Queue.h`, `Sample.h`). It is
+   PipeWire-only by design, so it links no audio library at all now: the service
+   costs ~0.3 MB.
 
-1. **Split the backend out**: move `PlaybackStreamPulseAudio.cpp` +
-   `PulseAudioWrappers.{h,cpp}` into their own Lagom library, so
-   `liblagom-audio` no longer DT_NEEDs libpulse. `PlaybackStream::create()` has to
-   move with it (it names the platform implementation), and LibWeb's
-   `AudioCodecPluginAgnostic` — the only in-tree user of a direct stream — links
-   both. The cleanest split, but it changes an upstream file layout.
-2. **Load libpulse lazily**: the 499-line `PulseAudioWrappers` already wrap the
-   API, so resolving its functions through `dlopen` removes the DT_NEEDED and
-   keeps every caller unchanged. More code churn, no API/structure change.
+Session PSS fell from **53.9 MB to 46.6 MB** with no behaviour change.
 
-Until one lands, the client PSS budget (16 MB) records the outlier rather than
-hiding it.
+One test note: `run-audio-test.sh` now runs with a private `SDE_SESSION_DIR`.
+LibWM *defers* to a service already listening on the session's portal path, so
+without it the test was answered by a live session's AudioServer instead of
+spawning its own (its spawn assertions failed, and it would have replaced the
+live session's sockets).
 
 ### The first fruit: `auto` no longer loads software GL for nothing
 
