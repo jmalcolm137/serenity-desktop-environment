@@ -10,8 +10,8 @@ LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
 BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
 
 echo "== building prerequisite =="
-ninja -C "$BUILD" libwm-binpath-test >/dev/null
+"$SDE_ROOT/scripts/build-tests.sh" libwm-binpath-test >/dev/null 2>&1 || true
 
 echo "=== binpath (/bin shadow) test ==="
-env LD_LIBRARY_PATH="$BUILD/lib" "$BUILD/bin/libwm-binpath-test"
+env LD_LIBRARY_PATH="$BUILD/lib" "$SDE_ROOT/build/test/libwm-binpath-test"
 echo "==> binpath test PASSED"

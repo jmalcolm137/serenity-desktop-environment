@@ -260,7 +260,7 @@ block the milestone on it.
 `set_system_fonts` is accepted and ignored; `SerenitySans-Regular.ttf` is
 scalable) and the R4/G5 path are recorded in
 [`10-font-parity-decision.md`](10-font-parity-decision.md). Confirmed by
-`libgui-wayland`'s `libwm-font-parity-test` (`scripts/run-font-parity-test.sh`).
+the SDE's `libwm-font-parity-test` (`scripts/run-font-parity-test.sh`).
 
 ## 5. Sequencing
 

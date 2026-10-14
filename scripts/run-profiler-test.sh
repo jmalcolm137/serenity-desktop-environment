@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Headless test for the Profiler (the Taskbar's Development menu), built by
-# libgui-wayland (patch 0040) and sampling through SDE's LibSerenitySystem.
+# SDE (patch 0004-profiler-libserenitysystem) and sampling through SDE's
+# LibSerenitySystem.
 #
 # On SerenityOS the kernel samples a process via profiling_enable(pid, mask) and
 # publishes perfcore JSON at /proc/<pid>/perf_events. Linux has no such kernel

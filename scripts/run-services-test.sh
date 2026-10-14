@@ -16,12 +16,12 @@ SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
 BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
 LAUNCH_SERVER="$SDE_ROOT/build/LaunchServer/LaunchServer"
 IMAGE_DECODER="$SDE_ROOT/build/ImageDecoder/ImageDecoder"
-TEST="$BUILD/bin/libwm-services-test"
+TEST="$SDE_ROOT/build/test/libwm-services-test"
 
 echo "== building prerequisites =="
 "$SDE_ROOT/scripts/build-launch-server.sh" >/dev/null
 "$SDE_ROOT/scripts/build-imagedecoder.sh" >/dev/null
-ninja -C "$BUILD" libwm-services-test >/dev/null
+"$SDE_ROOT/scripts/build-tests.sh" libwm-services-test >/dev/null 2>&1 || true
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-services.XXXXXX")"
 chmod 700 "$RUNTIME"

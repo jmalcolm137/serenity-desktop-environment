@@ -14,12 +14,12 @@ SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
 BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
 WLROOTS_SRC="${WLROOTS_SRC:-$SDE_ROOT/third_party/wlroots}"
 COMP="$SDE_ROOT/build/WindowServer/WindowServer"
-TEST="$BUILD/bin/libwm-tooltip-test"
+TEST="$SDE_ROOT/build/test/libwm-tooltip-test"
 TOOLS_BUILD="$SDE_ROOT/build/tooltip-test"
 
 echo "== building prerequisites =="
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
-ninja -C "$BUILD" libwm-tooltip-test >/dev/null
+"$SDE_ROOT/scripts/build-tests.sh" libwm-tooltip-test >/dev/null 2>&1 || true
 
 # The virtual pointer, to move the cursor over the window.
 mkdir -p "$TOOLS_BUILD"

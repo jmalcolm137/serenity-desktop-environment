@@ -24,7 +24,7 @@ settings work (objective **G5**, milestone **R4**).
 - **The settings path is inert.** DisplaySettings ▸ Fonts builds a font picker and
   calls `set_system_fonts(...)`; the port's shim accepts and ignores it (it must
   return a valid response so the synchronous caller does not block).
-- **Confirmed by a test.** `libgui-wayland`'s `libwm-font-parity-test` asserts
+- **Confirmed by a test.** The SDE's `libwm-font-parity-test` (`test/`) asserts
   the behaviour directly (run it with `SERENITY_RES_ROOT` pointing at the
   resource root):
 
