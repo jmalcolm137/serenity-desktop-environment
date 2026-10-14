@@ -18,6 +18,10 @@ do **not** vendor, fork, or duplicate them.
 - Do **not** use the C++ standard library where AK already provides the facility.
 - LibGPU is backed by **Mesa/EGL** (`libeglgpu`, with a LibSoftGPU fallback); use it for
   hardware-accelerated drawing.
+- **D-Bus uses the `dbus-1` reference library behind an AK value layer.** SDE services that
+  speak D-Bus (the portals, the Wi-Fi applet) use AK types over `dbus-1` — never GLib/GIO
+  (`GVariant`, `GDBus`, `GMainLoop`). The shared value/service layer for the portals is
+  `tools/portal/dbus.h` (`Portal::Value`, `Portal::MethodCall`, `Portal::Service`).
 
 ## D2 — SerenityOS-style `main` (always use LibCore/LibMain)
 

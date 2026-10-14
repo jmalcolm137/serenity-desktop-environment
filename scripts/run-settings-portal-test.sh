@@ -69,6 +69,11 @@ check "color-scheme" "$readall"
 check "accent-color" "$readall"
 check "contrast" "$readall"
 
+echo "=== (D) Properties.GetAll ==="
+allprops="$(gdbus call --session --dest "$DEST" --object-path "$OBJ" --method org.freedesktop.DBus.Properties.GetAll "$IFACE" 2>&1)"
+check "'version'" "$allprops"
+check "uint32 2" "$allprops"
+
 echo "--- portal log ---"
 tail -3 "$RUNTIME/portal.log" || true
 

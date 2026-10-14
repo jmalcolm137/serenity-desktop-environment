@@ -12,7 +12,8 @@ talk to the portal frontend, which routes to a backend implementing
 `org.freedesktop.impl.portal.*`. KDE ships `xdg-desktop-portal-kde`, GNOME ships
 `-gtk`; this is the SDE backend, **`xdg-desktop-portal-serenity`**.
 
-It is a **portable host D-Bus service** (GIO/GDBus, standard protocols only — P8/P9):
+It is a **portable host D-Bus service** (AK/LibCore over the `dbus-1` transport —
+see `tools/portal/dbus.h`; standard protocols only — P8/P9):
 it runs under any compositor, and reaches SDE-specific behaviour through small,
 overridable seams. It aims for **standards compliance** (the documented impl
 interfaces, no vendor-private surface).
@@ -23,8 +24,17 @@ interfaces, no vendor-private surface).
 - Selection: `contrib/xdg-desktop-portal/portals.conf` (prefer us where we
   implement an interface, fall back to `gtk` otherwise)
 
-This supersedes the earlier single-interface `tools/sde-settings-portal.c` (R4.4):
+This supersedes the earlier single-interface `tools/portal/settings-portal.cpp` (R4.4):
 `Settings` now lives here alongside the other interfaces.
+
+**Implementation.** The backend is Serenity-style C++ (AK/LibCore) over the
+`dbus-1` transport — **no GLib/GIO**. `tools/portal/dbus.h` is the AK value and
+service layer (`Portal::Value`, `Portal::MethodCall`, `Portal::Service`); the
+backend is split into `tools/portal/backend.cpp` (the non-capture interfaces)
+plus `screencast.cpp`, `remote-desktop.cpp`, `input-capture.cpp` and
+`global-shortcuts.cpp`, each registering its own interface on the shared
+`Portal::Service`. The R4.4 Settings portal is the standalone
+`tools/portal/settings-portal.cpp` binary.
 
 ## 2. Interfaces
 
@@ -38,7 +48,7 @@ This supersedes the earlier single-interface `tools/sde-settings-portal.c` (R4.4
 | `Email` (v1) | `ComposeEmail` opens a `mailto:` URI. |
 | `Location` (v1) | Reports "not available" (no location provider). |
 | `ProxyResolver` (v1) | `Lookup` returns an empty list (direct connection). |
-| `OpenURI` (v3) | `OpenURI`/`OpenDirectory`/`OpenFile` launch via `SDE_PORTAL_OPENER` (the session launcher) or GIO's default-app launch; `OpenFile` materialises its fd, `Activate` launches an app id. |
+| `OpenURI` (v3) | `OpenURI`/`OpenDirectory`/`OpenFile` launch via `SDE_PORTAL_OPENER` (the session launcher) or `xdg-open`, the portable default-app launcher; `OpenFile` materialises its fd, `Activate` launches an app id. |
 | `Notification` (v1) | `AddNotification`/`RemoveNotification` via `SDE_PORTAL_NOTIFIER` (the Serenity notify tool, called as `<id> <title> <body> <icon>`) or `notify-send`; exposes the `ActionInvoked`/`NotificationClosed` signals and passes a themed icon through. |
 | `ScreenCast` (v6) | `CreateSession`/`SelectSources`/`Start`/`AvailableSourceTypes`/`AvailableCursorModes`. Captures an output **or a window** with the standard **`ext-image-copy-capture-v1`** and publishes a **PipeWire** video stream (`sde-screencast`); `Start` returns the stream node id + `pipewire-serial` (v6) + position/size/source_type/id. Cursor modes: hidden, embedded, **metadata** (`SPA_META_Cursor`). Buffers are DMA-BUF when the compositor/PipeWire support it, else memfd. Restore tokens (`persist_mode`) are persisted and returned from `SelectSources`/`Start`. |
 | `Realtime` (v1) | Grants high-priority/realtime threads (accepted). |
@@ -236,7 +246,7 @@ session (`scripts/run-screencast-live-test.sh`,
   — via libei/EIS or a `WindowServer` input-capture path.
 - **Landed (P1–P5)** ([`17-input-capture.md`](17-input-capture.md)): the compositor
   hosts the EIS implementation (`libeis`) and the portal backend
-  (`tools/portal-input-capture.c`) is the D-Bus adapter, returning the session EIS
+  (`tools/portal/input-capture.cpp`) is the D-Bus adapter, returning the session EIS
   fd from `ConnectToEIS`; zones, barriers and enable/disable travel over the
   private `serenity_input_capture` protocol, the compositor's
   Activated/Deactivated/Disabled/ZonesChanged events are forwarded as D-Bus

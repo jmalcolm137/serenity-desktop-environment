@@ -84,13 +84,31 @@ cc -O2 -I "$TOOLS_BUILD" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/ext-workspace-test"
 
-# sde-settings-portal (R4.4): the SDE backend for the freedesktop Settings portal
-# (org.freedesktop.impl.portal.Settings) — reports color-scheme / accent-color /
-# contrast from the active SDE theme, so GTK/Qt/Flatpak apps follow it. Host
-# D-Bus via GIO.
-cc -O2 -Wall \
-    "$SDE_ROOT/tools/sde-settings-portal.c" \
-    $(pkg-config --cflags --libs gio-2.0) \
+# sde-settings-portal (R4.4) and xdg-desktop-portal-serenity (R5): the freedesktop
+# portal backends. Serenity-style C++ (AK/LibCore) over the `dbus-1` transport —
+# see tools/portal/dbus.h; no GLib/GIO. They link the Lagom userland libraries.
+SERENITY_BUILD_DIR="${SERENITY_BUILD_DIR:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
+PORTAL_INCLUDES=(
+    -I "$TOOLS_BUILD"
+    -I "$SDE_ROOT/tools/portal"
+    -I "$SERENITY"
+    -I "$SERENITY/Userland"
+    -I "$SERENITY/Userland/Libraries"
+    -I "$SERENITY/Userland/Services"
+    -I "$SERENITY_BUILD_DIR"
+    -I "$SERENITY_BUILD_DIR/Userland"
+    -I "$SERENITY_BUILD_DIR/Userland/Libraries"
+    -I "$SERENITY_BUILD_DIR/Userland/Services"
+)
+LAGOM_LIBS=(-L "$SERENITY_BUILD_DIR/lib" -llagom-ak -llagom-coreminimal -llagom-corebasic -llagom-core -llagom-threading -llagom-main)
+PORTAL_FLAGS=(-std=c++26 -fno-exceptions -Wno-literal-suffix -O2 -Wall "${PORTAL_INCLUDES[@]}")
+
+c++ "${PORTAL_FLAGS[@]}" \
+    $(pkg-config --cflags dbus-1) \
+    "$SDE_ROOT/tools/portal/dbus.cpp" \
+    "$SDE_ROOT/tools/portal/settings-portal.cpp" \
+    "${LAGOM_LIBS[@]}" $(pkg-config --libs dbus-1) -lpthread \
+    -Wl,-rpath,"$SERENITY_BUILD_DIR/lib" \
     -o "$TOOLS_BUILD/sde-settings-portal"
 
 # xdg-desktop-portal-serenity (R5): the SDE backend for the freedesktop portals
@@ -120,21 +138,39 @@ wayland-scanner private-code  "$VKEYBOARD_XML" "$TOOLS_BUILD/virtual-keyboard-un
 IC_XML="$SDE_ROOT/WindowServer/protocol/serenity-input-capture.xml"
 wayland-scanner client-header "$IC_XML" "$TOOLS_BUILD/serenity-input-capture-client-protocol.h"
 wayland-scanner private-code  "$IC_XML" "$TOOLS_BUILD/serenity-input-capture-protocol.c"
-cc -O2 -Wall -I "$TOOLS_BUILD" -I "$SDE_ROOT/tools" \
-    "$SDE_ROOT/tools/xdg-desktop-portal-serenity.c" \
-    "$SDE_ROOT/tools/portal-screencast.c" \
-    "$SDE_ROOT/tools/portal-remote-desktop.c" \
-    "$SDE_ROOT/tools/portal-input-capture.c" \
-    "$SDE_ROOT/tools/portal-global-shortcuts.c" \
-    "$TOOLS_BUILD/ext-image-copy-capture-v1-protocol.c" \
-    "$TOOLS_BUILD/ext-image-capture-source-v1-protocol.c" \
-    "$TOOLS_BUILD/ext-foreign-toplevel-list-v1-protocol.c" \
-    "$TOOLS_BUILD/linux-dmabuf-v1-protocol.c" \
-    "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c" \
-    "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c" \
-    "$TOOLS_BUILD/serenity-input-capture-protocol.c" \
-    $(pkg-config --cflags --libs gio-2.0 wayland-client libpipewire-0.3 gdk-pixbuf-2.0 xkbcommon gbm libdrm) \
-    -lpthread \
+
+# The generated protocol code is C; compile it with the C compiler.
+PORTAL_PROTOCOLS=(
+    ext-image-copy-capture-v1-protocol
+    ext-image-capture-source-v1-protocol
+    ext-foreign-toplevel-list-v1-protocol
+    linux-dmabuf-v1-protocol
+    wlr-virtual-pointer-unstable-v1-protocol
+    virtual-keyboard-unstable-v1-protocol
+    serenity-input-capture-protocol
+)
+for protocol in "${PORTAL_PROTOCOLS[@]}"; do
+    cc -O2 -I "$TOOLS_BUILD" $(pkg-config --cflags wayland-client) \
+        -c "$TOOLS_BUILD/$protocol.c" -o "$TOOLS_BUILD/$protocol.o"
+done
+
+PORTAL_OBJECTS=()
+for protocol in "${PORTAL_PROTOCOLS[@]}"; do
+    PORTAL_OBJECTS+=("$TOOLS_BUILD/$protocol.o")
+done
+
+c++ "${PORTAL_FLAGS[@]}" \
+    $(pkg-config --cflags dbus-1 gdk-pixbuf-2.0 wayland-client libpipewire-0.3 xkbcommon gbm libdrm) \
+    "$SDE_ROOT/tools/portal/dbus.cpp" \
+    "$SDE_ROOT/tools/portal/backend.cpp" \
+    "$SDE_ROOT/tools/portal/screencast.cpp" \
+    "$SDE_ROOT/tools/portal/remote-desktop.cpp" \
+    "$SDE_ROOT/tools/portal/input-capture.cpp" \
+    "$SDE_ROOT/tools/portal/global-shortcuts.cpp" \
+    "${PORTAL_OBJECTS[@]}" \
+    "${LAGOM_LIBS[@]}" \
+    $(pkg-config --libs dbus-1 gdk-pixbuf-2.0 wayland-client libpipewire-0.3 xkbcommon gbm libdrm) \
+    -lpthread -Wl,-rpath,"$SERENITY_BUILD_DIR/lib" \
     -o "$TOOLS_BUILD/xdg-desktop-portal-serenity"
 
 # capture-probe (R5): reports what the live compositor can offer the ScreenCast

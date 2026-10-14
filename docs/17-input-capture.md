@@ -237,7 +237,7 @@ InputCapture is a **keylogger-class** capability, so:
    keyboard device is created with the configured XKB keymap
    (`eis_device_new_keymap`); while a keyboard-capturing session is active, key
    events and the XKB modifier state are fed over EIS. Covered by the same test.
-4. **P4 — D-Bus end-to-end (landed).** `tools/portal-input-capture.{h,c}` implements
+4. **P4 — D-Bus end-to-end (landed).** `tools/portal/input-capture.{h,cpp}` implements
    `org.freedesktop.impl.portal.InputCapture` in `xdg-desktop-portal-serenity`:
    session/receiving relay to the compositor over the private protocol, the EIS fd
    from `ConnectToEIS`, the `Activated`/`Deactivated`/`Disabled`/`ZonesChanged`

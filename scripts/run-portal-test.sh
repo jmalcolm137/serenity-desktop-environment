@@ -98,6 +98,17 @@ check "color-scheme" "$readall"
 check "accent-color" "$readall"
 check "contrast" "$readall"
 
+echo "=== D-Bus dispatch (Properties / errors) ==="
+# Properties.GetAll works for a property-only interface (MemoryMonitor).
+memmon="$(call org.freedesktop.DBus.Properties.GetAll org.freedesktop.impl.portal.MemoryMonitor)"
+check "'version'" "$memmon"
+check "uint32 1" "$memmon"
+# A Peer.Ping proves the service is live and answers the standard interface.
+check "()" "$(call org.freedesktop.DBus.Peer.Ping)"
+# Unknown methods and interfaces must produce a D-Bus error, not hang.
+check "UnknownMethod" "$(call org.freedesktop.impl.portal.ProxyResolver.NoSuchMethod 2>&1 || true)"
+check "UnknownInterface" "$(call org.freedesktop.impl.portal.NoSuchPortal.NoSuchMethod 2>&1 || true)"
+
 # The backend watches the theme broker and emits SettingChanged.
 timeout 4 gdbus monitor --session --dest "$DEST" --object-path "$OBJ" > "$RUNTIME/settings-monitor.log" 2>&1 &
 SETTINGS_MONITOR_PID=$!
