@@ -287,6 +287,14 @@ if [ "$missing_services" = "1" ]; then
         || echo "note: session services not built; WebView apps and notifications may fail" >&2
 fi
 
+# The Taskbar is the SDE shell. The SDE's Lagom patch adds its build target
+# (libgui-wayland no longer knows about it), so build it through the SDE's build.
+if [ ! -x "$BUILD/bin/Taskbar" ]; then
+    echo "SDE session: building the Taskbar"
+    "$SDE_ROOT/scripts/build-taskbar.sh" >/dev/null 2>&1 \
+        || echo "note: the Taskbar was not built; the session will have no panel" >&2
+fi
+
 APP_BIN="${SDE_SESSION_APP_BIN_DIR:-${XDG_RUNTIME_DIR:-/tmp}/sde-app-bin$SEAT_SUFFIX}"
 mkdir -p "$APP_BIN"
 for app in "$BUILD/bin"/*; do

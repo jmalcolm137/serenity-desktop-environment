@@ -65,7 +65,7 @@ HEIGHT="${SIZE#*x}"
 # Keep the Taskbar current: it drives the applet-area position over the
 # WindowManagerServer connection, so a Taskbar binary that is out of sync with
 # LibGUI leaves the applets at the usable-area fallback (above the taskbar).
-ninja -C "$BUILD" Taskbar >/dev/null 2>&1 || true
+"$SDE_ROOT/scripts/build-taskbar.sh" >/dev/null 2>&1 || true
 
 # A dedicated session state dir: the wallpaper and (headless) the output layout.
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-scene.XXXXXX")"
