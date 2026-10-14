@@ -5548,6 +5548,14 @@ static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t
     };
     wl_resource_set_implementation(resource, &implementation, &server, serenity_window_manager_resource_destroy);
     server.serenity_window_managers.append(resource);
+
+    // The desktop owns the window-server configuration an application asks for
+    // (the workspace grid and the input-setting bounds); hand it to the shim so it
+    // answers those requests without reading our config file. See docs/24.
+    serenity_window_manager_send_host_config(resource,
+        static_cast<uint32_t>(Config::workspaces().rows), static_cast<uint32_t>(Config::workspaces().columns),
+        wl_fixed_from_double(Config::input_ranges().accel_min), wl_fixed_from_double(Config::input_ranges().accel_max),
+        Config::input_ranges().scroll_step_min, Config::input_ranges().double_click_min, Config::input_ranges().double_click_max);
 }
 
 // --- serenity-virtual-input (test harness) ---------------------------------
