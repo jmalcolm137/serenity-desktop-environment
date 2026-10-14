@@ -112,17 +112,20 @@ rule: a test belongs with the repo that owns its expectation. The port keeps the
 payloads it drives itself (`libwm-{test-window,clipboard,about,fullscreen,submenu}-test`,
 plus `appfile`/`hidpi-detail`).
 
-### 6. The applications are built by the SDE, not the framework — **build moved**
+### 6. The applications are built by the SDE, not the framework — **done**
 
 The SerenityOS applications (Applications, Demos, Games, DevTools) are the
-desktop's, not the application framework's. `libgui-wayland`'s
-`scripts/build-libgui.sh` used to build them all; it now builds only the
-framework — `LibGfx LibGUI windowserver eglgpu` — and the SDE's
-`scripts/build-apps.sh` builds the applications.
+desktop's, not the application framework's.
 
-**Remaining:** the *target definitions* (which app subdirectories Lagom adds, and
-how each links LibWM) still live in `libgui-wayland/patches/` (`0001`, `0035`,
-`0006`). Moving them into the SDE patch set is the same shape as §4.
+- **Build:** `scripts/build-apps.sh` builds them; `libgui-wayland`'s
+  `scripts/build-libgui.sh` builds only the framework — `LibGfx LibGUI
+  windowserver eglgpu`.
+- **Target definitions:** they live in this repo's
+  `patches/0008-sde-lagom-targets.patch` (the app list/loop, the games, the demos,
+  the DevTools, Magnifier, and the Taskbar build), applied after the port's patch
+  stack. `libgui-wayland`'s `0001`, `0035` (split: its `CodeComprehension` library
+  hunk stays with the framework) and `0044` (CertificateSettings — an app) were
+  trimmed or dropped accordingly.
 
 ## Not SDE-specific (leave in the port)
 
@@ -154,3 +157,6 @@ the compositor serves it, not LibWM — so that separation is done.
       Taskbar ones and the `LibSerenitySystem` links (see §4).
 - [x] **5. Decide test ownership** — the SDE owns the SDE-driven payloads;
       they moved to `test/` (`scripts/build-tests.sh`). See §5.
+- [x] **6. Build the applications here, not in the framework** —
+      `scripts/build-apps.sh`, with the target definitions in
+      `patches/0008-sde-lagom-targets.patch`. See §6.
