@@ -194,6 +194,58 @@ without it the test was answered by a live session's AudioServer instead of
 spawning its own (its spawn assertions failed, and it would have replaced the
 live session's sockets).
 
+### Where the rest goes (the other applets)
+
+The natural follow-up is "and the other applets?", so here is the same session
+split by what the pages *are* (one representative headless 1280×720 run, PSS in
+kB; "pixel surfaces" is `memfd` plus screen-sized anonymous mappings, "shared
+libraries" the process's share of the Lagom/shim/libc stack):
+
+| Process | total | pixel surfaces | shared libraries | heap | binary, fonts, anon, stack |
+|---|---|---|---|---|---|
+| WindowServer | 17 729 | 10 930 | 3 436 | 1 784 | 1 579 |
+| FileManager (Desktop) | 8 207 | 3 644 | 2 694 | 884 | 985 |
+| Taskbar | 4 065 | 148 | 1 378 | 1 812 | 727 |
+| each applet (×7) | ~2 150 | ~10 | ~1 200 | ~390 | ~550 |
+
+Read the sum, not the rows: **the sum of PSS across the session is the session's
+*unique* resident memory** — a page in a shared library counts once however many
+clients map it. So there are only two levers: private memory (a heap, an
+anonymous region, a pixel surface) and dropping a mapping that *every* client
+maps.
+
+The applets have nothing left to trim. All seven are uniform at 2.1–2.4 MB —
+~1.2 MB of shared stack, ~0.9 MB private — and every one of their 32 DT_NEEDED
+libraries comes from LibGUI's link closure, not from the applet (the applet's
+own binary is ~200 kB of that; `Audio`'s old libpulse/libgstreamer-style outlier
+is gone, above). Dropping a library from *some* clients would save nothing at
+all under the rule above.
+
+Ranked by size × how much of it is actually addressable:
+
+1. **Pixel surfaces — 14.8 MB, 32 % of the session**, and the only term that
+   grows with resolution (one 4K output surface is 33 MB). The compositor holds
+   two wlroots output buffers (shm on headless, a scanout/GBM buffer on DRM)
+   plus a cached full-screen desktop background bitmap; the Desktop holds the one
+   backing store a full-screen client needs. Reducible parts: render the
+   background per frame instead of caching it, and note that overlays allocate a
+   fresh full-screen `Gfx::Bitmap` on every render (`ChromeNode::render`) — cheap
+   while the tile preview and window switcher are small, not once they are
+   output-sized.
+2. **The framework's per-client private cost — ~0.85 MB × 9 clients ≈ 7.5 MB.**
+   ~390 kB heap, ~240 kB of *uniform* anonymous pages (every applet, however
+   small, has the same ~132 kB region plus a set of small ones), ~200 kB binary
+   text. That uniform part is startup cost every LibGUI client pays; the
+   structural lever is fewer client processes — bundling the seven applets into
+   one would save ~0.85 MB each — which is a deliberate divergence from
+   SerenityOS's one-process-per-applet model.
+3. **The shared LibGUI stack — ~16 MB, 34 %**, but it is clean file-backed
+   memory the kernel reclaims under pressure, and it counts once for the whole
+   session, so trimming a DT_NEEDED only pays when *no* client uses it.
+4. **The Taskbar's 1.8 MB heap — 4× an applet's, at startup, with no windows
+   open.** The one unexplained outlier left: upstream Taskbar behaviour plus the
+   SDE's system menu (an Action and an icon per installed app).
+
 ### The first fruit: `auto` no longer loads software GL for nothing
 
 `auto` used to hand the headless backend to wlroots' GL path, which on a machine

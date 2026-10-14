@@ -450,7 +450,10 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   1280×720 buffers before being reconfigured to 16×16 — the placeholder now
   depends on the window type. The SDE's AudioServer is PipeWire-only too (it linked
   liblagom-audio for three header-only helpers). Session PSS: 53.9 → 46.6 MB (see
-  §4 of the doc).
+  §4 of the doc). The applets themselves have nothing left: all seven are uniform
+  at 2.1–2.4 MB, and §4 now splits the whole session by what the pages are — the
+  remaining levers are the pixel surfaces (32 %), the framework's per-client
+  private cost, and the Taskbar's 1.8 MB heap.
 - **Crash recovery / watchdog / safe mode (N4) — done.** The R4.2 supervisor
   restarts a *crashed* compositor; R6 adds a **watchdog** for a *wedged* one (the
   compositor writes a liveness heartbeat, `SDE_HEARTBEAT_FILE`; the supervisor
