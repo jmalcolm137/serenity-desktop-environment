@@ -14,7 +14,7 @@ The stack is split across a small family of repositories:
 |---|---|
 | [`SerenityOS/serenity`](https://github.com/SerenityOS/serenity) | Upstream source of LibGUI / LibGfx / applications / themes / fonts. Consumed **unmodified** wherever possible. |
 | [`jmalcolm137/libgui-wayland`](https://github.com/jmalcolm137/libgui-wayland) | **LibWindowServer** — runs unmodified Serenity `LibGUI`/`LibGfx` apps natively on Wayland by implementing the WindowServer protocol in-process (plus **LibSerenityAudio** for `LibAudio` ↔ PipeWire). |
-| **this repo** | The **system side**: `WindowServer` (a wlroots-based Wayland compositor) and the session that runs the **unmodified SerenityOS shell apps** (Taskbar, applets, Desktop, Settings) as Wayland clients, plus services/settings and the integration that turns LibWindowServer-powered apps into a coherent desktop session. |
+| **this repo** | The **system side**: `WindowServer` (a [reasonably complete](docs/23-wayland-protocols.md) wlroots-based Wayland compositor) and the session that runs the **unmodified SerenityOS shell apps** (Taskbar, applets, Desktop, Settings) as Wayland clients, plus services/settings and the integration that turns LibWindowServer-powered apps into a coherent desktop session. |
 
 ## Documents
 
@@ -38,6 +38,7 @@ The stack is split across a small family of repositories:
 - [`docs/20-xwayland-next-steps.md`](docs/20-xwayland-next-steps.md) — XWayland state and the remaining work toward KWin/Plasma parity (the resume point for the R5 X11 effort).
 - [`docs/21-r5-protocol-parity-plan.md`](docs/21-r5-protocol-parity-plan.md) — the standard-protocol parity plan and the wlroots version policy (pin the release Arch ships; what lands in 0.21).
 - [`docs/22-input-method.md`](docs/22-input-method.md) — text input / IME (`wp_text_input_v3` + `zwp_input_method_v2`): the compositor as relay, and how it is tested.
+- [`docs/23-wayland-protocols.md`](docs/23-wayland-protocols.md) — the complete list of Wayland protocols the SDE compositor advertises and supports.
 
 ## Status
 
