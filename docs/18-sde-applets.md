@@ -11,8 +11,7 @@ equivalent** — never shimmed.
 `Applets/CMakeLists.txt` builds each applet from the **unmodified upstream
 sources** in the SerenityOS checkout (`SERENITY_SRC/Userland/Applets/<Name>/`),
 linking the Serenity userland libraries (from the `libgui-wayland` build), the
-in-process WindowServer shim (`windowserver`/LibWM), and (for Audio)
-`serenity-audio`. `compat/` supplies the one Serenity-only header the sources
+in-process WindowServer shim (`windowserver`/LibWM). `compat/` supplies the one Serenity-only header the sources
 need (`WindowServer/Window.h` → `WMEventMask`).
 
 ```sh
@@ -62,11 +61,12 @@ unmodified:
   through the display server's own protocol). Port patch
   `0033-libkeyboard-linux-system-map.patch`. The SDE compositor exports
   `XKB_DEFAULT_LAYOUT`/`XKB_DEFAULT_VARIANT` to its children from `[Keyboard]`.
-- **LibAudio / LibSerenityAudio** — the Audio applet's mixer protocol
-  (`/tmp/session/%sid/portal/audiomanager`) is served in-process by
-  `libserenity-audio` (`AudioManagerConnection`), backed by the shared `Mixer`
-  (main volume/mute applied to the mixed output) and the PipeWire backend. The
-  Audio applet therefore links `serenity-audio`.
+- **LibAudio / AudioServer** — the Audio applet's mixer protocol
+  (`/tmp/session/%sid/portal/audiomanager`) is served by the SDE **`AudioServer`
+  service** (spawned on demand by LibWM), backed by the shared `Mixer` (main
+  volume/mute applied to the mixed output) and the PipeWire backend. The applet
+  is an unmodified Serenity client and reaches it over the portal; no shim is
+  linked into it.
 
 ## 4. Session integration
 

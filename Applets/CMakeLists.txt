@@ -19,7 +19,6 @@ foreach(_lib ak coreminimal corebasic core gfx gui ipc threading main config key
     find_library(LAGOM_${_lib} NAMES lagom-${_lib} PATHS "${SERENITY_BUILD_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
 endforeach()
 find_library(WINDOWSERVER NAMES windowserver PATHS "${SERENITY_BUILD_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
-find_library(SERENITY_AUDIO NAMES serenity-audio PATHS "${SERENITY_BUILD_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
 
 set(APPLETS_SRC "${SERENITY_SRC}/Userland/Applets")
 
@@ -76,5 +75,5 @@ add_sde_applet(WorkspacePicker SOURCES DesktopStatusWindow.cpp main.cpp)
 add_sde_applet(Network SOURCES main.cpp)
 add_sde_applet(ResourceGraph SOURCES main.cpp)
 add_sde_applet(Keymap SOURCES KeymapStatusWindow.cpp KeymapStatusWidget.cpp main.cpp LIBS ${LAGOM_keyboard})
-add_sde_applet(Audio SOURCES main.cpp LIBS ${LAGOM_audio} ${LAGOM_config} ${SERENITY_AUDIO})
+add_sde_applet(Audio SOURCES main.cpp LIBS ${LAGOM_audio} ${LAGOM_config})
 add_sde_applet(ClipboardHistory SOURCES ClipboardHistoryModel.cpp main.cpp LIBS ${LAGOM_config})

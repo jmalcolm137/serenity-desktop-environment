@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the Serenity Desktop Environment against the libgui-wayland host build.
 #
-# The heavy userland (LibGUI/LibGfx/LibCore/LibVT, LibWM, LibSerenityAudio, ...)
+# The heavy userland (LibGUI/LibGfx/LibCore/LibVT, LibWM, ...)
 # is built by libgui-wayland. This script applies the SDE's own patches to the
 # SerenityOS checkout and links the SDE system library into the already-
 # registered Terminal target. It does not modify the libgui-wayland repository.
