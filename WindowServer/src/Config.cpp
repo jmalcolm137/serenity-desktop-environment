@@ -26,6 +26,7 @@ static Tiling g_tiling;
 static Focus g_focus;
 static Effects g_effects;
 static Compositor g_compositor;
+static Taskbar g_taskbar;
 static Output g_output;
 static Log g_log;
 static Vector<OutputSettings> g_outputs;
@@ -294,6 +295,9 @@ void load()
     if (auto value = read_bool(user, defaults, "Compositor"sv, "XWayland"sv); value.has_value())
         g_compositor.xwayland = value.value();
 
+    if (auto value = read_bool(user, defaults, "Taskbar"sv, "GroupWindows"sv); value.has_value())
+        g_taskbar.group_windows = value.value();
+
     g_log.level = read_entry(user, defaults, "Log"sv, "Level"sv);
     if (!g_log.level.is_empty()) {
         // R6/N8: the compositor's verbosity (see main.cpp).
@@ -394,6 +398,8 @@ void load()
         g_tiling.edge_threshold, g_tiling.drag_to_edge ? "on" : "off",
         g_focus.follows_mouse ? "on" : "off", g_effects.window_geometry ? "on" : "off",
         g_effects.show_geometry, g_effects.tile_window, g_output.default_scale);
+    dbgln("WindowServer: config: xwayland {}, taskbar group-windows {}",
+        g_compositor.xwayland ? "on" : "off", g_taskbar.group_windows ? "on" : "off");
 }
 
 void watch(Function<void()> on_reload)
@@ -724,6 +730,11 @@ Log const& log()
 Compositor const& compositor()
 {
     return g_compositor;
+}
+
+Taskbar const& taskbar()
+{
+    return g_taskbar;
 }
 
 Vector<ByteString> const& applet_order()

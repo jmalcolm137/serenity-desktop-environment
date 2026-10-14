@@ -86,6 +86,8 @@ public:
         // events; tell it the current size so it reports the area position (and
         // the applets are placed on the Taskbar rather than at the fallback).
         async_applet_area_size_changed(window_id, AppletManager::area_size());
+        // Tell the Taskbar whether to group a button per application.
+        async_taskbar_group_windows(window_id, Config::taskbar().group_windows);
     }
 
     virtual void set_active_window(i32, i32 window_id) override
@@ -773,6 +775,9 @@ void emit_window_state(Toplevel& toplevel)
     StringView title;
     if (toplevel.xdg_toplevel->title)
         title = StringView { toplevel.xdg_toplevel->title, strlen(toplevel.xdg_toplevel->title) };
+    StringView app_id;
+    if (toplevel.xdg_toplevel->app_id)
+        app_id = StringView { toplevel.xdg_toplevel->app_id, strlen(toplevel.xdg_toplevel->app_id) };
     for (auto& connection : g_connections) {
         if (connection->manager_window_id() < 0)
             continue;
@@ -781,7 +786,7 @@ void emit_window_state(Toplevel& toplevel)
         connection->async_window_state_changed(connection->manager_window_id(), 0, toplevel.wm_id, toplevel.workspace_row, toplevel.workspace_column,
             toplevel.frame_active && !toplevel.minimized, false, toplevel.minimized, false,
             static_cast<i32>(WindowServer::WindowType::Normal), ByteString { title },
-            Gfx::IntRect { 0, 0, 0, 0 }, Optional<i32> { });
+            Gfx::IntRect { 0, 0, 0, 0 }, Optional<i32> { }, ByteString { app_id });
     }
 }
 
@@ -818,13 +823,18 @@ void emit_window_state(X11Toplevel& toplevel)
 {
     dbgln("WindowServer: WM: X11 window {} '{}' (active={}, minimized={})", toplevel.wm_id, toplevel.title, toplevel.frame_active, !toplevel.mapped);
     bool minimized = !toplevel.mapped;
+    // An X11 client is identified by its WM_CLASS (the "class" part is the app
+    // name), with the instance as a fallback; this groups its taskbar button.
+    ByteString app_id = toplevel.wm_class;
+    if (app_id.is_empty())
+        app_id = toplevel.wm_instance;
     for (auto& connection : g_connections) {
         if (connection->manager_window_id() < 0)
             continue;
         connection->async_window_state_changed(connection->manager_window_id(), 0, toplevel.wm_id, 0, 0,
             toplevel.frame_active && !minimized, toplevel.demands_attention, minimized, false,
             static_cast<i32>(WindowServer::WindowType::Normal), toplevel.title,
-            Gfx::IntRect { 0, 0, 0, 0 }, Optional<i32> { });
+            Gfx::IntRect { 0, 0, 0, 0 }, Optional<i32> { }, app_id);
     }
     // The Taskbar drops an icon that arrives before the window button exists, and the
     // X11 icon is fetched before the window is reported, so re-send it now.
