@@ -3610,6 +3610,7 @@ struct PerfStats {
     size_t frames { 0 };
     size_t slow_frames { 0 };
     double started_ms { 0 };
+    int refresh_mhz { 0 };
 };
 static PerfStats s_perf;
 static double s_perf_last_frame_ms { 0 };
@@ -3629,6 +3630,23 @@ static void perf_note_input()
     s_perf_pending_input_ms = perf_now_ms();
 }
 
+// The frame budget is one refresh interval of the output being rendered on: a
+// 60 Hz panel is held to 16.667 ms, a 144 Hz one to 6.944 ms, a 240 Hz one to
+// 4.167 ms. SDE_PERF_BUDGET_HZ overrides the reference rate, for a harness (a
+// headless output reports no refresh) or to hold a session to a display it is
+// not on.
+static double perf_frame_budget_ms(int refresh_mhz)
+{
+    if (auto const* forced = getenv("SDE_PERF_BUDGET_HZ"); forced && *forced) {
+        double const hz = atof(forced);
+        if (hz > 0)
+            return 1000.0 / hz;
+    }
+    if (refresh_mhz > 0)
+        return 1000000.0 / static_cast<double>(refresh_mhz);
+    return 16.667; // 60 Hz, when the output does not report a refresh
+}
+
 static ByteString perf_summary()
 {
     double const seconds = max(0.001, (perf_now_ms() - s_perf.started_ms) / 1000.0);
@@ -3637,16 +3655,21 @@ static ByteString perf_summary()
     out.appendff("slow_frames={}\n", s_perf.slow_frames);
     out.appendff("fps={:.1}\n", static_cast<double>(s_perf.frames) / seconds);
     out.appendff("samples={}\n", s_perf.frame_ms.recent());
-    out.appendff("frame_ms_budget={:.1}\n", s_perf.frame_ms.budget_ms);
+    out.appendff("output_refresh_mhz={}\n", s_perf.refresh_mhz);
+    out.appendff("output_refresh_hz={:.1}\n", static_cast<double>(s_perf.refresh_mhz) / 1000.0);
+    out.appendff("frame_ms_budget={:.3}\n", s_perf.frame_ms.budget_ms);
     out.appendff("frame_ms_p50={:.3}\n", s_perf.frame_ms.percentile(0.5));
     out.appendff("frame_ms_p95={:.3}\n", s_perf.frame_ms.percentile(0.95));
+    out.appendff("frame_ms_p99={:.3}\n", s_perf.frame_ms.percentile(0.99));
     out.appendff("frame_ms_max={:.3}\n", s_perf.frame_ms.maximum);
     out.appendff("frame_ms_over_budget={}\n", s_perf.frame_ms.over_budget);
     out.appendff("frame_interval_ms_p50={:.3}\n", s_perf.frame_interval_ms.percentile(0.5));
     out.appendff("frame_interval_ms_p95={:.3}\n", s_perf.frame_interval_ms.percentile(0.95));
+    out.appendff("frame_interval_ms_p99={:.3}\n", s_perf.frame_interval_ms.percentile(0.99));
     out.appendff("input_to_present_ms_budget={:.1}\n", s_perf.input_to_present_ms.budget_ms);
     out.appendff("input_to_present_ms_p50={:.3}\n", s_perf.input_to_present_ms.percentile(0.5));
     out.appendff("input_to_present_ms_p95={:.3}\n", s_perf.input_to_present_ms.percentile(0.95));
+    out.appendff("input_to_present_ms_p99={:.3}\n", s_perf.input_to_present_ms.percentile(0.99));
     out.appendff("input_to_present_ms_max={:.3}\n", s_perf.input_to_present_ms.maximum);
     out.appendff("input_to_present_ms_over_budget={}\n", s_perf.input_to_present_ms.over_budget);
     out.appendff("input_to_present_samples={}\n", s_perf.input_to_present_ms.total);
@@ -3679,6 +3702,12 @@ static void output_frame(wl_listener* listener, void*)
     timespec now { };
     clock_gettime(CLOCK_MONOTONIC, &now);
     wlr_scene_output_send_frame_done(scene_output, &now);
+
+    // The budget is one refresh interval of the output we are rendering on, so a
+    // 144 Hz or 240 Hz panel is held to its own cadence (and a 60 Hz panel to
+    // 16.667 ms) without hardcoding a refresh rate.
+    s_perf.refresh_mhz = output->output->refresh;
+    s_perf.frame_ms.budget_ms = perf_frame_budget_ms(s_perf.refresh_mhz);
 
     double const frame_end_ms = perf_now_ms();
     s_perf.frame_ms.add(frame_end_ms - frame_start_ms);
@@ -3752,6 +3781,22 @@ static float auto_output_scale(struct wlr_output* output, struct wlr_output_mode
     return (width >= 2560 && height >= 1600) ? 2.0f : 1.0f;
 }
 
+// Resolve the output refresh (mHz; 0 = let the backend choose): the
+// SDE_OUTPUT_REFRESH override wins (the counterpart of SDE_OUTPUT_SCALE), then a
+// saved layout entry. A *virtual* output carries no refresh in its modes — the
+// headless backend defaults to 60 Hz — so this is also how such an output is held
+// to a given cadence (the performance budget test runs one at 240 Hz).
+static int resolve_output_refresh(Config::OutputSettings const* saved)
+{
+    if (auto const* env = getenv("SDE_OUTPUT_REFRESH"); env && *env) {
+        int const hz = atoi(env);
+        if (hz > 0)
+            return hz * 1000;
+    }
+    (void)saved;
+    return 0;
+}
+
 // Resolve the output scale: the SDE_OUTPUT_SCALE override wins, then the
 // configured [Output] DefaultScale, then a saved layout, then the auto rule.
 static float resolve_output_scale(struct wlr_output* output, struct wlr_output_mode* mode, Config::OutputSettings const* saved)
@@ -3802,14 +3847,30 @@ static void server_new_output(wl_listener* listener, void* data)
             }
         }
     }
-    if (mode)
+    int const refresh_mhz = resolve_output_refresh(saved);
+    if (mode && refresh_mhz == 0)
         wlr_output_state_set_mode(&state, mode);
     else if (saved && saved->width > 0 && saved->height > 0)
         // A saved size with no matching mode (e.g. the headless backend): request
         // a custom mode, which the backend honours (HiDPI captures need this).
-        wlr_output_state_set_custom_mode(&state, saved->width, saved->height, 0);
-    else if (auto* preferred = wlr_output_preferred_mode(wlr_output))
-        wlr_output_state_set_mode(&state, preferred);
+        wlr_output_state_set_custom_mode(&state, saved->width, saved->height, refresh_mhz);
+    else {
+        // No saved size and no preferred mode: a virtual output (the headless
+        // backend) has no mode list at all — it carries a custom mode from
+        // creation — so re-apply its current size, which is how a chosen refresh
+        // is requested for one.
+        int width = wlr_output->width;
+        int height = wlr_output->height;
+        auto* preferred = wlr_output_preferred_mode(wlr_output);
+        if (preferred) {
+            width = preferred->width;
+            height = preferred->height;
+        }
+        if (refresh_mhz > 0 && width > 0 && height > 0)
+            wlr_output_state_set_custom_mode(&state, width, height, refresh_mhz);
+        else if (preferred)
+            wlr_output_state_set_mode(&state, preferred);
+    }
     // HiDPI / fractional scale (see resolve_output_scale).
     float const scale = resolve_output_scale(wlr_output, mode, saved);
     if (scale != 1.0f) {
@@ -5524,12 +5585,21 @@ static void apply_saved_settings_to_output(Server& server, struct wlr_output* ou
             }
         }
     }
-    if (mode)
+    // Keep the output's current refresh unless one is configured: re-applying a
+    // saved layout must not silently drop a custom mode back to the backend's
+    // default (a virtual output carries no refresh in its modes).
+    int const refresh_mhz = resolve_output_refresh(&settings);
+    int const refresh = refresh_mhz > 0 ? refresh_mhz : output->refresh;
+    if (mode && refresh_mhz == 0)
         wlr_output_state_set_mode(&state, mode);
     else if (settings.width > 0 && settings.height > 0)
-        wlr_output_state_set_custom_mode(&state, settings.width, settings.height, 0);
-    else if (auto* preferred = wlr_output_preferred_mode(output))
-        wlr_output_state_set_mode(&state, preferred);
+        wlr_output_state_set_custom_mode(&state, settings.width, settings.height, refresh);
+    else if (auto* preferred = wlr_output_preferred_mode(output)) {
+        if (refresh > 0)
+            wlr_output_state_set_custom_mode(&state, preferred->width, preferred->height, refresh);
+        else
+            wlr_output_state_set_mode(&state, preferred);
+    }
     // The resolved scale honours SDE_OUTPUT_SCALE / [Output] DefaultScale first, so
     // a configured scale wins over the persisted (integer) layout.
     float const scale = resolve_output_scale(output, mode, &settings);
