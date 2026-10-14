@@ -220,7 +220,17 @@ fi
 
 echo "=== the PipeWire stream node exists ==="
 if command -v pw-cli >/dev/null 2>&1; then
-    if pw-cli ls Node 2>/dev/null | grep -q "sde-screencast"; then
+    # The node is published asynchronously; wait briefly for it (like the other
+    # readiness checks in this script) rather than racing the registry.
+    node_found=0
+    for _ in $(seq 1 30); do
+        if pw-cli ls Node 2>/dev/null | grep -q "sde-screencast"; then
+            node_found=1
+            break
+        fi
+        sleep 0.1
+    done
+    if [ "$node_found" -eq 1 ]; then
         echo "  ok: PipeWire node 'sde-screencast' published"
     else
         echo "  FAIL: PipeWire node 'sde-screencast' not found"
