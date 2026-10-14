@@ -10,6 +10,7 @@
 #include <AK/Optional.h>
 #include <AK/Vector.h>
 #include <LibCore/Socket.h>
+#include <LibCore/Timer.h>
 #include <LibGfx/Font/FontDatabase.h>
 #include <LibGfx/Painter.h>
 #include <LibGfx/Palette.h>
@@ -623,15 +624,238 @@ void load_workspaces(Server& server)
         g_hooks.workspace_changed(server);
 }
 
+// --- window-stack switch overlay (R3) ---------------------------------------
+//
+// SerenityOS briefly shows a grid of one cell per window stack (workspace) when
+// the stack is switched — or when the user asks for the stack they are already on
+// — with the current stack highlighted, so they can see where they are
+// (Compositor::create_window_stack_switch_overlay, 500 ms).
+static OwnPtr<ChromeNode> s_stack_switch_overlay;
+static RefPtr<Core::Timer> s_stack_switch_overlay_timer;
+static constexpr int stack_overlay_cell_width = 40;
+static constexpr int stack_overlay_cell_height = 30;
+static constexpr int stack_overlay_padding = 8;
+static constexpr int stack_overlay_margin = 16;
+static constexpr int stack_overlay_duration_ms = 500;
+
+static void hide_window_stack_switch_overlay()
+{
+    if (s_stack_switch_overlay)
+        s_stack_switch_overlay->set_visible(false);
+}
+
+static void show_window_stack_switch_overlay(Server& server, u32 row, u32 column)
+{
+    if (!server.overlay_tree)
+        return;
+
+    int const columns = static_cast<int>(workspace_columns());
+    int const rows = static_cast<int>(workspace_rows());
+    Gfx::IntSize content {
+        columns * (stack_overlay_cell_width + stack_overlay_padding) - stack_overlay_padding,
+        rows * (stack_overlay_cell_height + stack_overlay_padding) - stack_overlay_padding,
+    };
+    Gfx::IntRect frame { {}, content };
+    frame.inflate(2 * stack_overlay_margin, 2 * stack_overlay_margin);
+
+    Gfx::IntRect area { 0, 0, 1280, 720 };
+    if (g_hooks.primary_usable_area)
+        area = g_hooks.primary_usable_area(server);
+    frame.set_location({ area.x() + (area.width() - frame.width()) / 2, area.y() + (area.height() - frame.height()) / 2 });
+
+    if (!s_stack_switch_overlay)
+        s_stack_switch_overlay = make<ChromeNode>(*server.overlay_tree);
+    s_stack_switch_overlay->set_rect(frame);
+
+    auto const* palette = g_hooks.palette ? &g_hooks.palette(server) : nullptr;
+    s_stack_switch_overlay->render([&](Gfx::Painter& painter) {
+        Gfx::IntRect local { {}, frame.size() };
+        Gfx::Color background = Gfx::Color::from_rgb(0x2b2b2b).with_alpha(0xe0);
+        Gfx::Color border = Gfx::Color::from_rgb(0x9db8d2).with_alpha(0x80);
+        Gfx::Color active = Gfx::Color::from_rgb(0x3b6ea5);
+        Gfx::Color inactive = Gfx::Color::from_rgb(0x555555);
+        if (palette) {
+            background = palette->overlay_background();
+            border = palette->overlay_text().with_alpha(0x80);
+            active = palette->selection();
+            // SerenityOS picks the inactive cell colour from the overlay text's
+            // luminosity, so it reads on both light and dark themes.
+            inactive = palette->overlay_text().luminosity() > 128
+                ? palette->window().darkened(0.9f)
+                : palette->disabled_text_front();
+        }
+        painter.fill_rect(local, background);
+        painter.draw_rect(local.shrunken(1, 1), border);
+        auto const content_rect = Gfx::IntRect { {}, content }.centered_within(local);
+        for (int y = 0; y < rows; ++y) {
+            for (int x = 0; x < columns; ++x) {
+                Gfx::IntRect cell {
+                    content_rect.x() + x * (stack_overlay_cell_width + stack_overlay_padding),
+                    content_rect.y() + y * (stack_overlay_cell_height + stack_overlay_padding),
+                    stack_overlay_cell_width,
+                    stack_overlay_cell_height,
+                };
+                bool const is_current = static_cast<u32>(y) == row && static_cast<u32>(x) == column;
+                painter.fill_rect(cell, is_current ? active : inactive);
+            }
+        }
+    });
+    s_stack_switch_overlay->set_visible(true);
+    s_stack_switch_overlay->raise_to_top();
+
+    if (!s_stack_switch_overlay_timer)
+        s_stack_switch_overlay_timer = Core::Timer::create_single_shot(stack_overlay_duration_ms, hide_window_stack_switch_overlay);
+    s_stack_switch_overlay_timer->restart(stack_overlay_duration_ms);
+    dbgln("WindowServer: window-stack switch overlay for workspace {},{}", row, column);
+}
+
+// --- window-stack transition (R3) -------------------------------------------
+//
+// SerenityOS slides the outgoing window stack out and the incoming one in when
+// the stack (workspace) changes (the Compositor's window-stack transition
+// animation). SDE's stacks are not separate scene trees, so the toplevels of both
+// stacks are offset for the duration; when it ends every position is restored and
+// the outgoing stack is hidden.
+struct StackTransitionWindow {
+    wlr_scene_tree* tree { nullptr };
+    Gfx::IntPoint base;
+    Gfx::IntPoint from;
+    Gfx::IntPoint to;
+};
+static Vector<StackTransitionWindow> s_stack_transition;
+static RefPtr<Core::Timer> s_stack_transition_timer;
+static Server* s_stack_transition_server { nullptr };
+static i64 s_stack_transition_start_ms { 0 };
+static constexpr int stack_transition_duration_ms = 200;
+
+static i64 monotonic_ms_now()
+{
+    timespec now { };
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return static_cast<i64>(now.tv_sec) * 1000 + now.tv_nsec / 1000000;
+}
+
+static void finish_window_stack_transition()
+{
+    auto* server = s_stack_transition_server;
+    for (auto& entry : s_stack_transition) {
+        if (entry.tree)
+            wlr_scene_node_set_position(&entry.tree->node, entry.base.x(), entry.base.y());
+    }
+    s_stack_transition.clear();
+    s_stack_transition_server = nullptr;
+    if (s_stack_transition_timer)
+        s_stack_transition_timer->stop();
+    if (!server)
+        return;
+    // The switch has already happened, so this hides the outgoing stack.
+    for (auto& toplevel : server->toplevels)
+        update_toplevel_visibility(*toplevel);
+    for (auto& toplevel : server->x11_toplevels)
+        update_x11_toplevel_visibility(*toplevel);
+}
+
+static void tick_window_stack_transition()
+{
+    if (!s_stack_transition_server || s_stack_transition.is_empty()) {
+        finish_window_stack_transition();
+        return;
+    }
+    float t = clamp(static_cast<float>(monotonic_ms_now() - s_stack_transition_start_ms) / stack_transition_duration_ms, 0.0f, 1.0f);
+    float eased = 1.0f - (1.0f - t) * (1.0f - t); // ease-out
+    for (auto& entry : s_stack_transition) {
+        auto lerp = [eased](int from, int to) {
+            return from + static_cast<int>(static_cast<float>(to - from) * eased + (eased >= 0.5f ? 0.5f : -0.5f));
+        };
+        if (entry.tree)
+            wlr_scene_node_set_position(&entry.tree->node,
+                lerp(entry.base.x() + entry.from.x(), entry.base.x() + entry.to.x()),
+                lerp(entry.base.y() + entry.from.y(), entry.base.y() + entry.to.y()));
+    }
+    if (t >= 1.0f)
+        finish_window_stack_transition();
+}
+
+// Start a transition to `new_row`/`new_column` from `old_row`/`old_column`.
+// Returns false when there is nothing to animate (so the caller applies the
+// visibility change immediately).
+static bool start_window_stack_transition(Server& server, u32 new_row, u32 new_column, u32 old_row, u32 old_column)
+{
+    if (!Config::effects().animate_windows)
+        return false;
+    // The user is impatient: finish the previous transition instantly.
+    if (!s_stack_transition.is_empty())
+        finish_window_stack_transition();
+
+    Gfx::IntRect area { 0, 0, 1280, 720 };
+    if (g_hooks.primary_usable_area)
+        area = g_hooks.primary_usable_area(server);
+
+    // SerenityOS's direction convention: moving right slides the old stack left.
+    int delta_x = 0;
+    if (new_column < old_column)
+        delta_x = area.width();
+    else if (new_column > old_column)
+        delta_x = -area.width();
+    int delta_y = 0;
+    if (new_row < old_row)
+        delta_y = area.height();
+    else if (new_row > old_row)
+        delta_y = -area.height();
+    if (delta_x == 0 && delta_y == 0)
+        return false;
+
+    auto add = [&](wlr_scene_tree* tree, u32 row, u32 column) {
+        bool const incoming = row == new_row && column == new_column;
+        bool const outgoing = row == old_row && column == old_column;
+        if (!incoming && !outgoing)
+            return; // other stacks stay hidden
+        Gfx::IntPoint base { tree->node.x, tree->node.y };
+        wlr_scene_node_set_enabled(&tree->node, true);
+        s_stack_transition.append({ tree, base,
+            incoming ? Gfx::IntPoint { -delta_x, -delta_y } : Gfx::IntPoint { 0, 0 },
+            incoming ? Gfx::IntPoint { 0, 0 } : Gfx::IntPoint { delta_x, delta_y } });
+    };
+
+    for (auto& toplevel : server.toplevels) {
+        if (toplevel->minimized)
+            continue;
+        add(toplevel->scene_tree, toplevel->workspace_row, toplevel->workspace_column);
+    }
+    for (auto& toplevel : server.x11_toplevels) {
+        if (!toplevel->scene_tree || !toplevel->mapped || toplevel->override_redirect)
+            continue;
+        add(toplevel->scene_tree, toplevel->workspace_row, toplevel->workspace_column);
+    }
+
+    if (s_stack_transition.is_empty())
+        return false;
+
+    s_stack_transition_server = &server;
+    s_stack_transition_start_ms = monotonic_ms_now();
+    if (!s_stack_transition_timer)
+        s_stack_transition_timer = Core::Timer::create_repeating(15, tick_window_stack_transition);
+    s_stack_transition_timer->start();
+    dbgln("WindowServer: window-stack transition {},{} -> {},{} (delta {},{})", old_row, old_column, new_row, new_column, delta_x, delta_y);
+    return true;
+}
+
 void switch_workspace(Server& server, u32 row, u32 column, bool carry_focused)
 {
     if (row >= s_rows || column >= s_columns)
         return;
-    if (row == s_current_row && column == s_current_column)
+    if (row == s_current_row && column == s_current_column) {
+        // SerenityOS switches the stack even when the target is the current one,
+        // "so that the user knows which stack they're on": it shows the overlay.
+        show_window_stack_switch_overlay(server, row, column);
         return;
+    }
 
     // Carry the focused window into the target stack (Ctrl+Shift+Alt+arrow).
     Toplevel* carried = carry_focused ? focused_toplevel(server) : nullptr;
+
+    u32 const previous_row = s_current_row;
+    u32 const previous_column = s_current_column;
 
     s_current_row = row;
     s_current_column = column;
@@ -640,10 +864,15 @@ void switch_workspace(Server& server, u32 row, u32 column, bool carry_focused)
         carried->workspace_column = column;
     }
 
-    for (auto& toplevel : server.toplevels)
-        update_toplevel_visibility(*toplevel);
-    for (auto& toplevel : server.x11_toplevels)
-        update_x11_toplevel_visibility(*toplevel);
+    // SerenityOS slides the two stacks (R3). The visibility change happens when
+    // the transition finishes; without it (or with nothing to animate) apply it
+    // immediately.
+    if (!start_window_stack_transition(server, row, column, previous_row, previous_column)) {
+        for (auto& toplevel : server.toplevels)
+            update_toplevel_visibility(*toplevel);
+        for (auto& toplevel : server.x11_toplevels)
+            update_x11_toplevel_visibility(*toplevel);
+    }
 
     // Focus a visible window on the new stack so the keyboard follows.
     bool focused = false;
@@ -673,32 +902,18 @@ void switch_workspace(Server& server, u32 row, u32 column, bool carry_focused)
     emit_workspace_changed(server);
     if (g_hooks.workspace_changed)
         g_hooks.workspace_changed(server);
+    show_window_stack_switch_overlay(server, row, column);
     dbgln("WindowServer: switched to workspace {},{}", row, column);
 }
 
 static bool switch_direction(Server& server, int dx, int dy, bool carry)
 {
-    u32 row = s_current_row;
-    u32 column = s_current_column;
-    if (dx < 0) {
-        if (column == 0)
-            return true;
-        column--;
-    } else if (dx > 0) {
-        if (column + 1 >= s_columns)
-            return true;
-        column++;
-    }
-    if (dy < 0) {
-        if (row == 0)
-            return true;
-        row--;
-    } else if (dy > 0) {
-        if (row + 1 >= s_rows)
-            return true;
-        row++;
-    }
-    switch_workspace(server, row, column, carry);
+    // Clamp rather than ignoring an edge press: switch_workspace() shows the
+    // stack-switch overlay for the current workspace too (SerenityOS does the
+    // same, so a press at the edge still tells the user where they are).
+    int row = clamp(static_cast<int>(s_current_row) + dy, 0, static_cast<int>(s_rows) - 1);
+    int column = clamp(static_cast<int>(s_current_column) + dx, 0, static_cast<int>(s_columns) - 1);
+    switch_workspace(server, static_cast<u32>(row), static_cast<u32>(column), carry);
     return true;
 }
 

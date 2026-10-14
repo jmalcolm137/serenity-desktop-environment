@@ -237,6 +237,10 @@ struct Toplevel {
     // The Taskbar button rect for this window (reported over the
     // WindowManagerServer), so minimize/restore can animate the outline to it.
     Gfx::IntRect taskbar_rect;
+    // The rect the window was launched from (serenity_toplevel.set_launch_origin),
+    // so the compositor can animate the launch outline (SerenityOS
+    // Window::start_launch_animation).
+    Gfx::IntRect launch_origin;
     // The decoration object, if any; the server-side mode is applied once the
     // surface is initialized (set_mode schedules a configure).
     wlr_xdg_toplevel_decoration_v1* decoration { nullptr };
