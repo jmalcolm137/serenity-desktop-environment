@@ -55,13 +55,6 @@ click was already handled and returned earlier).
 
 ## R3 — Serenity look & behaviours (chrome done, rest pending)
 
-- **Menus opened from layer surfaces don't grab input (G3 / W2).** The Taskbar's
-  (and Desktop's) menus are overlay layer surfaces; unlike the `xdg_popup` menus
-  opened from ordinary windows (which grab), they do not take an input grab, so a
-  click on *another* surface does not dismiss them — the menu appears "stuck
-  open". It closes only on selecting an item, Escape, or a click on the owner's
-  own surface. Needs a compositor-side grab (or an outside-press dismissal) for
-  client menus.
 - **Window switcher with live thumbnails** — done (WS3). Alt+Tab (current
   workspace) / Super+Tab (all workspaces), Shift reverses, activate on modifier
   release; a Serenity-style list of live thumbnails, title and geometry drawn
@@ -646,7 +639,8 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   (and tooltips/popups): they used to collapse to a 2px-tall popup because the
   app clamped an off-screen rect against the desktop. Client menus opened from
   layer surfaces are now also dismissed by an outside press
-  (`serenity_window_manager.dismiss_menus`), instead of appearing stuck open.
+  (`serenity_window_manager.dismiss_menus`), instead of appearing stuck open —
+  verified by `scripts/run-menu-dismiss-test.sh`.
 - Display Settings: **Apply no longer freezes.** Wallpapers are now stored as raw
   pixels (PNG-encoding cost ~800 ms on the UI thread); the compositor watches the
   right file and coalesces the burst of state events into one repaint; the Monitor
