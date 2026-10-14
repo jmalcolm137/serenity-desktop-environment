@@ -28,6 +28,16 @@ wayland-scanner private-code  "$XDG_XML" "$TOOLS_BUILD/xdg-shell-protocol.c"
 SW_XML="$SDE_ROOT/WindowServer/protocol/serenity-window.xml"
 wayland-scanner client-header "$SW_XML" "$TOOLS_BUILD/serenity-window-client-protocol.h"
 wayland-scanner private-code  "$SW_XML" "$TOOLS_BUILD/serenity-window-protocol.c"
+# native-app-test also speaks presentation-time, fractional-scale and xdg-decoration.
+PRES_XML="$(pkg-config --variable=pkgdatadir wayland-protocols)/stable/presentation-time/presentation-time.xml"
+FRAC_XML="$(pkg-config --variable=pkgdatadir wayland-protocols)/staging/fractional-scale/fractional-scale-v1.xml"
+DECO_XML="$(pkg-config --variable=pkgdatadir wayland-protocols)/unstable/xdg-decoration/xdg-decoration-unstable-v1.xml"
+wayland-scanner client-header "$PRES_XML" "$TOOLS_BUILD/presentation-time-client-protocol.h"
+wayland-scanner private-code  "$PRES_XML" "$TOOLS_BUILD/presentation-time-protocol.c"
+wayland-scanner client-header "$FRAC_XML" "$TOOLS_BUILD/fractional-scale-v1-client-protocol.h"
+wayland-scanner private-code  "$FRAC_XML" "$TOOLS_BUILD/fractional-scale-v1-protocol.c"
+wayland-scanner client-header "$DECO_XML" "$TOOLS_BUILD/xdg-decoration-client-protocol.h"
+wayland-scanner private-code  "$DECO_XML" "$TOOLS_BUILD/xdg-decoration-protocol.c"
 wayland-scanner client-header "$VK_XML" "$TOOLS_BUILD/virtual-keyboard-unstable-v1-client-protocol.h"
 wayland-scanner private-code  "$VK_XML" "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c"
 wayland-scanner client-header "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-client-protocol.h"
@@ -37,6 +47,9 @@ cc -O2 -I "$TOOLS_BUILD" \
     "$SDE_ROOT/tools/native-app-test.c" \
     "$TOOLS_BUILD/xdg-shell-protocol.c" \
     "$TOOLS_BUILD/serenity-window-protocol.c" \
+    "$TOOLS_BUILD/presentation-time-protocol.c" \
+    "$TOOLS_BUILD/fractional-scale-v1-protocol.c" \
+    "$TOOLS_BUILD/xdg-decoration-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/native-app-test"
 cc -O2 -I "$TOOLS_BUILD" \
@@ -69,7 +82,7 @@ for _ in $(seq 1 50); do
 done
 
 # A normal client to have a titlebar to click on.
-env WAYLAND_DISPLAY="$SOCK" setsid timeout 8 "$TOOLS_BUILD/native-app-test" > "$RUNTIME/native.log" 2>&1 &
+env WAYLAND_DISPLAY="$SOCK" setsid timeout 8 "$TOOLS_BUILD/native-app-test" --server-side-decorations > "$RUNTIME/native.log" 2>&1 &
 sleep 1
 
 # Right-click the titlebar (the frame's top inset) through a virtual pointer.

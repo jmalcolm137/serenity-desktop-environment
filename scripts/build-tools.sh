@@ -60,12 +60,16 @@ wayland-scanner private-code  "$PRES_XML" "$TOOLS_BUILD/presentation-time-protoc
 FRAC_XML="$(pkg-config --variable=pkgdatadir wayland-protocols)/staging/fractional-scale/fractional-scale-v1.xml"
 wayland-scanner client-header "$FRAC_XML" "$TOOLS_BUILD/fractional-scale-v1-client-protocol.h"
 wayland-scanner private-code  "$FRAC_XML" "$TOOLS_BUILD/fractional-scale-v1-protocol.c"
+DECO_XML="$(pkg-config --variable=pkgdatadir wayland-protocols)/unstable/xdg-decoration/xdg-decoration-unstable-v1.xml"
+wayland-scanner client-header "$DECO_XML" "$TOOLS_BUILD/xdg-decoration-client-protocol.h"
+wayland-scanner private-code  "$DECO_XML" "$TOOLS_BUILD/xdg-decoration-protocol.c"
 cc -O2 -I "$TOOLS_BUILD" \
     "$SDE_ROOT/tools/native-app-test.c" \
     "$TOOLS_BUILD/xdg-shell-protocol.c" \
     "$TOOLS_BUILD/serenity-window-protocol.c" \
     "$TOOLS_BUILD/presentation-time-protocol.c" \
     "$TOOLS_BUILD/fractional-scale-v1-protocol.c" \
+    "$TOOLS_BUILD/xdg-decoration-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/native-app-test"
 
