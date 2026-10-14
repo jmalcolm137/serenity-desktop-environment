@@ -22,7 +22,7 @@ VI="$("$SDE_ROOT/scripts/build-virtual-input.sh")"
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 # The Taskbar must match this compositor's WM protocol.
-ninja -C "$BUILD" Taskbar >/dev/null 2>&1 || true
+"$SDE_ROOT/scripts/build-taskbar.sh" >/dev/null 2>&1 || true
 
 WIDTH="${SDE_MENU_WIDTH:-1280}"
 HEIGHT="${SDE_MENU_HEIGHT:-720}"

@@ -19,7 +19,8 @@ BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
 COMP="$SDE_ROOT/build/WindowServer/WindowServer"
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
-ninja -C "$BUILD" Taskbar TextEditor >/dev/null 2>&1 || true
+"$SDE_ROOT/scripts/build-taskbar.sh" >/dev/null 2>&1 || true
+ninja -C "$BUILD" TextEditor >/dev/null 2>&1 || true
 
 WIDTH=1280
 HEIGHT=720
