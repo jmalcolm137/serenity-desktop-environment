@@ -453,7 +453,12 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   §4 of the doc). The applets themselves have nothing left: all seven are uniform
   at 2.1–2.4 MB, and §4 now splits the whole session by what the pages are — the
   remaining levers are the pixel surfaces (32 %), the framework's per-client
-  private cost, and the Taskbar's 1.8 MB heap.
+  private cost, and the Taskbar's 1.8 MB heap. That Taskbar heap turned out to be
+  a startup *design* cost, not a leak (§4: ~0.6 MB of it is the system menu at
+  8.7 kB per installed app, linear); investigating it did surface a real bug — a
+  pinned quick-launch entry whose `.af` is missing crashed the whole shell, fixed
+  by `patches/0009-taskbar-quicklaunch-missing-app.patch` and covered by
+  `scripts/run-taskbar-quicklaunch-test.sh`.
 - **Crash recovery / watchdog / safe mode (N4) — done.** The R4.2 supervisor
   restarts a *crashed* compositor; R6 adds a **watchdog** for a *wedged* one (the
   compositor writes a liveness heartbeat, `SDE_HEARTBEAT_FILE`; the supervisor

@@ -243,8 +243,34 @@ Ranked by size × how much of it is actually addressable:
    memory the kernel reclaims under pressure, and it counts once for the whole
    session, so trimming a DT_NEEDED only pays when *no* client uses it.
 4. **The Taskbar's 1.8 MB heap — 4× an applet's, at startup, with no windows
-   open.** The one unexplained outlier left: upstream Taskbar behaviour plus the
-   SDE's system menu (an Action and an icon per installed app).
+   open.** Measured, and not a leak: it is *live* (glibc's
+   `MALLOC_TRIM_THRESHOLD_=0` does not return it), it is small-allocation `brk`
+   heap (profiling its startup records no anonymous `mmap` at all, so no
+   screen-sized buffer hides in it — unlike the Audio applet's old three), and it
+   stays at exactly 1 812 kB while thirty clients start and exit.
+
+   ~0.6 MB of it is the system menu, at **8.7 kB per installed app**, linear: a
+   resource root with 373 app files (300 duplicates) takes the heap to 4 196 kB.
+   That is upstream's eager menu construction — an `AppFile`, a `Gfx::Icon` bitmap
+   and a `GUI::Action` per app, built at startup; the SDE only made it visible by
+   shipping 73 app files instead of ~40. A lazy menu would trade that memory for a
+   first-open hitch, so it is recorded, not changed.
+
+   The rest is startup state any LibGUI app pays (the framework baseline is
+   ~390 kB) plus the Taskbar's own chrome. Splitting the 8.7 kB further needs an
+   allocation profiler, and that is worth writing down: our `Profiler` is a
+   CPU-and-mapping sampler, and the SerenityOS profiling interface's
+   malloc/free events (`Profile::Event::MallocData`) have **no producer on Linux**
+   — on SerenityOS the kernel owns malloc, here glibc does. A small `LD_PRELOAD`
+   interposer emitting those same events would close the gap for every process,
+   not just the Taskbar.
+
+   Chasing it did find a real bug, though: a pinned quick-launch entry whose `.af`
+   is missing or invalid aborted the whole shell (`AppFile::name()` VERIFYs on an
+   empty name, and the quick-launch path never checked `is_valid()` — the system
+   menu path does). Fixed by `patches/0009-taskbar-quicklaunch-missing-app.patch`;
+   `scripts/run-taskbar-quicklaunch-test.sh` runs the shell against a resource root
+   with no app files at all and asserts it still comes up.
 
 ### The first fruit: `auto` no longer loads software GL for nothing
 
