@@ -60,7 +60,7 @@ struct Workspaces {
 
 // Snap/tile behaviour (WS2).
 struct Tiling {
-    int edge_threshold { 48 };
+    int edge_threshold { 16 };
     bool drag_to_edge { true };
 };
 
