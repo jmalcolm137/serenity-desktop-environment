@@ -45,11 +45,13 @@
 #include <unistd.h>
 
 #include "dbus.h"
+#include "host.h"
 #include "global-shortcuts.h"
 #include "introspection.h"
 #include "input-capture.h"
 #include "remote-desktop.h"
 #include "screencast.h"
+#include "usb.h"
 
 namespace {
 
@@ -76,7 +78,6 @@ constexpr StringView screenshot_interface = "org.freedesktop.impl.portal.Screens
 constexpr StringView print_interface = "org.freedesktop.impl.portal.Print"sv;
 constexpr StringView wallpaper_interface = "org.freedesktop.impl.portal.Wallpaper"sv;
 constexpr StringView secret_interface = "org.freedesktop.impl.portal.Secret"sv;
-constexpr StringView usb_interface = "org.freedesktop.impl.portal.USB"sv;
 constexpr StringView dynamiclauncher_interface = "org.freedesktop.impl.portal.DynamicLauncher"sv;
 constexpr StringView access_interface = "org.freedesktop.impl.portal.Access"sv;
 
@@ -95,85 +96,9 @@ void register_portal_interface(Portal::Service& service, StringView name, Portal
         Portal::interface_introspection_xml(name).value_or(StringView {}));
 }
 
-Optional<ByteString> environment(StringView name)
-{
-    if (auto value = Core::Environment::get(name); value.has_value())
-        return value->to_byte_string();
-    return {};
-}
-
-ByteString runtime_dir()
-{
-    if (auto value = environment("XDG_RUNTIME_DIR"sv); value.has_value() && !value->is_empty())
-        return value.value();
-    return ByteString { "/tmp" };
-}
-
 // The place the portal keeps its state (wallpaper, secrets, tokens): the
 // session's SDE_STATE_DIR, else $XDG_CONFIG_HOME/sde, else $HOME/.config/sde.
-ByteString portal_state_file(StringView name)
-{
-    ByteString base;
-    if (auto state = environment("SDE_STATE_DIR"sv); state.has_value() && !state->is_empty())
-        base = state.value();
-    else if (auto config = environment("XDG_CONFIG_HOME"sv); config.has_value() && !config->is_empty())
-        base = ByteString::formatted("{}/sde", config.value());
-    else if (auto home = environment("HOME"sv); home.has_value() && !home->is_empty())
-        base = ByteString::formatted("{}/.config/sde", home.value());
-    else
-        base = ByteString { "/tmp/sde" };
-
-    (void)Core::System::mkdir(base, 0700);
-    return ByteString::formatted("{}/{}", base, name);
-}
-
 // --- process helpers --------------------------------------------------------
-
-ErrorOr<Optional<ByteString>> run_command(Vector<ByteString> const& arguments, bool capture_stdout)
-{
-    Core::ProcessSpawnOptions options {
-        .name = arguments.first(),
-        .executable = arguments.first(),
-        .search_for_executable_in_path = true,
-        .arguments = arguments,
-    };
-
-    int read_fd = -1;
-    int write_fd = -1;
-    if (capture_stdout) {
-        auto pipe = TRY(Core::System::pipe2(O_CLOEXEC));
-        read_fd = pipe[0];
-        write_fd = pipe[1];
-        options.file_actions.append(Core::FileAction::DuplicateFile { write_fd, STDOUT_FILENO });
-        options.file_actions.append(Core::FileAction::CloseFile { read_fd });
-    }
-
-    auto process = TRY(Core::Process::spawn(options));
-    if (write_fd >= 0)
-        ::close(write_fd);
-
-    Optional<ByteString> output;
-    if (read_fd >= 0) {
-        auto file = TRY(Core::File::adopt_fd(read_fd, Core::File::OpenMode::Read));
-        auto contents = TRY(file->read_until_eof());
-        StringView text { reinterpret_cast<char const*>(contents.data()), contents.size() };
-        output = text.trim_whitespace().to_byte_string();
-    }
-
-    (void)process.wait_for_termination();
-    return output;
-}
-
-void spawn_async(Vector<ByteString> const& arguments)
-{
-    Core::ProcessSpawnOptions options {
-        .name = arguments.first(),
-        .executable = arguments.first(),
-        .search_for_executable_in_path = true,
-        .arguments = arguments,
-    };
-    (void)Core::Process::spawn(options);
-}
 
 // Feed the contents of `fd` to the stdin of `/bin/sh -c command`. Returns false
 // if the child could not be started.
@@ -218,6 +143,13 @@ bool feed_fd_to_shell(int fd, ByteString const& command)
     (void)process.value().wait_for_termination();
     return true;
 }
+
+// The host helpers live in host.cpp, shared with the other portal modules.
+using Portal::environment;
+using Portal::run_command;
+using Portal::runtime_dir;
+using Portal::spawn_async;
+using Portal::state_file;
 
 // --- URI helpers ------------------------------------------------------------
 
@@ -983,14 +915,14 @@ bool write_wallpaper_raw(StringView uri)
     for (int y = 0; y < height; ++y)
         memcpy(raw.data() + sizeof(header) + static_cast<size_t>(y) * pitch, bitmap.scanline_u8(y), static_cast<size_t>(pitch));
 
-    auto raw_path = portal_state_file("wallpaper.raw"sv);
+    auto raw_path = state_file("wallpaper.raw"sv);
     auto file = Core::File::open(raw_path, Core::File::OpenMode::Write | Core::File::OpenMode::Truncate);
     if (file.is_error())
         return false;
     if (auto result = file.value()->write_until_depleted(raw); result.is_error())
         return false;
 
-    auto mode_path = portal_state_file("wallpaper.mode"sv);
+    auto mode_path = state_file("wallpaper.mode"sv);
     if (auto mode_file = Core::File::open(mode_path, Core::File::OpenMode::Write | Core::File::OpenMode::Truncate); !mode_file.is_error())
         (void)mode_file.value()->write_until_depleted("stretch"sv);
     return true;
@@ -1028,7 +960,7 @@ void handle_secret(Portal::MethodCall& call)
     }
     auto app_id = call.string_argument(1);
     auto name = sanitized_app_id(app_id);
-    auto dir = portal_state_file("secrets"sv);
+    auto dir = state_file("secrets"sv);
     (void)Core::System::mkdir(dir, 0700);
     auto path = ByteString::formatted("{}/{}", dir, name);
 
@@ -1064,23 +996,7 @@ void handle_secret(Portal::MethodCall& call)
     call.reply({ Portal::Value::make_uint32(response_success), Portal::Value::make_array(move(bytes), "y"sv) });
 }
 
-// --- USB / DynamicLauncher / Access -----------------------------------------
-
-void handle_usb(Portal::MethodCall& call)
-{
-    Portal::Dictionary results;
-    if (call.member() == "ListDevices"sv) {
-        // No USB device broker: report an empty list (standards-compliant).
-        results.append(Portal::Value::Entry { "devices", Portal::Value::make_array({}, "(ua{sv})"sv) });
-        call.reply_response(response_success, results);
-        return;
-    }
-    if (call.member() == "AcquireDevices"sv || call.member() == "ReleaseDevices"sv) {
-        call.reply_response(response_success, results);
-        return;
-    }
-    call.reply_error(Portal::ErrorName::UnknownMethod, "unknown method"sv);
-}
+// --- DynamicLauncher / Access -----------------------------------------
 
 void handle_dynamic_launcher(Portal::MethodCall& call)
 {
@@ -1306,12 +1222,6 @@ ErrorOr<int> serenity_main(Main::Arguments)
         Vector<ByteString> { "version"sv });
 
     register_portal_interface(*service,
-        usb_interface.to_byte_string(),
-        [](Portal::MethodCall& call) { handle_usb(call); },
-        [](StringView property) { return generic_version_property(property, 1); },
-        Vector<ByteString> { "version"sv });
-
-    register_portal_interface(*service,
         dynamiclauncher_interface.to_byte_string(),
         [](Portal::MethodCall& call) { handle_dynamic_launcher(call); },
         [](StringView property) { return generic_version_property(property, 1); },
@@ -1323,6 +1233,7 @@ ErrorOr<int> serenity_main(Main::Arguments)
         [](StringView property) { return generic_version_property(property, 1); },
         Vector<ByteString> { "version"sv });
 
+    Usb::register_interface(*service);
     Screencast::register_interface(*service);
     RemoteDesktop::register_interface(*service);
     InputCapture::register_interface(*service);

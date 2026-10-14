@@ -213,9 +213,14 @@ fi
 echo "=== Secret / USB / DynamicLauncher / Access ==="
 check "uint32 0" "$(call org.freedesktop.impl.portal.Access.AccessDialog /h app "" "Allow?" "" "Please allow." "{}")"
 check "uint32 0" "$(call org.freedesktop.impl.portal.Secret.RetrieveSecret /h app "{}")"
-usb="$(call org.freedesktop.impl.portal.USB.ListDevices "{}")"
-check "uint32 0" "$usb"
-check "devices" "$usb"
+# USB: the backend brokers device access (AcquireDevices). Its policy/prompt
+# behaviour has its own test (run-usb-portal-test.sh); here just check it is
+# served on the standard interface.
+check "uint32 1" "$(prop org.freedesktop.impl.portal.Usb version)"
+# (The test's stub AccessDialog answers "allow", so the request is granted.)
+usb_granted="$(call org.freedesktop.impl.portal.Usb.AcquireDevices /h "" app "[('usb:1-1', {}, {})]" "{}")"
+check "uint32 0" "$usb_granted"
+check "usb:1-1" "$usb_granted"
 token="$(call org.freedesktop.impl.portal.DynamicLauncher.RequestInstallToken app "{}")"
 if [ ${#token} -gt 5 ]; then
     echo "  ok: install token ($token)"

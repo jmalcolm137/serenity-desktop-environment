@@ -400,7 +400,9 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   the **metadata cursor** mode and **zero-copy DMA-BUF** are landed and verified
   on a live TTY; **Camera** works via the frontend (PipeWire + our Access/Lockdown)
   and `Device` was superseded by USB; **InputCapture** is landed
-  ([`17-input-capture.md`](17-input-capture.md)), and a real USB broker remains.
+  ([`17-input-capture.md`](17-input-capture.md)), and the **USB** portal's backend
+  is a real broker (policy + user prompt + remembered grants,
+  `tools/portal/usb.cpp`, `scripts/run-usb-portal-test.sh`).
 - **Text input / IME (G5) — done (R5); accessibility (G1) remains.** `text-input-v3`
   / `input-method-v2` are served (see [`22-input-method.md`](22-input-method.md)),
   so an input method can compose CJK text into a focused field. AT-SPI, sticky
