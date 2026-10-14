@@ -8,8 +8,6 @@ SerenityOS describes itself as "a love letter to '90s user interfaces". SDE is a
 
 SerenityOS describes it's rough goals to be "a marriage between the aesthetic of late-1990s productivity software and the power-user accessibility of late-2000s *nix". The SerenityOS UX does an amazng job of capturing the aesthetic. That said, we believe "the power-iser accessibility of late-2000s *nix" is best expressed by modern Linux with its broad hardware compatibility, vast software catalog, and container ecosystem. The goal of SDE is to faithfully recreate the SerenityOS UX on Linux.
 
-The beating heart of SDE is WindowServer, a fully native and reasonably complete Wayland compositor. Beyond WindowServer, SDE hosts the SerenityOS userland, unmodified as much as possible. Some applciations, such as SystemMonitor present the SerenityOS UX with decidedly Linux internals. To complete the picture, there are a few applications found only on SDE, such as the Battery and WiFi applets.
-
 The stack is split across a small family of repositories:
 
 | Repository | Role |
