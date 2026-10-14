@@ -207,6 +207,11 @@ static void notify_activity(Server& server);
 // The client surface (xdg or X11) under a layout point, and focus for it (R5).
 static wlr_surface* window_surface_at(Server& server, double lx, double ly, double* sx, double* sy);
 static void focus_window_at(Server& server, double lx, double ly);
+// SerenityOS "fragile" windows (client popups/menus) close when focus moves.
+static void dismiss_fragile_windows(Server& server, StringView reason);
+static void update_ext_workspace_active(Server& server);
+// SerenityOS: Super+H toggles the cursor highlight (R4.7).
+static void toggle_cursor_highlight(Server& server);
 // X11 (Xwayland) window helpers (R5).
 static X11Toplevel* x11_toplevel_for_wlr_surface(Server& server, wlr_surface* surface);
 static bool x11_surface_at(Server& server, double lx, double ly, wlr_surface** surface, double* sx, double* sy);
@@ -483,6 +488,9 @@ void focus_toplevel(Server& server, Toplevel* toplevel)
     // when the keyboard focus did not change, so a window left active is fixed up.
     deactivate_other_windows(server, toplevel, nullptr);
 
+    // SerenityOS: activating a window closes any fragile (popup/menu) window.
+    dismiss_fragile_windows(server, "window activated"sv);
+
     wlr_surface* previous_surface = server.seat->keyboard_state.focused_surface;
     wlr_surface* surface = toplevel->xdg_toplevel->base->surface;
     if (previous_surface == surface && toplevel->frame_active)
@@ -588,6 +596,14 @@ static bool handle_keybinding(Server& server, xkb_keysym_t sym, uint32_t modifie
         default:
             break;
         }
+    }
+    // SerenityOS: Super+H toggles the cursor highlight. (Without Shift the
+    // keysym is the lowercase 'h', as with Super+D above.)
+    if (config_modifiers(modifiers) == Config::ModSuper && (sym == XKB_KEY_H || sym == XKB_KEY_h)) {
+        // A Super+H is not a Super tap, so do not open the Taskbar menu.
+        WindowManager::clear_super_tap();
+        toggle_cursor_highlight(server);
+        return true;
     }
     return false;
 }
@@ -768,6 +784,10 @@ static void keyboard_key(wl_listener* listener, void* data)
         bool switcher_handled = false;
         for (int i = 0; i < syms_count; ++i)
             switcher_handled |= WindowSwitcher::handle_key(server, syms[i], modifiers, event->state == WL_KEYBOARD_KEY_STATE_PRESSED);
+        // SerenityOS: while the window switcher is open, fragile (popup/menu)
+        // windows are closed.
+        if (WindowSwitcher::is_visible())
+            dismiss_fragile_windows(server, "window switcher"sv);
         if (switcher_handled) {
             // A Super+Tab/Super+Shift+Tab shortcut is not a Super tap.
             WindowManager::clear_super_tap();
@@ -1092,10 +1112,40 @@ static void update_button_pressed(Server& server, FrameHit const& hit)
 static int g_cursor_highlight_radius { 0 };
 static Gfx::Color g_cursor_highlight_color { Gfx::Color::Transparent };
 static OwnPtr<ChromeNode> s_cursor_highlight;
+// SerenityOS's WindowManager defaults, used when Super+H turns the highlight on
+// and Mouse Settings have not configured one.
+static constexpr int cursor_highlight_default_radius { 25 };
+// Super+H toggles the highlight; until it is used, the settings decide.
+static Optional<bool> s_cursor_highlight_override;
+
+static bool cursor_highlight_configured()
+{
+    return g_cursor_highlight_radius >= 20 && g_cursor_highlight_color.alpha() != 0;
+}
+
+static bool cursor_highlight_enabled()
+{
+    return s_cursor_highlight_override.value_or(cursor_highlight_configured());
+}
+
+static int cursor_highlight_radius()
+{
+    if (g_cursor_highlight_radius >= 20)
+        return g_cursor_highlight_radius;
+    return s_cursor_highlight_override.value_or(false) ? cursor_highlight_default_radius : 0;
+}
+
+static Gfx::Color cursor_highlight_color()
+{
+    if (g_cursor_highlight_color.alpha() != 0)
+        return g_cursor_highlight_color;
+    // SerenityOS's defaults: a red highlight at alpha 110.
+    return Gfx::Color { 255, 0, 0, 110 };
+}
 
 static void render_cursor_highlight(Server& server)
 {
-    bool const enabled = g_cursor_highlight_radius >= 20 && g_cursor_highlight_color.alpha() != 0;
+    bool const enabled = cursor_highlight_enabled() && cursor_highlight_radius() > 0;
     if (!enabled) {
         if (s_cursor_highlight)
             s_cursor_highlight->set_visible(false);
@@ -1105,9 +1155,9 @@ static void render_cursor_highlight(Server& server)
         return;
     if (!s_cursor_highlight)
         s_cursor_highlight = make<ChromeNode>(*server.overlay_tree);
-    int const radius = g_cursor_highlight_radius;
+    int const radius = cursor_highlight_radius();
     s_cursor_highlight->set_rect({ static_cast<int>(server.cursor->x) - radius, static_cast<int>(server.cursor->y) - radius, radius * 2, radius * 2 });
-    auto color = g_cursor_highlight_color;
+    auto color = cursor_highlight_color();
     s_cursor_highlight->render([radius, color](Gfx::Painter& painter) {
         painter.fill_ellipse({ 0, 0, radius * 2, radius * 2 }, color);
     });
@@ -1119,8 +1169,16 @@ static void move_cursor_highlight(Server& server)
 {
     if (!s_cursor_highlight || !s_cursor_highlight->is_visible() || !server.cursor)
         return;
-    int const radius = g_cursor_highlight_radius;
+    int const radius = cursor_highlight_radius();
     s_cursor_highlight->set_rect({ static_cast<int>(server.cursor->x) - radius, static_cast<int>(server.cursor->y) - radius, radius * 2, radius * 2 });
+}
+
+// SerenityOS: Super+H toggles the cursor highlight.
+static void toggle_cursor_highlight(Server& server)
+{
+    s_cursor_highlight_override = !cursor_highlight_enabled();
+    render_cursor_highlight(server);
+    dbgln("WindowServer: cursor highlight {}", cursor_highlight_enabled() ? "on" : "off");
 }
 
 // zwp-pointer-constraints-v1 (R5). wlroots advertises the protocol; the
@@ -1507,6 +1565,36 @@ static void cursor_touch_cancel(wl_listener* listener, void* data)
 // surfaces with no input grab, so wlroots will not route an outside press to
 // them and the client cannot dismiss them. On a press that lands on another
 // client's surface, ask the menu owner to close its menus.
+// SerenityOS closes "fragile" windows (popups, menus, tooltips) as soon as
+// focus moves elsewhere — a new active window, the window switcher, or a
+// workspace switch. SDE's client popups are client menus (mapped `serenity-menu`
+// layer surfaces), so we ask their owning clients to dismiss them.
+static void dismiss_fragile_windows(Server& server, StringView reason)
+{
+    Vector<wl_client*> owners;
+    for (auto& layer : server.layer_surfaces) {
+        if (!layer->is_menu || !layer->layer_surface || !layer->layer_surface->surface)
+            continue;
+        if (!layer->layer_surface->surface->mapped)
+            continue;
+        auto* client = wl_resource_get_client(layer->layer_surface->resource);
+        if (!owners.contains_slow(client))
+            owners.append(client);
+    }
+    if (owners.is_empty())
+        return;
+
+    bool dismissed = false;
+    for (auto* manager : server.serenity_window_managers) {
+        if (!owners.contains_slow(wl_resource_get_client(manager)))
+            continue;
+        serenity_window_manager_send_dismiss_menus(manager);
+        dismissed = true;
+    }
+    if (dismissed)
+        dbgln("WindowServer: closed fragile windows ({})", reason);
+}
+
 static void maybe_dismiss_layer_menus(Server& server)
 {
     LayerSurface* menu_layer = nullptr;
@@ -3113,6 +3201,8 @@ static void hook_focus_x11(Server& server, X11Toplevel* toplevel)
     if (toplevel->xsurface->minimized)
         wlr_xwayland_surface_set_minimized(toplevel->xsurface, false);
     focus_x11_toplevel(server, toplevel);
+    // SerenityOS: activating a window closes any fragile (popup/menu) window.
+    dismiss_fragile_windows(server, "window activated"sv);
 }
 
 static void hook_set_minimized_x11(Server&, X11Toplevel& toplevel, bool minimized)
@@ -6281,6 +6371,13 @@ static void rebuild_ext_workspaces(Server& server)
     dbgln("WindowServer: ext-workspace-v1 published {}x{} grid", rows, columns);
 }
 
+static void on_workspace_changed(Server& server)
+{
+    update_ext_workspace_active(server);
+    // SerenityOS: switching window stacks closes any fragile (popup/menu) window.
+    dismiss_fragile_windows(server, "workspace switch"sv);
+}
+
 static void update_ext_workspace_active(Server& server)
 {
     if (!server.ext_workspace_manager)
@@ -7203,7 +7300,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     if (!wm_server->listen(wm_portal))
         warnln("WindowServer: could not listen on {}", wm_portal);
     // Let the window manager call back into the compositor's focus/menu code.
-    WindowManager::set_host_hooks({ focus_toplevel, open_window_menu, primary_usable_area, toplevel_report_position, toplevel_begin_interactive, current_palette, update_ext_workspace_active, set_toplevel_minimized, hook_focus_x11, hook_set_minimized_x11 });
+    WindowManager::set_host_hooks({ focus_toplevel, open_window_menu, primary_usable_area, toplevel_report_position, toplevel_begin_interactive, current_palette, on_workspace_changed, set_toplevel_minimized, hook_focus_x11, hook_set_minimized_x11 });
     WindowSwitcher::set_host_hooks({ current_palette, focus_toplevel, WindowManager::switch_workspace, overlay_shadow_hook, toplevel_update_frame, hook_focus_x11, hook_set_minimized_x11, x11_update_frame });
     AppletManager::set_host_hooks({ WindowManager::tell_wms_applet_area_size_changed, primary_usable_area, layer_report_position });
     // Bring the workspace grid up from the config, and follow later edits.

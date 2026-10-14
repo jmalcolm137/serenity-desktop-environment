@@ -163,15 +163,17 @@ that SDE does **not** reproduce yet.
   to the Taskbar. Covered by `scripts/run-modal-test.sh`.
   (Not yet: cross-client modal chains — an X11 modal blocking an xdg window and
   vice versa — and SerenityOS's explicit "lower the blockers" pass.)
-- **Fragile windows** — SerenityOS closes them on focus loss / certain actions
-  (`request_close_fragile_windows`). SDE: none.
-- **Automatic cursor tracking windows** (a tracked window, e.g. a client menu,
-  follows the pointer) — `set_automatic_cursor_tracking_window`. SDE: none.
+- **Automatic cursor tracking windows.** SerenityOS's
+  `set_automatic_cursor_tracking_window` keeps delivering pointer events to the
+  window that received a press until every button is released (and lets several
+  windows track at once). SDE has the single-window form as its **implicit
+  pointer grab** (`Server::pointer_grab_surface` in `WindowServer/src/main.cpp`,
+  set on a press and cleared when the last button is released, mirroring
+  SerenityOS's `process_ongoing_active_input_mouse_event`); SerenityOS's
+  multi-window tracking and its `did_popup_a_menu` reset are not reproduced.
 - **The window-stack-switch overlay.** SerenityOS briefly shows the workspace-grid
   overlay when switching stacks (`switch_to_window_stack(..., show_overlay)`); SDE
   switches silently. (The tile-preview and geometry overlays *are* implemented.)
-- **`Super+H` to toggle the cursor highlight.** SDE has the cursor highlight
-  (R4.7, set from Mouse Settings) but no shortcut for it.
 - **`Ctrl+Super+Shift+I`** (reload icon bitmaps after a scale change) — an
   internal SerenityOS hotkey with no SDE equivalent (SDE reloads icons on demand).
 - **The remaining window animations.** Minimize/restore landed (see "Recently
@@ -448,6 +450,19 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   on this path ([`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md) §6).
 
 ## Recently resolved (kept so we don't re-chase them)
+
+- **Fragile windows and the Super+H cursor highlight (R3).** SerenityOS closes
+  its "fragile" windows (popups, menus, tooltips) as soon as focus moves; SDE's
+  client popups are client menus (`serenity-menu` layer surfaces), so the
+  compositor asks their owner to dismiss them (`dismiss_fragile_windows()`) on a
+  window activation, while the window switcher is open, and on a workspace
+  switch — the same three call sites as SerenityOS's
+  `request_close_fragile_windows`. `Super+H` now toggles the cursor highlight
+  (R4.7), like SerenityOS's `WindowManager`: it flips the configured state and
+  falls back to SerenityOS's defaults (radius 25, red at alpha 110) when Mouse
+  Settings have not configured one, and is not taken as a Super tap. Covered by
+  `scripts/run-fragile-window-test.sh` and
+  `scripts/run-cursor-highlight-test.sh`.
 
 - **Exactly one window is active at a time (R3/R5).** The compositor deactivated
   the previous window only when the seat still reported a focused surface. A seat
