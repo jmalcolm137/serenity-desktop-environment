@@ -19,6 +19,8 @@
 #   SDE_SESSION_MAX_RESTARTS   restart budget on non-zero exit (default 3)
 #   SDE_SESSION_RESTART_DELAY  seconds between restarts (default 1)
 #   SDE_SESSION_AUTOSTART     0 to skip autostart (default 1)
+#   SDE_SESSION_RESTORE       0 to skip restoring the previous session's apps (default 1)
+#   SDE_SESSION_RESTORE_FILE  the compositor-written list of running apps (default below)
 #   SDE_SESSION_WATCHDOG_SECONDS  heartbeat staleness before restarting (default 10; 0 disables)
 #   SDE_SESSION_HEARTBEAT_FILE    liveness file the compositor writes (default below)
 #   SDE_SESSION_COMPOSITOR_SAFE   compositor command for safe mode (minimal session)
@@ -77,6 +79,7 @@ if [ -r "$SESSION_CONF" ]; then
             watchdog_seconds) apply_session_setting SDE_SESSION_WATCHDOG_SECONDS "$value" ;;
             safe_mode) apply_session_setting SDE_SESSION_SAFE_MODE "$value" ;;
             autostart) apply_session_setting SDE_SESSION_AUTOSTART "$value" ;;
+            restore) apply_session_setting SDE_SESSION_RESTORE "$value" ;;
             autostart_dir) apply_session_setting SDE_SESSION_AUTOSTART_DIR "$value" ;;
             lock_on_suspend) apply_session_setting SDE_SUSPEND_LOCK_ON "$value" ;;
             suspend_hook) apply_session_setting SDE_SUSPEND_HOOK "$value" ;;
@@ -117,6 +120,19 @@ AUTOSTART_DIR="${SDE_SESSION_AUTOSTART_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/au
 MAX_RESTARTS="${SDE_SESSION_MAX_RESTARTS:-3}"
 RESTART_DELAY="${SDE_SESSION_RESTART_DELAY:-1}"
 RUN_AUTOSTART="${SDE_SESSION_AUTOSTART:-1}"
+# Full session restore (R4.2): the compositor records the applications that have a
+# mapped window (one app id per line); after a compositor (re)start we relaunch
+# them, and the apps that opted into xdg-session-management-v1 restore their
+# toplevels' geometry. Apps the session's own startup command already launches are
+# skipped so they are not duplicated.
+RUN_RESTORE="${SDE_SESSION_RESTORE:-1}"
+RESTORE_FILE="${SDE_SESSION_RESTORE_FILE:-$(session_state_dir)/session-apps}"
+SHELL_APPS=""
+for _word in ${SDE_SESSION_SHELL:-}; do
+    _base="$(basename "$_word" 2>/dev/null || true)"
+    case "$_base" in ""|"&"|"-"*) continue ;; esac
+    SHELL_APPS="$SHELL_APPS $_base"
+done
 
 # R6/N4 hardening. The watchdog restarts a *wedged* compositor (one whose event
 # loop is blocked) by watching a liveness heartbeat file the compositor writes;
@@ -216,6 +232,29 @@ run_autostart() {
         [ -e "$entry" ] || continue
         run_desktop_entry "$entry"
     done
+}
+
+# Relaunch the applications that had a window when the compositor last ran (R4.2
+# "full session restore"). The list is the compositor's live record, so an app the
+# user closed is not restored; one that is no longer installed is skipped.
+run_restore() {
+    [ "$RUN_RESTORE" = "1" ] || return 0
+    [ -s "$RESTORE_FILE" ] || return 0
+    local id bin
+    while IFS= read -r id || [ -n "$id" ]; do
+        [ -n "$id" ] || continue
+        case " $SHELL_APPS " in *" $id "*) continue ;; esac
+        if [ -x "$APP_BIN/$id" ]; then
+            bin="$APP_BIN/$id"
+        elif command -v "$id" >/dev/null 2>&1; then
+            bin="$id"
+        else
+            echo "SDE session: session restore: '$id' is no longer available" >&2
+            continue
+        fi
+        echo "SDE session: restoring $id"
+        setsid "$bin" >/dev/null 2>&1 &
+    done < "$RESTORE_FILE"
 }
 
 # Wait (bounded) for the compositor's Wayland socket before launching clients.
@@ -371,6 +410,12 @@ while :; do
     if [ "$RUN_AUTOSTART" = "1" ]; then
         wait_for_socket || true
         run_autostart
+    fi
+
+    # Then the applications the previous compositor had open (R4.2).
+    if [ "$RUN_RESTORE" = "1" ]; then
+        wait_for_socket || true
+        run_restore
     fi
 
     # A SIGTERM/SIGINT means "stop the session", not "restart the compositor":

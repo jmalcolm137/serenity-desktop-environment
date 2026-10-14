@@ -355,4 +355,43 @@ void on_toplevel_destroyed(Toplevel& toplevel)
     }
 }
 
+static ByteString running_apps_path()
+{
+    if (auto const* dir = getenv("SDE_STATE_DIR"); dir && *dir)
+        return ByteString::formatted("{}/session-apps", dir);
+    if (auto const* runtime = getenv("XDG_RUNTIME_DIR"); runtime && *runtime)
+        return ByteString::formatted("{}/sde-session-apps", runtime);
+    return ByteString("/tmp/sde-session-apps");
+}
+
+void update_running_apps(Server& server)
+{
+    // One entry per application with a mapped toplevel, in the order they
+    // appeared (an app whose windows have all closed is dropped, so the list is
+    // always the live set). The session supervisor reads it after a restart and
+    // relaunches these applications; the ones that opted into
+    // xdg-session-management-v1 then restore their toplevels' geometry.
+    Vector<ByteString> apps;
+    for (auto& toplevel : server.toplevels) {
+        if (toplevel->mapped == false)
+            continue;
+        auto const* app_id = toplevel->xdg_toplevel->app_id;
+        if (app_id == nullptr || *app_id == '\0')
+            continue;
+        ByteString id { app_id };
+        if (!apps.contains_slow(id))
+            apps.append(move(id));
+    }
+
+    auto path = running_apps_path();
+    int fd = ::open(path.characters(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0)
+        return;
+    for (auto const& app : apps) {
+        (void)::write(fd, app.characters(), app.length());
+        (void)::write(fd, "\n", 1);
+    }
+    ::close(fd);
+}
+
 }

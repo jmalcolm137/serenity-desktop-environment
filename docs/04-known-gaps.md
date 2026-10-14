@@ -226,10 +226,15 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
   serves the standard protocol and persists per-session toplevel geometry under
   `$SDE_STATE_DIR/sessions`, so an app that opts in restores its toplevels across
   a compositor restart — verified by `scripts/run-session-management-test.sh`
-  (which restarts the compositor). Remaining: supervision/restart of user apps —
-  the supervisor now (re)launches XDG Autostart entries inside its loop once the
-  compositor socket is up, so they start after the compositor and are relaunched
-  after a restart; supervising long-running apps beyond that is not yet done.
+  (which restarts the compositor). **Full session restore now completes**: the
+  compositor records the applications that have a mapped window
+  (`$SDE_STATE_DIR/session-apps`, rewritten as windows come and go), and the
+  supervisor relaunches them once the compositor socket is up — on a restart, and
+  on the next login. Apps that opted into `xdg-session-management-v1` then restore
+  their toplevels' geometry; an app the user closed is not restored, one that is
+  no longer installed is skipped, and the apps the session's own startup command
+  launches are not duplicated. The supervisor still (re)launches XDG Autostart
+  entries the same way; supervising long-running apps beyond that is not done.
 
 - **Session lifecycle (G6 / W5) — resolved (R4.1–R4.9).** Greet/login stays the
   display manager's; the session now starts, autostarts, locks, idles, saves/
@@ -433,10 +438,10 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   restarts it when the heartbeat goes stale) and **safe mode** (after the restart
   budget, drop to a minimal shell instead of ending the session). User-facing
   session policy is configurable in `$XDG_CONFIG_HOME/sde/session.conf`
-  (environment overrides). Covered by `run-session-test.sh` phases (H)–(K) and
-  the heartbeat assertion in `run-headless-test.sh`. Full **session restore**
-  (relaunching the user's windows after a compositor restart) is not done — it
-  needs `xdg-session-management-v1`.
+  (environment overrides). Covered by `run-session-test.sh` phases (H)–(M) and
+  the heartbeat assertion in `run-headless-test.sh`. **Full session restore**
+  (relaunching the user's windows after a compositor restart) is done — see the
+  R4.2 note above.
 - **Packaging** of `WindowServer` and the session; **headless CI matrix**;
   **sanitizers/fuzzing**; **compositor design doc** and observability.
 
@@ -450,6 +455,26 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   on this path ([`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md) §6).
 
 ## Recently resolved (kept so we don't re-chase them)
+
+- **Full session restore (R4.2): the user's applications are relaunched.** The
+  compositor already served `xdg-session-management-v1` and persisted a
+  session-managed toplevel's geometry, but nothing brought the applications
+  themselves back after a compositor restart. `SessionManager::update_running_apps`
+  now keeps `$SDE_STATE_DIR/session-apps` (one app id per line — the apps with a
+  mapped toplevel, rewritten on map/unmap/destroy), and the session supervisor
+  relaunches them once the socket is up (`run_restore`, `SDE_SESSION_RESTORE`),
+  skipping apps the session's own startup command launches and ones that are no
+  longer installed. Covered by `run-session-management-test.sh` (the app is
+  recorded while its window is up) and `run-session-test.sh` phase (M).
+
+- **A client's "no wallpaper" broke its own connection (R2/R3).** When the Desktop
+  had no wallpaper it still called `serenity_window_manager.set_wallpaper` with
+  `fd = -1`; libwayland cannot dup a -1 and aborts the *whole* request, so the
+  client's connection was left broken and the desktop layer surface never mapped
+  on a fresh state directory (the shell came up with no desktop). The
+  `WaylandClient` shim now hands over a valid placeholder fd for the zero-size "no
+  wallpaper" case, and the compositor closes the fd it no longer used.
+  `scripts/run-shell-start-test.sh` covers it.
 
 - **Fragile windows and the Super+H cursor highlight (R3).** SerenityOS closes
   its "fragile" windows (popups, menus, tooltips) as soon as focus moves; SDE's

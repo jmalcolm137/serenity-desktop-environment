@@ -28,4 +28,9 @@ void on_toplevel_mapped(Toplevel& toplevel);
 // Drop references to a toplevel that is being destroyed.
 void on_toplevel_destroyed(Toplevel& toplevel);
 
+// Record the applications that currently have a mapped toplevel, so the session
+// supervisor can relaunch them after a compositor (re)start — the "relaunch the
+// user's windows" half of session restore. Written whenever the set changes.
+void update_running_apps(Server& server);
+
 }

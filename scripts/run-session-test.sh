@@ -286,6 +286,33 @@ env SDE_SLEEP_MONITOR_CMD="$RUNTIME/sleep-monitor" \
 check_absent_file "$RUNTIME/locked-2"
 check_file "$RUNTIME/suspended-2"
 
+echo "== (M) session restore relaunches the recorded applications =="
+# The compositor records the apps that had a window (R4.2); the supervisor
+# relaunches them after a (re)start, skipping what its own startup command runs.
+mkdir -p "$RUNTIME/bin-k"
+cat > "$RUNTIME/bin-k/TextEditor" <<EOF
+#!/usr/bin/env bash
+touch "$RUNTIME/restored-k"
+EOF
+cat > "$RUNTIME/bin-k/FileManager" <<EOF
+#!/usr/bin/env bash
+touch "$RUNTIME/restored-shell-app"
+EOF
+chmod +x "$RUNTIME/bin-k/TextEditor" "$RUNTIME/bin-k/FileManager"
+printf 'TextEditor\nFileManager\nGone\n' > "$RUNTIME/session-apps-k"
+env SDE_SESSION_COMPOSITOR="sleep 0.5" \
+    SDE_SESSION_APP_BIN_DIR="$RUNTIME/bin-k" \
+    SDE_SESSION_RESTORE_FILE="$RUNTIME/session-apps-k" \
+    SDE_SESSION_AUTOSTART=0 \
+    SDE_SESSION_SHELL="$RUNTIME/bin-k/FileManager -d" \
+    SDE_SESSION_RESTART_DELAY=0 \
+    "$SDE" > "$RUNTIME/session-k.log" 2>&1 || true
+check "restoring TextEditor" "$RUNTIME/session-k.log"
+check "'Gone' is no longer available" "$RUNTIME/session-k.log"
+check_file "$RUNTIME/restored-k"
+# The shell's own app is not relaunched a second time.
+check_absent_file "$RUNTIME/restored-shell-app"
+
 if [ "$fail" -ne 0 ]; then
     echo "==> session test FAILED"
     exit 1

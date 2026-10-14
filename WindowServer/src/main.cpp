@@ -3995,6 +3995,8 @@ static void toplevel_map(wl_listener* listener, void*)
         wlr_foreign_toplevel_handle_v1_output_enter(toplevel->foreign_handle, toplevel->server->primary_output);
     focus_toplevel(*toplevel->server, toplevel);
     WindowManager::emit_window_state(*toplevel);
+    // A new window means a new running application to restore (R4.2).
+    SessionManager::update_running_apps(*toplevel->server);
 }
 
 static void toplevel_unmap(wl_listener* listener, void*)
@@ -4007,6 +4009,9 @@ static void toplevel_unmap(wl_listener* listener, void*)
     wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
     if (toplevel == toplevel->server->grabbed_toplevel)
         reset_cursor_mode(*toplevel->server);
+    // An application whose windows have all closed is no longer part of the
+    // session to restore.
+    SessionManager::update_running_apps(*toplevel->server);
 }
 
 // Spike (docs/09-r3-implementation-plan.md §3): capture a toplevel's pixels for
@@ -4099,6 +4104,10 @@ static void toplevel_destroy(wl_listener* listener, void*)
     wlr_scene_node_destroy(&toplevel->scene_tree->node);
     dbgln("WindowServer: toplevel destroyed wm_id={}", toplevel->wm_id);
     WindowManager::emit_window_removed(*toplevel);
+    // A destroyed window's application may no longer be running (R4.2). Treat it
+    // as unmapped first: a client that goes away can be destroyed without an unmap.
+    toplevel->mapped = false;
+    SessionManager::update_running_apps(server);
     remove_owned(server.toplevels, toplevel);
 }
 
@@ -5730,6 +5739,10 @@ static void serenity_window_manager_set_wallpaper(wl_client*, wl_resource* resou
 {
     auto* server = static_cast<Server*>(wl_resource_get_user_data(resource));
     if (fd < 0 || width <= 0 || height <= 0 || pitch <= 0) {
+        // "No wallpaper" (a zero size, or a client without one). A client may
+        // still have handed us a placeholder fd, so close it.
+        if (fd >= 0)
+            ::close(fd);
         g_wallpaper = nullptr;
         write_sde_wallpaper(nullptr);
     } else {

@@ -60,6 +60,12 @@ for _ in $(seq 1 80); do
     sleep 0.1
 done
 sleep 4
+# The Desktop (FileManager -d) can take a moment to come up, so wait for its
+# layer surface rather than racing a fixed sleep.
+for _ in $(seq 1 300); do
+    grep -q "layer surface namespace='serenity-desktop'" "$RUNTIME/comp.log" && break
+    sleep 0.1
+done
 # The compositor must have created the override path's parent directory and be
 # listening there (the WM clients connect to this socket).
 PORTAL_OK=0
