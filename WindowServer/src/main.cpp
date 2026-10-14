@@ -11,11 +11,13 @@
  */
 
 #include <AK/ByteString.h>
+#include <AK/Array.h>
 #include <AK/Error.h>
 #include <AK/Format.h>
 #include <AK/StringBuilder.h>
 #include <AK/LexicalPath.h>
 #include <AK/NonnullOwnPtr.h>
+#include <AK/QuickSort.h>
 #include <AK/NonnullRefPtr.h>
 #include <AK/StdLibExtras.h>
 #include <AK/Vector.h>
@@ -3547,6 +3549,110 @@ static void watch_wallpaper_state(Server& server)
         (void)watcher->add_watch(Config::state_file(name), Core::FileWatcherEvent::Type::ContentModified | Core::FileWatcherEvent::Type::MetadataModified | Core::FileWatcherEvent::Type::Deleted);
 }
 
+// --- R6: performance instrumentation -----------------------------------------
+//
+// N3's budget is "low, predictable input latency; smooth 60 Hz; a software
+// compositor fallback". Two numbers decide it, and both are cheap to measure:
+//
+//   * frame time — how long the compositor takes to produce a frame: its own
+//     work in output_frame() (scene build, render, commit). This is the cost we
+//     own; the client's own drawing happens before its commit.
+//   * input -> present — from the moment the compositor handles an input event
+//     (notify_activity(), the same hook that resets the idle timer) to the frame
+//     that presents its effect (the next output_frame()). This is what the user
+//     feels, so it includes the client's response and the buffer hand-off.
+//
+// Each metric keeps a ring of the last `capacity` samples — fixed memory, so a
+// long session cannot grow — plus totals. The measurement is always on (two
+// clock reads per frame); the *reporting* is opt-in:
+//   SDE_PERF_STATS=<file>  rewrite a key=value summary once a second
+//   SDE_PERF_LOG=1         also log it, so a run can be watched live
+struct PerfMetric {
+    static constexpr size_t capacity = 600; // ~10 s at 60 Hz
+    Array<double, capacity> samples { };
+    size_t written { 0 };
+    size_t total { 0 };
+    double maximum { 0 };
+    double budget_ms { 0 };
+    size_t over_budget { 0 };
+
+    void add(double value)
+    {
+        samples[written % capacity] = value;
+        ++written;
+        ++total;
+        maximum = max(maximum, value);
+        if (budget_ms > 0 && value > budget_ms)
+            ++over_budget;
+    }
+
+    size_t recent() const { return min(written, capacity); }
+
+    double percentile(double fraction) const
+    {
+        size_t const count = recent();
+        if (count == 0)
+            return 0;
+        Array<double, capacity> sorted { };
+        for (size_t i = 0; i < count; ++i)
+            sorted[i] = samples[i];
+        auto view = sorted.span().slice(0, count);
+        quick_sort(view);
+        auto index = static_cast<size_t>(fraction * static_cast<double>(count - 1) + 0.5);
+        return sorted[min(index, count - 1)];
+    }
+};
+
+struct PerfStats {
+    PerfMetric frame_ms { .budget_ms = 16.6 };           // 60 Hz
+    PerfMetric frame_interval_ms { .budget_ms = 50.0 };
+    PerfMetric input_to_present_ms { .budget_ms = 50.0 };
+    size_t frames { 0 };
+    size_t slow_frames { 0 };
+    double started_ms { 0 };
+};
+static PerfStats s_perf;
+static double s_perf_last_frame_ms { 0 };
+static double s_perf_pending_input_ms { -1 };
+
+static double perf_now_ms()
+{
+    timespec now { };
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return static_cast<double>(now.tv_sec) * 1000.0 + static_cast<double>(now.tv_nsec) / 1000000.0;
+}
+
+// Note that input arrived: the next frame is the one that presents it. The most
+// recent event wins, because that is what the frame ends up showing.
+static void perf_note_input()
+{
+    s_perf_pending_input_ms = perf_now_ms();
+}
+
+static ByteString perf_summary()
+{
+    double const seconds = max(0.001, (perf_now_ms() - s_perf.started_ms) / 1000.0);
+    StringBuilder out;
+    out.appendff("frames={}\n", s_perf.frames);
+    out.appendff("slow_frames={}\n", s_perf.slow_frames);
+    out.appendff("fps={:.1}\n", static_cast<double>(s_perf.frames) / seconds);
+    out.appendff("samples={}\n", s_perf.frame_ms.recent());
+    out.appendff("frame_ms_budget={:.1}\n", s_perf.frame_ms.budget_ms);
+    out.appendff("frame_ms_p50={:.3}\n", s_perf.frame_ms.percentile(0.5));
+    out.appendff("frame_ms_p95={:.3}\n", s_perf.frame_ms.percentile(0.95));
+    out.appendff("frame_ms_max={:.3}\n", s_perf.frame_ms.maximum);
+    out.appendff("frame_ms_over_budget={}\n", s_perf.frame_ms.over_budget);
+    out.appendff("frame_interval_ms_p50={:.3}\n", s_perf.frame_interval_ms.percentile(0.5));
+    out.appendff("frame_interval_ms_p95={:.3}\n", s_perf.frame_interval_ms.percentile(0.95));
+    out.appendff("input_to_present_ms_budget={:.1}\n", s_perf.input_to_present_ms.budget_ms);
+    out.appendff("input_to_present_ms_p50={:.3}\n", s_perf.input_to_present_ms.percentile(0.5));
+    out.appendff("input_to_present_ms_p95={:.3}\n", s_perf.input_to_present_ms.percentile(0.95));
+    out.appendff("input_to_present_ms_max={:.3}\n", s_perf.input_to_present_ms.maximum);
+    out.appendff("input_to_present_ms_over_budget={}\n", s_perf.input_to_present_ms.over_budget);
+    out.appendff("input_to_present_samples={}\n", s_perf.input_to_present_ms.total);
+    return out.to_byte_string();
+}
+
 // R6 presentation-time: mark the surfaces the upcoming frame displays on this
 // output, so wlroots can deliver wp_presentation_feedback ("presented" events).
 // The scene reports the buffers visible on the output in rendering order.
@@ -3563,6 +3669,7 @@ static void output_frame(wl_listener* listener, void*)
 {
     Output* output = nullptr;
     output = wl_container_of(listener, output, frame);
+    double const frame_start_ms = perf_now_ms();
     update_desktop_background(*output->server, *output);
     auto* scene_output = wlr_scene_get_scene_output(output->server->scene, output->output);
     if (!scene_output)
@@ -3572,6 +3679,19 @@ static void output_frame(wl_listener* listener, void*)
     timespec now { };
     clock_gettime(CLOCK_MONOTONIC, &now);
     wlr_scene_output_send_frame_done(scene_output, &now);
+
+    double const frame_end_ms = perf_now_ms();
+    s_perf.frame_ms.add(frame_end_ms - frame_start_ms);
+    if (s_perf_last_frame_ms > 0)
+        s_perf.frame_interval_ms.add(frame_start_ms - s_perf_last_frame_ms);
+    s_perf_last_frame_ms = frame_start_ms;
+    if (s_perf_pending_input_ms >= 0) {
+        s_perf.input_to_present_ms.add(frame_end_ms - s_perf_pending_input_ms);
+        s_perf_pending_input_ms = -1;
+    }
+    ++s_perf.frames;
+    if (frame_end_ms - frame_start_ms > s_perf.frame_ms.budget_ms)
+        ++s_perf.slow_frames;
 }
 
 static void output_request_state(wl_listener* listener, void* data)
@@ -6179,6 +6299,8 @@ static void virtual_input_manager_bind(wl_client* client, void* data, uint32_t v
 
 static void notify_activity(Server& server)
 {
+    // R6: this is also where we mark the start of the input -> present interval.
+    perf_note_input();
     if (server.idle_notifier)
         wlr_idle_notifier_v1_notify_activity(server.idle_notifier, server.seat);
 }
@@ -7470,6 +7592,24 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
         static RefPtr<Core::Timer> heartbeat_timer;
         heartbeat_timer = Core::Timer::create_repeating(1000, [beat] { beat(); });
         heartbeat_timer->start();
+    }
+
+    // R6: the performance meter's report (see the meter above output_frame()).
+    if (auto const* stats_path = getenv("SDE_PERF_STATS"); stats_path && *stats_path) {
+        ByteString path { stats_path };
+        bool const log = getenv("SDE_PERF_LOG") && *getenv("SDE_PERF_LOG");
+        s_perf.started_ms = perf_now_ms();
+        static RefPtr<Core::Timer> perf_timer;
+        perf_timer = Core::Timer::create_repeating(1000, [path, log] {
+            if (auto file = Core::File::open(path, Core::File::OpenMode::Write | Core::File::OpenMode::Truncate); !file.is_error())
+                (void)file.value()->write_until_depleted(perf_summary());
+            if (log)
+                dbgln("WindowServer: perf: frames={} fps={:.1} frame p50/p95/max={:.2}/{:.2}/{:.2} ms slow={} input->present p50/p95={:.2}/{:.2} ms",
+                    s_perf.frames, static_cast<double>(s_perf.frames) / max(0.001, (perf_now_ms() - s_perf.started_ms) / 1000.0),
+                    s_perf.frame_ms.percentile(0.5), s_perf.frame_ms.percentile(0.95), s_perf.frame_ms.maximum, s_perf.slow_frames,
+                    s_perf.input_to_present_ms.percentile(0.5), s_perf.input_to_present_ms.percentile(0.95));
+        });
+        perf_timer->start();
     }
 
     int result = loop.exec();
