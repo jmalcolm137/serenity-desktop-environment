@@ -58,7 +58,23 @@ stop_comp() {
 
 echo "== (A) a client creates a session and adds a toplevel =="
 start_comp mgmt-a
-env WAYLAND_DISPLAY=mgmt-a "$TOOLS_BUILD/session-test" create > "$RUNTIME/create.log" 2>&1 || true
+env WAYLAND_DISPLAY=mgmt-a "$TOOLS_BUILD/session-test" create > "$RUNTIME/create.log" 2>&1 &
+CREATE_PID=$!
+for _ in $(seq 1 40); do
+    grep -q 'SESSION-TEST: created id=' "$RUNTIME/create.log" 2>/dev/null && break
+    sleep 0.1
+done
+# While the client is up, the compositor records its application, so the session
+# can relaunch it after a restart (R4.2 "full session restore").
+restore_recorded=0
+for _ in $(seq 1 20); do
+    if grep -qxF 'session-test' "$RUNTIME/state/session-apps" 2>/dev/null; then
+        restore_recorded=1
+        break
+    fi
+    sleep 0.1
+done
+wait "$CREATE_PID" 2>/dev/null || true
 cat "$RUNTIME/create.log"
 session_id="$(sed -nE 's/.*SESSION-TEST: created id=(.*)/\1/p' "$RUNTIME/create.log" | head -1)"
 echo "  session id: '${session_id}'"
@@ -94,6 +110,13 @@ if [[ -n "$session_id" && -s "$RUNTIME/state/sessions/$session_id" ]]; then
     echo "  ok: session state persisted ($(cat "$RUNTIME/state/sessions/$session_id"))"
 else
     echo "  MISSING: session state file"
+    fail=1
+fi
+
+if [[ "$restore_recorded" -eq 1 ]]; then
+    echo "  ok: the client's application is recorded for session restore"
+else
+    echo "  MISSING: running-application record ($RUNTIME/state/session-apps)"
     fail=1
 fi
 

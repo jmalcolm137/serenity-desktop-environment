@@ -154,6 +154,7 @@ int main(int argc, char** argv)
     struct xdg_toplevel* toplevel = xdg_surface_get_toplevel(xdg_surface);
     xdg_toplevel_add_listener(toplevel, &toplevel_listener, NULL);
     xdg_toplevel_set_title(toplevel, "Session Test");
+    xdg_toplevel_set_app_id(toplevel, "session-test");
     if (strcmp(mode, "restore") == 0) {
         struct xdg_toplevel_session_v1* ts = xdg_session_v1_restore_toplevel(session, toplevel, "win");
         xdg_toplevel_session_v1_add_listener(ts, &ts_listener, NULL);
