@@ -101,6 +101,8 @@ PORTAL_INCLUDES=(
     -I "$SERENITY_BUILD_DIR/Userland/Services"
 )
 LAGOM_LIBS=(-L "$SERENITY_BUILD_DIR/lib" -llagom-ak -llagom-coreminimal -llagom-corebasic -llagom-core -llagom-threading -llagom-main)
+# The main backend decodes/encodes images (wallpaper, screenshots) with LibGfx.
+PORTAL_LAGOM_LIBS=("${LAGOM_LIBS[@]}" -llagom-gfx -llagom-compress -llagom-crypto -llagom-textcodec -llagom-unicode -llagom-url -llagom-filesystem -llagom-riff -llagom-ipc)
 PORTAL_FLAGS=(-std=c++26 -fno-exceptions -Wno-literal-suffix -O2 -Wall "${PORTAL_INCLUDES[@]}")
 
 c++ "${PORTAL_FLAGS[@]}" \
@@ -160,7 +162,7 @@ for protocol in "${PORTAL_PROTOCOLS[@]}"; do
 done
 
 c++ "${PORTAL_FLAGS[@]}" \
-    $(pkg-config --cflags dbus-1 gdk-pixbuf-2.0 wayland-client libpipewire-0.3 xkbcommon gbm libdrm) \
+    $(pkg-config --cflags dbus-1 wayland-client libpipewire-0.3 xkbcommon gbm libdrm) \
     "$SDE_ROOT/tools/portal/dbus.cpp" \
     "$SDE_ROOT/tools/portal/backend.cpp" \
     "$SDE_ROOT/tools/portal/screencast.cpp" \
@@ -168,8 +170,8 @@ c++ "${PORTAL_FLAGS[@]}" \
     "$SDE_ROOT/tools/portal/input-capture.cpp" \
     "$SDE_ROOT/tools/portal/global-shortcuts.cpp" \
     "${PORTAL_OBJECTS[@]}" \
-    "${LAGOM_LIBS[@]}" \
-    $(pkg-config --libs dbus-1 gdk-pixbuf-2.0 wayland-client libpipewire-0.3 xkbcommon gbm libdrm) \
+    "${PORTAL_LAGOM_LIBS[@]}" \
+    $(pkg-config --libs dbus-1 wayland-client libpipewire-0.3 xkbcommon gbm libdrm) \
     -lpthread -Wl,-rpath,"$SERENITY_BUILD_DIR/lib" \
     -o "$TOOLS_BUILD/xdg-desktop-portal-serenity"
 

@@ -25,7 +25,7 @@
 // This is the Serenity-style rewrite of tools/portal-screencast.c: it speaks
 // D-Bus through Portal::/AK/LibCore (see dbus.h) instead of GDBus/GVariant, and
 // there is no GLib/GIO in the plumbing. The PipeWire, Wayland, GBM and
-// gdk-pixbuf capture code is unchanged.
+// the capture code is unchanged.
 
 #define _GNU_SOURCE
 
@@ -37,7 +37,6 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <gdk-pixbuf/gdk-pixbuf.h>
 #include <poll.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -67,6 +66,8 @@
 #include <LibCore/Directory.h>
 #include <LibCore/Environment.h>
 #include <LibCore/File.h>
+#include <LibGfx/Bitmap.h>
+#include <LibGfx/ImageFormats/PNGWriter.h>
 
 #define MAX_OUTPUTS 8
 #define MAX_TOPLEVELS 64
@@ -2033,22 +2034,16 @@ int capture_png(ByteString const& path)
 
     int result = -1;
     if (shot.status == 1 && shot.pixels && shot.width > 0 && shot.height > 0) {
-        GdkPixbuf* pixbuf = gdk_pixbuf_new(GDK_COLORSPACE_RGB, FALSE, 8, shot.width, shot.height);
-        if (pixbuf) {
-            guchar* dst = gdk_pixbuf_get_pixels(pixbuf);
-            int dst_stride = gdk_pixbuf_get_rowstride(pixbuf);
-            for (int y = 0; y < shot.height; ++y) {
-                for (int x = 0; x < shot.width; ++x) {
-                    uint8_t* src = shot.pixels + (size_t)y * shot.stride + (size_t)x * 4;
-                    guchar* out = dst + (size_t)y * dst_stride + (size_t)x * 3;
-                    out[0] = src[2]; // R (SHM is BGRA in memory)
-                    out[1] = src[1]; // G
-                    out[2] = src[0]; // B
+        // The SHM frame is BGRA8888 in memory; wrap it (no copy) and encode.
+        auto bitmap = Gfx::Bitmap::create_wrapper(Gfx::BitmapFormat::BGRA8888, { shot.width, shot.height }, 1, shot.stride, shot.pixels);
+        if (!bitmap.is_error()) {
+            auto png = Gfx::PNGWriter::encode(*bitmap.value());
+            if (!png.is_error()) {
+                if (auto file = Core::File::open(path, Core::File::OpenMode::Write | Core::File::OpenMode::Truncate); !file.is_error()) {
+                    if (!file.value()->write_until_depleted(png.value()).is_error())
+                        result = 0;
                 }
             }
-            if (gdk_pixbuf_save(pixbuf, path.characters(), "png", nullptr, nullptr))
-                result = 0;
-            g_object_unref(pixbuf);
         }
     }
 

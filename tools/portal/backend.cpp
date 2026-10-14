@@ -32,12 +32,14 @@
 #include <LibCore/File.h>
 #include <LibCore/Process.h>
 #include <LibCore/System.h>
+#include <LibGfx/Bitmap.h>
+#include <LibGfx/ImageFormats/PNGWriter.h>
+#include <LibGfx/Painter.h>
 #include <LibMain/Main.h>
 
 #include <ctype.h>
 #include <fcntl.h>
 #include <limits.h>
-#include <gdk-pixbuf/gdk-pixbuf.h>
 #include <pwd.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -715,55 +717,61 @@ void handle_filechooser(Portal::MethodCall& call)
 
 // --- Screenshot -------------------------------------------------------------
 
+// Encode a bitmap as a PNG at `path`.
+bool save_png(Gfx::Bitmap const& bitmap, ByteString const& path)
+{
+    auto png = Gfx::PNGWriter::encode(bitmap);
+    if (png.is_error())
+        return false;
+    auto file = Core::File::open(path, Core::File::OpenMode::Write | Core::File::OpenMode::Truncate);
+    if (file.is_error())
+        return false;
+    return !file.value()->write_until_depleted(png.value()).is_error();
+}
+
 bool sample_png_color(ByteString const& path, int x, int y, double& out_r, double& out_g, double& out_b)
 {
-    GdkPixbuf* pixbuf = gdk_pixbuf_new_from_file(path.characters(), nullptr);
-    if (!pixbuf)
+    auto decoded = Gfx::Bitmap::load_from_file(path);
+    if (decoded.is_error())
         return false;
-    int width = gdk_pixbuf_get_width(pixbuf);
-    int height = gdk_pixbuf_get_height(pixbuf);
-    int channels = gdk_pixbuf_get_n_channels(pixbuf);
-    int rowstride = gdk_pixbuf_get_rowstride(pixbuf);
-    guchar* pixels = gdk_pixbuf_get_pixels(pixbuf);
-
+    auto const& bitmap = *decoded.value();
+    int width = bitmap.width();
+    int height = bitmap.height();
     if (x < 0 || x >= width)
         x = width / 2;
     if (y < 0 || y >= height)
         y = height / 2;
 
-    guchar const* pixel = pixels + static_cast<gsize>(y) * rowstride + static_cast<gsize>(x) * channels;
-    out_r = pixel[0] / 255.0;
-    out_g = pixel[1] / 255.0;
-    out_b = pixel[2] / 255.0;
-    g_object_unref(pixbuf);
+    auto color = bitmap.get_pixel(x, y);
+    out_r = color.red() / 255.0;
+    out_g = color.green() / 255.0;
+    out_b = color.blue() / 255.0;
     return true;
 }
 
 bool crop_png(ByteString const& src, ByteString const& dst, int x, int y, int w, int h)
 {
-    GdkPixbuf* full = gdk_pixbuf_new_from_file(src.characters(), nullptr);
-    if (!full)
+    auto decoded = Gfx::Bitmap::load_from_file(src);
+    if (decoded.is_error())
         return false;
-    int width = gdk_pixbuf_get_width(full);
-    int height = gdk_pixbuf_get_height(full);
+    auto const& full = *decoded.value();
     if (x < 0)
         x = 0;
     if (y < 0)
         y = 0;
-    if (x + w > width)
-        w = width - x;
-    if (y + h > height)
-        h = height - y;
-    if (w <= 0 || h <= 0) {
-        g_object_unref(full);
+    if (x + w > full.width())
+        w = full.width() - x;
+    if (y + h > full.height())
+        h = full.height() - y;
+    if (w <= 0 || h <= 0)
         return false;
-    }
-    GdkPixbuf* sub = gdk_pixbuf_new_subpixbuf(full, x, y, w, h);
-    bool ok = sub && gdk_pixbuf_save(sub, dst.characters(), "png", nullptr, nullptr);
-    if (sub)
-        g_object_unref(sub);
-    g_object_unref(full);
-    return ok;
+
+    auto cropped = Gfx::Bitmap::create(full.format(), { w, h });
+    if (cropped.is_error())
+        return false;
+    Gfx::Painter painter { *cropped.value() };
+    painter.blit({ 0, 0 }, full, { x, y, w, h });
+    return save_png(*cropped.value(), dst);
 }
 
 void handle_screenshot(Portal::MethodCall& call)
@@ -932,40 +940,38 @@ bool write_wallpaper_raw(StringView uri)
     auto path = filename_from_uri(uri);
     if (!path.has_value())
         return false;
-    GdkPixbuf* pixbuf = gdk_pixbuf_new_from_file(path.value().characters(), nullptr);
-    if (!pixbuf)
+    auto decoded = Gfx::Bitmap::load_from_file(path.value());
+    if (decoded.is_error())
         return false;
 
-    int width = gdk_pixbuf_get_width(pixbuf);
-    int height = gdk_pixbuf_get_height(pixbuf);
-    int channels = gdk_pixbuf_get_n_channels(pixbuf);
-    int rowstride = gdk_pixbuf_get_rowstride(pixbuf);
-    guchar* pixels = gdk_pixbuf_get_pixels(pixbuf);
+    // The wallpaper state is BGRA8888; convert whatever the decoder produced.
+    auto converted = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, decoded.value()->size());
+    if (converted.is_error())
+        return false;
+    {
+        Gfx::Painter painter { *converted.value() };
+        painter.blit({ 0, 0 }, *decoded.value(), { 0, 0, decoded.value()->width(), decoded.value()->height() });
+    }
+    auto const& bitmap = *converted.value();
+
+    int width = bitmap.width();
+    int height = bitmap.height();
     int pitch = width * 4;
 
     struct Header {
-        guint32 magic;
-        guint32 format;
-        guint32 width;
-        guint32 height;
-        guint32 pitch;
+        u32 magic;
+        u32 format;
+        u32 width;
+        u32 height;
+        u32 pitch;
     };
-    Header header = { 0x53445750u, 2u /* BGRA8888 */, static_cast<guint32>(width), static_cast<guint32>(height), static_cast<guint32>(pitch) };
+    Header header = { 0x53445750u, 2u /* BGRA8888 */, static_cast<u32>(width), static_cast<u32>(height), static_cast<u32>(pitch) };
 
     ByteBuffer raw;
     raw.resize(sizeof(header) + static_cast<size_t>(pitch) * static_cast<size_t>(height));
     memcpy(raw.data(), &header, sizeof(header));
-    for (int y = 0; y < height; ++y) {
-        guchar const* src = pixels + static_cast<gsize>(y) * rowstride;
-        guchar* dst = raw.data() + sizeof(header) + static_cast<gsize>(y) * pitch;
-        for (int x = 0; x < width; ++x) {
-            dst[x * 4 + 0] = src[x * channels + 2]; // B
-            dst[x * 4 + 1] = src[x * channels + 1]; // G
-            dst[x * 4 + 2] = src[x * channels + 0]; // R
-            dst[x * 4 + 3] = channels == 4 ? src[x * channels + 3] : 0xff;
-        }
-    }
-    g_object_unref(pixbuf);
+    for (int y = 0; y < height; ++y)
+        memcpy(raw.data() + sizeof(header) + static_cast<size_t>(y) * pitch, bitmap.scanline_u8(y), static_cast<size_t>(pitch));
 
     auto raw_path = portal_state_file("wallpaper.raw"sv);
     auto file = Core::File::open(raw_path, Core::File::OpenMode::Write | Core::File::OpenMode::Truncate);
