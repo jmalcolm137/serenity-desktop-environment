@@ -165,6 +165,17 @@ export XDG_RUNTIME_DIR="$LOG_DIR/runtime"
 mkdir -p "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
 
+# The backend every test's compositor should use. A CI container has no DRM device
+# and no libinput, so a compositor that autoselects the real backend cannot start at
+# all ("WindowServer: failed to create wlr_backend", and the test's client then
+# "cannot connect to a compositor"). The dev machine *does* have both, which is why
+# this only ever failed in CI. A test that wants something else sets it itself.
+export WLR_BACKENDS=headless
+export WLR_HEADLESS_OUTPUTS=1
+# ...and for tests that go through the session's own launcher rather than starting
+# the compositor directly (scripts/start-sde-session.sh reads SDE_BACKENDS).
+export SDE_BACKENDS="${SDE_BACKENDS:-headless}"
+
 # The SerenityOS resource root every client needs to find its fonts and themes.
 # The session exports it to everything it runs, so on a development machine the
 # tests inherit it and pass -- but on a clean runner nothing sets it, and a client

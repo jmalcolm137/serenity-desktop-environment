@@ -17,7 +17,22 @@ WITH_APPS=0
 
 build() {
     echo "==> $1"
-    "$SDE_ROOT/scripts/$1" >/dev/null
+    # Keep the output and show it only when the step fails. Discarding it turns a
+    # one-line error into a mystery: the CI log showed "==> build-apps.sh" and then
+    # an exit status, with nothing to say why.
+    local log status
+    log="$(mktemp)"
+    set +e
+    "$SDE_ROOT/scripts/$1" >"$log" 2>&1
+    status=$?
+    set -e
+    if [[ "$status" -ne 0 ]]; then
+        echo "--- $1 failed (exit $status); its output follows ---" >&2
+        cat "$log" >&2
+        rm -f "$log"
+        return "$status"
+    fi
+    rm -f "$log"
 }
 
 # The compositor is what every test starts.
