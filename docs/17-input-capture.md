@@ -134,7 +134,7 @@ protocol (`§5`), except the prompt.
 |---|---|
 | `SupportedCapabilities` | `POINTER \| KEYBOARD` (`1\|2 = 3`). No `TOUCHSCREEN` (SDE has no touch, [`08`](08-compositor-gaps.md) §4). |
 | `CreateSession` (deprecated) / `CreateSession2` | allocate a session; `CreateSession2` returns a not-yet-started session. |
-| `Start` | show the **AccessDialog** ("Allow *<app>* to capture input?" via `SDE_PORTAL_ACCESS_DIALOG`); on allow, return the granted `capabilities` (subset of requested) and, if `persist_mode != 0`, a `restore_data` token (reuse the ScreenCast/RemoteDesktop token store). `clipboard_enabled` is always `false` (clipboard capture is out of scope, §8). |
+| `Start` | show the **AccessDialog** ("Allow *<app>* to capture input?" via `SDE_PORTAL_ACCESS_DIALOG`); on allow, return the granted `capabilities` (subset of requested) and, if `persist_mode != 0`, `persist_mode` and a `restore_data` (the ScreenCast/RemoteDesktop format; the frontend keeps it in the permission store). `clipboard_enabled` is always `false` (clipboard capture is out of scope, §8). |
 | `GetZones` | compositor returns the session's zones, `a(uuii)` `(width,height,x,y)` from the output layout, plus an incrementing `zone_set`. |
 | `SetPointerBarriers` | compositor stores the barriers (edge lines) for the session; returns `failed_barriers` for any rejected (off-zone / diagonal) barrier. |
 | `Enable` / `Disable` | enable/disable triggering for the session; on activation the compositor emits `Activated`, on stop `Deactivated`. |
@@ -244,9 +244,10 @@ InputCapture is a **keylogger-class** capability, so:
    signals, the `AccessDialog` prompt, and `portals.conf` now prefers `serenity`
    (also added to `serenity.portal`). Covered by
    `scripts/run-input-capture-portal-test.sh`.
-5. **P5: persistence (landed).** `Start` mints a restore token when
-   `persist_mode != 0` and accepts it back as `restore_data` (the `(suv)` vendor
-   blob, reusing the ScreenCast restore-token store); a restored session skips the
+5. **P5: persistence (landed).** `Start` returns `persist_mode` and a
+   self-contained `restore_data` when `persist_mode != 0` (the `(suv)` vendor blob
+   in the ScreenCast format, kept per app by the frontend in the permission store)
+   and accepts it back; a restored session skips the
    permission prompt. On `ZonesChanged` the compositor stops and disarms capture
    and the app re-requests zones and re-arms. Covered by the portal test.
 
@@ -272,8 +273,9 @@ GPU), so CI stays green.
   end: `SupportedCapabilities`/`version`, `CreateSession2`, `Start` (with the
   `AccessDialog` prompt), `GetZones`, `SetPointerBarriers` (diagonal rejected),
   `ConnectToEIS`, `Enable`, the `Activated` signal after a scripted barrier
-  crossing, `Disable`, and persistence (`persist_mode` mints a `restore_data`
-  token that suppresses the prompt on the next `Start`).
+  crossing, `Disable`, and persistence (`persist_mode` returns a `restore_data`
+  that suppresses the prompt on the next `Start`, and legacy version 1 data still
+  restores).
 - `tools/input-capture-test.c` (new): a small libei passive client, mirroring
   `tools/screencast-consumer.c` for the capture side; reports
   `device_start_emulating seq=N`, received motion/keys, and can inject emulated
@@ -299,7 +301,7 @@ GPU), so CI stays green.
 | I2 | Capabilities advertised | `POINTER \| KEYBOARD`; touch later |
 | I3 | Global gating | `SDE_INPUT_CAPTURE=1` + portal prompt |
 | I4 | Compositor release escape hatch | Reserved keybinding (e.g. `Super+Escape`) while active |
-| I5 | Persistence | Reuse the ScreenCast restore-token store |
+| I5 | Persistence | The ScreenCast restore-data format, kept by the frontend |
 
 ---
 

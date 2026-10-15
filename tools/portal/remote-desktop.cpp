@@ -13,9 +13,9 @@
 //
 // This is a Serenity-style rewrite of the old GLib/GIO backend: the D-Bus
 // plumbing goes through Portal:: (see dbus.h) over the `dbus-1` transport, and
-// the ScreenCast/restore-token state is shared with the ScreenCast module
-// (screencast.h). Everything else — Wayland, xkbcommon and the virtual input
-// protocols — is unchanged.
+// the ScreenCast session and the restore-data format are shared with the
+// ScreenCast module (screencast.h). Everything else (Wayland, xkbcommon and the
+// virtual input protocols) is unchanged.
 
 #ifndef _GNU_SOURCE
 #    define _GNU_SOURCE
@@ -25,7 +25,6 @@
 #include "introspection.h"
 
 #include <AK/Format.h>
-#include <AK/Random.h>
 #include <AK/Time.h>
 
 #include <fcntl.h>
@@ -66,7 +65,7 @@ struct rd_state {
 };
 
 rd_state g_rd;
-ByteString g_rd_restore_token;
+u32 g_rd_persist_mode { 0 };
 
 u32 now_ms()
 {
@@ -189,22 +188,13 @@ void handle_remote_desktop(Portal::MethodCall& call)
     }
 
     if (call.member() == "SelectDevices"sv) {
+        g_rd_persist_mode = 0;
         if (auto const* options = call.argument(3)) {
-            // Restore-token round trip (same store as ScreenCast).
-            auto restore = options->string_or("restore_token"sv);
-            if (!restore.is_empty()) {
-                if (Screencast::load_restore_token(restore).has_value())
-                    g_rd_restore_token = restore;
-            }
-            auto persist_mode = options->uint32_or("persist_mode"sv);
-            if (persist_mode != 0 && g_rd_restore_token.is_empty()) {
-                char token[33];
-                for (int i = 0; i < 32; ++i)
-                    token[i] = "0123456789abcdef"[get_random_uniform(16)];
-                token[32] = '\0';
-                g_rd_restore_token = ByteString { StringView { token, 32 } };
-                Screencast::store_restore_token(g_rd_restore_token, rd_device_pointer | rd_device_keyboard, 0, {});
-            }
+            // Persistence is the frontend's: it hands back the restore_data we
+            // returned from an earlier Start, and keeps it in the permission store.
+            g_rd_persist_mode = Screencast::clamp_persist_mode(options->uint32_or("persist_mode"sv));
+            if (Screencast::parse_restore_data(*options).has_value())
+                dbgln("sde-remote-desktop: restored from restore_data");
         }
         call.reply_response(static_cast<u32>(Portal::Response::Success));
         return;
@@ -238,8 +228,12 @@ void handle_remote_desktop(Portal::MethodCall& call)
             streams.append(Portal::Value::make_struct({ Portal::Value::make_uint32(stream.node_id), Portal::Value::make_dict(move(props)) }));
             results.append(Portal::Value::Entry { "streams"sv, Portal::Value::make_variant(Portal::Value::make_array(move(streams), "(ua{sv})"sv.to_byte_string())) });
         }
-        if (!g_rd_restore_token.is_empty())
-            results.append(Portal::Value::Entry { "restore_token"sv, Portal::Value::make_variant(Portal::Value::make_string(g_rd_restore_token)) });
+        if (g_rd_persist_mode != 0) {
+            Screencast::RestoreData restore;
+            restore.types = devices;
+            results.append(Portal::Value::Entry { "persist_mode"sv, Portal::Value::make_variant(Portal::Value::make_uint32(g_rd_persist_mode)) });
+            results.append(Portal::Value::Entry { "restore_data"sv, Portal::Value::make_variant(Screencast::make_restore_data(restore)) });
+        }
         dbgln("sde-remote-desktop: started (devices {}, stream {})", devices, have_stream ? stream.node_id : 0u);
         call.reply_response(static_cast<u32>(Portal::Response::Success), results);
         return;
