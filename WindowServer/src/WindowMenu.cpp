@@ -165,7 +165,7 @@ void open_window_menu(Server& server, Toplevel& toplevel, Gfx::IntPoint position
     menu.ignore_release = true;
     // Opening the menu must not leave a stale frame grab behind: the press that
     // opened it is consumed here, not by an interactive frame drag.
-    server.frame_grab = false;
+    server.grab.from_frame = false;
     menu.toplevel = &toplevel;
     menu.hovered_index = -1;
     menu.pressed_index = -1;

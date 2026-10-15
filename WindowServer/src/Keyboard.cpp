@@ -188,10 +188,10 @@ static void start_key_repeat(Keyboard& keyboard, uint32_t keycode)
 // forwarded to the client without triggering compositor actions.
 static bool keyboard_shortcuts_inhibited(Server& server, wlr_surface* surface)
 {
-    if (!server.keyboard_shortcuts_inhibit || !surface)
+    if (!server.input.keyboard_shortcuts_inhibit || !surface)
         return false;
     wlr_keyboard_shortcuts_inhibitor_v1* inhibitor = nullptr;
-    wl_list_for_each(inhibitor, &server.keyboard_shortcuts_inhibit->inhibitors, link) {
+    wl_list_for_each(inhibitor, &server.input.keyboard_shortcuts_inhibit->inhibitors, link) {
         if (inhibitor->active && inhibitor->surface == surface)
             return true;
     }
@@ -296,7 +296,7 @@ void keyboard_key(wl_listener* listener, void* data)
         return;
 
     // While the session is locked, keys go to the lock surface, not the shell.
-    if (server.locked) {
+    if (server.lock.locked) {
         if (auto* lock = lock_surface_at_cursor(server)) {
             wlr_seat_set_keyboard(server.seat, keyboard->keyboard);
             wlr_seat_keyboard_notify_enter(server.seat, lock->lock_surface->surface, keyboard->keyboard->keycodes, keyboard->keyboard->num_keycodes, &keyboard->keyboard->modifiers);
@@ -395,9 +395,9 @@ void keyboard_key(wl_listener* listener, void* data)
 void update_seat_capabilities(Server& server)
 {
     uint32_t capabilities = WL_SEAT_CAPABILITY_POINTER;
-    if (!server.keyboards.is_empty())
+    if (!server.input.keyboards.is_empty())
         capabilities |= WL_SEAT_CAPABILITY_KEYBOARD;
-    if (!server.touch_devices.is_empty() || server.virtual_touch_count > 0)
+    if (!server.input.touch_devices.is_empty() || server.input.virtual_touch_count > 0)
         capabilities |= WL_SEAT_CAPABILITY_TOUCH;
     wlr_seat_set_capabilities(server.seat, capabilities);
 }
@@ -412,7 +412,7 @@ void keyboard_destroy(wl_listener* listener, void*)
     wl_list_remove(&keyboard->destroy.link);
     if (s_key_repeat_keyboard == keyboard)
         stop_key_repeat();
-    remove_owned(server.keyboards, keyboard);
+    remove_owned(server.input.keyboards, keyboard);
     // Drop the keyboard capability once the last keyboard is gone, so clients do
     // not keep a stale wl_keyboard (a later client would otherwise get one with
     // no keymap). Symmetric with server_new_input().

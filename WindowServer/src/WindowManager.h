@@ -26,7 +26,7 @@ class LocalSocket;
 namespace WindowManager {
 
 // Operations the window manager calls back into the compositor. main.cpp
-// registers these at startup, so this module stays free of main.cpp's internals.
+// registers these at startup, so this module stays free of the compositor's internals.
 struct HostHooks {
     void (*focus_toplevel)(Server&, Toplevel*) { nullptr };
     void (*open_window_menu)(Server&, Toplevel&, Gfx::IntPoint) { nullptr };
@@ -41,7 +41,7 @@ struct HostHooks {
     // state can be refreshed.
     void (*workspace_changed)(Server&) { nullptr };
     // Minimize/restore a window (state, visibility, the foreign handle, and the
-    // minimize/restore animation). main.cpp owns the visibility + animation.
+    // minimize/restore animation). XdgShell.cpp owns the visibility + animation.
     void (*set_minimized)(Server&, Toplevel&, bool minimized) { nullptr };
     // X11 windows (R5): focus and minimize, so the Taskbar can drive them too.
     void (*focus_x11)(Server&, X11Toplevel*) { nullptr };

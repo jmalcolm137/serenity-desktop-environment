@@ -59,12 +59,12 @@ static void apply_keyboard_input(Server& server)
         keymap = xkb_keymap_new_from_names(context, nullptr, XKB_KEYMAP_COMPILE_NO_FLAGS);
     }
     if (keymap) {
-        for (auto& keyboard : server.keyboards)
+        for (auto& keyboard : server.input.keyboards)
             wlr_keyboard_set_keymap(keyboard->keyboard, keymap);
         xkb_keymap_unref(keymap);
     }
     xkb_context_unref(context);
-    for (auto& keyboard : server.keyboards)
+    for (auto& keyboard : server.input.keyboards)
         wlr_keyboard_set_repeat_info(keyboard->keyboard, settings.repeat_rate, settings.repeat_delay);
     // Repeat is compositor-owned (wlroots 0.20 removed the timer); drop any
     // in-flight repeat if the rate was turned off.
@@ -92,7 +92,7 @@ bool cycle_keyboard_layout(Server& server)
 static void apply_mouse_input(Server& server)
 {
     auto const& mouse = Config::input().mouse;
-    for (auto* device : server.pointer_devices) {
+    for (auto* device : server.input.pointer_devices) {
         if (!wlr_input_device_is_libinput(device))
             continue;
         auto* libinput_device = wlr_libinput_get_device_handle(device);
@@ -133,8 +133,8 @@ static void pointer_swipe_begin(wl_listener* listener, void* data)
     Pointer* pointer = nullptr;
     pointer = wl_container_of(listener, pointer, swipe_begin);
     auto* event = static_cast<wlr_pointer_swipe_begin_event*>(data);
-    if (pointer->server->pointer_gestures)
-        wlr_pointer_gestures_v1_send_swipe_begin(pointer->server->pointer_gestures, pointer->server->seat, event->time_msec, event->fingers);
+    if (pointer->server->input.pointer_gestures)
+        wlr_pointer_gestures_v1_send_swipe_begin(pointer->server->input.pointer_gestures, pointer->server->seat, event->time_msec, event->fingers);
     notify_activity(*pointer->server);
 }
 
@@ -143,8 +143,8 @@ static void pointer_swipe_update(wl_listener* listener, void* data)
     Pointer* pointer = nullptr;
     pointer = wl_container_of(listener, pointer, swipe_update);
     auto* event = static_cast<wlr_pointer_swipe_update_event*>(data);
-    if (pointer->server->pointer_gestures)
-        wlr_pointer_gestures_v1_send_swipe_update(pointer->server->pointer_gestures, pointer->server->seat, event->time_msec, event->dx, event->dy);
+    if (pointer->server->input.pointer_gestures)
+        wlr_pointer_gestures_v1_send_swipe_update(pointer->server->input.pointer_gestures, pointer->server->seat, event->time_msec, event->dx, event->dy);
     notify_activity(*pointer->server);
 }
 
@@ -153,8 +153,8 @@ static void pointer_swipe_end(wl_listener* listener, void* data)
     Pointer* pointer = nullptr;
     pointer = wl_container_of(listener, pointer, swipe_end);
     auto* event = static_cast<wlr_pointer_swipe_end_event*>(data);
-    if (pointer->server->pointer_gestures)
-        wlr_pointer_gestures_v1_send_swipe_end(pointer->server->pointer_gestures, pointer->server->seat, event->time_msec, event->cancelled);
+    if (pointer->server->input.pointer_gestures)
+        wlr_pointer_gestures_v1_send_swipe_end(pointer->server->input.pointer_gestures, pointer->server->seat, event->time_msec, event->cancelled);
     notify_activity(*pointer->server);
 }
 
@@ -163,8 +163,8 @@ static void pointer_pinch_begin(wl_listener* listener, void* data)
     Pointer* pointer = nullptr;
     pointer = wl_container_of(listener, pointer, pinch_begin);
     auto* event = static_cast<wlr_pointer_pinch_begin_event*>(data);
-    if (pointer->server->pointer_gestures)
-        wlr_pointer_gestures_v1_send_pinch_begin(pointer->server->pointer_gestures, pointer->server->seat, event->time_msec, event->fingers);
+    if (pointer->server->input.pointer_gestures)
+        wlr_pointer_gestures_v1_send_pinch_begin(pointer->server->input.pointer_gestures, pointer->server->seat, event->time_msec, event->fingers);
     notify_activity(*pointer->server);
 }
 
@@ -173,8 +173,8 @@ static void pointer_pinch_update(wl_listener* listener, void* data)
     Pointer* pointer = nullptr;
     pointer = wl_container_of(listener, pointer, pinch_update);
     auto* event = static_cast<wlr_pointer_pinch_update_event*>(data);
-    if (pointer->server->pointer_gestures)
-        wlr_pointer_gestures_v1_send_pinch_update(pointer->server->pointer_gestures, pointer->server->seat, event->time_msec, event->dx, event->dy, event->scale, event->rotation);
+    if (pointer->server->input.pointer_gestures)
+        wlr_pointer_gestures_v1_send_pinch_update(pointer->server->input.pointer_gestures, pointer->server->seat, event->time_msec, event->dx, event->dy, event->scale, event->rotation);
     notify_activity(*pointer->server);
 }
 
@@ -183,8 +183,8 @@ static void pointer_pinch_end(wl_listener* listener, void* data)
     Pointer* pointer = nullptr;
     pointer = wl_container_of(listener, pointer, pinch_end);
     auto* event = static_cast<wlr_pointer_pinch_end_event*>(data);
-    if (pointer->server->pointer_gestures)
-        wlr_pointer_gestures_v1_send_pinch_end(pointer->server->pointer_gestures, pointer->server->seat, event->time_msec, event->cancelled);
+    if (pointer->server->input.pointer_gestures)
+        wlr_pointer_gestures_v1_send_pinch_end(pointer->server->input.pointer_gestures, pointer->server->seat, event->time_msec, event->cancelled);
     notify_activity(*pointer->server);
 }
 
@@ -193,8 +193,8 @@ static void pointer_hold_begin(wl_listener* listener, void* data)
     Pointer* pointer = nullptr;
     pointer = wl_container_of(listener, pointer, hold_begin);
     auto* event = static_cast<wlr_pointer_hold_begin_event*>(data);
-    if (pointer->server->pointer_gestures)
-        wlr_pointer_gestures_v1_send_hold_begin(pointer->server->pointer_gestures, pointer->server->seat, event->time_msec, event->fingers);
+    if (pointer->server->input.pointer_gestures)
+        wlr_pointer_gestures_v1_send_hold_begin(pointer->server->input.pointer_gestures, pointer->server->seat, event->time_msec, event->fingers);
     notify_activity(*pointer->server);
 }
 
@@ -203,8 +203,8 @@ static void pointer_hold_end(wl_listener* listener, void* data)
     Pointer* pointer = nullptr;
     pointer = wl_container_of(listener, pointer, hold_end);
     auto* event = static_cast<wlr_pointer_hold_end_event*>(data);
-    if (pointer->server->pointer_gestures)
-        wlr_pointer_gestures_v1_send_hold_end(pointer->server->pointer_gestures, pointer->server->seat, event->time_msec, event->cancelled);
+    if (pointer->server->input.pointer_gestures)
+        wlr_pointer_gestures_v1_send_hold_end(pointer->server->input.pointer_gestures, pointer->server->seat, event->time_msec, event->cancelled);
     notify_activity(*pointer->server);
 }
 
@@ -221,7 +221,7 @@ static void pointer_destroy(wl_listener* listener, void*)
     wl_list_remove(&pointer->hold_begin.link);
     wl_list_remove(&pointer->hold_end.link);
     wl_list_remove(&pointer->destroy.link);
-    remove_owned(pointer->server->pointer_objects, pointer);
+    remove_owned(pointer->server->input.pointer_objects, pointer);
 }
 
 // Switch devices: lid, tablet-mode, keypad-slide. The compositor forwards the
@@ -244,13 +244,13 @@ static void switch_destroy(wl_listener* listener, void*)
     device = wl_container_of(listener, device, destroy);
     wl_list_remove(&device->toggle.link);
     wl_list_remove(&device->destroy.link);
-    remove_owned(device->server->switch_objects, device);
+    remove_owned(device->server->input.switch_objects, device);
 }
 
-void server_new_input(wl_listener* listener, void* data)
+static void server_new_input(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, new_input);
+    server = wl_container_of(listener, server, input.new_input);
     auto* device = static_cast<wlr_input_device*>(data);
 
     switch (device->type) {
@@ -267,7 +267,7 @@ void server_new_input(wl_listener* listener, void* data)
         wl_signal_add(&device->events.destroy, &keyboard->destroy);
 
         wlr_seat_set_keyboard(server->seat, keyboard->keyboard);
-        server->keyboards.append(move(keyboard));
+        server->input.keyboards.append(move(keyboard));
         // Keymap and repeat come from the input config (R4.6).
         apply_keyboard_input(*server);
 
@@ -285,7 +285,7 @@ void server_new_input(wl_listener* listener, void* data)
     }
     case WLR_INPUT_DEVICE_POINTER: {
         wlr_cursor_attach_input_device(server->cursor, device);
-        server->pointer_devices.append(device);
+        server->input.pointer_devices.append(device);
         apply_mouse_input(*server);
         // Track the pointer so its touchpad gestures can be forwarded (R5).
         auto pointer = make<Pointer>();
@@ -310,7 +310,7 @@ void server_new_input(wl_listener* listener, void* data)
         wl_signal_add(&pointer->pointer->events.hold_end, &pointer->hold_end);
         pointer->destroy.notify = pointer_destroy;
         wl_signal_add(&device->events.destroy, &pointer->destroy);
-        server->pointer_objects.append(move(pointer));
+        server->input.pointer_objects.append(move(pointer));
         break;
     }
     case WLR_INPUT_DEVICE_SWITCH: {
@@ -321,7 +321,7 @@ void server_new_input(wl_listener* listener, void* data)
         wl_signal_add(&switch_device->device->events.toggle, &switch_device->toggle);
         switch_device->destroy.notify = switch_destroy;
         wl_signal_add(&device->events.destroy, &switch_device->destroy);
-        server->switch_objects.append(move(switch_device));
+        server->input.switch_objects.append(move(switch_device));
         break;
     }
     case WLR_INPUT_DEVICE_TABLET:
@@ -333,7 +333,7 @@ void server_new_input(wl_listener* listener, void* data)
         auto pad = make<TabletPad>();
         pad->server = server;
         pad->pad = wlr_tablet_pad_from_input_device(device);
-        pad->v2_pad = server->tablet_manager ? wlr_tablet_pad_create(server->tablet_manager, server->seat, device) : nullptr;
+        pad->v2_pad = server->tablet.manager ? wlr_tablet_pad_create(server->tablet.manager, server->seat, device) : nullptr;
         pad->button.notify = tablet_pad_button;
         wl_signal_add(&pad->pad->events.button, &pad->button);
         pad->ring.notify = tablet_pad_ring;
@@ -342,14 +342,14 @@ void server_new_input(wl_listener* listener, void* data)
         wl_signal_add(&pad->pad->events.strip, &pad->strip);
         pad->destroy.notify = tablet_pad_destroy;
         wl_signal_add(&device->events.destroy, &pad->destroy);
-        server->tablet_pads.append(move(pad));
+        server->tablet.pads.append(move(pad));
         break;
     }
     case WLR_INPUT_DEVICE_TOUCH:
         // Touch is routed through the cursor (touch_down/motion/up events), like
         // pointers; the compositor converts them to wlr_seat touch notifications.
         wlr_cursor_attach_input_device(server->cursor, device);
-        server->touch_devices.append(device);
+        server->input.touch_devices.append(device);
         break;
     default:
         break;
@@ -361,20 +361,41 @@ void server_new_input(wl_listener* listener, void* data)
 // Virtual input (wlr virtual-keyboard / virtual-pointer). Both embed a real
 // wlr_input_device, so route them through the same setup as physical input - this
 // is what lets the headless harness script keyboard and pointer events.
-void server_new_virtual_keyboard(wl_listener* listener, void* data)
+static void server_new_virtual_keyboard(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, new_virtual_keyboard);
+    server = wl_container_of(listener, server, input.new_virtual_keyboard);
     auto* keyboard = static_cast<wlr_virtual_keyboard_v1*>(data);
     dbgln("WindowServer: virtual keyboard connected");
-    server_new_input(&server->new_input, &keyboard->keyboard.base);
+    server_new_input(&server->input.new_input, &keyboard->keyboard.base);
 }
 
-void server_new_virtual_pointer(wl_listener* listener, void* data)
+static void server_new_virtual_pointer(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, new_virtual_pointer);
+    server = wl_container_of(listener, server, input.new_virtual_pointer);
     auto* event = static_cast<wlr_virtual_pointer_v1_new_pointer_event*>(data);
     dbgln("WindowServer: virtual pointer connected");
-    server_new_input(&server->new_input, &event->new_pointer->pointer.base);
+    server_new_input(&server->input.new_input, &event->new_pointer->pointer.base);
+}
+
+void initialize_input_devices(Server& server)
+{
+    // Virtual input for the headless harness (docs/09-r3-implementation-plan.md §2.4).
+    server.input.virtual_keyboard_manager = wlr_virtual_keyboard_manager_v1_create(server.display);
+    server.input.new_virtual_keyboard.notify = server_new_virtual_keyboard;
+    wl_signal_add(&server.input.virtual_keyboard_manager->events.new_virtual_keyboard, &server.input.new_virtual_keyboard);
+    server.input.virtual_pointer_manager = wlr_virtual_pointer_manager_v1_create(server.display);
+    server.input.new_virtual_pointer.notify = server_new_virtual_pointer;
+    wl_signal_add(&server.input.virtual_pointer_manager->events.new_virtual_pointer, &server.input.new_virtual_pointer);
+
+    server.input.new_input.notify = server_new_input;
+    wl_signal_add(&server.backend->events.new_input, &server.input.new_input);
+
+    // R5 native-app glue: relative motion (sent from process_cursor_motion), touchpad
+    // gestures (forwarded by the Pointer listeners) and keyboard-shortcuts-inhibit
+    // (honoured in keyboard_key()).
+    server.input.relative_pointer_manager = wlr_relative_pointer_manager_v1_create(server.display);
+    server.input.pointer_gestures = wlr_pointer_gestures_v1_create(server.display);
+    server.input.keyboard_shortcuts_inhibit = wlr_keyboard_shortcuts_inhibit_v1_create(server.display);
 }

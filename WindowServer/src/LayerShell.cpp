@@ -50,7 +50,7 @@ Gfx::Palette const& current_palette(Server&)
 // maximized windows, fullscreen) respect SDE's panels/docks. docs/20 item 8.
 void update_xwayland_workareas(Server& server)
 {
-    if (!server.xwayland || !server.xwayland_started)
+    if (!server.xwayland.wlr || !server.xwayland.started)
         return;
     // `xwayland_started` only records that the X server became ready once — it may
     // have died since. `wlr_xwayland_set_workareas()` dereferences the XWM
@@ -60,7 +60,7 @@ void update_xwayland_workareas(Server& server)
     // not hypothetical: a test run that disturbed the session's Xwayland took the
     // whole session down from this line, via arrange_layers → a layer-surface
     // commit. Report only to a live X server.
-    if (!wlr_xwayland_get_xwm_connection(server.xwayland))
+    if (!wlr_xwayland_get_xwm_connection(server.xwayland.wlr))
         return;
     Vector<wlr_box> areas;
     for (auto& output : server.outputs) {
@@ -71,7 +71,7 @@ void update_xwayland_workareas(Server& server)
     }
     if (areas.is_empty())
         return;
-    wlr_xwayland_set_workareas(server.xwayland, areas.data(), areas.size());
+    wlr_xwayland_set_workareas(server.xwayland.wlr, areas.data(), areas.size());
     dbgln("WindowServer: reported X11 workarea ({} area(s); first {}x{} at {},{}).",
         areas.size(), areas[0].width, areas[0].height, areas[0].x, areas[0].y);
 }
@@ -261,7 +261,7 @@ static void layer_surface_destroy(wl_listener* listener, void*)
         restore_keyboard_focus(*server);
 }
 
-void server_new_layer_surface(wl_listener* listener, void* data)
+static void server_new_layer_surface(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
     server = wl_container_of(listener, server, new_layer_surface);
@@ -318,4 +318,11 @@ void server_new_layer_surface(wl_listener* listener, void* data)
     wl_signal_add(&layer_surface->events.destroy, &layer->destroy);
 
     server->layer_surfaces.append(move(layer));
+}
+
+void initialize_layer_shell(Server& server)
+{
+    server.layer_shell = wlr_layer_shell_v1_create(server.display, 4);
+    server.new_layer_surface.notify = server_new_layer_surface;
+    wl_signal_add(&server.layer_shell->events.new_surface, &server.new_layer_surface);
 }

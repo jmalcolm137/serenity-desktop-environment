@@ -9,5 +9,5 @@
 #include "Compositor.h"
 
 bool surface_global_origin(Server& server, wlr_surface* surface, double* out_x, double* out_y);
-void seat_start_drag(wl_listener* listener, void* data);
-void seat_request_start_drag(wl_listener* listener, void* data);
+
+void initialize_drag_and_drop(Server&);

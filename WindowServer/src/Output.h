@@ -12,4 +12,5 @@ Gfx::IntSize output_logical_size(wlr_output* output);
 void use_nearest_filter(struct wlr_scene_node* node);
 int resolve_output_refresh(Config::OutputSettings const* saved);
 float resolve_output_scale(struct wlr_output* output, struct wlr_output_mode* mode, Config::OutputSettings const* saved);
-void server_new_output(wl_listener* listener, void* data);
+
+void initialize_outputs(Server&);

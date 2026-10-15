@@ -63,52 +63,52 @@ Toplevel* toplevel_at(Server& server, double lx, double ly, wlr_surface** surfac
 
 void reset_cursor_mode(Server& server)
 {
-    server.cursor_mode = CursorMode::Passthrough;
-    server.grabbed_toplevel = nullptr;
-    server.grabbed_x11 = nullptr;
+    server.grab.mode = CursorMode::Passthrough;
+    server.grab.toplevel = nullptr;
+    server.grab.x11 = nullptr;
     // The interactive grab ended: hide the geometry HUD (WS2).
     WindowManager::hide_geometry_hud();
 }
 
 static void process_cursor_move(Server& server)
 {
-    if (server.grabbed_x11) {
-        auto* toplevel = server.grabbed_x11;
-        int x = static_cast<int>(server.cursor->x - server.grab_x);
-        int y = static_cast<int>(server.cursor->y - server.grab_y);
+    if (server.grab.x11) {
+        auto* toplevel = server.grab.x11;
+        int x = static_cast<int>(server.cursor->x - server.grab.x);
+        int y = static_cast<int>(server.cursor->y - server.grab.y);
         wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
         wlr_xwayland_surface_configure(toplevel->xsurface, x, y, toplevel->xsurface->width, toplevel->xsurface->height);
         return;
     }
-    auto* toplevel = server.grabbed_toplevel;
+    auto* toplevel = server.grab.toplevel;
     if (!toplevel)
         return;
-    wlr_scene_node_set_position(&toplevel->scene_tree->node, server.cursor->x - server.grab_x, server.cursor->y - server.grab_y);
+    wlr_scene_node_set_position(&toplevel->scene_tree->node, server.cursor->x - server.grab.x, server.cursor->y - server.grab.y);
     // Show the tile preview when the pointer reaches a screen edge (WS2).
     WindowManager::update_move_snap(server, *toplevel);
 }
 
 static void process_cursor_resize(Server& server)
 {
-    if (server.grabbed_x11) {
-        auto* toplevel = server.grabbed_x11;
-        double border_x = server.cursor->x - server.grab_x;
-        double border_y = server.cursor->y - server.grab_y;
-        int new_left = server.grab_box.x;
-        int new_right = server.grab_box.x + server.grab_box.width;
-        int new_top = server.grab_box.y;
-        int new_bottom = server.grab_box.y + server.grab_box.height;
-        if (server.resize_edges & WLR_EDGE_TOP) {
+    if (server.grab.x11) {
+        auto* toplevel = server.grab.x11;
+        double border_x = server.cursor->x - server.grab.x;
+        double border_y = server.cursor->y - server.grab.y;
+        int new_left = server.grab.box.x;
+        int new_right = server.grab.box.x + server.grab.box.width;
+        int new_top = server.grab.box.y;
+        int new_bottom = server.grab.box.y + server.grab.box.height;
+        if (server.grab.edges & WLR_EDGE_TOP) {
             new_top = static_cast<int>(border_y);
             if (new_top >= new_bottom) new_top = new_bottom - 1;
-        } else if (server.resize_edges & WLR_EDGE_BOTTOM) {
+        } else if (server.grab.edges & WLR_EDGE_BOTTOM) {
             new_bottom = static_cast<int>(border_y);
             if (new_bottom <= new_top) new_bottom = new_top + 1;
         }
-        if (server.resize_edges & WLR_EDGE_LEFT) {
+        if (server.grab.edges & WLR_EDGE_LEFT) {
             new_left = static_cast<int>(border_x);
             if (new_left >= new_right) new_left = new_right - 1;
-        } else if (server.resize_edges & WLR_EDGE_RIGHT) {
+        } else if (server.grab.edges & WLR_EDGE_RIGHT) {
             new_right = static_cast<int>(border_x);
             if (new_right <= new_left) new_right = new_left + 1;
         }
@@ -126,31 +126,31 @@ static void process_cursor_resize(Server& server)
         wlr_xwayland_surface_configure(toplevel->xsurface, new_left, new_top, content_w, content_h);
         return;
     }
-    auto* toplevel = server.grabbed_toplevel;
+    auto* toplevel = server.grab.toplevel;
     if (!toplevel)
         return;
 
-    double border_x = server.cursor->x - server.grab_x;
-    double border_y = server.cursor->y - server.grab_y;
-    int new_left = server.grab_box.x;
-    int new_right = server.grab_box.x + server.grab_box.width;
-    int new_top = server.grab_box.y;
-    int new_bottom = server.grab_box.y + server.grab_box.height;
+    double border_x = server.cursor->x - server.grab.x;
+    double border_y = server.cursor->y - server.grab.y;
+    int new_left = server.grab.box.x;
+    int new_right = server.grab.box.x + server.grab.box.width;
+    int new_top = server.grab.box.y;
+    int new_bottom = server.grab.box.y + server.grab.box.height;
 
-    if (server.resize_edges & WLR_EDGE_TOP) {
+    if (server.grab.edges & WLR_EDGE_TOP) {
         new_top = border_y;
         if (new_top >= new_bottom)
             new_top = new_bottom - 1;
-    } else if (server.resize_edges & WLR_EDGE_BOTTOM) {
+    } else if (server.grab.edges & WLR_EDGE_BOTTOM) {
         new_bottom = border_y;
         if (new_bottom <= new_top)
             new_bottom = new_top + 1;
     }
-    if (server.resize_edges & WLR_EDGE_LEFT) {
+    if (server.grab.edges & WLR_EDGE_LEFT) {
         new_left = border_x;
         if (new_left >= new_right)
             new_left = new_right - 1;
-    } else if (server.resize_edges & WLR_EDGE_RIGHT) {
+    } else if (server.grab.edges & WLR_EDGE_RIGHT) {
         new_right = border_x;
         if (new_right <= new_left)
             new_right = new_left + 1;
@@ -177,16 +177,16 @@ static void pointer_constraint_destroy(wl_listener* listener, void* data)
     auto* constraint = static_cast<wlr_pointer_constraint_v1*>(data);
     PointerConstraintListener* entry = nullptr;
     entry = wl_container_of(listener, entry, destroy);
-    if (entry->server->active_pointer_constraint == constraint)
-        entry->server->active_pointer_constraint = nullptr;
+    if (entry->server->pointer.active_constraint == constraint)
+        entry->server->pointer.active_constraint = nullptr;
     wl_list_remove(&listener->link);
     delete entry;
 }
 
-void new_pointer_constraint(wl_listener* listener, void* data)
+static void new_pointer_constraint(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, new_pointer_constraint);
+    server = wl_container_of(listener, server, pointer.new_constraint);
     auto* constraint = static_cast<wlr_pointer_constraint_v1*>(data);
     auto* entry = new PointerConstraintListener { {}, server };
     entry->destroy.notify = pointer_constraint_destroy;
@@ -196,7 +196,7 @@ void new_pointer_constraint(wl_listener* listener, void* data)
 static void process_cursor_motion(Server& server, uint32_t time)
 {
     // While the session is locked, only the lock surface receives input.
-    if (server.locked) {
+    if (server.lock.locked) {
         if (auto* lock = lock_surface_at_cursor(server)) {
             wlr_box box { };
             wlr_output_layout_get_box(server.output_layout, lock->lock_surface->output, &box);
@@ -211,13 +211,13 @@ static void process_cursor_motion(Server& server, uint32_t time)
     // Explicit drag-and-drop: route motion to the surface under the cursor (the
     // drag grab turns it into wl_data_device enter/motion) and follow the cursor
     // with the drag icon.
-    if (server.active_drag) {
+    if (server.drag.active) {
         double dx = 0;
         double dy = 0;
         wlr_surface* target = nullptr;
         toplevel_at(server, server.cursor->x, server.cursor->y, &target, &dx, &dy);
-        if (target != server.drag_target) {
-            server.drag_target = target;
+        if (target != server.drag.target) {
+            server.drag.target = target;
             if (target)
                 wlr_seat_pointer_notify_enter(server.seat, target, dx, dy);
             else
@@ -225,8 +225,8 @@ static void process_cursor_motion(Server& server, uint32_t time)
         } else if (target) {
             wlr_seat_pointer_notify_motion(server.seat, time, dx, dy);
         }
-        if (server.drag_icon_node)
-            wlr_scene_node_set_position(server.drag_icon_node, static_cast<int>(server.cursor->x), static_cast<int>(server.cursor->y));
+        if (server.drag.icon_node)
+            wlr_scene_node_set_position(server.drag.icon_node, static_cast<int>(server.cursor->x), static_cast<int>(server.cursor->y));
         return;
     }
 
@@ -237,27 +237,27 @@ static void process_cursor_motion(Server& server, uint32_t time)
         return;
     }
 
-    if (server.cursor_mode == CursorMode::Move) {
+    if (server.grab.mode == CursorMode::Move) {
         process_cursor_move(server);
         wlr_cursor_set_xcursor(server.cursor, server.cursor_manager, "grabbing");
         return;
     }
-    if (server.cursor_mode == CursorMode::Resize) {
+    if (server.grab.mode == CursorMode::Resize) {
         process_cursor_resize(server);
         return;
     }
 
     // Implicit grab: a client button is down, so keep delivering motion to the
     // surface that received the press until it is released.
-    if (server.pointer_grab_surface) {
-        if (server.seat->pointer_state.focused_surface != server.pointer_grab_surface) {
+    if (server.pointer.grab_surface) {
+        if (server.seat->pointer_state.focused_surface != server.pointer.grab_surface) {
             // The grabbed surface went away (e.g. the client disconnected).
-            server.pointer_grab_surface = nullptr;
-            server.pointer_buttons_down = 0;
+            server.pointer.grab_surface = nullptr;
+            server.pointer.buttons_down = 0;
         } else {
             wlr_seat_pointer_notify_motion(server.seat, time,
-                server.cursor->x - server.pointer_grab_origin_x,
-                server.cursor->y - server.pointer_grab_origin_y);
+                server.cursor->x - server.pointer.grab_origin_x,
+                server.cursor->y - server.pointer.grab_origin_y);
             return;
         }
     }
@@ -275,18 +275,18 @@ static void process_cursor_motion(Server& server, uint32_t time)
 
     // Pointer constraints: activate the constraint of the surface under the
     // cursor and, while one is active, keep the cursor locked or confined.
-    if (server.pointer_constraints) {
+    if (server.pointer.constraints) {
         wlr_pointer_constraint_v1* constraint = surface
-            ? wlr_pointer_constraints_v1_constraint_for_surface(server.pointer_constraints, surface, server.seat)
+            ? wlr_pointer_constraints_v1_constraint_for_surface(server.pointer.constraints, surface, server.seat)
             : nullptr;
-        if (constraint != server.active_pointer_constraint) {
-            if (server.active_pointer_constraint)
-                wlr_pointer_constraint_v1_send_deactivated(server.active_pointer_constraint);
-            server.active_pointer_constraint = constraint;
+        if (constraint != server.pointer.active_constraint) {
+            if (server.pointer.active_constraint)
+                wlr_pointer_constraint_v1_send_deactivated(server.pointer.active_constraint);
+            server.pointer.active_constraint = constraint;
             if (constraint)
                 wlr_pointer_constraint_v1_send_activated(constraint);
         }
-        if (auto* active = server.active_pointer_constraint) {
+        if (auto* active = server.pointer.active_constraint) {
             double origin_x = 0;
             double origin_y = 0;
             if (surface_global_origin(server, active->surface, &origin_x, &origin_y)) {
@@ -320,7 +320,7 @@ static void process_cursor_motion(Server& server, uint32_t time)
     }
 
     // [Focus] FollowsMouse (R4.4): focus the window (xdg or X11) under the cursor.
-    if (Config::focus().follows_mouse && server.cursor_mode == CursorMode::Passthrough && !server.pointer_grab_surface)
+    if (Config::focus().follows_mouse && server.grab.mode == CursorMode::Passthrough && !server.pointer.grab_surface)
         focus_window_at(server, server.cursor->x, server.cursor->y);
 
     // Set the cursor for our chrome last: clearing client focus above resets it
@@ -334,16 +334,16 @@ static void process_cursor_motion(Server& server, uint32_t time)
     }
 }
 
-void cursor_motion(wl_listener* listener, void* data)
+static void cursor_motion(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, cursor_motion);
+    server = wl_container_of(listener, server, pointer.motion);
     auto* event = static_cast<wlr_pointer_motion_event*>(data);
     wlr_cursor_move(server->cursor, &event->pointer->base, event->delta_x, event->delta_y);
     // R5: relative-pointer clients (games) get the raw relative motion. The time
     // is in microseconds (wl_pointer uses milliseconds).
-    if (server->relative_pointer_manager)
-        wlr_relative_pointer_manager_v1_send_relative_motion(server->relative_pointer_manager, server->seat,
+    if (server->input.relative_pointer_manager)
+        wlr_relative_pointer_manager_v1_send_relative_motion(server->input.relative_pointer_manager, server->seat,
             static_cast<uint64_t>(event->time_msec) * 1000, event->delta_x, event->delta_y, event->unaccel_dx, event->unaccel_dy);
     move_cursor_highlight(*server);
     // The switcher grabs the pointer while it is open.
@@ -356,10 +356,10 @@ void cursor_motion(wl_listener* listener, void* data)
     notify_activity(*server);
 }
 
-void cursor_motion_absolute(wl_listener* listener, void* data)
+static void cursor_motion_absolute(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, cursor_motion_absolute);
+    server = wl_container_of(listener, server, pointer.motion_absolute);
     auto* event = static_cast<wlr_pointer_motion_absolute_event*>(data);
     wlr_cursor_warp_absolute(server->cursor, &event->pointer->base, event->x, event->y);
     move_cursor_highlight(*server);
@@ -390,8 +390,8 @@ void handle_touch_down(Server& server, uint32_t time_msec, int32_t touch_id, dou
 void handle_touch_motion(Server& server, uint32_t time_msec, int32_t touch_id, double lx, double ly)
 {
     // A touch drag's icon follows the finger (the pointer cursor does not move).
-    if (server.active_drag && server.drag_icon_node)
-        wlr_scene_node_set_position(server.drag_icon_node, static_cast<int>(lx), static_cast<int>(ly));
+    if (server.drag.active && server.drag.icon_node)
+        wlr_scene_node_set_position(server.drag.icon_node, static_cast<int>(lx), static_cast<int>(ly));
     double sx = 0;
     double sy = 0;
     wlr_surface* surface = nullptr;
@@ -417,10 +417,10 @@ void handle_touch_cancel(Server& server)
     }
 }
 
-void cursor_touch_down(wl_listener* listener, void* data)
+static void cursor_touch_down(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, touch_down);
+    server = wl_container_of(listener, server, pointer.touch_down);
     auto* event = static_cast<wlr_touch_down_event*>(data);
     double lx = 0;
     double ly = 0;
@@ -428,10 +428,10 @@ void cursor_touch_down(wl_listener* listener, void* data)
     handle_touch_down(*server, event->time_msec, event->touch_id, lx, ly);
 }
 
-void cursor_touch_motion(wl_listener* listener, void* data)
+static void cursor_touch_motion(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, touch_motion);
+    server = wl_container_of(listener, server, pointer.touch_motion);
     auto* event = static_cast<wlr_touch_motion_event*>(data);
     double lx = 0;
     double ly = 0;
@@ -439,18 +439,18 @@ void cursor_touch_motion(wl_listener* listener, void* data)
     handle_touch_motion(*server, event->time_msec, event->touch_id, lx, ly);
 }
 
-void cursor_touch_up(wl_listener* listener, void* data)
+static void cursor_touch_up(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, touch_up);
+    server = wl_container_of(listener, server, pointer.touch_up);
     auto* event = static_cast<wlr_touch_up_event*>(data);
     handle_touch_up(*server, event->time_msec, event->touch_id);
 }
 
-void cursor_touch_cancel(wl_listener* listener, void* data)
+static void cursor_touch_cancel(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, touch_cancel);
+    server = wl_container_of(listener, server, pointer.touch_cancel);
     (void)data;
     handle_touch_cancel(*server);
 }
@@ -599,10 +599,10 @@ static bool handle_super_drag_press(Server& server, uint32_t button)
     return true;
 }
 
-void cursor_button(wl_listener* listener, void* data)
+static void cursor_button(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, cursor_button);
+    server = wl_container_of(listener, server, pointer.button);
     auto* event = static_cast<wlr_pointer_button_event*>(data);
 
     // R4.6: left-handed mode swaps the primary and secondary buttons.
@@ -623,7 +623,7 @@ void cursor_button(wl_listener* listener, void* data)
     if (InputCapture::handle_pointer_button(*server, event->button, event->state, event->time_msec))
         return;
 
-    if (server->locked) {
+    if (server->lock.locked) {
         if (auto* lock = lock_surface_at_cursor(*server)) {
             wlr_box box { };
             wlr_output_layout_get_box(server->output_layout, lock->lock_surface->output, &box);
@@ -645,8 +645,8 @@ void cursor_button(wl_listener* listener, void* data)
             // balanced. The menu may have swallowed any number of presses; a
             // stray release is harmless to the client.
             wlr_seat_pointer_notify_button(server->seat, event->time_msec, event->button, event->state);
-            server->pointer_buttons_down = 0;
-            server->pointer_grab_surface = nullptr;
+            server->pointer.buttons_down = 0;
+            server->pointer.grab_surface = nullptr;
         }
         return;
     }
@@ -659,26 +659,26 @@ void cursor_button(wl_listener* listener, void* data)
         if (handle_frame_press(*server, event->button, event->time_msec)) {
             // Opening the window menu is not an interactive frame grab.
             if (!server->window_menu.open)
-                server->frame_grab = true;
+                server->grab.from_frame = true;
             return;
         }
         if (handle_x11_frame_press(*server, event->button)) {
-            server->frame_grab = true;
+            server->grab.from_frame = true;
             return;
         }
         // SerenityOS: Super+LMB moves and Super+RMB resizes, from anywhere.
         if (handle_super_drag_press(*server, event->button)) {
-            server->frame_grab = true;
+            server->grab.from_frame = true;
             return;
         }
-    } else if (server->frame_grab) {
-        server->frame_grab = false;
+    } else if (server->grab.from_frame) {
+        server->grab.from_frame = false;
         // A titlebar drag has ended: tile to the previewed edge target, if any.
-        if (server->grabbed_toplevel && server->cursor_mode == CursorMode::Move)
-            WindowManager::finish_move_snap(*server, *server->grabbed_toplevel);
+        if (server->grab.toplevel && server->grab.mode == CursorMode::Move)
+            WindowManager::finish_move_snap(*server, *server->grab.toplevel);
         handle_frame_release(*server, event->button);
         handle_x11_frame_release(*server, event->button);
-        if (server->grabbed_x11)
+        if (server->grab.x11)
             reset_cursor_mode(*server);
         return;
     }
@@ -690,15 +690,15 @@ void cursor_button(wl_listener* listener, void* data)
     auto serial = wlr_seat_pointer_notify_button(server->seat, event->time_msec, event->button, event->state);
     if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {
         // A drag has ended: tile to the previewed edge target, if any (WS2).
-        if (server->grabbed_toplevel && server->cursor_mode == CursorMode::Move)
-            WindowManager::finish_move_snap(*server, *server->grabbed_toplevel);
+        if (server->grab.toplevel && server->grab.mode == CursorMode::Move)
+            WindowManager::finish_move_snap(*server, *server->grab.toplevel);
         // Tell the client where its window ended up.
-        if (server->grabbed_toplevel)
-            toplevel_report_position(*server->grabbed_toplevel);
-        if (server->pointer_buttons_down > 0)
-            --server->pointer_buttons_down;
-        if (server->pointer_buttons_down == 0)
-            server->pointer_grab_surface = nullptr;
+        if (server->grab.toplevel)
+            toplevel_report_position(*server->grab.toplevel);
+        if (server->pointer.buttons_down > 0)
+            --server->pointer.buttons_down;
+        if (server->pointer.buttons_down == 0)
+            server->pointer.grab_surface = nullptr;
         reset_cursor_mode(*server);
     } else {
         double sx = 0;
@@ -708,18 +708,18 @@ void cursor_button(wl_listener* listener, void* data)
         // The seat accepted the press: remember the surface so the release finds
         // its way back to the same client even if the cursor moves away.
         if (serial && surface) {
-            server->pointer_grab_surface = surface;
-            server->pointer_grab_origin_x = server->cursor->x - sx;
-            server->pointer_grab_origin_y = server->cursor->y - sy;
-            ++server->pointer_buttons_down;
+            server->pointer.grab_surface = surface;
+            server->pointer.grab_origin_x = server->cursor->x - sx;
+            server->pointer.grab_origin_y = server->cursor->y - sy;
+            ++server->pointer.buttons_down;
         }
     }
 }
 
-void cursor_axis(wl_listener* listener, void* data)
+static void cursor_axis(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, cursor_axis);
+    server = wl_container_of(listener, server, pointer.axis);
     auto* event = static_cast<wlr_pointer_axis_event*>(data);
     // R4.6: natural-scroll inverts the axis; the scroll step scales it.
     auto const& mouse = Config::input().mouse;
@@ -737,45 +737,97 @@ void cursor_axis(wl_listener* listener, void* data)
     notify_activity(*server);
 }
 
-void cursor_frame(wl_listener* listener, void*)
+static void cursor_frame(wl_listener* listener, void*)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, cursor_frame);
+    server = wl_container_of(listener, server, pointer.frame);
     wlr_seat_pointer_notify_frame(server->seat);
 }
 
-void seat_request_cursor(wl_listener* listener, void* data)
+static void seat_request_cursor(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, seat_request_cursor);
+    server = wl_container_of(listener, server, pointer.seat_request_cursor);
     auto* event = static_cast<wlr_seat_pointer_request_set_cursor_event*>(data);
     if (server->seat->pointer_state.focused_client == event->seat_client)
         wlr_cursor_set_surface(server->cursor, event->surface, event->hotspot_x, event->hotspot_y);
 }
 
-void seat_pointer_focus_change(wl_listener* listener, void* data)
+static void seat_pointer_focus_change(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, seat_pointer_focus_change);
+    server = wl_container_of(listener, server, pointer.seat_pointer_focus_change);
     auto* event = static_cast<wlr_seat_pointer_focus_change_event*>(data);
     if (!event->new_surface)
         wlr_cursor_set_xcursor(server->cursor, server->cursor_manager, "default");
 }
 
-void seat_request_set_selection(wl_listener* listener, void* data)
+static void seat_request_set_selection(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, seat_request_set_selection);
+    server = wl_container_of(listener, server, pointer.seat_request_set_selection);
     auto* event = static_cast<wlr_seat_request_set_selection_event*>(data);
     wlr_seat_set_selection(server->seat, event->source, event->serial);
 }
 
 // PRIMARY selection (zwp_primary_selection_v1 / gtk): forward it to the seat so
 // wlroots' XWM can bridge it to X11 PRIMARY and vice-versa (docs/20 item 5).
-void seat_request_set_primary_selection(wl_listener* listener, void* data)
+static void seat_request_set_primary_selection(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, seat_request_set_primary_selection);
+    server = wl_container_of(listener, server, pointer.seat_request_set_primary_selection);
     auto* event = static_cast<wlr_seat_request_set_primary_selection_event*>(data);
     wlr_seat_set_primary_selection(server->seat, event->source, event->serial);
+}
+
+// wp-cursor-shape-v1: a client asked for a named cursor shape (e.g. "text").
+static void cursor_shape_request(wl_listener* listener, void* data)
+{
+    Server* server = nullptr;
+    server = wl_container_of(listener, server, pointer.cursor_shape_request);
+    auto* event = static_cast<wlr_cursor_shape_manager_v1_request_set_shape_event*>(data);
+    if (event->device_type != WLR_CURSOR_SHAPE_MANAGER_V1_DEVICE_TYPE_POINTER)
+        return;
+    if (auto const* name = wlr_cursor_shape_v1_name(event->shape); name && server->cursor)
+        wlr_cursor_set_xcursor(server->cursor, server->cursor_manager, name);
+}
+
+void initialize_pointer(Server& server)
+{
+    server.pointer.motion.notify = cursor_motion;
+    wl_signal_add(&server.cursor->events.motion, &server.pointer.motion);
+    server.pointer.motion_absolute.notify = cursor_motion_absolute;
+    wl_signal_add(&server.cursor->events.motion_absolute, &server.pointer.motion_absolute);
+    server.pointer.button.notify = cursor_button;
+    wl_signal_add(&server.cursor->events.button, &server.pointer.button);
+    server.pointer.axis.notify = cursor_axis;
+    wl_signal_add(&server.cursor->events.axis, &server.pointer.axis);
+    server.pointer.frame.notify = cursor_frame;
+    wl_signal_add(&server.cursor->events.frame, &server.pointer.frame);
+    server.pointer.touch_down.notify = cursor_touch_down;
+    wl_signal_add(&server.cursor->events.touch_down, &server.pointer.touch_down);
+    server.pointer.touch_motion.notify = cursor_touch_motion;
+    wl_signal_add(&server.cursor->events.touch_motion, &server.pointer.touch_motion);
+    server.pointer.touch_up.notify = cursor_touch_up;
+    wl_signal_add(&server.cursor->events.touch_up, &server.pointer.touch_up);
+    server.pointer.touch_cancel.notify = cursor_touch_cancel;
+    wl_signal_add(&server.cursor->events.touch_cancel, &server.pointer.touch_cancel);
+
+    server.pointer.seat_request_cursor.notify = seat_request_cursor;
+    wl_signal_add(&server.seat->events.request_set_cursor, &server.pointer.seat_request_cursor);
+    server.pointer.seat_pointer_focus_change.notify = seat_pointer_focus_change;
+    wl_signal_add(&server.seat->pointer_state.events.focus_change, &server.pointer.seat_pointer_focus_change);
+    server.pointer.seat_request_set_selection.notify = seat_request_set_selection;
+    wl_signal_add(&server.seat->events.request_set_selection, &server.pointer.seat_request_set_selection);
+    server.pointer.seat_request_set_primary_selection.notify = seat_request_set_primary_selection;
+    wl_signal_add(&server.seat->events.request_set_primary_selection, &server.pointer.seat_request_set_primary_selection);
+
+    // wp-cursor-shape-v1: clients can set named cursor shapes (R4.7/R4.8).
+    server.pointer.cursor_shape_manager = wlr_cursor_shape_manager_v1_create(server.display, 1);
+    server.pointer.cursor_shape_request.notify = cursor_shape_request;
+    wl_signal_add(&server.pointer.cursor_shape_manager->events.request_set_shape, &server.pointer.cursor_shape_request);
+
+    server.pointer.constraints = wlr_pointer_constraints_v1_create(server.display);
+    server.pointer.new_constraint.notify = new_pointer_constraint;
+    wl_signal_add(&server.pointer.constraints->events.new_constraint, &server.pointer.new_constraint);
 }

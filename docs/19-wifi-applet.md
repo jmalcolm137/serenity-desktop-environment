@@ -87,7 +87,7 @@ Opening the applet (left click) shows a KDE-style popup above it:
 The popup is a `GUI::WindowType::Popup` (an overlay layer surface), so it is
 undecorated, out of the window list and takes keyboard focus for the search and
 passphrase fields. (Keyboard focus for `on_demand` layer surfaces is provided by
-the compositor; see `focus_layer_surface` in `WindowServer/src/main.cpp`.)
+the compositor; see `focus_layer_surface` in `WindowServer/src/LayerShell.cpp`.)
 
 ## 5. Running on the Taskbar
 

@@ -62,14 +62,6 @@
 
 #include "Wlroots.h"
 
-extern "C" {
-#include "serenity-virtual-input-server-protocol.h"
-}
-
-extern "C" {
-#include "serenity-window-server-protocol.h"
-}
-
 static ErrorOr<void> initialize(Server& server)
 {
     server.display = wl_display_create();
@@ -167,67 +159,36 @@ static ErrorOr<void> initialize(Server& server)
     server.top_tree = wlr_scene_tree_create(&server.scene->tree);
     server.overlay_tree = wlr_scene_tree_create(&server.scene->tree);
     // Drag icons render above every layer (R5 explicit drag-and-drop).
-    server.drag_icon_tree = wlr_scene_tree_create(&server.scene->tree);
+    server.drag.icon_tree = wlr_scene_tree_create(&server.scene->tree);
     wlr_xdg_output_manager_v1_create(server.display, server.output_layout);
 
-    server.new_output.notify = server_new_output;
-    wl_signal_add(&server.backend->events.new_output, &server.new_output);
+    server.cursor = wlr_cursor_create();
+    wlr_cursor_attach_output_layout(server.cursor, server.output_layout);
+    server.cursor_manager = wlr_xcursor_manager_create(nullptr, 24);
+    wlr_xcursor_manager_load(server.cursor_manager, 1);
+    wlr_cursor_set_xcursor(server.cursor, server.cursor_manager, "default");
 
-    server.xdg_shell = wlr_xdg_shell_create(server.display, 3);
-    server.new_xdg_toplevel.notify = server_new_xdg_toplevel;
-    wl_signal_add(&server.xdg_shell->events.new_toplevel, &server.new_xdg_toplevel);
-    server.new_xdg_popup.notify = server_new_xdg_popup;
-    wl_signal_add(&server.xdg_shell->events.new_popup, &server.new_xdg_popup);
+    server.seat = wlr_seat_create(server.display, "seat0");
 
-    server.layer_shell = wlr_layer_shell_v1_create(server.display, 4);
-    server.new_layer_surface.notify = server_new_layer_surface;
-    wl_signal_add(&server.layer_shell->events.new_surface, &server.new_layer_surface);
-
-    if (auto* decoration_manager = wlr_xdg_decoration_manager_v1_create(server.display)) {
-        server.new_toplevel_decoration.notify = server_new_toplevel_decoration;
-        wl_signal_add(&decoration_manager->events.new_toplevel_decoration, &server.new_toplevel_decoration);
-    }
-
-    server.foreign_toplevel_manager = wlr_foreign_toplevel_manager_v1_create(server.display);
-    wl_global_create(server.display, &serenity_window_manager_interface, 1, &server, serenity_window_manager_bind);
+    // Each subsystem creates its globals and wires its listeners.
+    initialize_outputs(server);
+    initialize_xdg_shell(server);
+    initialize_layer_shell(server);
+    initialize_serenity_window(server);
     // Test harness: virtual touch/tablet injection (see serenity-virtual-input).
-    wl_global_create(server.display, &serenity_virtual_input_manager_v1_interface, 1, &server, virtual_input_manager_bind);
+    initialize_virtual_input(server);
     SessionManager::initialize(server);
     // R5: InputCapture portal support (compositor-hosted EIS; docs/17).
     InputCapture::initialize(server);
-
-    // R4.8: the standard interop surface. ext-workspace-v1 maps the SDE grid;
-    // ext-foreign-toplevel-list-v1 maps the window list; xdg-activation-v1 lets a
-    // client ask to be focused.
-    server.ext_workspace_manager = wlr_ext_workspace_manager_v1_create(server.display, 1);
-    server.ext_workspace_commit.notify = ext_workspace_commit;
-    wl_signal_add(&server.ext_workspace_manager->events.commit, &server.ext_workspace_commit);
-    server.ext_foreign_toplevel_list = wlr_ext_foreign_toplevel_list_v1_create(server.display, 1);
-    // Window capture sources (ext-image-capture-source-v1) for the ScreenCast portal.
-    server.ext_toplevel_capture_source_manager = wlr_ext_foreign_toplevel_image_capture_source_manager_v1_create(server.display, 1);
-    server.xdg_activation = wlr_xdg_activation_v1_create(server.display);
-
-    // R5 protocol parity (docs/21-r5-protocol-parity-plan.md): client window icons
-    // and the system bell, both available on the pinned wlroots 0.20.
-    server.toplevel_icon_manager = wlr_xdg_toplevel_icon_manager_v1_create(server.display, 1);
-    if (server.toplevel_icon_manager) {
-        static int sizes[] = { 16, 32, 64 };
-        wlr_xdg_toplevel_icon_manager_v1_set_sizes(server.toplevel_icon_manager, sizes, 3);
-        server.toplevel_icon_set.notify = toplevel_icon_set;
-        wl_signal_add(&server.toplevel_icon_manager->events.set_icon, &server.toplevel_icon_set);
-    }
-    server.system_bell = wlr_xdg_system_bell_v1_create(server.display, 1);
-    if (server.system_bell) {
-        server.system_bell_ring.notify = system_bell_ring;
-        wl_signal_add(&server.system_bell->events.ring, &server.system_bell_ring);
-    }
-    server.xdg_activation_activate.notify = xdg_activation_activate;
-    wl_signal_add(&server.xdg_activation->events.request_activate, &server.xdg_activation_activate);
-
-    // wp-cursor-shape-v1: clients can set named cursor shapes (R4.7/R4.8).
-    server.cursor_shape_manager = wlr_cursor_shape_manager_v1_create(server.display, 1);
-    server.cursor_shape_request.notify = cursor_shape_request;
-    wl_signal_add(&server.cursor_shape_manager->events.request_set_shape, &server.cursor_shape_request);
+    initialize_interop(server);
+    initialize_output_management(server);
+    initialize_idle(server);
+    initialize_session_lock(server);
+    initialize_input_devices(server);
+    initialize_pointer(server);
+    initialize_tablet(server);
+    initialize_drag_and_drop(server);
+    initialize_xwayland(server);
 
     // Screen capture. Expose the standard ext-image-copy-capture-v1 (the primary,
     // portable capture surface) and the wlr-screencopy-unstable-v1 compat so
@@ -236,107 +197,10 @@ static ErrorOr<void> initialize(Server& server)
     (void)wlr_ext_image_copy_capture_manager_v1_create(server.display, 1);
     (void)wlr_screencopy_manager_v1_create(server.display);
 
-    server.output_manager = wlr_output_manager_v1_create(server.display);
-    server.output_manager_apply.notify = output_manager_apply;
-    wl_signal_add(&server.output_manager->events.apply, &server.output_manager_apply);
-    server.output_manager_test.notify = output_manager_test;
-    wl_signal_add(&server.output_manager->events.test, &server.output_manager_test);
-
-    // Session safety net (R4.1): idle notification, idle inhibition and DPMS.
-    server.idle_notifier = wlr_idle_notifier_v1_create(server.display);
-    server.idle_inhibit_manager = wlr_idle_inhibit_v1_create(server.display);
-    server.new_idle_inhibitor.notify = server_new_idle_inhibitor;
-    wl_signal_add(&server.idle_inhibit_manager->events.new_inhibitor, &server.new_idle_inhibitor);
-    server.output_power_manager = wlr_output_power_manager_v1_create(server.display);
-    server.output_power_set_mode.notify = output_power_set_mode;
-    wl_signal_add(&server.output_power_manager->events.set_mode, &server.output_power_set_mode);
-    server.session_lock_manager = wlr_session_lock_manager_v1_create(server.display);
-    server.session_lock_new_lock.notify = session_lock_new_lock;
-    wl_signal_add(&server.session_lock_manager->events.new_lock, &server.session_lock_new_lock);
-
-    // Virtual input for the headless harness (docs/09-r3-implementation-plan.md §2.4).
-    server.virtual_keyboard_manager = wlr_virtual_keyboard_manager_v1_create(server.display);
-    server.new_virtual_keyboard.notify = server_new_virtual_keyboard;
-    wl_signal_add(&server.virtual_keyboard_manager->events.new_virtual_keyboard, &server.new_virtual_keyboard);
-    server.virtual_pointer_manager = wlr_virtual_pointer_manager_v1_create(server.display);
-    server.new_virtual_pointer.notify = server_new_virtual_pointer;
-    wl_signal_add(&server.virtual_pointer_manager->events.new_virtual_pointer, &server.new_virtual_pointer);
-
-    server.cursor = wlr_cursor_create();
-    wlr_cursor_attach_output_layout(server.cursor, server.output_layout);
-    server.cursor_manager = wlr_xcursor_manager_create(nullptr, 24);
-    wlr_xcursor_manager_load(server.cursor_manager, 1);
-    wlr_cursor_set_xcursor(server.cursor, server.cursor_manager, "default");
-
-    server.cursor_motion.notify = cursor_motion;
-    wl_signal_add(&server.cursor->events.motion, &server.cursor_motion);
-    server.cursor_motion_absolute.notify = cursor_motion_absolute;
-    wl_signal_add(&server.cursor->events.motion_absolute, &server.cursor_motion_absolute);
-    server.cursor_button.notify = cursor_button;
-    wl_signal_add(&server.cursor->events.button, &server.cursor_button);
-    server.cursor_axis.notify = cursor_axis;
-    wl_signal_add(&server.cursor->events.axis, &server.cursor_axis);
-    server.cursor_frame.notify = cursor_frame;
-    wl_signal_add(&server.cursor->events.frame, &server.cursor_frame);
-    server.touch_down.notify = cursor_touch_down;
-    wl_signal_add(&server.cursor->events.touch_down, &server.touch_down);
-    server.touch_motion.notify = cursor_touch_motion;
-    wl_signal_add(&server.cursor->events.touch_motion, &server.touch_motion);
-    server.touch_up.notify = cursor_touch_up;
-    wl_signal_add(&server.cursor->events.touch_up, &server.touch_up);
-    server.touch_cancel.notify = cursor_touch_cancel;
-    wl_signal_add(&server.cursor->events.touch_cancel, &server.touch_cancel);
-    server.tablet_tool_axis.notify = tablet_tool_axis;
-    wl_signal_add(&server.cursor->events.tablet_tool_axis, &server.tablet_tool_axis);
-    server.tablet_tool_proximity.notify = tablet_tool_proximity;
-    wl_signal_add(&server.cursor->events.tablet_tool_proximity, &server.tablet_tool_proximity);
-    server.tablet_tool_tip.notify = tablet_tool_tip;
-    wl_signal_add(&server.cursor->events.tablet_tool_tip, &server.tablet_tool_tip);
-    server.tablet_tool_button.notify = tablet_tool_button;
-    wl_signal_add(&server.cursor->events.tablet_tool_button, &server.tablet_tool_button);
-
-    server.new_input.notify = server_new_input;
-    wl_signal_add(&server.backend->events.new_input, &server.new_input);
-
-    server.seat = wlr_seat_create(server.display, "seat0");
-
-    // XWayland (R5): X11 client support. [Compositor] XWayland=false disables it
-    // entirely (no server, no DISPLAY). Lazy: the X server starts on first use.
-    if (Config::compositor().xwayland && server.compositor) {
-        server.xwayland = wlr_xwayland_create(server.display, server.compositor, true);
-        if (server.xwayland) {
-            wlr_xwayland_set_seat(server.xwayland, server.seat);
-            server.new_xwayland_surface.notify = server_new_xwayland_surface;
-            wl_signal_add(&server.xwayland->events.new_surface, &server.new_xwayland_surface);
-            server.xwayland_ready.notify = xwayland_ready;
-            wl_signal_add(&server.xwayland->events.ready, &server.xwayland_ready);
-            // Export DISPLAY for the session's apps (state file + our own env).
-            setenv("DISPLAY", server.xwayland->display_name, 1);
-            StringView display { server.xwayland->display_name, strlen(server.xwayland->display_name) };
-            Config::write_state("xwayland-display"sv, display.bytes());
-            dbgln("WindowServer: Xwayland enabled (DISPLAY={})", server.xwayland->display_name);
-        } else {
-            warnln("WindowServer: could not create Xwayland");
-        }
-    }
-    server.seat_request_cursor.notify = seat_request_cursor;
-    wl_signal_add(&server.seat->events.request_set_cursor, &server.seat_request_cursor);
-    server.seat_pointer_focus_change.notify = seat_pointer_focus_change;
-    wl_signal_add(&server.seat->pointer_state.events.focus_change, &server.seat_pointer_focus_change);
-    server.seat_request_set_selection.notify = seat_request_set_selection;
-    wl_signal_add(&server.seat->events.request_set_selection, &server.seat_request_set_selection);
-    server.seat_request_set_primary_selection.notify = seat_request_set_primary_selection;
-    wl_signal_add(&server.seat->events.request_set_primary_selection, &server.seat_request_set_primary_selection);
-    // R5: explicit drag-and-drop (data-device DnD between windows).
-    server.seat_request_start_drag.notify = seat_request_start_drag;
-    wl_signal_add(&server.seat->events.request_start_drag, &server.seat_request_start_drag);
-    server.seat_start_drag.notify = seat_start_drag;
-    wl_signal_add(&server.seat->events.start_drag, &server.seat_start_drag);
-
     // R5: the native-app compatibility surface. Most of these protocols are fully
-    // implemented by wlroots, so the compositor only advertises them; relative
-    // pointer and keyboard-shortcuts-inhibit also need a little glue (below and
-    // in keyboard_key()).
+    // implemented by wlroots, so the compositor only advertises them; the ones
+    // that need a little glue (relative pointer, keyboard-shortcuts-inhibit,
+    // gestures, tablets, pointer constraints) are set up by their subsystems above.
     wlr_primary_selection_v1_device_manager_create(server.display);
     // data-control lets clipboard managers (e.g. the SDE ClipboardHistory applet)
     // observe and set the selection and primary selection. wlroots implements the
@@ -357,13 +221,6 @@ static ErrorOr<void> initialize(Server& server)
     // R6 HiDPI: fractional output scale. wlr_scene notifies each mapped surface of
     // the preferred (possibly fractional) scale, so native clients render at it.
     wlr_fractional_scale_manager_v1_create(server.display, 1);
-    server.relative_pointer_manager = wlr_relative_pointer_manager_v1_create(server.display);
-    server.pointer_gestures = wlr_pointer_gestures_v1_create(server.display);
-    server.tablet_manager = wlr_tablet_v2_create(server.display);
-    server.keyboard_shortcuts_inhibit = wlr_keyboard_shortcuts_inhibit_v1_create(server.display);
-    server.pointer_constraints = wlr_pointer_constraints_v1_create(server.display);
-    server.new_pointer_constraint.notify = new_pointer_constraint;
-    wl_signal_add(&server.pointer_constraints->events.new_constraint, &server.new_pointer_constraint);
     auto* foreign_registry = wlr_xdg_foreign_registry_create(server.display);
     wlr_xdg_foreign_v1_create(server.display, foreign_registry);
     wlr_xdg_foreign_v2_create(server.display, foreign_registry);

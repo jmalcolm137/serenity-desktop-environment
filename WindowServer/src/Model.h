@@ -105,7 +105,8 @@ struct wlr_xdg_toplevel;
 struct wlr_xdg_toplevel_decoration_v1;
 
 // The compositor's core model: the server, its outputs, windows and inputs.
-// Shared by main.cpp (wiring) and the policy modules (WindowManager, ...).
+// Shared by the compositor's subsystems (Keyboard, Pointer, XdgShell, ...) and the
+// policy modules (WindowManager, ...).
 
 enum class CursorMode {
     Passthrough,
@@ -558,118 +559,16 @@ struct LockSurface {
     wl_listener destroy { };
 };
 
-struct Server {
-    wl_display* display { nullptr };
-    wlr_backend* backend { nullptr };
-    wlr_renderer* renderer { nullptr };
-    wlr_allocator* allocator { nullptr };
-    wlr_scene* scene { nullptr };
-    wlr_scene_output_layout* scene_layout { nullptr };
-    wlr_output_layout* output_layout { nullptr };
-    // Per-layer scene trees, in bottom-to-top order, so layer surfaces stack
-    // correctly relative to ordinary windows (the flat scene root does not).
-    wlr_scene_tree* background_tree { nullptr };
-    wlr_scene_tree* bottom_tree { nullptr };
-    wlr_scene_tree* windows_tree { nullptr };
-    wlr_scene_tree* top_tree { nullptr };
-    wlr_scene_tree* overlay_tree { nullptr };
-    wlr_xdg_shell* xdg_shell { nullptr };
-    wlr_layer_shell_v1* layer_shell { nullptr };
-    wlr_foreign_toplevel_manager_v1* foreign_toplevel_manager { nullptr };
-    // R4.8: the standard interop surface. ext-workspace-v1 maps the SDE grid,
-    // ext-foreign-toplevel-list-v1 maps the window list, xdg-activation-v1 lets
-    // clients ask to be focused.
-    wlr_ext_workspace_manager_v1* ext_workspace_manager { nullptr };
-    wlr_ext_workspace_group_handle_v1* ext_workspace_group { nullptr };
-    Vector<wlr_ext_workspace_handle_v1*> ext_workspaces;
-    wlr_ext_foreign_toplevel_list_v1* ext_foreign_toplevel_list { nullptr };
-    wlr_ext_foreign_toplevel_image_capture_source_manager_v1* ext_toplevel_capture_source_manager { nullptr };
-    wlr_xdg_activation_v1* xdg_activation { nullptr };
-    // R5 protocol parity (docs/21): client window icons and the system bell.
-    wlr_xdg_toplevel_icon_manager_v1* toplevel_icon_manager { nullptr };
-    wl_listener toplevel_icon_set { };
-    wlr_xdg_system_bell_v1* system_bell { nullptr };
-    wl_listener system_bell_ring { };
-    wlr_cursor_shape_manager_v1* cursor_shape_manager { nullptr };
-    wlr_output_manager_v1* output_manager { nullptr };
-    // R5: native-app compatibility protocols (mostly wlroots-implemented; these
-    // need a little compositor glue — relative motion and shortcut inhibition).
-    wlr_relative_pointer_manager_v1* relative_pointer_manager { nullptr };
-    wlr_keyboard_shortcuts_inhibit_manager_v1* keyboard_shortcuts_inhibit { nullptr };
-    // R5 IME (docs/22-input-method.md): text-input-v3 + input-method-v2. The
-    // compositor relays text-input state between the focused client and the
-    // (single) input method, and routes keys to the input method's keyboard grab.
-    wlr_text_input_manager_v3* text_input_manager { nullptr };
-    wl_listener text_input_new { };
-    wlr_input_method_manager_v2* input_method_manager { nullptr };
-    wl_listener input_method_new { };
-    Vector<NonnullOwnPtr<TextInput>> text_inputs;
-    Vector<NonnullOwnPtr<InputPopup>> input_popups;
-    Vector<NonnullOwnPtr<InputMethodClient>> input_methods;
-    wlr_input_method_v2* input_method { nullptr };
-    // Scene tree for input-method popups (candidate windows), above the shell.
-    wlr_scene_tree* ime_popup_tree { nullptr };
-    wl_listener input_method_grab_destroy { };
-    // zwp-pointer-constraints-v1: pointer lock/confine for games. The active
-    // constraint (for the focused pointer surface) is enforced in
-    // process_cursor_motion(); null when none applies.
-    wlr_pointer_constraints_v1* pointer_constraints { nullptr };
-    wlr_pointer_constraint_v1* active_pointer_constraint { nullptr };
-    wl_listener new_pointer_constraint { };
-    // Explicit drag-and-drop (data-device DnD between windows): the active drag,
-    // the surface it is currently over, and the scene node drawing its icon.
-    wlr_drag* active_drag { nullptr };
-    wlr_surface* drag_target { nullptr };
-    wlr_scene_tree* drag_icon_tree { nullptr };
-    wlr_scene_node* drag_icon_node { nullptr };
-    wl_listener seat_request_start_drag { };
-    wl_listener seat_start_drag { };
-    wl_listener drag_destroy { };
-    wl_listener drag_icon_destroy { };
-    // Virtual input (wlr virtual-keyboard / virtual-pointer), so headless tests
-    // can script keyboard and pointer events. See docs/09 §2.4.
-    wlr_virtual_keyboard_manager_v1* virtual_keyboard_manager { nullptr };
-    wlr_virtual_pointer_manager_v1* virtual_pointer_manager { nullptr };
-    wlr_cursor* cursor { nullptr };
-    wlr_xcursor_manager* cursor_manager { nullptr };
-    wlr_seat* seat { nullptr };
-    wlr_output* primary_output { nullptr };
+// --- Server state, by subsystem ---------------------------------------------
+// The compositor's state is grouped by the subsystem that owns it. Each group's
+// wlroots objects and listeners are created and wired by that subsystem's
+// initialize_*() (Keyboard.cpp, Pointer.cpp, XWayland.cpp, ...); the Server below
+// holds the groups plus the core every subsystem shares.
 
-    wl_listener new_output { };
-    wl_listener new_xdg_toplevel { };
-    wl_listener new_xdg_popup { };
-    wl_listener new_layer_surface { };
-    wl_listener new_toplevel_decoration { };
-    wl_listener output_manager_apply { };
-    wl_listener output_manager_test { };
-    wl_listener new_input { };
-    wl_listener cursor_motion { };
-    wl_listener cursor_motion_absolute { };
-    wl_listener cursor_button { };
-    wl_listener cursor_axis { };
-    wl_listener cursor_frame { };
-    wl_listener touch_down { };
-    wl_listener touch_motion { };
-    wl_listener touch_up { };
-    wl_listener touch_cancel { };
-    wl_listener seat_request_cursor { };
-    wl_listener seat_pointer_focus_change { };
-    wl_listener seat_request_set_selection { };
-    wl_listener seat_request_set_primary_selection { };
-    wl_listener new_virtual_keyboard { };
-    wl_listener new_virtual_pointer { };
-    wl_listener ext_workspace_commit { };
-    wl_listener xdg_activation_activate { };
-    wl_listener cursor_shape_request { };
-
-    Vector<NonnullOwnPtr<Output>> outputs;
-    Vector<NonnullOwnPtr<Toplevel>> toplevels;
-    Vector<NonnullOwnPtr<Popup>> popups;
-    Vector<NonnullOwnPtr<LayerSurface>> layer_surfaces;
-    // The on_demand layer surface that currently holds keyboard focus (a client
-    // popup such as the Wi-Fi network list or its passphrase field), if any, so
-    // focus can be restored when it unmaps.
-    LayerSurface* keyboard_focus_layer { nullptr };
+// Input devices (InputDevices.cpp, Keyboard.cpp): keyboards, pointers, touch and
+// switches, the virtual-input managers the headless tests drive, and the
+// native-app glue protocols that act on them.
+struct InputState {
     Vector<NonnullOwnPtr<Keyboard>> keyboards;
     // Pointer devices, so input.ini's libinput settings can be (re)applied when
     // the config changes. See R4.6.
@@ -682,82 +581,251 @@ struct Server {
     Vector<NonnullOwnPtr<SwitchDevice>> switch_objects;
     // wp-pointer-gestures-v1: touchpad swipe/pinch/hold.
     wlr_pointer_gestures_v1* pointer_gestures { nullptr };
-    // XWayland (R5): X11 client support.
-    wlr_compositor* compositor { nullptr };
-    wlr_xwayland* xwayland { nullptr };
-    // Set when the X server is up (the xwayland "ready" event), so the compositor
-    // only calls XWM-backed APIs (e.g. set_workareas) once xwm exists.
-    bool xwayland_started { false };
-    Vector<NonnullOwnPtr<X11Toplevel>> x11_toplevels;
-    X11Toplevel* focused_x11 { nullptr };
-    wl_listener new_xwayland_surface { };
-    wl_listener xwayland_ready { };
-    // zwp-tablet-v2 (pen/tablet): the manager plus the v2 tablet/tool wrappers.
-    wlr_tablet_manager_v2* tablet_manager { nullptr };
-    HashMap<u64, wlr_tablet_v2_tablet*> tablet_map;
-    HashMap<u64, wlr_tablet_v2_tablet_tool*> tablet_tool_map;
-    Vector<NonnullOwnPtr<TabletPad>> tablet_pads;
-    wl_listener tablet_tool_axis { };
-    wl_listener tablet_tool_proximity { };
-    wl_listener tablet_tool_tip { };
-    wl_listener tablet_tool_button { };
-    Vector<NonnullOwnPtr<Decoration>> decorations;
-    // serenity_window_manager resources, so the compositor can ask a client to
-    // dismiss its menus (see maybe_dismiss_layer_menus).
-    Vector<wl_resource*> serenity_window_managers;
+    // Virtual input (wlr virtual-keyboard / virtual-pointer), so headless tests
+    // can script keyboard and pointer events. See docs/09 §2.4.
+    wlr_virtual_keyboard_manager_v1* virtual_keyboard_manager { nullptr };
+    wlr_virtual_pointer_manager_v1* virtual_pointer_manager { nullptr };
+    // R5: native-app compatibility protocols (mostly wlroots-implemented; these
+    // need a little compositor glue — relative motion and shortcut inhibition).
+    wlr_relative_pointer_manager_v1* relative_pointer_manager { nullptr };
+    wlr_keyboard_shortcuts_inhibit_manager_v1* keyboard_shortcuts_inhibit { nullptr };
+    wl_listener new_input { };
+    wl_listener new_virtual_keyboard { };
+    wl_listener new_virtual_pointer { };
+};
 
-    CursorMode cursor_mode { CursorMode::Passthrough };
-    Toplevel* grabbed_toplevel { nullptr };
-    X11Toplevel* grabbed_x11 { nullptr };
-    // The X11 window whose frame button is held, and which one.
-    X11Toplevel* pressed_button_x11 { nullptr };
-    int pressed_button_x11_index { -1 };
-    double grab_x { 0 };
-    double grab_y { 0 };
-    wlr_box grab_box { };
-    uint32_t resize_edges { 0 };
-    bool frame_grab { false };
-    bool show_desktop { false };
+// The cursor and the seat's pointer-side requests (Pointer.cpp).
+struct PointerState {
+    wl_listener motion { };
+    wl_listener motion_absolute { };
+    wl_listener button { };
+    wl_listener axis { };
+    wl_listener frame { };
+    wl_listener touch_down { };
+    wl_listener touch_motion { };
+    wl_listener touch_up { };
+    wl_listener touch_cancel { };
+    wl_listener seat_request_cursor { };
+    wl_listener seat_pointer_focus_change { };
+    wl_listener seat_request_set_selection { };
+    wl_listener seat_request_set_primary_selection { };
+    // zwp-pointer-constraints-v1: pointer lock/confine for games. The active
+    // constraint (for the focused pointer surface) is enforced in
+    // process_cursor_motion(); null when none applies.
+    wlr_pointer_constraints_v1* constraints { nullptr };
+    wlr_pointer_constraint_v1* active_constraint { nullptr };
+    wl_listener new_constraint { };
+    // wp-cursor-shape-v1: clients can set named cursor shapes (R4.7/R4.8).
+    wlr_cursor_shape_manager_v1* cursor_shape_manager { nullptr };
+    wl_listener cursor_shape_request { };
 
     // Implicit pointer grab: while a client button is held, keep the pointer
     // focused on the surface that received the press and forward motion to it,
     // even if the cursor crosses into another surface. wlroots' seat forgets the
     // pressed button when pointer focus changes, so without this the eventual
     // release is silently dropped and the client stays stuck mid-press.
-    wlr_surface* pointer_grab_surface { nullptr };
-    double pointer_grab_origin_x { 0 };
-    double pointer_grab_origin_y { 0 };
-    uint32_t pointer_buttons_down { 0 };
+    wlr_surface* grab_surface { nullptr };
+    double grab_origin_x { 0 };
+    double grab_origin_y { 0 };
+    uint32_t buttons_down { 0 };
+};
 
-    // Pointer interaction with window chrome (titlebar buttons, titlebar drags
-    // and resize borders), mirroring SerenityOS's WindowFrame/Button state.
-    Toplevel* pressed_button_toplevel { nullptr };
-    int pressed_button_index { -1 };
-    Toplevel* last_titlebar_press_toplevel { nullptr };
-    uint32_t last_titlebar_press_time { 0 };
-    double last_titlebar_press_x { 0 };
-    double last_titlebar_press_y { 0 };
+// An interactive move or resize of a window (xdg or X11), started from its frame,
+// a client request or a Super-drag.
+struct GrabState {
+    CursorMode mode { CursorMode::Passthrough };
+    Toplevel* toplevel { nullptr };
+    X11Toplevel* x11 { nullptr };
+    double x { 0 };
+    double y { 0 };
+    wlr_box box { };
+    uint32_t edges { 0 };
+    // Started from the server-side frame (titlebar / border), not by the client.
+    bool from_frame { false };
+};
+
+// Pointer interaction with window chrome (titlebar buttons, titlebar drags and
+// resize borders), mirroring SerenityOS's WindowFrame/Button state (Frame.cpp,
+// XWaylandFrame.cpp).
+struct FramePressState {
+    Toplevel* toplevel { nullptr };
+    int button_index { -1 };
+    // The X11 window whose frame button is held, and which one.
+    X11Toplevel* x11 { nullptr };
+    int x11_button_index { -1 };
+    Toplevel* last_titlebar_toplevel { nullptr };
+    uint32_t last_titlebar_time { 0 };
+    double last_titlebar_x { 0 };
+    double last_titlebar_y { 0 };
     bool double_click_pending { false };
+};
 
+// Explicit drag-and-drop (data-device DnD between windows; DragAndDrop.cpp): the
+// active drag, the surface it is currently over, and the scene node drawing its
+// icon.
+struct DragState {
+    wlr_drag* active { nullptr };
+    wlr_surface* target { nullptr };
+    wlr_scene_tree* icon_tree { nullptr };
+    wlr_scene_node* icon_node { nullptr };
+    wl_listener request_start { };
+    wl_listener start { };
+    wl_listener destroy { };
+    wl_listener icon_destroy { };
+};
+
+// zwp-tablet-v2 (pen/tablet; Tablet.cpp): the manager plus the v2 tablet/tool
+// wrappers.
+struct TabletState {
+    wlr_tablet_manager_v2* manager { nullptr };
+    HashMap<u64, wlr_tablet_v2_tablet*> tablets;
+    HashMap<u64, wlr_tablet_v2_tablet_tool*> tools;
+    Vector<NonnullOwnPtr<TabletPad>> pads;
+    wl_listener tool_axis { };
+    wl_listener tool_proximity { };
+    wl_listener tool_tip { };
+    wl_listener tool_button { };
+};
+
+// R5 IME (docs/22-input-method.md; InputMethod.cpp): text-input-v3 +
+// input-method-v2. The compositor relays text-input state between the focused
+// client and the (single) input method, and routes keys to the input method's
+// keyboard grab.
+struct ImeState {
+    wlr_text_input_manager_v3* text_input_manager { nullptr };
+    wl_listener text_input_new { };
+    wlr_input_method_manager_v2* input_method_manager { nullptr };
+    wl_listener input_method_new { };
+    Vector<NonnullOwnPtr<TextInput>> text_inputs;
+    Vector<NonnullOwnPtr<InputPopup>> input_popups;
+    Vector<NonnullOwnPtr<InputMethodClient>> input_methods;
+    wlr_input_method_v2* input_method { nullptr };
+    // Scene tree for input-method popups (candidate windows), above the shell.
+    wlr_scene_tree* popup_tree { nullptr };
+    wl_listener grab_destroy { };
+};
+
+// XWayland (R5; XWayland.cpp): X11 client support.
+struct XWaylandState {
+    wlr_xwayland* wlr { nullptr };
+    // Set when the X server is up (the xwayland "ready" event), so the compositor
+    // only calls XWM-backed APIs (e.g. set_workareas) once xwm exists.
+    bool started { false };
+    Vector<NonnullOwnPtr<X11Toplevel>> toplevels;
+    X11Toplevel* focused { nullptr };
+    wl_listener new_surface { };
+    wl_listener ready { };
+};
+
+// R4.8 / R5: the standard interop surface (Interop.cpp). ext-workspace-v1 maps the
+// SDE grid, ext-foreign-toplevel-list-v1 and wlr-foreign-toplevel-management map
+// the window list, xdg-activation-v1 lets clients ask to be focused, plus client
+// window icons and the system bell (docs/21).
+struct InteropState {
+    wlr_foreign_toplevel_manager_v1* foreign_toplevel_manager { nullptr };
+    wlr_ext_workspace_manager_v1* ext_workspace_manager { nullptr };
+    wlr_ext_workspace_group_handle_v1* ext_workspace_group { nullptr };
+    Vector<wlr_ext_workspace_handle_v1*> ext_workspaces;
+    wlr_ext_foreign_toplevel_list_v1* ext_foreign_toplevel_list { nullptr };
+    wlr_ext_foreign_toplevel_image_capture_source_manager_v1* ext_toplevel_capture_source_manager { nullptr };
+    wlr_xdg_activation_v1* xdg_activation { nullptr };
+    wlr_xdg_toplevel_icon_manager_v1* toplevel_icon_manager { nullptr };
+    wlr_xdg_system_bell_v1* system_bell { nullptr };
+    wl_listener ext_workspace_commit { };
+    wl_listener xdg_activation_activate { };
+    wl_listener toplevel_icon_set { };
+    wl_listener system_bell_ring { };
+};
+
+// wlr-output-management (OutputManagement.cpp).
+struct OutputManagementState {
+    wlr_output_manager_v1* manager { nullptr };
+    wl_listener apply { };
+    wl_listener test { };
+};
+
+// Session safety net (R4.1; Idle.cpp), see docs/11-r4-implementation-plan.md:
+// idle notification (ext-idle-notify-v1), idle inhibition (zwp_idle_inhibit_v1)
+// and DPMS (wlr-output-power-management).
+struct IdleState {
+    wlr_idle_notifier_v1* notifier { nullptr };
+    wlr_idle_inhibit_manager_v1* inhibit_manager { nullptr };
+    wlr_output_power_manager_v1* output_power_manager { nullptr };
+    Vector<NonnullOwnPtr<IdleInhibitor>> inhibitors;
+    wl_listener new_inhibitor { };
+    wl_listener output_power_set_mode { };
+};
+
+// Session lock (R4.1, ext-session-lock-v1; SessionLock.cpp).
+struct LockState {
+    wlr_session_lock_manager_v1* manager { nullptr };
+    wlr_session_lock_v1* lock { nullptr };
+    bool locked { false };
+    Vector<NonnullOwnPtr<LockSurface>> surfaces;
+    wl_listener new_lock { };
+    wl_listener new_surface { };
+    wl_listener unlock { };
+    wl_listener destroy { };
+};
+
+struct Server {
+    wl_display* display { nullptr };
+    wlr_backend* backend { nullptr };
+    wlr_renderer* renderer { nullptr };
+    wlr_allocator* allocator { nullptr };
+    wlr_compositor* compositor { nullptr };
+    wlr_scene* scene { nullptr };
+    wlr_scene_output_layout* scene_layout { nullptr };
+    wlr_output_layout* output_layout { nullptr };
+    // Per-layer scene trees, in bottom-to-top order, so layer surfaces stack
+    // correctly relative to ordinary windows (the flat scene root does not).
+    wlr_scene_tree* background_tree { nullptr };
+    wlr_scene_tree* bottom_tree { nullptr };
+    wlr_scene_tree* windows_tree { nullptr };
+    wlr_scene_tree* top_tree { nullptr };
+    wlr_scene_tree* overlay_tree { nullptr };
+    wlr_cursor* cursor { nullptr };
+    wlr_xcursor_manager* cursor_manager { nullptr };
+    wlr_seat* seat { nullptr };
+
+    // Outputs (Output.cpp).
+    Vector<NonnullOwnPtr<Output>> outputs;
+    wlr_output* primary_output { nullptr };
+    wl_listener new_output { };
+
+    // The shell: xdg toplevels, popups and decorations (XdgShell.cpp) and layer
+    // surfaces (LayerShell.cpp).
+    wlr_xdg_shell* xdg_shell { nullptr };
+    wlr_layer_shell_v1* layer_shell { nullptr };
+    Vector<NonnullOwnPtr<Toplevel>> toplevels;
+    Vector<NonnullOwnPtr<Popup>> popups;
+    Vector<NonnullOwnPtr<Decoration>> decorations;
+    Vector<NonnullOwnPtr<LayerSurface>> layer_surfaces;
+    // The on_demand layer surface that currently holds keyboard focus (a client
+    // popup such as the Wi-Fi network list or its passphrase field), if any, so
+    // focus can be restored when it unmaps.
+    LayerSurface* keyboard_focus_layer { nullptr };
+    wl_listener new_xdg_toplevel { };
+    wl_listener new_xdg_popup { };
+    wl_listener new_layer_surface { };
+    wl_listener new_toplevel_decoration { };
+    // serenity_window_manager resources, so the compositor can ask a client to
+    // dismiss its menus (see maybe_dismiss_layer_menus).
+    Vector<wl_resource*> serenity_window_managers;
+    bool show_desktop { false };
     // The (single) window menu, if any is open.
     WindowMenu window_menu;
 
-    // --- Session safety net (R4.1), see docs/11-r4-implementation-plan.md ---
-    // Idle notification (ext-idle-notify-v1), idle inhibition
-    // (zwp_idle_inhibit_v1), DPMS (wlr-output-power-management) and session lock
-    // (ext-session-lock-v1).
-    wlr_idle_notifier_v1* idle_notifier { nullptr };
-    wlr_idle_inhibit_manager_v1* idle_inhibit_manager { nullptr };
-    wlr_output_power_manager_v1* output_power_manager { nullptr };
-    wlr_session_lock_manager_v1* session_lock_manager { nullptr };
-    wlr_session_lock_v1* session_lock { nullptr };
-    bool locked { false };
-    Vector<NonnullOwnPtr<IdleInhibitor>> idle_inhibitors;
-    Vector<NonnullOwnPtr<LockSurface>> lock_surfaces;
-    wl_listener new_idle_inhibitor { };
-    wl_listener output_power_set_mode { };
-    wl_listener session_lock_new_lock { };
-    wl_listener session_lock_new_surface { };
-    wl_listener session_lock_unlock { };
-    wl_listener session_lock_destroy { };
+    InputState input;
+    PointerState pointer;
+    GrabState grab;
+    FramePressState frame_press;
+    DragState drag;
+    TabletState tablet;
+    ImeState ime;
+    XWaylandState xwayland;
+    InteropState interop;
+    OutputManagementState output_management;
+    IdleState idle;
+    LockState lock;
 };

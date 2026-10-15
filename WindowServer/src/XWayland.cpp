@@ -31,7 +31,7 @@ static void x11_fetch_icon(X11Toplevel& toplevel);
 
 X11Toplevel* x11_toplevel_for_wlr_surface(Server& server, wlr_surface* surface)
 {
-    for (auto& toplevel : server.x11_toplevels) {
+    for (auto& toplevel : server.xwayland.toplevels) {
         if (toplevel->xsurface && toplevel->xsurface->surface == surface)
             return toplevel.ptr();
     }
@@ -42,7 +42,7 @@ X11Toplevel* x11_toplevel_for_wlr_surface(Server& server, wlr_surface* surface)
 // xdg toplevels are handled elsewhere, so only X11 surfaces are considered.
 bool x11_surface_at(Server& server, double lx, double ly, wlr_surface** surface, double* sx, double* sy)
 {
-    if (!server.xwayland)
+    if (!server.xwayland.wlr)
         return false;
     auto* node = wlr_scene_node_at(&server.scene->tree.node, lx, ly, sx, sy);
     if (!node || node->type != WLR_SCENE_NODE_BUFFER)
@@ -62,7 +62,7 @@ bool x11_surface_at(Server& server, double lx, double ly, wlr_surface** surface,
 // the parent is raised. docs/20-xwayland-next-steps.md item 4.
 static void x11_raise_overrides_above(X11Toplevel& parent)
 {
-    for (auto& child : parent.server->x11_toplevels) {
+    for (auto& child : parent.server->xwayland.toplevels) {
         if (!child->mapped || !child->xsurface)
             continue;
         // Override-redirect menus/tooltips follow X's parent; managed transients
@@ -78,7 +78,7 @@ static void x11_raise_overrides_above(X11Toplevel& parent)
 // Keep _NET_WM_STATE_ABOVE windows on top after another window is raised.
 static void x11_raise_above_windows(Server& server)
 {
-    for (auto& toplevel : server.x11_toplevels) {
+    for (auto& toplevel : server.xwayland.toplevels) {
         if (toplevel->mapped && toplevel->always_on_top)
             wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
     }
@@ -99,7 +99,7 @@ void focus_x11_toplevel(Server& server, X11Toplevel* toplevel)
     if (server.seat->keyboard_state.focused_surface == surface && toplevel->frame_active)
         return;
 
-    server.focused_x11 = toplevel;
+    server.xwayland.focused = toplevel;
     // Feed the Alt-Tab switcher's most-recently-focused ordering (see
     // Toplevel::focus_order; X11Toplevel gained the same field).
     toplevel->focus_order = ++g_focus_order_counter;
@@ -267,12 +267,12 @@ static void x11_surface_destroy(wl_listener* listener, void*)
     wl_list_remove(&toplevel->request_skip_taskbar.link);
     wl_list_remove(&toplevel->request_demands_attention.link);
     wl_list_remove(&toplevel->destroy.link);
-    if (server.focused_x11 == toplevel)
-        server.focused_x11 = nullptr;
-    if (server.grabbed_x11 == toplevel)
-        server.grabbed_x11 = nullptr;
-    if (server.pressed_button_x11 == toplevel)
-        server.pressed_button_x11 = nullptr;
+    if (server.xwayland.focused == toplevel)
+        server.xwayland.focused = nullptr;
+    if (server.grab.x11 == toplevel)
+        server.grab.x11 = nullptr;
+    if (server.frame_press.x11 == toplevel)
+        server.frame_press.x11 = nullptr;
     if (toplevel->wm_id != 0)
         WindowManager::emit_window_removed(*toplevel);
     if (toplevel->frame_buffer)
@@ -282,13 +282,13 @@ static void x11_surface_destroy(wl_listener* listener, void*)
         toplevel->scene_tree = nullptr;
     }
     // Avoid dangling transient-parent pointers (and our surface back-reference).
-    for (auto& other : server.x11_toplevels) {
+    for (auto& other : server.xwayland.toplevels) {
         if (other->transient_parent == toplevel)
             other->transient_parent = nullptr;
     }
     if (toplevel->xsurface)
         toplevel->xsurface->data = nullptr;
-    remove_owned(server.x11_toplevels, toplevel);
+    remove_owned(server.xwayland.toplevels, toplevel);
 }
 
 // Place the window's frame origin at the client's requested position, keeping the
@@ -442,7 +442,7 @@ static void x11_fetch_wm_hints_icon(X11Toplevel& toplevel)
         return;
     xcb_pixmap_t const mask = (xsurface->hints->flags & XCB_ICCCM_WM_HINT_ICON_MASK) ? xsurface->hints->icon_mask : XCB_NONE;
 
-    auto* connection = (toplevel.server && toplevel.server->xwayland) ? wlr_xwayland_get_xwm_connection(toplevel.server->xwayland) : nullptr;
+    auto* connection = (toplevel.server && toplevel.server->xwayland.wlr) ? wlr_xwayland_get_xwm_connection(toplevel.server->xwayland.wlr) : nullptr;
     if (!connection)
         return;
 
@@ -582,10 +582,10 @@ static void x11_set_hints(wl_listener* listener, void*)
     x11_fetch_icon(*toplevel);
 }
 
-void server_new_xwayland_surface(wl_listener* listener, void* data)
+static void server_new_xwayland_surface(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, new_xwayland_surface);
+    server = wl_container_of(listener, server, xwayland.new_surface);
     auto* xsurface = static_cast<wlr_xwayland_surface*>(data);
 
     auto toplevel = make<X11Toplevel>();
@@ -627,15 +627,38 @@ void server_new_xwayland_surface(wl_listener* listener, void* data)
     // WM_CLASS may already be set by the time we associate.
     x11_update_class(*toplevel);
 
-    server->x11_toplevels.append(move(toplevel));
+    server->xwayland.toplevels.append(move(toplevel));
 }
 
-void xwayland_ready(wl_listener* listener, void*)
+static void xwayland_ready(wl_listener* listener, void*)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, xwayland_ready);
-    server->xwayland_started = true;
+    server = wl_container_of(listener, server, xwayland.ready);
+    server->xwayland.started = true;
     // Now that xwm exists, report the workarea (panels' exclusive zones).
     update_xwayland_workareas(*server);
-    dbgln("WindowServer: Xwayland ready (DISPLAY={})", server->xwayland->display_name);
+    dbgln("WindowServer: Xwayland ready (DISPLAY={})", server->xwayland.wlr->display_name);
+}
+
+void initialize_xwayland(Server& server)
+{
+    // XWayland (R5): X11 client support. [Compositor] XWayland=false disables it
+    // entirely (no server, no DISPLAY). Lazy: the X server starts on first use.
+    if (Config::compositor().xwayland && server.compositor) {
+        server.xwayland.wlr = wlr_xwayland_create(server.display, server.compositor, true);
+        if (server.xwayland.wlr) {
+            wlr_xwayland_set_seat(server.xwayland.wlr, server.seat);
+            server.xwayland.new_surface.notify = server_new_xwayland_surface;
+            wl_signal_add(&server.xwayland.wlr->events.new_surface, &server.xwayland.new_surface);
+            server.xwayland.ready.notify = xwayland_ready;
+            wl_signal_add(&server.xwayland.wlr->events.ready, &server.xwayland.ready);
+            // Export DISPLAY for the session's apps (state file + our own env).
+            setenv("DISPLAY", server.xwayland.wlr->display_name, 1);
+            StringView display { server.xwayland.wlr->display_name, strlen(server.xwayland.wlr->display_name) };
+            Config::write_state("xwayland-display"sv, display.bytes());
+            dbgln("WindowServer: Xwayland enabled (DISPLAY={})", server.xwayland.wlr->display_name);
+        } else {
+            warnln("WindowServer: could not create Xwayland");
+        }
+    }
 }

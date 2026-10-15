@@ -85,7 +85,7 @@ public:
             emit_window_state(*toplevel);
             emit_window_icon(*toplevel);
         }
-        for (auto& toplevel : m_server.x11_toplevels)
+        for (auto& toplevel : m_server.xwayland.toplevels)
             emit_window_state(*toplevel);
         // If the applets already mapped, this WM missed the area-size-changed
         // events; tell it the current size so it reports the area position (and
@@ -617,7 +617,7 @@ void load_workspaces(Server& server)
     s_columns = static_cast<u32>(max(1, grid.columns));
     for (auto& toplevel : server.toplevels)
         update_toplevel_visibility(*toplevel);
-    for (auto& toplevel : server.x11_toplevels)
+    for (auto& toplevel : server.xwayland.toplevels)
         update_x11_toplevel_visibility(*toplevel);
     dbgln("WindowServer: workspaces {}x{}, current {},{}", s_rows, s_columns, s_current_row, s_current_column);
     if (g_hooks.workspace_changed)
@@ -751,7 +751,7 @@ static void finish_window_stack_transition()
     // The switch has already happened, so this hides the outgoing stack.
     for (auto& toplevel : server->toplevels)
         update_toplevel_visibility(*toplevel);
-    for (auto& toplevel : server->x11_toplevels)
+    for (auto& toplevel : server->xwayland.toplevels)
         update_x11_toplevel_visibility(*toplevel);
 }
 
@@ -822,7 +822,7 @@ static bool start_window_stack_transition(Server& server, u32 new_row, u32 new_c
             continue;
         add(toplevel->scene_tree, toplevel->workspace_row, toplevel->workspace_column);
     }
-    for (auto& toplevel : server.x11_toplevels) {
+    for (auto& toplevel : server.xwayland.toplevels) {
         if (!toplevel->scene_tree || !toplevel->mapped || toplevel->override_redirect)
             continue;
         add(toplevel->scene_tree, toplevel->workspace_row, toplevel->workspace_column);
@@ -870,7 +870,7 @@ void switch_workspace(Server& server, u32 row, u32 column, bool carry_focused)
     if (!start_window_stack_transition(server, row, column, previous_row, previous_column)) {
         for (auto& toplevel : server.toplevels)
             update_toplevel_visibility(*toplevel);
-        for (auto& toplevel : server.x11_toplevels)
+        for (auto& toplevel : server.xwayland.toplevels)
             update_x11_toplevel_visibility(*toplevel);
     }
 
@@ -885,7 +885,7 @@ void switch_workspace(Server& server, u32 row, u32 column, bool carry_focused)
         }
     }
     if (!focused) {
-        for (auto& toplevel : server.x11_toplevels) {
+        for (auto& toplevel : server.xwayland.toplevels) {
             if (toplevel->mapped && !toplevel->override_redirect
                 && toplevel->workspace_row == row && toplevel->workspace_column == column) {
                 if (g_hooks.focus_x11)
@@ -897,7 +897,7 @@ void switch_workspace(Server& server, u32 row, u32 column, bool carry_focused)
 
     for (auto& toplevel : server.toplevels)
         emit_window_state(*toplevel);
-    for (auto& toplevel : server.x11_toplevels)
+    for (auto& toplevel : server.xwayland.toplevels)
         emit_window_state(*toplevel);
     emit_workspace_changed(server);
     if (g_hooks.workspace_changed)
@@ -1064,7 +1064,7 @@ bool is_x11_toplevel_blocked(Server& server, X11Toplevel const& window)
     // A minimized X11 window is unmapped.
     if (!window.mapped)
         return false;
-    for (auto& entry : server.x11_toplevels) {
+    for (auto& entry : server.xwayland.toplevels) {
         if (blocks(*entry, window))
             return true;
     }
@@ -1166,7 +1166,7 @@ void emit_window_icon(X11Toplevel& toplevel)
 
 X11Toplevel* find_x11_by_wm_id(Server& server, i32 wm_id)
 {
-    for (auto& toplevel : server.x11_toplevels) {
+    for (auto& toplevel : server.xwayland.toplevels) {
         if (toplevel->wm_id == wm_id)
             return toplevel.ptr();
     }
@@ -1213,7 +1213,7 @@ bool perform_action(Server& server, Config::Action action)
     case Config::Action::MaximizeVertical:
         return tile_focused(server, WindowTileType::VerticallyMaximized);
     default:
-        return false; // Lock is handled by the compositor (main.cpp).
+        return false; // Lock is handled by the compositor (SessionLock.cpp).
     }
 }
 

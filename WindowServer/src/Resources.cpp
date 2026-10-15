@@ -115,11 +115,11 @@ void reload_icon_bitmaps_after_scale_change(Server& server)
         toplevel_update_frame(*toplevel);
         WindowManager::emit_window_icon(*toplevel);
     }
-    for (auto& toplevel : server.x11_toplevels) {
+    for (auto& toplevel : server.xwayland.toplevels) {
         x11_update_frame(*toplevel);
         WindowManager::emit_window_icon(*toplevel);
     }
     render_cursor_highlight(server);
     dbgln("WindowServer: reloaded icon bitmaps ({} toplevels, {} x11 windows)",
-        server.toplevels.size(), server.x11_toplevels.size());
+        server.toplevels.size(), server.xwayland.toplevels.size());
 }

@@ -15,4 +15,5 @@ Gfx::IntRect primary_usable_area(Server& server);
 Gfx::Palette const& current_palette(Server&);
 void update_xwayland_workareas(Server& server);
 void arrange_layers(Server& server, wlr_output* output);
-void server_new_layer_surface(wl_listener* listener, void* data);
+
+void initialize_layer_shell(Server&);

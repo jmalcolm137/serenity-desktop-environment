@@ -233,7 +233,7 @@ by `scripts/run-binpath-test.sh` (port-side `/bin` shadow) and
 *permanently inhibited*: wlroots unlinks an inhibitor only *after* its destroy
 signal, so the compositor's `wl_list_empty` check still saw it. The compositor now
 excludes the dying inhibitor when recomputing the inhibited state
-(`WindowServer/src/main.cpp`).
+(`update_idle_inhibit` in `WindowServer/src/Idle.cpp`).
 
 **Session restore landed (`xdg-session-management-v1`).** The compositor serves the
 standard protocol (`WindowServer/src/SessionManager.cpp`): `get_session` (new →

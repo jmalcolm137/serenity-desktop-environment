@@ -195,7 +195,7 @@ void apply_loaded_screen_layout(Server& server)
 
 void output_manager_send_configuration(Server& server)
 {
-    if (!server.output_manager)
+    if (!server.output_management.manager)
         return;
 
     auto* config = wlr_output_configuration_v1_create();
@@ -206,7 +206,7 @@ void output_manager_send_configuration(Server& server)
         head->state.x = box.x;
         head->state.y = box.y;
     }
-    wlr_output_manager_v1_set_configuration(server.output_manager, config);
+    wlr_output_manager_v1_set_configuration(server.output_management.manager, config);
 }
 
 static void output_manager_apply_or_test(Server& server, wlr_output_configuration_v1* config, bool test)
@@ -248,16 +248,25 @@ static void output_manager_apply_or_test(Server& server, wlr_output_configuratio
     }
 }
 
-void output_manager_apply(wl_listener* listener, void* data)
+static void output_manager_apply(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, output_manager_apply);
+    server = wl_container_of(listener, server, output_management.apply);
     output_manager_apply_or_test(*server, static_cast<wlr_output_configuration_v1*>(data), false);
 }
 
-void output_manager_test(wl_listener* listener, void* data)
+static void output_manager_test(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, output_manager_test);
+    server = wl_container_of(listener, server, output_management.test);
     output_manager_apply_or_test(*server, static_cast<wlr_output_configuration_v1*>(data), true);
+}
+
+void initialize_output_management(Server& server)
+{
+    server.output_management.manager = wlr_output_manager_v1_create(server.display);
+    server.output_management.apply.notify = output_manager_apply;
+    wl_signal_add(&server.output_management.manager->events.apply, &server.output_management.apply);
+    server.output_management.test.notify = output_manager_test;
+    wl_signal_add(&server.output_management.manager->events.test, &server.output_management.test);
 }

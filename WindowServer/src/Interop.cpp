@@ -26,16 +26,16 @@ static void update_ext_workspace_active(Server& server);
 // and one workspace per grid cell, with grid coordinates and the active state.
 static void rebuild_ext_workspaces(Server& server)
 {
-    for (auto* workspace : server.ext_workspaces)
+    for (auto* workspace : server.interop.ext_workspaces)
         wlr_ext_workspace_handle_v1_destroy(workspace);
-    server.ext_workspaces.clear();
-    if (!server.ext_workspace_manager)
+    server.interop.ext_workspaces.clear();
+    if (!server.interop.ext_workspace_manager)
         return;
 
-    if (!server.ext_workspace_group) {
-        server.ext_workspace_group = wlr_ext_workspace_group_handle_v1_create(server.ext_workspace_manager, 0);
+    if (!server.interop.ext_workspace_group) {
+        server.interop.ext_workspace_group = wlr_ext_workspace_group_handle_v1_create(server.interop.ext_workspace_manager, 0);
         for (auto& output : server.outputs)
-            wlr_ext_workspace_group_handle_v1_output_enter(server.ext_workspace_group, output->output);
+            wlr_ext_workspace_group_handle_v1_output_enter(server.interop.ext_workspace_group, output->output);
     }
 
     u32 rows = WindowManager::workspace_rows();
@@ -45,14 +45,14 @@ static void rebuild_ext_workspaces(Server& server)
     for (u32 row = 0; row < rows; ++row) {
         for (u32 column = 0; column < columns; ++column) {
             auto id = ByteString::formatted("{},{}", row, column);
-            auto* workspace = wlr_ext_workspace_handle_v1_create(server.ext_workspace_manager, id.characters(), EXT_WORKSPACE_HANDLE_V1_WORKSPACE_CAPABILITIES_ACTIVATE);
+            auto* workspace = wlr_ext_workspace_handle_v1_create(server.interop.ext_workspace_manager, id.characters(), EXT_WORKSPACE_HANDLE_V1_WORKSPACE_CAPABILITIES_ACTIVATE);
             auto name = ByteString::formatted("{}", row * columns + column + 1);
             wlr_ext_workspace_handle_v1_set_name(workspace, name.characters());
             uint32_t coordinates[2] = { column, row };
             wlr_ext_workspace_handle_v1_set_coordinates(workspace, coordinates, 2);
-            wlr_ext_workspace_handle_v1_set_group(workspace, server.ext_workspace_group);
+            wlr_ext_workspace_handle_v1_set_group(workspace, server.interop.ext_workspace_group);
             wlr_ext_workspace_handle_v1_set_active(workspace, row == current_row && column == current_column);
-            server.ext_workspaces.append(workspace);
+            server.interop.ext_workspaces.append(workspace);
         }
     }
     dbgln("WindowServer: ext-workspace-v1 published {}x{} grid", rows, columns);
@@ -67,26 +67,26 @@ void on_workspace_changed(Server& server)
 
 static void update_ext_workspace_active(Server& server)
 {
-    if (!server.ext_workspace_manager)
+    if (!server.interop.ext_workspace_manager)
         return;
     u32 columns = max(1u, WindowManager::workspace_columns());
-    if (server.ext_workspaces.size() != WindowManager::workspace_rows() * columns) {
+    if (server.interop.ext_workspaces.size() != WindowManager::workspace_rows() * columns) {
         rebuild_ext_workspaces(server);
         return;
     }
     u32 current_row = WindowManager::current_workspace_row();
     u32 current_column = WindowManager::current_workspace_column();
-    for (size_t index = 0; index < server.ext_workspaces.size(); ++index) {
+    for (size_t index = 0; index < server.interop.ext_workspaces.size(); ++index) {
         u32 row = static_cast<u32>(index) / columns;
         u32 column = static_cast<u32>(index) % columns;
-        wlr_ext_workspace_handle_v1_set_active(server.ext_workspaces[index], row == current_row && column == current_column);
+        wlr_ext_workspace_handle_v1_set_active(server.interop.ext_workspaces[index], row == current_row && column == current_column);
     }
 }
 
-void ext_workspace_commit(wl_listener* listener, void* data)
+static void ext_workspace_commit(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, ext_workspace_commit);
+    server = wl_container_of(listener, server, interop.ext_workspace_commit);
     auto* event = static_cast<wlr_ext_workspace_v1_commit_event*>(data);
     wlr_ext_workspace_v1_request* request = nullptr;
     wl_list_for_each(request, event->requests, link)
@@ -104,10 +104,10 @@ void ext_workspace_commit(wl_listener* listener, void* data)
 
 // xdg-activation-v1: a client asked to be focused. Switch to its workspace and
 // focus it.
-void xdg_activation_activate(wl_listener* listener, void* data)
+static void xdg_activation_activate(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, xdg_activation_activate);
+    server = wl_container_of(listener, server, interop.xdg_activation_activate);
     auto* event = static_cast<wlr_xdg_activation_v1_request_activate_event*>(data);
     for (auto& toplevel : server->toplevels) {
         if (!toplevel->xdg_toplevel || toplevel->xdg_toplevel->base->surface != event->surface)
@@ -117,18 +117,6 @@ void xdg_activation_activate(wl_listener* listener, void* data)
         dbgln("WindowServer: xdg-activation focused '{}'", toplevel->xdg_toplevel->title ? toplevel->xdg_toplevel->title : "");
         break;
     }
-}
-
-// wp-cursor-shape-v1: a client asked for a named cursor shape (e.g. "text").
-void cursor_shape_request(wl_listener* listener, void* data)
-{
-    Server* server = nullptr;
-    server = wl_container_of(listener, server, cursor_shape_request);
-    auto* event = static_cast<wlr_cursor_shape_manager_v1_request_set_shape_event*>(data);
-    if (event->device_type != WLR_CURSOR_SHAPE_MANAGER_V1_DEVICE_TYPE_POINTER)
-        return;
-    if (auto const* name = wlr_cursor_shape_v1_name(event->shape); name && server->cursor)
-        wlr_cursor_set_xcursor(server->cursor, server->cursor_manager, name);
 }
 
 // --- R5 protocol parity: xdg-toplevel-icon-v1 + xdg-system-bell-v1 (docs/21) --
@@ -157,10 +145,10 @@ static bool shm_format_is_rgb(uint32_t format)
 // xdg-toplevel-icon-v1: a client set (or cleared) a window icon. Convert the
 // chosen buffer to a Gfx::Bitmap and report it, like the X11 _NET_WM_ICON path
 // (docs/20 item 3) — the Taskbar button and the Alt-Tab switcher draw it.
-void toplevel_icon_set(wl_listener* listener, void* data)
+static void toplevel_icon_set(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, toplevel_icon_set);
+    server = wl_container_of(listener, server, interop.toplevel_icon_set);
     auto* event = static_cast<wlr_xdg_toplevel_icon_manager_v1_set_icon_event*>(data);
     auto* toplevel = toplevel_for_xdg(*server, event->toplevel);
     if (!toplevel)
@@ -226,10 +214,43 @@ void toplevel_icon_set(wl_listener* listener, void* data)
 
 // xdg-system-bell-v1: a client asked for the system bell. Advertise the global so
 // such clients do not fail; the audible/visual bell itself is not implemented.
-void system_bell_ring(wl_listener* listener, void*)
+static void system_bell_ring(wl_listener* listener, void*)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, system_bell_ring);
+    server = wl_container_of(listener, server, interop.system_bell_ring);
     (void)server;
     dbgln("WindowServer: xdg-system-bell ring (bell output not implemented)");
+}
+
+void initialize_interop(Server& server)
+{
+    server.interop.foreign_toplevel_manager = wlr_foreign_toplevel_manager_v1_create(server.display);
+
+    // R4.8: the standard interop surface. ext-workspace-v1 maps the SDE grid;
+    // ext-foreign-toplevel-list-v1 maps the window list; xdg-activation-v1 lets a
+    // client ask to be focused.
+    server.interop.ext_workspace_manager = wlr_ext_workspace_manager_v1_create(server.display, 1);
+    server.interop.ext_workspace_commit.notify = ext_workspace_commit;
+    wl_signal_add(&server.interop.ext_workspace_manager->events.commit, &server.interop.ext_workspace_commit);
+    server.interop.ext_foreign_toplevel_list = wlr_ext_foreign_toplevel_list_v1_create(server.display, 1);
+    // Window capture sources (ext-image-capture-source-v1) for the ScreenCast portal.
+    server.interop.ext_toplevel_capture_source_manager = wlr_ext_foreign_toplevel_image_capture_source_manager_v1_create(server.display, 1);
+    server.interop.xdg_activation = wlr_xdg_activation_v1_create(server.display);
+
+    // R5 protocol parity (docs/21-r5-protocol-parity-plan.md): client window icons
+    // and the system bell, both available on the pinned wlroots 0.20.
+    server.interop.toplevel_icon_manager = wlr_xdg_toplevel_icon_manager_v1_create(server.display, 1);
+    if (server.interop.toplevel_icon_manager) {
+        static int sizes[] = { 16, 32, 64 };
+        wlr_xdg_toplevel_icon_manager_v1_set_sizes(server.interop.toplevel_icon_manager, sizes, 3);
+        server.interop.toplevel_icon_set.notify = toplevel_icon_set;
+        wl_signal_add(&server.interop.toplevel_icon_manager->events.set_icon, &server.interop.toplevel_icon_set);
+    }
+    server.interop.system_bell = wlr_xdg_system_bell_v1_create(server.display, 1);
+    if (server.interop.system_bell) {
+        server.interop.system_bell_ring.notify = system_bell_ring;
+        wl_signal_add(&server.interop.system_bell->events.ring, &server.interop.system_bell_ring);
+    }
+    server.interop.xdg_activation_activate.notify = xdg_activation_activate;
+    wl_signal_add(&server.interop.xdg_activation->events.request_activate, &server.interop.xdg_activation_activate);
 }

@@ -81,7 +81,7 @@ trap cleanup EXIT
 
 # --- Wallpaper: convert a PNG to the compositor's raw "SDWP" format ----------
 # Header: magic "SDWP", format (Gfx::BitmapFormat::BGRA8888 == 2), width, height,
-# pitch, then BGRA pixels (see WindowServer/src/main.cpp).
+# pitch, then BGRA pixels (see WindowServer/src/Wallpaper.cpp).
 write_wallpaper() {
     local png="$1"
     [[ -f "$png" ]] || { echo "note: wallpaper '$png' not found; using the theme background" >&2; return; }
