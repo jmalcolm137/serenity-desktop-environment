@@ -84,6 +84,18 @@ cc -O2 -I "$TOOLS_BUILD" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/ext-workspace-test"
 
+# output-management-test (R6/N5): disable or re-enable one output through
+# zwlr_output_management_v1 — the compositor's hotplug path as a client can drive
+# it. Used by run-output-hotplug-test.sh.
+OM_XML="$WLROOTS_SRC/protocol/wlr-output-management-unstable-v1.xml"
+wayland-scanner client-header "$OM_XML" "$TOOLS_BUILD/wlr-output-management-unstable-v1-client-protocol.h"
+wayland-scanner private-code  "$OM_XML" "$TOOLS_BUILD/wlr-output-management-unstable-v1-protocol.c"
+cc -O2 -I "$TOOLS_BUILD" \
+    "$SDE_ROOT/tools/output-management-test.c" \
+    "$TOOLS_BUILD/wlr-output-management-unstable-v1-protocol.c" \
+    $(pkg-config --cflags --libs wayland-client) \
+    -o "$TOOLS_BUILD/output-management-test"
+
 # sde-settings-portal (R4.4) and xdg-desktop-portal-serenity (R5): the freedesktop
 # portal backends. Serenity-style C++ (AK/LibCore) over the `dbus-1` transport —
 # see tools/portal/dbus.h; no GLib/GIO. They link the Lagom userland libraries.
@@ -199,4 +211,4 @@ cc -O2 -Wall -Wextra \
     $(pkg-config --cflags --libs libpipewire-0.3 libdrm) \
     -o "$TOOLS_BUILD/screencast-consumer"
 
-echo "==> SDE tools: $TOOLS_BUILD/sde-idle $TOOLS_BUILD/sde-dpms $TOOLS_BUILD/sde-screenshot $TOOLS_BUILD/sde-settings-portal $TOOLS_BUILD/ext-workspace-test $TOOLS_BUILD/native-app-test $TOOLS_BUILD/capture-probe $TOOLS_BUILD/screencast-consumer $TOOLS_BUILD/xdg-desktop-portal-serenity"
+echo "==> SDE tools: $TOOLS_BUILD/output-management-test $TOOLS_BUILD/sde-idle $TOOLS_BUILD/sde-dpms $TOOLS_BUILD/sde-screenshot $TOOLS_BUILD/sde-settings-portal $TOOLS_BUILD/ext-workspace-test $TOOLS_BUILD/native-app-test $TOOLS_BUILD/capture-probe $TOOLS_BUILD/screencast-consumer $TOOLS_BUILD/xdg-desktop-portal-serenity"

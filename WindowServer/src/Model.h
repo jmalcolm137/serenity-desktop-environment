@@ -174,6 +174,11 @@ struct Output {
     Server* server { nullptr };
     wlr_output* output { nullptr };
     wlr_box usable_area { };
+    // Where this output sits in the layout, and whether it was enabled at the last
+    // commit. Both are needed when it goes away: the layout forgets the output when
+    // it is destroyed, so "where was it" has to have been recorded while it existed.
+    wlr_box area { };
+    bool was_enabled { false };
     wlr_scene_buffer* background { nullptr };
     Gfx::IntSize background_size;
     wl_listener frame { };

@@ -421,11 +421,24 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 
 Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.md) §5–7.
 
-- **Multi-output / hotplug** — coarse: the compositor handles several outputs
-  (`server_new_output`, `wlr_output_layout`, per-output scale) and applies a saved
-  layout, but per-output mode/scale and hotplug behaviour is basic (see
-  [`13`](13-native-session-and-aur-packaging.md)). **HiDPI — integer and fractional
-  output scaling — is done**; see "Recently resolved" below.
+- **Multi-output / hotplug** — the compositor handles several outputs
+  (`server_new_output`, `wlr_output_layout`), applies a saved per-output layout
+  (mode/scale/position from `screenlayout.ini`), and implements
+  `zwlr_output_management_v1` (apply and test), persisting what a client changes.
+  **Losing an output no longer strands windows**: a window whose output is
+  disabled or unplugged is moved onto a surviving output, keeping its offset from
+  the old one, and the primary output is reassigned — before this, those windows
+  sat outside every output (invisible, unreachable without editing the layout) and
+  every later placement used a destroyed output. Covered by
+  `scripts/run-output-hotplug-test.sh`, which drives the disable through
+  `zwlr_output_management_v1` like Display Settings or `wlr-randr` would; a real
+  unplug arrives through the same helper. **HiDPI — integer and fractional output
+  scaling — is done**; see "Recently resolved" below.
+  **Still basic:** a re-enabled output does not become primary again (Serenity's
+  `MainScreen` index would say otherwise), a maximised window keeps its old size
+  when it moves across outputs of different sizes, and per-output mode/scale has
+  no *UI* — DisplaySettings' Monitor tab is still inert
+  (`libgui-wayland` patch 0020).
 - **Multi-GPU / render-device selection; color management; direct scanout.**
 - **Renderer selection & fallback (N2/N5) — done.** `[Output] Renderer`
   (`auto`/`gles2`/`vulkan`/`pixman`, with the `SDE_RENDERER` override) selects the

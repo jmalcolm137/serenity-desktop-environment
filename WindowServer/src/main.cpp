@@ -3946,11 +3946,82 @@ static void output_request_state(wl_listener* listener, void* data)
     wlr_output_commit_state(output->output, event->state);
 }
 
+// R6/N5 (multi-output/hotplug). An output that goes away — unplugged, or disabled
+// through zwlr_output_management_v1 — must not take its windows with it. Window
+// positions are layout coordinates, so anything that was on the vanished output
+// ends up outside every remaining one: invisible, and unreachable without editing
+// the layout by hand. Move those windows onto a surviving output, keeping their
+// offset from the old output's origin, so "the window at the top-left" stays the
+// window at the top-left.
+static wlr_output* first_enabled_output(Server& server, wlr_output* excluding)
+{
+    for (auto& output : server.outputs) {
+        if (output->output == excluding || !output->output->enabled)
+            continue;
+        return output->output;
+    }
+    return nullptr;
+}
+
+static void migrate_toplevels_off_output(Server& server, wlr_box const& gone, wlr_output* replacement)
+{
+    if (wlr_box_empty(&gone) || !replacement)
+        return;
+    wlr_box target { };
+    wlr_output_layout_get_box(server.output_layout, replacement, &target);
+    if (wlr_box_empty(&target))
+        return;
+
+    auto move_if_on_gone_output = [&](wlr_scene_tree* scene_tree) {
+        auto& node = scene_tree->node;
+        if (node.x < gone.x || node.y < gone.y
+            || node.x >= gone.x + gone.width || node.y >= gone.y + gone.height)
+            return false;
+        int x = target.x + (node.x - gone.x);
+        int y = target.y + (node.y - gone.y);
+        // Keep the origin on the surviving output: a window larger than it (the
+        // default size of a client that asked for the whole screen) stays reachable.
+        x = max(target.x, min(x, target.x + max(0, target.width - 1)));
+        y = max(target.y, min(y, target.y + max(0, target.height - 1)));
+        wlr_scene_node_set_position(&node, x, y);
+        return true;
+    };
+
+    unsigned moved = 0;
+    for (auto& toplevel : server.toplevels) {
+        if (toplevel->scene_tree && !toplevel->minimized && move_if_on_gone_output(toplevel->scene_tree))
+            ++moved;
+    }
+    for (auto& toplevel : server.x11_toplevels) {
+        if (toplevel->scene_tree && move_if_on_gone_output(toplevel->scene_tree))
+            ++moved;
+    }
+    if (moved > 0) {
+        dbgln("WindowServer: moved {} window(s) off the removed output onto '{}'",
+            moved, replacement->name ? replacement->name : "?");
+    }
+}
+
+// The primary output is the reference for the workarea and for placing new
+// windows. Losing it must reassign it — every placement afterwards would
+// otherwise use a destroyed output.
+static void reassign_primary_output(Server& server, wlr_output* gone)
+{
+    if (server.primary_output != gone)
+        return;
+    server.primary_output = first_enabled_output(server, gone);
+    dbgln("WindowServer: primary output is now '{}'",
+        server.primary_output && server.primary_output->name ? server.primary_output->name : "(none)");
+}
+
 static void output_destroy(wl_listener* listener, void*)
 {
     Output* output = nullptr;
     output = wl_container_of(listener, output, destroy);
     auto& server = *output->server;
+    // Take its windows with us before the output is forgotten...
+    wlr_box const gone = output->area;
+    migrate_toplevels_off_output(server, gone, first_enabled_output(server, output->output));
     wl_list_remove(&output->frame.link);
     wl_list_remove(&output->request_state.link);
     wl_list_remove(&output->destroy.link);
@@ -3958,6 +4029,8 @@ static void output_destroy(wl_listener* listener, void*)
     if (output->background)
         wlr_scene_node_destroy(&output->background->node);
     remove_owned(server.outputs, output);
+    // ...and only then pick a new primary, from what is left.
+    reassign_primary_output(server, output->output);
     // R5: the InputCapture zones are the outputs.
     InputCapture::on_outputs_changed(server);
 }
@@ -3966,6 +4039,25 @@ static void output_commit(wl_listener* listener, void*)
 {
     Output* output = nullptr;
     output = wl_container_of(listener, output, commit);
+    auto& server = *output->server;
+    // Read the new box, but keep the old one: a disable empties it, and the windows
+    // are still where they were, so the migration below needs to know where the
+    // output *was*. (Getting this order wrong is how the first version of this
+    // silently moved nothing.)
+    wlr_box const previous_area = output->area;
+    wlr_output_layout_get_box(server.output_layout, output->output, &output->area);
+
+    // Disabling an output (zwlr_output_management_v1) is the hotplug path a test
+    // can drive: the output stays, but nothing of it is on screen any more, so its
+    // windows have to move and the primary may have to be reassigned.
+    bool const enabled = output->output->enabled;
+    if (output->was_enabled && !enabled) {
+        dbgln("WindowServer: output '{}' disabled", output->output->name ? output->output->name : "?");
+        wlr_box const gone = wlr_box_empty(&output->area) ? previous_area : output->area;
+        migrate_toplevels_off_output(server, gone, first_enabled_output(server, output->output));
+        reassign_primary_output(server, output->output);
+    }
+    output->was_enabled = enabled;
     reconfigure_lock_surface(*output->server, output->output);
 }
 
@@ -5920,6 +6012,11 @@ static void output_manager_apply_or_test(Server& server, wlr_output_configuratio
     free(states);
 
     if (!ok) {
+        // Say something: a refused configuration is otherwise silent on both sides
+        // (the protocol's failed event carries no reason), which makes "Display
+        // Settings did nothing" impossible to diagnose.
+        dbgln("WindowServer: output configuration refused ({} head(s), {})",
+            wl_list_length(&config->heads), test ? "test" : "apply");
         wlr_output_configuration_v1_send_failed(config);
         wlr_output_configuration_v1_destroy(config);
         return;
