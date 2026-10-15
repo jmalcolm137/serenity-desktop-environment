@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ci-tier: full
 # Super+H toggles the cursor highlight (R3, docs/04).
 #
 # SerenityOS's WindowManager binds Super+H to the cursor highlight. SDE's

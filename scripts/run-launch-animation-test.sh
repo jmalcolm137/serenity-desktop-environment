@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ci-tier: full
 # Headless launch-animation test (R3).
 #
 # SerenityOS animates a newly launched window as an outline growing out of the

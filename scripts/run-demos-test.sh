@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ci-tier: full
 # Headless test for the SerenityOS demos and Magnifier (the Taskbar's Demos and
 # Utilities menus), built by libgui-wayland (patch 0035). Mirrors
 # run-devtools-test.sh: asserts each app's .af declares the expected category
