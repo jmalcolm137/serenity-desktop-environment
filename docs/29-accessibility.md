@@ -80,6 +80,29 @@ Two options for the source, in order of preference:
 The magnifier also has to be usable without the pointer leaving it, i.e. the input
 region it covers must not steal clicks; the compositor can keep a "magnifier"
 layer surface input-transparent.
+**Where the two methods land.** `get_screen_bitmap*` is a WindowServer IPC method, so
+serving it is three pieces, and this is the order that keeps each one testable:
+
+1. *Compositor:* a `capture_output_region(server, Gfx::IntRect) -> RefPtr<Gfx::Bitmap>`.
+   Nothing in the tree renders the *scene* to a bitmap today: `Overlays.cpp`'s
+   `snapshot_toplevel()` reads one client's buffer directly (and gives up on a
+   DMA-BUF), which is enough for a window thumbnail and not enough for a screen
+   region. The route is wlroots' own render path —
+   `wlr_scene_output_build_state()` into a custom buffer, then a readback
+   (`wlr_texture_read_pixels`) — both present in the vendored 0.20. Assert it
+   headless (render a scene, read a region, compare pixels) before wiring anything to
+   it.
+2. *Framework:* the `Messages::WindowServer::GetScreenBitmap*` IPC definitions and
+   the shim's `WindowServerConnection` overrides (it currently inherits
+   `WindowServerDefaultStub`, which returns a null bitmap). The
+   `…_around_cursor` / `…_around_location` variants are a rect around a point, so the
+   shim can derive them from the one region message; the cursor position is the
+   compositor's to answer.
+3. *Test:* a `run-magnifier-test.sh` in the same shape as the other app tests — start
+   Magnifier, assert it maps a window and that the captured bitmap matches a known
+   scene region.
+
+That is a real feature, not a wiring job, and it should be its own change.
 
 ## 4. AT-SPI
 
