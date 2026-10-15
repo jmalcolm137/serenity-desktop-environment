@@ -56,13 +56,24 @@ control (off is inert) as well.
 
 ## 3. Screen magnifier
 
-**Not started.** The application exists; what it needs on Wayland is a screen
-source. Two options, in order of preference:
+**Not started; the blocker is identified.** The application exists and is built, but
+it captures the screen through `GUI::ConnectionToWindowServer::the()
+.get_screen_bitmap_around_cursor()` / `…_around_location()`, and on the port both
+resolve to the *default stub* in `WindowServerDefaultStub.h`, which returns a null
+bitmap — the compositor serves neither. Measured: `Magnifier` starts, then sits for
+six seconds without ever mapping a window and without an error, which is what a
+display-link callback blocking on an IPC that is never answered looks like. So the
+work is to serve those two methods rather than to write a magnifier.
 
-1. Wire `Magnifier` to the SDE's own `ext-image-copy-capture-v1` path (the one
-   ScreenCast and the screenshot tools already use), so it magnifies the real
-   output without a portal round-trip. This is the compositor-native answer and
-   lets the magnifier follow the focused output.
+Two options for the source, in order of preference:
+
+1. Serve `get_screen_bitmap(rect, screen_index)` / `…_around_cursor` /
+   `…_around_location` from the compositor's own capture machinery
+   (`ext-image-copy-capture-v1` — the same path the screenshot portal and the
+   Taskbar's window thumbnails already use), and forward them from the shim over the
+   existing serenity-window connection. That magnifies the real output with no
+   portal round-trip, and lets the magnifier follow the focused output. This is the
+   smaller change: the capture already exists, only the two methods do not.
 2. Fall back to the ScreenCast portal (`docs/15`) if the application's capture
    abstraction cannot be pointed at an in-process source.
 
