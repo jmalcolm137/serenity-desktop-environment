@@ -130,3 +130,20 @@ X11 client going away must not abort the compositor, nor must the default icon g
 missing from the WM). Anything that needs a compositor with a Taskbar can run one
 as in `scripts/run-headless-test.sh`; `scripts/run-virtual-touch-test.sh` +
 `tools/virtual-input-test.c` drive pointer/keyboard.
+
+**Two X clients started together sometimes leave one unmapped.** In the headless
+harness Xwayland announces the second window — the compositor logs its `WM_CLASS` and
+title — but never commits its first buffer, so no map event arrives and the window
+never appears. It is not a race with the property set: a ten-second gap between the
+two clients does not help, `xmessage` pairs usually both map, and a minimal
+hand-written `xcb` client's second window reliably does not. It is Xwayland's, below
+the compositor — nothing in the window-announce path is involved.
+`run-taskbar-grouping-test.sh` starts its two `xmessage` clients a few seconds apart
+and asserts grouping, which is what that test is about.
+
+**The late-`WM_CLASS` re-emit is only reached by slow clients.** Most clients (and
+`xmessage`) set `WM_CLASS` before mapping, so the class is already there when the
+window is announced and `WindowManager::emit_window_state` carries it from the start.
+`WindowServer`'s `x11_set_class` re-emit exists for clients that set it *after* the
+map — a slow `xterm` was the original case — and no fast client exercises that path.
+
