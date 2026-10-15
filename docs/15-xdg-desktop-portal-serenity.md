@@ -1,6 +1,6 @@
 # xdg-desktop-portal-serenity (R5)
 
-**Status:** Phase 1 + Phase 2 landed. Metadata cursor mode and zero-copy DMA-BUF are in place and verified on a live TTY; Camera works via the frontend (§6); InputCapture is landed (P1–P5, [`17-input-capture.md`](17-input-capture.md)); the USB portal's backend is a real broker (§6.5); `Inhibit` (and the `Request` object machinery) is served (§2); the dialogs run asynchronously (§6.6). Remaining code-only work: the permission store.
+**Status:** Phase 1 + Phase 2 landed. Metadata cursor mode and zero-copy DMA-BUF are in place and verified on a live TTY; Camera works via the frontend (§6); InputCapture is landed (P1–P5, [`17-input-capture.md`](17-input-capture.md)); the USB portal's backend is a real broker (§6.5); `Inhibit` (and the `Request` object machinery) is served (§2); the dialogs run asynchronously (§6.6); grants are remembered in the freedesktop permission store (§6.6). No code-only work remains.
 **Related:** [`08-compositor-gaps.md`](08-compositor-gaps.md) §3,
 [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §R5,
 `contrib/xdg-desktop-portal/`
@@ -67,7 +67,7 @@ portal is the standalone `tools/portal/settings-portal.cpp` binary.
 | `GlobalShortcuts` (v1) | `CreateSession`/`BindShortcuts`/`ListShortcuts`. Shortcuts are stored in the SDE **config system** (`global-shortcuts.ini`, `[ShortcutN] Session/Id/Trigger`) for the compositor to bind like any other keybinding; activations are reported over a session FIFO (`sde-global-shortcuts.fifo`) and emitted as the `Activated` signal. |
 | `Wallpaper` (v1) | `SetWallpaper` decodes the image and writes the compositor's wallpaper state (`wallpaper.raw`/`.mode`), so a sandboxed app can set the desktop background. |
 | `Secret` (v1) | `RetrieveSecret` returns a stable per-app 64-byte secret, generated once and kept under `secrets/` in the state directory. |
-| `Usb` (v1) | `AcquireDevices` — the **broker**. The frontend enumerates the devices with udev and opens the device node for the app; this backend decides whether it may have it: `SDE_PORTAL_USB` is `ask` (default — prompt once through the Access dialog, then remember the grant in `usb-permissions` in the state directory), `allow` or `deny`, and the results carry the granted subset as `a(sa{sv})`. Covered by `scripts/run-usb-portal-test.sh`. |
+| `Usb` (v1) | `AcquireDevices` — the **broker**. The frontend enumerates the devices with udev and opens the device node for the app; this backend decides whether it may have it: `SDE_PORTAL_USB` is `ask` (default — prompt once through the Access dialog, then remember the grant in the permission store, falling back to `usb-permissions` in the state directory), `allow` or `deny`, and the results carry the granted subset as `a(sa{sv})`. Covered by `scripts/run-usb-portal-test.sh`. |
 | `DynamicLauncher` (v1) | `RequestInstallToken` (random token), `PrepareInstall` (echoes the name), `Launch` (launches the desktop file). |
 | `Access` (v1) | `AccessDialog` through the LibGUI **AccessDialog** app (`SDE_PORTAL_ACCESS_DIALOG`); returns allowed (0) / denied (1). |
 | `Inhibit` (v1) | `Inhibit` (logout / user-switch / suspend / idle flags). The impl method returns nothing, so the backend exports a `Request` object at the call's handle and the caller `Close`s it to release; the response arrives as the `Request.Response` signal. Inhibiting is layered and best-effort: **logind**'s block inhibitor on the system bus (`shutdown`/`sleep`/`idle`, held as an fd) when logind is available, plus the session seam `SDE_PORTAL_INHIBIT_CMD <flags>` (the OR of the live flags, 0 when none) that the session wires to its own idle/power path (`scripts/sde-idle`, `sde-power`). No `xdg-desktop-portal-gtk` fallback any more. Verified directly and through the real frontend by `scripts/run-portal-test.sh`. |
@@ -183,8 +183,9 @@ To reach and surpass `xdg-desktop-portal-kde`:
   the frontend from PipeWire camera nodes, with our Access/Lockdown backends
   providing the prompt and the `disable-camera` lockdown. `IsCameraPresent` is
   already true here.
-- A **permission store** integration and the `Request`/`Response`
-  choreography.
+- The `Request`/`Response` choreography (the `Request` object machinery landed
+  with `Inhibit`; see §6.6). The **permission store** integration is done — the
+  USB broker remembers grants there (§2, §6.5).
 
 ## 6. Infrastructure (TTY) work
 
@@ -272,9 +273,12 @@ code in the usual sense:
   `org.freedesktop.impl.portal.Usb` (`AcquireDevices`); there is no external
   daemon, and the frontend does the enumeration (udev) and the fd passing. Our
   backend is the broker: it applies the `SDE_PORTAL_USB` policy, prompts through
-  the Access dialog, remembers grants in `usb-permissions` (deleting a line
-  revokes it) and answers with the granted subset — see `tools/portal/usb.cpp`
-  and `scripts/run-usb-portal-test.sh`.
+  the Access dialog, remembers grants in the **permission store** (table `usb`, id
+  = device id, the app's permissions `["read"]`/`["read","write"]`; the flat file
+  `usb-permissions` is the fallback when no store is on the bus, and a flat-file
+  grant is migrated into the store on first use) and answers with the granted
+  subset — see `tools/portal/usb.cpp`, `tools/portal/permission-store.{h,cpp}` and
+  `scripts/run-usb-portal-test.sh`.
 - **Camera** is implemented **inside the frontend** (`desktop-portal/camera.c`):
   it tracks the camera nodes PipeWire exposes, and for access it uses the
   **Access** backend (`org.freedesktop.impl.portal.Access`) and the **Lockdown**
@@ -298,10 +302,17 @@ These live in §5 and are plain backend work:
   the teardown never stalls the loop. `scripts/run-portal-test.sh` proves it (a
   2-second dialog open, another portal call answered in ~3ms), as does
   `run-screencast-test.sh` for the chooser.
-- **Permission-store integration** and the `Request`/`Response` choreography —
-  the `Request` object machinery landed with `Inhibit` (`tools/portal/inhibit.cpp`:
-  the service serves the request paths, and `Request.Close` releases); the
-  permission store itself is still to come.
+- ~~**Permission-store integration**~~ — **done**. The USB broker remembers its
+  grants in the freedesktop permission store
+  (`org.freedesktop.impl.portal.PermissionStore`) instead of a private file, so
+  they are visible to the standard tooling
+  (`flatpak permission-show`). A small blocking client over a private session-bus
+  connection (`tools/portal/permission-store.{h,cpp}`, the `inhibit.cpp` idiom)
+  does `Lookup`/`SetPermission`/`Delete`; when no store is on the bus it falls back
+  to the legacy flat file, and a legacy grant is migrated into the store on first
+  use (`scripts/run-usb-portal-test.sh`). The `Request`/`Response` choreography
+  landed earlier with `Inhibit` (`tools/portal/inhibit.cpp`: the service serves the
+  request paths, and `Request.Close` releases).
 - ~~**`Inhibit`**~~ — **done**: the `Inhibit` interface (with the `Request`
   object) is served, wired to logind and to the `SDE_PORTAL_INHIBIT_CMD` seam
   (see §2).
