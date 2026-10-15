@@ -15,8 +15,32 @@ PORTAL="$SDE_ROOT/build/tools/xdg-desktop-portal-serenity"
 "$SDE_ROOT/scripts/build-tools.sh" >/dev/null
 
 if [ "${1:-}" != "--inner" ]; then
-    # A private D-Bus session bus; PipeWire keeps the real XDG_RUNTIME_DIR.
-    exec dbus-run-session -- "$0" --inner
+    # A private D-Bus session bus *and* a private runtime directory: the test brings
+    # its own PipeWire (a CI runner has none running) and everything it creates --
+    # the compositor socket, the PipeWire socket -- stays inside it, so a live
+    # session's PipeWire is never used or disturbed.
+    RUN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sde-screencast-run.XXXXXX")"
+    chmod 700 "$RUN_DIR"
+    if ! command -v pipewire >/dev/null 2>&1; then
+        echo "note: pipewire is not installed; skipping the screencast test"
+        echo "==> screencast test SKIPPED"
+        rm -rf "$RUN_DIR"
+        exit 0
+    fi
+    XDG_RUNTIME_DIR="$RUN_DIR" pipewire > "$RUN_DIR/pipewire.log" 2>&1 &
+    PW_PID=$!
+    sleep 1
+    set +e
+    XDG_RUNTIME_DIR="$RUN_DIR" dbus-run-session -- "$0" --inner
+    status=$?
+    set -e
+    kill "$PW_PID" 2>/dev/null || true
+    wait "$PW_PID" 2>/dev/null || true
+    if [[ "$status" -ne 0 ]]; then
+        echo "  (pipewire log:)"; tail -5 "$RUN_DIR/pipewire.log" 2>/dev/null || true
+    fi
+    rm -rf "$RUN_DIR"
+    exit "$status"
 fi
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-screencast.XXXXXX")"
