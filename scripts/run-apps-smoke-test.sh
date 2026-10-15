@@ -64,6 +64,7 @@ for app in "${APPS[@]}"; do
     faults="$(grep -ciE 'Failed to parse IPC message|SIGSEGV|Segmentation fault|ASSERTION FAILED|VERIFICATION FAILED|Runtime error' "$log" || true)"
     if [[ "$faults" -ne 0 ]]; then
         echo "  FAIL: $app: $(grep -iE 'Failed to parse IPC message|SIGSEGV|ASSERTION FAILED|VERIFICATION FAILED|Runtime error' "$log" | head -1)"
+        echo "      --- $app log ---"; tail -6 "$log" 2>/dev/null | sed 's/^/      /' || true
         fail=1
     elif [[ "$after" -le "$before" ]]; then
         echo "  FAIL: $app did not map a window (log: $log)"

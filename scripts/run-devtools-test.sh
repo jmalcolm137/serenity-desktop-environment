@@ -99,6 +99,7 @@ for tool in "${TOOLS[@]}"; do
     fi
     if grep -qiE "SIGSEGV|Segmentation fault|ASSERTION FAILED|VERIFICATION FAILED|Runtime error" "$LOG"; then
         echo "  FAIL: $tool reported a fault"
+        echo "      --- $tool log ---"; tail -6 "$LOG" 2>/dev/null | sed "s/^/      /" || true
         fail=1
     fi
 done
