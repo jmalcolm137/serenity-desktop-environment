@@ -119,6 +119,12 @@ struct Accessibility {
     // key press is delivered with it (Shift then 'a' produces 'A'), and clears once
     // that key is pressed. Off by default.
     bool sticky_keys { false };
+
+    // High contrast: force the Contrast palette for the whole desktop -- the
+    // compositor's own chrome and every client (through the theme broker) -- and
+    // ignore a later theme change while it is on, so the mode cannot be left by
+    // accident.
+    bool high_contrast { false };
 };
 
 // A persisted screen entry (screenlayout.ini in the state directory). This is

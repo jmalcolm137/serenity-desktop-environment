@@ -7857,6 +7857,26 @@ static void apply_theme_path(Server& server, ByteString const& theme_path)
     dbgln("WindowServer: applied system theme '{}'", theme_path);
 }
 
+// R5 accessibility (docs/29-accessibility.md): the palette the compositor forces
+// when [Accessibility] HighContrast is on.
+static ByteString high_contrast_theme_path()
+{
+    return ByteString::formatted("{}/themes/Contrast.ini", g_resource_root);
+}
+
+// Publish a theme to the broker: that is how a live theme choice reaches every
+// client (Display Settings writes it when the user picks one).
+static void publish_theme_to_broker(ByteString const& theme_path)
+{
+    auto file = Core::File::open(theme_broker_path(), Core::File::OpenMode::Write | Core::File::OpenMode::Truncate);
+    if (file.is_error()) {
+        warnln("WindowServer: could not open the theme broker to publish '{}': {}", theme_path, file.error());
+        return;
+    }
+    if (auto written = file.value()->write_until_depleted(theme_path.bytes()); written.is_error())
+        warnln("WindowServer: could not publish the theme to the broker: {}", written.error());
+}
+
 static void watch_theme_broker(Server& server)
 {
     static RefPtr<Core::FileWatcher> watcher;
@@ -7865,6 +7885,23 @@ static void watch_theme_broker(Server& server)
     watcher->on_change = [&server, path](Core::FileWatcherEvent const& event) {
         if (event.event_path != path)
             return;
+        // R5 accessibility: high contrast owns the theme while it is on, so a broker
+        // write must not be able to turn it off. Keep the broker agreeing with what
+        // is actually applied (unless it already does, so this cannot loop).
+        if (Config::accessibility().high_contrast) {
+            auto file = Core::File::open(path, Core::File::OpenMode::Read);
+            if (file.is_error())
+                return;
+            auto contents = file.value()->read_until_eof();
+            if (contents.is_error())
+                return;
+            auto requested = StringView { contents.value() }.trim_whitespace().to_byte_string();
+            auto const forced = high_contrast_theme_path();
+            dbgln("WindowServer: high contrast is on; ignoring the theme broker ('{}')", requested);
+            if (requested != forced)
+                publish_theme_to_broker(forced);
+            return;
+        }
         auto file = Core::File::open(path, Core::File::OpenMode::Read);
         if (file.is_error())
             return;
@@ -8252,6 +8289,15 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     // choice) then takes over.
     if (!Config::theme().path.is_empty())
         apply_theme_path(*server, Config::theme().path);
+    // R5 accessibility (docs/29-accessibility.md): high contrast overrides whatever
+    // theme is configured -- for the compositor's own chrome here, and for every
+    // client through the broker.
+    if (Config::accessibility().high_contrast) {
+        auto const contrast_theme = high_contrast_theme_path();
+        apply_theme_path(*server, contrast_theme);
+        publish_theme_to_broker(contrast_theme);
+        dbgln("WindowServer: high contrast on; forced '{}'", contrast_theme);
+    }
     watch_fonts_broker(*server);
     apply_cursor_state(*server);
     watch_cursor_state(*server);
