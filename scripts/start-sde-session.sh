@@ -25,13 +25,32 @@ COMP="$SDE_ROOT/build/WindowServer/WindowServer"
 # A display manager (SDDM) discards the session's stdout, so when there is no
 # terminal, log to a file. Diagnose a failed login with:
 #   cat ~/.local/state/sde/session.log
+#
+# The log is capped. It carries every client's diagnostics, and a single chatty
+# process is enough to fill the disk: a terminal logging an unimplemented escape
+# mode and the shim logging every present grew one session's log past a gigabyte.
+# Rotate in place — the writers hold the fd with O_APPEND, so truncating the same
+# inode is safe and keeps them logging — and keep the tail beside it.
 if [[ ! -t 1 ]]; then
     SDE_SESSION_LOG="${SDE_SESSION_LOG:-${XDG_STATE_HOME:-${HOME:-/tmp}/.local/state}/sde/session.log}"
+    : "${SDE_SESSION_LOG_MAX_KB:=65536}"  # 64 MiB before rotating
+    : "${SDE_SESSION_LOG_KEEP_KB:=8192}"  # tail preserved as session.log.1
     if mkdir -p "$(dirname "$SDE_SESSION_LOG")" 2>/dev/null && : >>"$SDE_SESSION_LOG" 2>/dev/null; then
         exec >>"$SDE_SESSION_LOG" 2>&1
         echo "--- SDE session start $(date -Is) ---"
         echo "user=$(id -un) uid=$(id -u) display=${WAYLAND_DISPLAY:-<unset>} session_type=${XDG_SESSION_TYPE:-<unset>}"
         echo "seat=${XDG_SEAT:-<unset>} vt=${XDG_VTNR:-<unset>} runtime=${XDG_RUNTIME_DIR}"
+
+        (
+            while :; do
+                sleep 20
+                size_kb="$(du -k "$SDE_SESSION_LOG" 2>/dev/null | cut -f1)" || continue
+                [[ -n "$size_kb" && "$size_kb" -gt "$SDE_SESSION_LOG_MAX_KB" ]] || continue
+                tail -c "$((SDE_SESSION_LOG_KEEP_KB * 1024))" "$SDE_SESSION_LOG" > "$SDE_SESSION_LOG.1" 2>/dev/null || true
+                truncate -s 0 "$SDE_SESSION_LOG" 2>/dev/null || true
+                echo "--- SDE session log rotated (> ${SDE_SESSION_LOG_MAX_KB} KiB; the tail is in ${SDE_SESSION_LOG##*/}.1) ---"
+            done
+        ) &
     fi
 fi
 

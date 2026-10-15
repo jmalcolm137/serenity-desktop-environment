@@ -119,6 +119,49 @@ if [[ -z "$LOG_DIR" ]]; then
 fi
 mkdir -p "$LOG_DIR"
 
+# --- refusing to run against a live session ---------------------------------
+#
+# These tests start compositors, supervisors, portals and services, and several of
+# them deliberately drive session-level machinery: the watchdog heartbeat, input
+# capture, the session lock ("a wedged compositor must be restarted", "the lock
+# engages"). They isolate their own runtime directory, but the *environment* they
+# inherit from a session's shell is not theirs to use. On a machine with a live
+# session, SDE_HEARTBEAT_FILE points at the live supervisor's liveness file: a test
+# that removes or stalls it makes that supervisor decide the live compositor is
+# wedged and restart it — taking the session, and everything running in it, down.
+# That is exactly how three local runs of this suite killed the session it was
+# running inside. So: refuse, unless told explicitly.
+live_session_running() {
+    local runtime="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    # The session's compositor socket, or a heartbeat file written seconds ago.
+    [[ -S "$runtime/${SDE_SESSION_DISPLAY:-sde}" ]] && return 0
+    local heartbeat="$runtime/sde-heartbeat" now modified
+    if [[ -e "$heartbeat" ]]; then
+        now="$(date +%s)"
+        modified="$(stat -c %Y "$heartbeat" 2>/dev/null || echo 0)"
+        (( now - modified < 60 )) && return 0
+    fi
+    return 1
+}
+
+if live_session_running && [[ "${SDE_ALLOW_LIVE_SESSION:-0}" != 1 ]]; then
+    echo "refusing to run: a live SDE session is present on this machine." >&2
+    echo "  These tests drive session-level state (the watchdog heartbeat, input" >&2
+    echo "  capture, the lock) and can restart the session they are started from." >&2
+    echo "  Run them in CI, or on a machine with no session. To override, at your" >&2
+    echo "  own risk: SDE_ALLOW_LIVE_SESSION=1 scripts/run-all-tests.sh ..." >&2
+    exit 3
+fi
+
+# Nothing a test starts may reach the live session's files, sockets or services.
+# The session exports these to everything it runs — including the shell this driver
+# is launched from — so drop them and give the tests their own.
+unset SDE_HEARTBEAT_FILE SDE_SESSION_LOG SDE_SESSION_DISPLAY SDE_WM_PORTAL_PATH \
+      SDE_STATE_DIR SDE_SESSION_SHELL SDE_SESSION_IDLE_SECONDS \
+      SDE_SESSION_WATCHDOG_SECONDS SDE_SESSION_SAFE_MODE SDE_LOCK_CMD \
+      SDE_SESSION_IDLE_DPMS_SECONDS SDE_SESSION_COMPOSITOR_SAFE
+export SDE_SESSION_DISPLAY=sde-tests
+
 started_at="$(date +%s)"
 passed=0; failed=0; skipped=0; timed_out=0
 results=()
@@ -144,6 +187,10 @@ for name in "${selected[@]}"; do
     # there, the session (docs/26-ci.md §6). Only the tests that exercise X11 ask
     # for it back (they unset this and skip when a session is live).
     export SDE_XWAYLAND=0
+
+    # And its own liveness heartbeat, so a test that runs a supervisor — or a
+    # compositor that stops writing one — can never stall the session's watchdog.
+    export SDE_HEARTBEAT_FILE="$LOG_DIR/heartbeat-$name"
 
     begin="$(date +%s)"
     if timeout -k 10 "$TIMEOUT" bash "$SDE_ROOT/scripts/$name" > "$log" 2>&1; then

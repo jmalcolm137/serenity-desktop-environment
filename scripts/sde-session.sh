@@ -141,7 +141,13 @@ done
 WATCHDOG_SECONDS="${SDE_SESSION_WATCHDOG_SECONDS:-10}"
 SAFE_MODE="${SDE_SESSION_SAFE_MODE:-0}"
 SAFE_COMPOSITOR="${SDE_SESSION_COMPOSITOR_SAFE:-}"
-HEARTBEAT_FILE="${SDE_SESSION_HEARTBEAT_FILE:-${XDG_RUNTIME_DIR:-/tmp}/sde-heartbeat}"
+# Per session, not per machine. The whole session inherits this path, so a global
+# name lets any process started inside a session — a test, another seat's
+# compositor — stall or delete the file this supervisor watches, and it would then
+# restart a compositor that was never wedged. That happened: three runs of the
+# test suite restarted the session they were running in
+# (serenity-desktop-environment: docs/26-ci.md §6.3).
+HEARTBEAT_FILE="${SDE_SESSION_HEARTBEAT_FILE:-${XDG_RUNTIME_DIR:-/tmp}/sde-heartbeat-$SESSION_DISPLAY}"
 # The compositor (and its clients) inherit this and touch the file each second.
 export SDE_HEARTBEAT_FILE="$HEARTBEAT_FILE"
 
