@@ -362,8 +362,13 @@ static void show(Server& server, Mode mode, bool reverse)
     if (!s_visible) {
         s_mode = mode;
         build_list(server);
-        if (s_windows.is_empty())
+        if (s_windows.is_empty()) {
+            // Say so. Returning silently here made a dead client look like a broken
+            // switcher: the "showing N windows" line the tests look for is emitted
+            // below, so an empty list reads as "the switcher never ran".
+            dbgln("WindowSwitcher: nothing to show (mode={})", to_underlying(mode));
             return;
+        }
         s_visible = true;
         s_hovered = -1;
         s_selected = 0;
