@@ -1,0 +1,5 @@
+# The CI image only needs scripts/ and ci/: keep the context small.
+build/
+.git/
+third_party/wlroots/
+docs/images/
