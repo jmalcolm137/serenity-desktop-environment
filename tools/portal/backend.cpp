@@ -148,6 +148,7 @@ bool feed_fd_to_shell(int fd, ByteString const& command)
 // The host helpers live in host.cpp, shared with the other portal modules.
 using Portal::environment;
 using Portal::run_command;
+using Portal::run_command_async;
 using Portal::runtime_dir;
 using Portal::spawn_async;
 using Portal::state_file;
@@ -382,29 +383,39 @@ void handle_appchooser(Portal::MethodCall& call)
     auto const* choices_argument = call.argument(3);
     Portal::Value::Container choices = choices_argument ? choices_argument->container() : Portal::Value::Container {};
 
-    Portal::Dictionary results;
-    u32 response = response_cancelled;
-    size_t count = choices.size();
-    int chosen = -1;
+    size_t const count = choices.size();
+    StringBuilder joined;
+    for (size_t i = 0; i < count; ++i) {
+        if (i)
+            joined.append('\n');
+        joined.append(choices[i].as_string());
+    }
 
-    if (auto chooser = environment("SDE_PORTAL_APP_CHOOSER"sv); count > 0 && chooser.has_value() && !chooser->is_empty()) {
-        StringBuilder joined;
-        for (size_t i = 0; i < count; ++i) {
-            if (i)
-                joined.append('\n');
-            joined.append(choices[i].as_string());
+    // The chooser is a LibGUI dialog: ask it without blocking the backend
+    // (docs/15 §6.6), then reply from the continuation.
+    auto pending = call.take();
+    auto reply_with = [pending, choices = move(choices)](int chosen) {
+        size_t count = choices.size();
+        u32 response = response_cancelled;
+        Portal::Dictionary results;
+        if (count > 0) {
+            if (chosen < 0 || static_cast<size_t>(chosen) >= count)
+                chosen = 0; // default to the first offered application
+            results.append(Portal::Value::Entry { "choice", Portal::Value::make_string(choices[static_cast<size_t>(chosen)].as_string()) });
+            response = response_success;
         }
-        if (auto output = run_command({ chooser.value(), "-t", "Choose an Application", "-c", joined.to_byte_string() }, true); !output.is_error() && output.value().has_value())
-            chosen = output.value()->to_number<int>().value_or(-1);
-    }
+        pending->reply_response(response, results);
+    };
 
-    if (count > 0) {
-        if (chosen < 0 || static_cast<size_t>(chosen) >= count)
-            chosen = 0; // default to the first offered application
-        results.append(Portal::Value::Entry { "choice", Portal::Value::make_string(choices[static_cast<size_t>(chosen)].as_string()) });
-        response = response_success;
+    auto chooser = environment("SDE_PORTAL_APP_CHOOSER"sv);
+    if (count > 0 && chooser.has_value() && !chooser->is_empty()) {
+        auto arguments = Vector<ByteString> { chooser.value(), "-t", ByteString { "Choose an Application" }, "-c", joined.to_byte_string() };
+        run_command_async(move(arguments), [reply_with](Optional<ByteString> output) mutable {
+            reply_with(output.has_value() ? output->to_number<int>().value_or(-1) : -1);
+        });
+        return;
     }
-    call.reply_response(response, results);
+    reply_with(-1);
 }
 
 // --- Email ------------------------------------------------------------------
@@ -828,29 +839,42 @@ void handle_print(Portal::MethodCall& call)
     if (call.member() == "PreparePrint"sv) {
         auto title = call.string_argument(3);
         auto printers = collect_printers();
-        ByteString chosen_printer;
-        u32 copies = 1;
-        u32 response = response_cancelled;
+        // The print dialog is user-interactive: ask it without blocking the
+        // backend (docs/15 §6.6), then reply from the continuation.
+        auto pending = call.take();
 
-        if (auto dialog = environment("SDE_PORTAL_PRINT_DIALOG"sv); dialog.has_value() && !dialog->is_empty()) {
-            auto output = run_command({ dialog.value(), "-t", title.is_empty() ? ByteString { "Print" } : title, "-p", printers }, true);
-            if (!output.is_error() && output.value().has_value()) {
-                auto tokens = output.value().value().split('\t');
+        auto reply_with = [pending](ByteString printer, u32 copies, u32 response) {
+            Portal::Dictionary results;
+            Portal::Dictionary settings;
+            settings.append(Portal::Value::Entry { "printer", Portal::Value::make_string(printer) });
+            settings.append(Portal::Value::Entry { "copies", Portal::Value::make_uint32(copies) });
+            results.append(Portal::Value::Entry { "settings", Portal::Value::make_dict(move(settings)) });
+            results.append(Portal::Value::Entry { "page_setup", Portal::Value::make_dict({}) });
+            pending->reply_response(response, results);
+        };
+
+        auto dialog = environment("SDE_PORTAL_PRINT_DIALOG"sv);
+        if (!dialog.has_value() || dialog->is_empty()) {
+            reply_with({}, 1, response_cancelled);
+            return;
+        }
+
+        auto arguments = Vector<ByteString> { dialog.value(), "-t", title.is_empty() ? ByteString { "Print" } : title, "-p", printers };
+        run_command_async(move(arguments), [reply_with](Optional<ByteString> output) {
+            ByteString printer;
+            u32 copies = 1;
+            u32 response = response_cancelled;
+            if (output.has_value()) {
+                auto tokens = output->split('\t');
                 if (!tokens.is_empty() && !tokens[0].is_empty()) {
-                    chosen_printer = tokens[0];
+                    printer = tokens[0];
                     if (tokens.size() > 1)
                         copies = max(1u, tokens[1].to_number<u32>().value_or(1));
                     response = response_success;
                 }
             }
-        }
-
-        Portal::Dictionary settings;
-        settings.append(Portal::Value::Entry { "printer", Portal::Value::make_string(chosen_printer) });
-        settings.append(Portal::Value::Entry { "copies", Portal::Value::make_uint32(copies) });
-        results.append(Portal::Value::Entry { "settings", Portal::Value::make_dict(move(settings)) });
-        results.append(Portal::Value::Entry { "page_setup", Portal::Value::make_dict({}) });
-        call.reply_response(response, results);
+            reply_with(printer, copies, response);
+        });
         return;
     }
 
@@ -1028,7 +1052,6 @@ void handle_dynamic_launcher(Portal::MethodCall& call)
 // A LibGUI permission dialog (AccessDialog) prints 0 (allow) or 1 (deny).
 void handle_access(Portal::MethodCall& call)
 {
-    Portal::Dictionary results;
     if (call.member() != "AccessDialog"sv) {
         call.reply_error(Portal::ErrorName::UnknownMethod, "unknown method"sv);
         return;
@@ -1037,13 +1060,23 @@ void handle_access(Portal::MethodCall& call)
     auto subtitle = call.string_argument(4);
     auto body = call.string_argument(5);
 
-    u32 response = response_cancelled;
-    if (auto dialog = environment("SDE_PORTAL_ACCESS_DIALOG"sv); dialog.has_value() && !dialog->is_empty()) {
-        auto output = run_command({ dialog.value(), "-t", title.is_empty() ? ByteString { "Allow this request?" } : title, "-s", subtitle, "-b", body }, true);
-        if (!output.is_error() && output.value().has_value())
-            response = static_cast<u32>(max(0, output.value()->to_number<int>().value_or(0)));
+    auto dialog = environment("SDE_PORTAL_ACCESS_DIALOG"sv);
+    if (!dialog.has_value() || dialog->is_empty()) {
+        call.reply_response(response_cancelled, {});
+        return;
     }
-    call.reply_response(response, results);
+
+    // The dialog is user-interactive: run it without blocking the backend, and
+    // reply when it closes (docs/15 §6.6).
+    auto pending = call.take();
+    run_command_async({ dialog.value(), "-t", title.is_empty() ? ByteString { "Allow this request?" } : title, "-s", subtitle, "-b", body },
+        [pending](Optional<ByteString> output) {
+            u32 response = response_cancelled;
+            if (output.has_value())
+                response = static_cast<u32>(max(0, output->to_number<int>().value_or(0)));
+            Portal::Dictionary results;
+            pending->reply_response(response, results);
+        });
 }
 
 }

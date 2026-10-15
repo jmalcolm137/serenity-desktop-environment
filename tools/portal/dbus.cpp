@@ -598,19 +598,82 @@ ByteString MethodCall::object_path_argument(size_t index) const
     return {};
 }
 
+static void send_method_return(DBusConnection* connection, DBusMessage* message, Vector<Value> const& results)
+{
+    auto* reply = dbus_message_new_method_return(message);
+    if (!reply)
+        return;
+    DBusMessageIter iter;
+    dbus_message_iter_init_append(reply, &iter);
+    for (auto const& value : results)
+        value.append_to(&iter);
+    dbus_connection_send(connection, reply, nullptr);
+    dbus_connection_flush(connection);
+    dbus_message_unref(reply);
+}
+
+static void send_method_error(DBusConnection* connection, DBusMessage* message, StringView name, StringView text)
+{
+    auto* reply = dbus_message_new_error(message, name.to_byte_string().characters(), text.to_byte_string().characters());
+    if (!reply)
+        return;
+    dbus_connection_send(connection, reply, nullptr);
+    dbus_connection_flush(connection);
+    dbus_message_unref(reply);
+}
+
 void MethodCall::reply(Vector<Value> const& results)
 {
     if (m_replied)
         return;
     m_replied = true;
-    auto* reply = dbus_message_new_method_return(m_message);
-    DBusMessageIter iter;
-    dbus_message_iter_init_append(reply, &iter);
-    for (auto const& value : results)
-        value.append_to(&iter);
-    dbus_connection_send(m_connection, reply, nullptr);
-    dbus_connection_flush(m_connection);
-    dbus_message_unref(reply);
+    send_method_return(m_connection, m_message, results);
+}
+
+NonnullRefPtr<DeferredReply> MethodCall::take()
+{
+    m_deferred = true;
+    // The message is owned by the dispatch; the reply outlives it, so hold a ref.
+    if (m_message)
+        dbus_message_ref(m_message);
+    return DeferredReply::create(m_connection, m_message);
+}
+
+DeferredReply::DeferredReply(DBusConnection* connection, DBusMessage* message)
+    : m_connection(connection)
+    , m_message(message)
+{
+}
+
+DeferredReply::~DeferredReply()
+{
+    if (m_message)
+        dbus_message_unref(m_message);
+}
+
+void DeferredReply::reply(Vector<Value> const& results)
+{
+    if (m_replied || !m_message)
+        return;
+    m_replied = true;
+    send_method_return(m_connection, m_message, results);
+}
+
+void DeferredReply::reply_response(u32 response, Dictionary const& results)
+{
+    Dictionary copy;
+    copy.ensure_capacity(results.size());
+    for (auto const& entry : results)
+        copy.append(Value::Entry { entry.key, entry.value });
+    reply(Vector<Value> { Value::make_uint32(response), Value::make_dict(move(copy)) });
+}
+
+void DeferredReply::reply_error(StringView name, StringView text)
+{
+    if (m_replied || !m_message)
+        return;
+    m_replied = true;
+    send_method_error(m_connection, m_message, name, text);
 }
 
 void MethodCall::reply_response(u32 response, Dictionary const& results)
@@ -627,12 +690,7 @@ void MethodCall::reply_error(StringView name, StringView message)
     if (m_replied)
         return;
     m_replied = true;
-    auto* reply = dbus_message_new_error(m_message, name.to_byte_string().characters(), message.to_byte_string().characters());
-    if (!reply)
-        return;
-    dbus_connection_send(m_connection, reply, nullptr);
-    dbus_connection_flush(m_connection);
-    dbus_message_unref(reply);
+    send_method_error(m_connection, m_message, name, message);
 }
 
 // --- Service ----------------------------------------------------------------
@@ -824,7 +882,9 @@ void Service::handle_message(DBusMessage* message)
             return;
         }
         registered->method_handler(call);
-        if (!call.m_replied)
+        // A handler that took the call (MethodCall::take()) replies later, from
+        // its asynchronous continuation.
+        if (!call.m_replied && !call.m_deferred)
             call.reply_error(ErrorName::UnknownMethod, "unhandled method"sv);
         return;
     }
