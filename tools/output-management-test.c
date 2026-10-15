@@ -3,6 +3,7 @@
 //
 //   output-management-test --off <output-name>
 //   output-management-test --on  <output-name> [<width>x<height>]
+//   output-management-test --query <output-name>    (print its live mode and scale)
 //
 // A disabled head advertises no modes at all, so re-enabling one needs a size from
 // the caller (`set_custom_mode`, the same way the compositor brings up a virtual
@@ -216,11 +217,31 @@ static struct zwlr_output_configuration_v1_listener const configuration_listener
 
 static const char* target_name;
 static bool turn_off;
+static bool query_only;
+static bool got_done;
 static int custom_width, custom_height;
 
 static void manager_done(void*, struct zwlr_output_manager_v1*, uint32_t done_serial)
 {
     serial = done_serial;
+    got_done = true;
+    if (query_only) {
+        // What the compositor currently has this output at — the state Display
+        // Settings reads, and the observable for a layout change actually being
+        // applied.
+        for (struct head* entry = heads; entry; entry = entry->next) {
+            if (!entry->name || strcmp(entry->name, target_name) != 0)
+                continue;
+            printf("head %s mode=%dx%d scale=%d\n", entry->name,
+                entry->has_current_mode ? entry->current_width : 0,
+                entry->has_current_mode ? entry->current_height : 0,
+                entry->scale);
+            fflush(stdout);
+        }
+        got_configuration = true;
+        result = 0;
+        return;
+    }
     struct head* target = NULL;
     for (struct head* entry = heads; entry; entry = entry->next) {
         if (entry->name && strcmp(entry->name, target_name) == 0)
@@ -302,11 +323,12 @@ static struct wl_registry_listener const registry_listener = {
 
 int main(int argc, char** argv)
 {
-    if (argc < 3 || (strcmp(argv[1], "--off") != 0 && strcmp(argv[1], "--on") != 0)) {
-        fprintf(stderr, "usage: %s --off|--on <output-name> [<width>x<height>]\n", argv[0]);
+    if (argc < 3 || (strcmp(argv[1], "--off") != 0 && strcmp(argv[1], "--on") != 0 && strcmp(argv[1], "--query") != 0)) {
+        fprintf(stderr, "usage: %s --off|--on|--query <output-name> [<width>x<height>]\n", argv[0]);
         return 2;
     }
     turn_off = strcmp(argv[1], "--off") == 0;
+    query_only = strcmp(argv[1], "--query") == 0;
     target_name = argv[2];
     if (argc >= 4)
         sscanf(argv[3], "%dx%d", &custom_width, &custom_height);
