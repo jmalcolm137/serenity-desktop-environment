@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ci-tier: full
 # Drag-to-edge snapping test (WS2, docs/14).
 #
 # Dragging a window's titlebar to a screen edge arms a snap (a tile preview, then

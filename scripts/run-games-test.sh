@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ci-tier: full
 # Headless test for the SerenityOS games (the Taskbar's "Games" menu).
 #
 # The games are built by libgui-wayland (patch 0035). The Taskbar generates its

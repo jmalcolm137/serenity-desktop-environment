@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ci-tier: full
 # Headless icon-reload hotkey test (R3).
 #
 # SerenityOS binds Ctrl+Super+Shift+I to

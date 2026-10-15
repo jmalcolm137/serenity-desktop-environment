@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ci-tier: full
 # Headless InputCapture *portal* test (P4, docs/17-input-capture.md).
 #
 # Starts an SDE compositor with the private serenity_input_capture protocol

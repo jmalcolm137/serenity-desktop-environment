@@ -133,14 +133,17 @@ mkdir -p "$LOG_DIR"
 # running inside. So: refuse, unless told explicitly.
 live_session_running() {
     local runtime="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-    # The session's compositor socket, or a heartbeat file written seconds ago.
+    # The session's compositor socket.
     [[ -S "$runtime/${SDE_SESSION_DISPLAY:-sde}" ]] && return 0
-    local heartbeat="$runtime/sde-heartbeat" now modified
-    if [[ -e "$heartbeat" ]]; then
-        now="$(date +%s)"
+    # Or a liveness file written seconds ago. The name carries the session display
+    # (sde-heartbeat-<display>), so look for any of them, not just the oldest.
+    local heartbeat now modified
+    now="$(date +%s)"
+    for heartbeat in "$runtime"/sde-heartbeat*; do
+        [[ -e "$heartbeat" ]] || continue
         modified="$(stat -c %Y "$heartbeat" 2>/dev/null || echo 0)"
         (( now - modified < 60 )) && return 0
-    fi
+    done
     return 1
 }
 
@@ -160,7 +163,6 @@ unset SDE_HEARTBEAT_FILE SDE_SESSION_LOG SDE_SESSION_DISPLAY SDE_WM_PORTAL_PATH 
       SDE_STATE_DIR SDE_SESSION_SHELL SDE_SESSION_IDLE_SECONDS \
       SDE_SESSION_WATCHDOG_SECONDS SDE_SESSION_SAFE_MODE SDE_LOCK_CMD \
       SDE_SESSION_IDLE_DPMS_SECONDS SDE_SESSION_COMPOSITOR_SAFE
-export SDE_SESSION_DISPLAY=sde-tests
 
 started_at="$(date +%s)"
 passed=0; failed=0; skipped=0; timed_out=0

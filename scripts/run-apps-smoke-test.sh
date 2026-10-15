@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ci-tier: full
 # Smoke test: launch a set of protocol-heavy Serenity apps against the compositor
 # and assert none of them fault or print an IPC parse error.
 #

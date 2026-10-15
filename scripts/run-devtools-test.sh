@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ci-tier: full
 # Headless test for the SerenityOS developer tools (the Taskbar's Development
 # menu): GMLPlayground, SQLStudio, HackStudio and Profiler, built by
 # libgui-wayland (patches 0035/0040). Like the games test, it asserts each tool's .af declares

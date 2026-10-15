@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ci-tier: full
 # Headless session-safety-net test (R4.1, docs/11-r4-implementation-plan.md):
 # assert the compositor implements ext-idle-notify-v1, zwp_idle_inhibit_v1 and
 # wlr-output-power-management, and that idle inhibition suppresses the idle
