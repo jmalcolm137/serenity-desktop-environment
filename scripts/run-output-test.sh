@@ -92,7 +92,7 @@ ScaleFactor=2
 EOF
 COMP_PID="$(start_compositor sde-out-b)"
 LOG="$RUNTIME/comp-sde-out-b.log"
-check "scaling 2x (saved layout)" "$(cat "$LOG")"
+check "applied screen layout to 'HEADLESS-1': 1280x720 @2x" "$(cat "$LOG")"
 check "640x360 @2x" "$(cat "$LOG")"
 
 echo "=== (C) editing the layout live re-applies it ==="
@@ -128,8 +128,8 @@ ScaleFactor=1
 EOF
 COMP_PID="$(start_compositor sde-out-d 2)"
 LOG="$RUNTIME/comp-sde-out-d.log"
-check "output 'HEADLESS-1' scale 1x (saved layout)" "$(cat "$LOG")"
-check "output 'HEADLESS-2' scale 1x (saved layout)" "$(cat "$LOG")"
+check "output 'HEADLESS-1' 1280x720 @1x" "$(cat "$LOG")"
+check "output 'HEADLESS-2' 1280x720 @1x" "$(cat "$LOG")"
 check "usable area for 'HEADLESS-1': 1280x720 at 0,0" "$(cat "$LOG")"
 check "usable area for 'HEADLESS-2': 1280x720 at 1280,0" "$(cat "$LOG")"
 # A startup burst of outputs must not clobber the saved layout: HEADLESS-1 must
