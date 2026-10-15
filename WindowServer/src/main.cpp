@@ -730,6 +730,30 @@ static bool keyboard_shortcuts_inhibited(Server& server, wlr_surface* surface)
     return false;
 }
 
+// R5 accessibility (docs/29-accessibility.md): the modifier a keysym is, for sticky
+// keys. 0 for anything that is not a modifier.
+static uint32_t sticky_modifier_for_keysym(xkb_keysym_t keysym)
+{
+    switch (keysym) {
+    case XKB_KEY_Shift_L:
+    case XKB_KEY_Shift_R:
+        return WLR_MODIFIER_SHIFT;
+    case XKB_KEY_Control_L:
+    case XKB_KEY_Control_R:
+        return WLR_MODIFIER_CTRL;
+    case XKB_KEY_Alt_L:
+    case XKB_KEY_Alt_R:
+        return WLR_MODIFIER_ALT;
+    case XKB_KEY_Super_L:
+    case XKB_KEY_Super_R:
+    case XKB_KEY_Meta_L:
+    case XKB_KEY_Meta_R:
+        return WLR_MODIFIER_LOGO;
+    default:
+        return 0;
+    }
+}
+
 static void keyboard_key(wl_listener* listener, void* data)
 {
     Keyboard* keyboard = nullptr;
@@ -739,6 +763,14 @@ static void keyboard_key(wl_listener* listener, void* data)
 
     notify_activity(server);
     uint32_t keycode = event->keycode + 8;
+
+    // R5 accessibility: a latched modifier is used up by one key press, and that
+    // press has already been delivered with it, so drop the latch before this event
+    // recomputes the masks below.
+    if (keyboard->sticky_consumed) {
+        keyboard->sticky_consumed = false;
+        keyboard->sticky_mask = 0;
+    }
 
     // Releasing the held key ends its repeat; unrelated releases are ignored.
     if (event->state == WL_KEYBOARD_KEY_STATE_RELEASED && s_key_repeat_keyboard && event->keycode == s_key_repeat_keycode)
@@ -754,6 +786,38 @@ static void keyboard_key(wl_listener* listener, void* data)
     keyboard->keyboard->modifiers.latched = xkb_state_serialize_mods(xkb_state, XKB_STATE_MODS_LATCHED);
     keyboard->keyboard->modifiers.locked = xkb_state_serialize_mods(xkb_state, XKB_STATE_MODS_LOCKED);
     keyboard->keyboard->modifiers.group = xkb_state_serialize_layout(xkb_state, XKB_STATE_LAYOUT_EFFECTIVE);
+
+    // R5 accessibility: sticky keys (docs/29-accessibility.md). Wayland clients
+    // translate keycodes themselves, so a latched modifier only has to be in the
+    // modifier mask they are told about -- the notification just below carries it,
+    // and a client that sees it applies it to the following key. Settling it here
+    // means keybindings, InputCapture and the input method see it too.
+    if (Config::accessibility().sticky_keys) {
+        bool const pressed = event->state == WL_KEYBOARD_KEY_STATE_PRESSED;
+        uint32_t const tapped_bit = sticky_modifier_for_keysym(xkb_state_key_get_one_sym(xkb_state, keycode));
+        if (tapped_bit != 0) {
+            if (pressed) {
+                keyboard->sticky_pending = true;
+                keyboard->sticky_pending_bit = tapped_bit;
+            } else if (keyboard->sticky_pending && keyboard->sticky_pending_bit == tapped_bit) {
+                // Tapping the same modifier again cancels, so a latch made by
+                // accident is not a trap.
+                keyboard->sticky_mask ^= tapped_bit;
+                keyboard->sticky_pending = false;
+                keyboard->sticky_pending_bit = 0;
+                dbgln("WindowServer: sticky keys {} (mask {:#x})", keyboard->sticky_mask != 0 ? "latched" : "cleared", keyboard->sticky_mask);
+            }
+        } else {
+            keyboard->sticky_pending = false;
+            keyboard->sticky_pending_bit = 0;
+            if (pressed && keyboard->sticky_mask != 0) {
+                keyboard->keyboard->modifiers.depressed |= keyboard->sticky_mask;
+                keyboard->sticky_consumed = true;
+                dbgln("WindowServer: sticky keys applied (mask {:#x})", keyboard->sticky_mask);
+            }
+        }
+    }
+
     if (!InputMethod::handle_modifiers(server, keyboard->keyboard))
         wlr_seat_keyboard_notify_modifiers(server.seat, &keyboard->keyboard->modifiers);
 

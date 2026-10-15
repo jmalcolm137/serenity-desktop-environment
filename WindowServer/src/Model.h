@@ -362,6 +362,15 @@ struct Keyboard {
     wl_listener modifiers { };
     wl_listener key { };
     wl_listener destroy { };
+
+    // R5 accessibility (docs/29-accessibility.md): sticky keys. A modifier tapped on
+    // its own latches (`sticky_mask`); the next key press is delivered with it and
+    // then clears it. `sticky_pending` remembers the modifier currently held so a
+    // release with no key in between is what latches it.
+    bool sticky_pending { false };
+    uint32_t sticky_pending_bit { 0 };
+    uint32_t sticky_mask { 0 };
+    bool sticky_consumed { false };
 };
 
 // R5 IME (docs/22-input-method.md): the compositor's relay for one client

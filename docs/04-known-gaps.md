@@ -412,10 +412,12 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   ([`17-input-capture.md`](17-input-capture.md)), and the **USB** portal's backend
   is a real broker (policy + user prompt + remembered grants,
   `tools/portal/usb.cpp`, `scripts/run-usb-portal-test.sh`).
-- **Text input / IME (G5) — done (R5); accessibility (G1) remains.** `text-input-v3`
+- **Text input / IME (G5) — done (R5); accessibility (G1) partly.** `text-input-v3`
   / `input-method-v2` are served (see [`22-input-method.md`](22-input-method.md)),
-  so an input method can compose CJK text into a focused field. AT-SPI, sticky
-  keys, magnifier and high contrast are still absent.
+  so an input method can compose CJK text into a focused field. **Sticky keys is
+  now implemented** (`[Accessibility] StickyKeys`, `scripts/run-sticky-keys-test.sh`);
+  AT-SPI, the magnifier and high contrast remain, planned in
+  [`29-accessibility.md`](29-accessibility.md).
 
 ## R6 — Hardening & packaging (in progress)
 
