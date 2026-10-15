@@ -34,7 +34,6 @@
 #include "host.h"
 
 #include <AK/HashMap.h>
-#include <AK/Random.h>
 #include <AK/StringUtils.h>
 
 #include <errno.h>
@@ -213,7 +212,7 @@ struct session {
     int chosen_toplevel_index; // -1 = entire screen
     struct capture* capture;
     uint32_t persist_mode;
-    ByteString restore_token;
+    bool restored; // the source came from restore_data, so no chooser ran
 };
 
 struct capture {
@@ -1259,11 +1258,13 @@ static void setup_cursor_session(struct capture* capture)
     (void)capture;
 }
 
+// A closed window keeps its slot (the listeners hold pointers into the array) but
+// loses its handle, which is how the rest of the backend tells it is gone.
 static void ftl_handle_closed(void* data, struct ext_foreign_toplevel_handle_v1* handle)
 {
-    (void)handle;
     struct toplevel_info* toplevel = static_cast<struct toplevel_info*>(data);
     toplevel->handle = nullptr;
+    ext_foreign_toplevel_handle_v1_destroy(handle);
 }
 static void ftl_handle_done(void* data, struct ext_foreign_toplevel_handle_v1* handle)
 {
@@ -1476,6 +1477,27 @@ static bool ensure_wayland(struct screencast_state* state)
     return true;
 }
 
+// Bring the window list up to date. Once a capture has started its thread
+// dispatches the compositor's events; before that, nothing reads them.
+static void refresh_toplevels(struct screencast_state* state)
+{
+    if (!ensure_wayland(state))
+        return;
+    if (!state->capture_thread_started)
+        wl_display_roundtrip(state->display);
+}
+
+// The indices of the windows that are still open, in the order they appeared.
+static Vector<int> open_toplevels(struct screencast_state const& state)
+{
+    Vector<int> indices;
+    for (size_t i = 0; i < state.toplevel_count; ++i) {
+        if (state.toplevels[i].handle)
+            indices.append(static_cast<int>(i));
+    }
+    return indices;
+}
+
 // The argv for the LibGUI source chooser (SDE_PORTAL_CHOOSER) with the candidate
 // labels, or empty when no chooser is configured.
 static Vector<ByteString> source_chooser_arguments(Vector<ByteString> const& labels)
@@ -1503,27 +1525,24 @@ static int parse_chosen_index(Optional<ByteString> const& output, size_t label_c
     return chosen;
 }
 
-// Mint and persist a restore token when the app asked to remember the choice
-// (persist_mode 1 = permanent, 2 = until revoked), then reply. Shared by the
-// synchronous path and the chooser continuation; `session` may be null when the
-// session was closed while the chooser was open.
-static void finish_select_sources(struct session* session, Function<void(u32, Portal::Dictionary const&)> reply)
+// Reply to SelectSources. Shared by the synchronous path and the chooser
+// continuation; `session` may be null when the session was closed while the
+// chooser was open. What the session will restore from is reported by Start.
+static void finish_select_sources(struct session*, Function<void(u32, Portal::Dictionary const&)> reply)
 {
-    if (session && session->persist_mode != 0 && session->restore_token.is_empty()) {
-        char token[33];
-        for (int i = 0; i < 32; ++i)
-            token[i] = "0123456789abcdef"[AK::get_random_uniform(16)];
-        token[32] = '\0';
-        ByteString source_id;
-        if (session->chosen_toplevel_index >= 0 && (size_t)session->chosen_toplevel_index < g_state.toplevel_count)
-            source_id = g_state.toplevels[session->chosen_toplevel_index].identifier;
-        Screencast::store_restore_token(ByteString { token }, session->types, session->cursor_mode, source_id);
-        session->restore_token = token;
-    }
-    Portal::Dictionary results;
-    if (session && !session->restore_token.is_empty())
-        results.append(Portal::Value::Entry { "restore_token"sv, Portal::Value::make_variant(Portal::Value::make_string(session->restore_token)) });
-    reply(0, results);
+    reply(0, {});
+}
+
+// What a later session needs to skip the chooser: the source types, the cursor
+// mode, and the chosen window (empty for the entire screen).
+static Screencast::RestoreData restore_data_for(struct session const& session)
+{
+    Screencast::RestoreData data;
+    data.types = session.types;
+    data.cursor_mode = session.cursor_mode;
+    if (session.chosen_toplevel_index >= 0 && (size_t)session.chosen_toplevel_index < g_state.toplevel_count)
+        data.source_id = g_state.toplevels[session.chosen_toplevel_index].identifier;
+    return data;
 }
 
 // Set up the capture for the requested source (the chosen window, else the
@@ -1580,12 +1599,12 @@ static struct capture* begin_capture(struct screencast_state* state, struct sess
     return capture;
 }
 
-// --- restore tokens ---------------------------------------------------------
+// --- state directory --------------------------------------------------------
 //
-// The XDG ScreenCast restore token lets an application remember a source so the
-// user is not asked to pick again. Tokens are persisted as one pipe-separated
-// record per line ("token|types|cursor_mode|source_id") in the SDE state
-// directory.
+// Restore data is self-contained and kept by the frontend (see screencast.h); the
+// state directory only holds the legacy screencast-tokens file, one
+// "token|types|cursor_mode|source_id" record per line, which version 1 restore
+// data still points into.
 
 ByteString screencast_state_path(StringView name)
 {
@@ -1640,39 +1659,45 @@ static void handle_screencast(Portal::MethodCall& call)
             session->cursor_mode = options->uint32_or("cursor_mode"sv, session->cursor_mode);
             session->persist_mode = options->uint32_or("persist_mode"sv, session->persist_mode);
 
-            // Restore a previously persisted source if the app supplies a token.
-            auto restore = options->string_or("restore_token"sv);
-            if (!restore.is_empty()) {
-                if (auto stored = Screencast::load_restore_token(restore); stored.has_value()) {
-                    session->types = stored->types;
-                    session->cursor_mode = stored->cursor_mode;
-                    session->restore_token = restore;
-                    if (!stored->source_id.is_empty()) {
-                        ensure_wayland(&g_state);
-                        for (size_t i = 0; i < g_state.toplevel_count; ++i) {
-                            if (g_state.toplevels[i].identifier == stored->source_id) {
-                                session->chosen_toplevel_index = static_cast<int>(i);
-                                break;
-                            }
+            session->persist_mode = Screencast::clamp_persist_mode(session->persist_mode);
+
+            // Restore the source the frontend remembered for this app. A window
+            // that no longer exists cannot be restored: fall through to the chooser
+            // rather than silently capturing something else.
+            if (auto stored = Screencast::parse_restore_data(*options); stored.has_value()) {
+                int window_index = -1;
+                if (!stored->source_id.is_empty()) {
+                    refresh_toplevels(&g_state);
+                    for (int i : open_toplevels(g_state)) {
+                        if (g_state.toplevels[i].identifier == stored->source_id) {
+                            window_index = i;
+                            break;
                         }
                     }
                 }
-                if (!session->restore_token.is_empty()) {
-                    Portal::Dictionary results;
-                    results.append(Portal::Value::Entry { "restore_token"sv, Portal::Value::make_variant(Portal::Value::make_string(session->restore_token)) });
-                    call.reply_response(0, results);
+                if (stored->source_id.is_empty() || window_index >= 0) {
+                    session->types = stored->types;
+                    session->cursor_mode = stored->cursor_mode;
+                    session->chosen_toplevel_index = window_index;
+                    session->restored = true;
+                    fprintf(stderr, "xdg-desktop-portal-serenity: screencast restored from restore_data (%s)\n",
+                        stored->source_id.is_empty() ? "entire screen" : stored->source_id.characters());
+                    call.reply_response(0);
                     return;
                 }
+                fprintf(stderr, "xdg-desktop-portal-serenity: screencast restore_data names a window that is gone; asking again\n");
             }
         }
         // When window sources are offered and a chooser is configured, let the
         // user pick via the LibGUI ScreenCastChooser (index 0 = entire screen).
         Vector<ByteString> labels;
+        Vector<int> windows;
         auto chooser = Core::Environment::get("SDE_PORTAL_CHOOSER"sv);
         if (session && (session->types & 2) && chooser.has_value() && !chooser->is_empty()) {
-            ensure_wayland(&g_state);
+            refresh_toplevels(&g_state);
+            windows = open_toplevels(g_state);
             labels.append("Entire screen"sv);
-            for (size_t i = 0; i < g_state.toplevel_count; ++i) {
+            for (int i : windows) {
                 labels.append(ByteString::formatted("Window: {}", g_state.toplevels[i].title.is_empty()
                         ? (g_state.toplevels[i].identifier.is_empty() ? ByteString { "Window" } : g_state.toplevels[i].identifier)
                         : g_state.toplevels[i].title));
@@ -1687,10 +1712,13 @@ static void handle_screencast(Portal::MethodCall& call)
             // handle and re-look it up rather than hold the pointer across the gap.
             auto pending = call.take();
             auto label_count = labels.size();
-            Portal::run_command_async(move(chooser_arguments), [pending, session_handle, label_count](Optional<ByteString> output) {
+            Portal::run_command_async(move(chooser_arguments), [pending, session_handle, label_count, windows = move(windows)](Optional<ByteString> output) {
                 struct session* session = find_session(session_handle);
-                if (session)
-                    session->chosen_toplevel_index = parse_chosen_index(output, label_count) - 1; // -1 => entire screen
+                if (session) {
+                    // Label 0 is the entire screen; label n is the n-th open window.
+                    int chosen = parse_chosen_index(output, label_count);
+                    session->chosen_toplevel_index = chosen > 0 ? windows[chosen - 1] : -1;
+                }
                 finish_select_sources(session, [pending](u32 response, Portal::Dictionary const& results) {
                     pending->reply_response(response, results);
                 });
@@ -1738,8 +1766,10 @@ static void handle_screencast(Portal::MethodCall& call)
 
             Portal::Dictionary results;
             results.append(Portal::Value::Entry { "streams"sv, Portal::Value::make_variant(move(streams)) });
-            if (!session->restore_token.is_empty())
-                results.append(Portal::Value::Entry { "restore_token"sv, Portal::Value::make_variant(Portal::Value::make_string(session->restore_token)) });
+            if (session->persist_mode != 0) {
+                results.append(Portal::Value::Entry { "persist_mode"sv, Portal::Value::make_variant(Portal::Value::make_uint32(session->persist_mode)) });
+                results.append(Portal::Value::Entry { "restore_data"sv, Portal::Value::make_variant(Screencast::make_restore_data(restore_data_for(*session))) });
+            }
             fprintf(stderr, "xdg-desktop-portal-serenity: screencast stream node %d (%dx%d, source_type %u, cursor %u)\n",
                 g_state.stream_node_id, g_state.stream_width, g_state.stream_height,
                 session->capture->source_type, session->capture->cursor_mode);
@@ -1953,16 +1983,61 @@ void register_interface(Portal::Service& service)
         Portal::interface_introspection_xml(screencast_interface).value_or(StringView {}));
 }
 
-void store_restore_token(ByteString const& token, u32 types, u32 cursor_mode, ByteString const& source_id)
+static constexpr StringView restore_data_vendor = "SDE"sv;
+static constexpr u32 restore_data_version = 2;
+
+static Optional<RestoreData> load_legacy_restore_token(ByteString const& token);
+
+Portal::Value make_restore_data(RestoreData const& data)
 {
-    auto path = screencast_state_path("screencast-tokens"sv);
-    auto file = Core::File::open(path, Core::File::OpenMode::Write | Core::File::OpenMode::Append);
-    if (file.is_error())
-        return;
-    (void)file.value()->write_formatted("{}|{}|{}|{}\n", token, types, cursor_mode, source_id);
+    Portal::Dictionary fields;
+    fields.append(Portal::Value::Entry { "types"sv, Portal::Value::make_variant(Portal::Value::make_uint32(data.types)) });
+    fields.append(Portal::Value::Entry { "cursor_mode"sv, Portal::Value::make_variant(Portal::Value::make_uint32(data.cursor_mode)) });
+    if (!data.source_id.is_empty())
+        fields.append(Portal::Value::Entry { "source_id"sv, Portal::Value::make_variant(Portal::Value::make_string(data.source_id)) });
+    return Portal::Value::make_struct({
+        Portal::Value::make_string(restore_data_vendor),
+        Portal::Value::make_uint32(restore_data_version),
+        Portal::Value::make_variant(Portal::Value::make_dict(move(fields))),
+    });
 }
 
-Optional<RestoreToken> load_restore_token(ByteString const& token)
+Optional<RestoreData> parse_restore_data(Portal::Value const& options)
+{
+    if (!options.is(Portal::Value::Type::Dict))
+        return {};
+    auto const* wrapped = options.find("restore_data"sv);
+    if (!wrapped)
+        return {};
+    auto const& structure = wrapped->unwrapped();
+    if (!structure.is(Portal::Value::Type::Struct) || structure.container().size() < 3)
+        return {};
+    auto const& vendor = structure.container()[0].unwrapped();
+    auto const& version = structure.container()[1].unwrapped();
+    auto const& payload = structure.container()[2].unwrapped();
+    if (!vendor.is(Portal::Value::Type::String) || vendor.as_string() != restore_data_vendor || !version.is(Portal::Value::Type::UInt32))
+        return {};
+
+    if (version.as_uint32() == 1) {
+        if (!payload.is(Portal::Value::Type::String) || payload.as_string().is_empty())
+            return {};
+        return load_legacy_restore_token(payload.as_string());
+    }
+    if (version.as_uint32() != restore_data_version || !payload.is(Portal::Value::Type::Dict))
+        return {};
+    RestoreData data;
+    data.types = payload.uint32_or("types"sv);
+    data.cursor_mode = payload.uint32_or("cursor_mode"sv);
+    data.source_id = payload.string_or("source_id"sv);
+    return data;
+}
+
+u32 clamp_persist_mode(u32 requested)
+{
+    return requested <= 2 ? requested : 0;
+}
+
+static Optional<RestoreData> load_legacy_restore_token(ByteString const& token)
 {
     auto path = screencast_state_path("screencast-tokens"sv);
     auto file = Core::File::open(path, Core::File::OpenMode::Read);
@@ -1991,7 +2066,7 @@ Optional<RestoreToken> load_restore_token(ByteString const& token)
         if (!third.has_value())
             continue;
 
-        RestoreToken stored;
+        RestoreData stored;
         stored.types = AK::StringUtils::convert_to_uint<u32>(rest.substring_view(0, *second)).value_or(0);
         stored.cursor_mode = AK::StringUtils::convert_to_uint<u32>(rest2.substring_view(0, *third)).value_or(0);
         stored.source_id = ByteString { rest2.substring_view(*third + 1) };

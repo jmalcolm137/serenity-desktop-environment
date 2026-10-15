@@ -32,7 +32,6 @@
 #include <AK/Format.h>
 #include <AK/NonnullOwnPtr.h>
 #include <AK/Optional.h>
-#include <AK/Random.h>
 #include <AK/StringView.h>
 #include <AK/Vector.h>
 #include <LibCore/Command.h>
@@ -73,7 +72,6 @@ struct serenity_input_capture_manager_v1* s_manager { nullptr };
 RefPtr<Core::Notifier> s_wl_notifier;
 Portal::Service* s_service { nullptr };
 u32 s_activation_id { 0 };
-ByteString s_restore_token;
 Vector<NonnullOwnPtr<Session>> s_sessions;
 
 // --- Wayland connection -----------------------------------------------------
@@ -312,15 +310,6 @@ u32 run_access_prompt()
     return parse_dialog_response(text);
 }
 
-ByteString mint_restore_token()
-{
-    char token[33];
-    for (int i = 0; i < 32; ++i)
-        token[i] = "0123456789abcdef"[get_random_uniform(16)];
-    token[32] = '\0';
-    return ByteString { token };
-}
-
 // --- D-Bus interface --------------------------------------------------------
 
 void handle_call(Portal::MethodCall& call)
@@ -360,23 +349,12 @@ void handle_call(Portal::MethodCall& call)
         bool restored = false;
         if (options) {
             requested = options->uint32_or("capabilities"sv, 0);
-            persist_mode = options->uint32_or("persist_mode"sv, 0);
+            persist_mode = Screencast::clamp_persist_mode(options->uint32_or("persist_mode"sv, 0));
 
-            // restore_data is (suv): vendor, version, and an implementation-private
-            // variant (our restore-token string, shared with ScreenCast).
-            if (auto const* restore_data = options->find("restore_data"sv)) {
-                auto const& structure = restore_data->unwrapped();
-                if (structure.is(Portal::Value::Type::Struct) && structure.container().size() >= 3) {
-                    auto const& token_value = structure.container()[2].unwrapped();
-                    if (token_value.is(Portal::Value::Type::String)) {
-                        auto token = token_value.as_string();
-                        if (!token.is_empty() && Screencast::load_restore_token(token).has_value()) {
-                            s_restore_token = token;
-                            restored = true;
-                        }
-                    }
-                }
-            }
+            // The frontend hands back the restore_data an earlier Start returned
+            // (it keeps it per app in the permission store): the user already
+            // agreed, so skip the prompt.
+            restored = Screencast::parse_restore_data(*options).has_value();
         }
 
         u32 const granted = requested & supported_capabilities;
@@ -388,22 +366,14 @@ void handle_call(Portal::MethodCall& call)
         }
         session->capabilities = granted;
 
-        if (persist_mode != 0 && s_restore_token.is_empty()) {
-            auto token = mint_restore_token();
-            Screencast::store_restore_token(token, granted, 0, {});
-            s_restore_token = token;
-        }
-
         Portal::Dictionary results;
         results.append(Portal::Value::Entry { ByteString { "capabilities"sv }, Portal::Value::make_variant(Portal::Value::make_uint32(granted)) });
         results.append(Portal::Value::Entry { ByteString { "clipboard_enabled"sv }, Portal::Value::make_variant(Portal::Value::make_bool(false)) });
-        if (!s_restore_token.is_empty()) {
-            Portal::Value::Container restore {
-                Portal::Value::make_string("SDE"sv),
-                Portal::Value::make_uint32(1),
-                Portal::Value::make_variant(Portal::Value::make_string(s_restore_token)),
-            };
-            results.append(Portal::Value::Entry { ByteString { "restore_data"sv }, Portal::Value::make_variant(Portal::Value::make_struct(move(restore))) });
+        if (persist_mode != 0) {
+            Screencast::RestoreData restore;
+            restore.types = granted;
+            results.append(Portal::Value::Entry { ByteString { "persist_mode"sv }, Portal::Value::make_variant(Portal::Value::make_uint32(persist_mode)) });
+            results.append(Portal::Value::Entry { ByteString { "restore_data"sv }, Portal::Value::make_variant(Screencast::make_restore_data(restore)) });
         }
         dbgln("xdg-desktop-portal-serenity: input capture session started (caps {}, restored {})", granted, restored);
         call.reply_response(0, results);

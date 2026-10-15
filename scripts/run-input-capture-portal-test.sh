@@ -160,22 +160,18 @@ REQ2="/org/freedesktop/portal/desktop/request/1/persist"
 call org.freedesktop.impl.portal.InputCapture.CreateSession2 "$SESH2" "org.sde.Test" "{}" >/dev/null
 before_persist="$(wc -l < "$RUNTIME/prompts.log" 2>/dev/null || echo 0)"
 persist="$(call org.freedesktop.impl.portal.InputCapture.Start "$REQ2" "$SESH2" "org.sde.Test" "" "{'capabilities': <uint32 3>, 'persist_mode': <uint32 2>}")"
-check "restore_data" "$persist"
-check "'SDE'" "$persist"
-token="$(grep -oE '[0-9a-f]{32}' <<<"$persist" | head -1)"
-if [[ -n "$token" ]]; then
-    echo "  ok: persist_mode returned a restore token"
-else
-    echo "  MISSING: restore token in '$persist'"
-    fail=1
-fi
+check "'persist_mode': <uint32 2>" "$persist"
+check "'restore_data': <('SDE', uint32 2" "$persist"
+restore_data="$(grep -oP "'restore_data': <\K\('SDE'.*?\}>\)" <<<"$persist" | head -1)"
 after_persist="$(wc -l < "$RUNTIME/prompts.log" 2>/dev/null || echo 0)"
 
+# The frontend hands the restore data back (it keeps it in the permission store);
+# the app asks to stay remembered, so the data is returned again.
 SESH3="/org/freedesktop/portal/desktop/session/1/restore"
 REQ3="/org/freedesktop/portal/desktop/request/1/restore"
 call org.freedesktop.impl.portal.InputCapture.CreateSession2 "$SESH3" "org.sde.Test" "{}" >/dev/null
-restore="$(call org.freedesktop.impl.portal.InputCapture.Start "$REQ3" "$SESH3" "org.sde.Test" "" "{'capabilities': <uint32 3>, 'restore_data': <('SDE', uint32 1, <'$token'>)>}")"
-check "restore_data" "$restore"
+restore="$(call org.freedesktop.impl.portal.InputCapture.Start "$REQ3" "$SESH3" "org.sde.Test" "" "{'capabilities': <uint32 3>, 'persist_mode': <uint32 2>, 'restore_data': <$restore_data>}")"
+check "'restore_data': <('SDE', uint32 2" "$restore"
 after_restore="$(wc -l < "$RUNTIME/prompts.log" 2>/dev/null || echo 0)"
 if [[ "$after_persist" -gt "$before_persist" ]]; then
     echo "  ok: persist_mode start prompted ($before_persist -> $after_persist)"
@@ -189,10 +185,35 @@ else
     echo "  MISSING: restore_data did not suppress the prompt ($after_persist -> $after_restore)"
     fail=1
 fi
-if [[ -f "$RUNTIME/screencast-tokens" ]]; then
-    echo "  ok: restore token persisted to disk"
+if [[ ! -e "$RUNTIME/screencast-tokens" ]]; then
+    echo "  ok: the backend kept no private token file"
 else
-    echo "  MISSING: restore token file"
+    echo "  MISSING: screencast-tokens was written"
+    fail=1
+fi
+
+# Version 1 restore data (a token into the old screencast-tokens file) that a
+# frontend stored before the format changed still restores; a token that is not
+# in the file does not.
+echo "0123456789abcdef0123456789abcdef|3|0|" > "$RUNTIME/screencast-tokens"
+SESH4="/org/freedesktop/portal/desktop/session/1/legacy"
+call org.freedesktop.impl.portal.InputCapture.CreateSession2 "$SESH4" "org.sde.Test" "{}" >/dev/null
+call org.freedesktop.impl.portal.InputCapture.Start /h4 "$SESH4" "org.sde.Test" "" "{'capabilities': <uint32 3>, 'restore_data': <('SDE', uint32 1, <'0123456789abcdef0123456789abcdef'>)>}" >/dev/null
+after_legacy="$(wc -l < "$RUNTIME/prompts.log" 2>/dev/null || echo 0)"
+if [[ "$after_legacy" == "$after_restore" ]]; then
+    echo "  ok: version 1 restore data still restores"
+else
+    echo "  MISSING: version 1 restore data prompted"
+    fail=1
+fi
+SESH5="/org/freedesktop/portal/desktop/session/1/forged"
+call org.freedesktop.impl.portal.InputCapture.CreateSession2 "$SESH5" "org.sde.Test" "{}" >/dev/null
+call org.freedesktop.impl.portal.InputCapture.Start /h5 "$SESH5" "org.sde.Test" "" "{'capabilities': <uint32 3>, 'restore_data': <('SDE', uint32 1, <'ffffffffffffffffffffffffffffffff'>)>}" >/dev/null
+after_unknown="$(wc -l < "$RUNTIME/prompts.log" 2>/dev/null || echo 0)"
+if [[ "$after_unknown" -gt "$after_legacy" ]]; then
+    echo "  ok: an unknown version 1 token prompts"
+else
+    echo "  MISSING: an unknown version 1 token skipped the prompt"
     fail=1
 fi
 

@@ -13,54 +13,54 @@ The stack is split across a small family of repositories:
 | Repository | Role |
 |---|---|
 | [`SerenityOS/serenity`](https://github.com/SerenityOS/serenity) | Upstream source of LibGUI / LibGfx / applications / themes / fonts. Consumed **unmodified** wherever possible. |
-| [`jmalcolm137/libgui-wayland`](https://github.com/jmalcolm137/libgui-wayland) | **LibWindowServer** — runs unmodified Serenity `LibGUI`/`LibGfx` apps natively on Wayland by implementing the WindowServer protocol in-process. |
+| [`jmalcolm137/libgui-wayland`](https://github.com/jmalcolm137/libgui-wayland) | **LibWindowServer**: runs unmodified Serenity `LibGUI`/`LibGfx` apps natively on Wayland by implementing the WindowServer protocol in-process. |
 | **this repo** | The **system side**: `WindowServer` (a [reasonably complete](docs/23-wayland-protocols.md) wlroots-based Wayland compositor) and the session that runs the **unmodified SerenityOS shell apps** (Taskbar, applets, Desktop, Settings) as Wayland clients, plus services/settings and the integration that turns LibWindowServer-powered apps into a coherent desktop session. |
 
 ## Documents
 
-- [`docs/01-objectives.md`](docs/01-objectives.md) — vision, goals, non-goals, principles, architecture, success criteria.
-- [`docs/02-compositor-decision.md`](docs/02-compositor-decision.md) — options analysis for the compositor and the design decision.
-- [`docs/03-engineering-conventions.md`](docs/03-engineering-conventions.md) — binding coding/build conventions (AK/LibCore/LibGfx, SerenityOS-style `serenity_main`, host compat in the SDE).
-- [`docs/04-known-gaps.md`](docs/04-known-gaps.md) — running list of known gaps and remaining work, so nothing found during bring-up is forgotten.
-- [`docs/05-r3-plan.md`](docs/05-r3-plan.md) — working plan for milestone R3 (Serenity look & behaviours): switcher, snapping, workspaces, applets, notifications, tooltips.
-- [`docs/06-service-layering.md`](docs/06-service-layering.md) — which Serenity service belongs in `libgui-wayland` vs. the SDE session; the "prefer the session service, else in-process fallback" rule.
-- [`docs/07-systemserver-roles.md`](docs/07-systemserver-roles.md) — every place SDE stands in for a SerenityOS `SystemServer` role, and how each maps to systemd on a real Linux session.
-- [`docs/08-compositor-gaps.md`](docs/08-compositor-gaps.md) — what is missing from the plan for `WindowServer` as a general-purpose compositor: session/seat, robustness, ecosystem protocols, portals, input/IME, accessibility, output/render depth, testing.
-- [`docs/09-r3-implementation-plan.md`](docs/09-r3-implementation-plan.md) — execution companion to `05`: foundation-first sequencing, the de-risking spikes, feature order, and what to pull forward.
-- [`docs/10-font-parity-decision.md`](docs/10-font-parity-decision.md) — the R3 font-parity decision (bitmap Katica, no size-based zoom) and the R4/G5 path to scalable fonts.
-- [`docs/11-r4-implementation-plan.md`](docs/11-r4-implementation-plan.md) — the R4 (Session & settings) execution plan, delivered as milestones R4.1–R4.9.
-- [`docs/12-r4.3-portable-session-integration.md`](docs/12-r4.3-portable-session-integration.md) — the R4.3 design: logind/systemd optional; portable session env, seat/DRM/VT via `libseat` backends, power provider chain, optional portals.
-- [`docs/13-native-session-and-aur-packaging.md`](docs/13-native-session-and-aur-packaging.md) — plan to run SDE natively (DRM/KMS) and package it for Arch/EndeavourOS (AUR) with an SDDM session entry.
-- [`docs/14-r4.4-config.md`](docs/14-r4.4-config.md) — the compositor configuration seam: a validated, live-reloading `WindowServer.ini` and `scripts/sde-config`.
-- [`docs/15-xdg-desktop-portal-serenity.md`](docs/15-xdg-desktop-portal-serenity.md) — the SDE xdg-desktop-portal backend and its LibGUI dialogs (R5).
-- [`docs/16-battery-applet.md`](docs/16-battery-applet.md) — the battery status applet for the Taskbar's applet area.
-- [`docs/19-wifi-applet.md`](docs/19-wifi-applet.md) — the Wi-Fi applet for the Taskbar's applet area (a LibGUI frontend to NetworkManager, modeled on KDE Plasma's Networks applet).
-- [`docs/20-xwayland-next-steps.md`](docs/20-xwayland-next-steps.md) — XWayland state and the remaining work toward KWin/Plasma parity (the resume point for the R5 X11 effort).
-- [`docs/21-r5-protocol-parity-plan.md`](docs/21-r5-protocol-parity-plan.md) — the standard-protocol parity plan and the wlroots version policy (pin the release Arch ships; what lands in 0.21).
-- [`docs/22-input-method.md`](docs/22-input-method.md) — text input / IME (`wp_text_input_v3` + `zwp_input_method_v2`): the compositor as relay, and how it is tested.
-- [`docs/23-wayland-protocols.md`](docs/23-wayland-protocols.md) — the complete list of Wayland protocols the SDE compositor advertises and supports.
-- [`docs/24-libgui-wayland-sde-boundary.md`](docs/24-libgui-wayland-sde-boundary.md) — keeping the SDE out of libgui-wayland: what is SDE-specific in the application framework and the work to move it back across the line.
-- [`docs/25-performance.md`](docs/25-performance.md) — the performance & latency budget (N3): what is measured, the reference numbers, how to run it, and what keeps the compositor inside 60 Hz.
-- [`docs/26-ci.md`](docs/26-ci.md) — CI (N6): the test driver, what runs on a push versus nightly, the prebuilt image, and what a runner cannot cover.
+- [`docs/01-objectives.md`](docs/01-objectives.md): vision, goals, non-goals, principles, architecture, success criteria.
+- [`docs/02-compositor-decision.md`](docs/02-compositor-decision.md): options analysis for the compositor and the design decision.
+- [`docs/03-engineering-conventions.md`](docs/03-engineering-conventions.md): binding coding/build conventions (AK/LibCore/LibGfx, SerenityOS-style `serenity_main`, host compat in the SDE).
+- [`docs/04-known-gaps.md`](docs/04-known-gaps.md): running list of known gaps and remaining work, so nothing found during bring-up is forgotten.
+- [`docs/05-r3-plan.md`](docs/05-r3-plan.md): working plan for milestone R3 (Serenity look & behaviours): switcher, snapping, workspaces, applets, notifications, tooltips.
+- [`docs/06-service-layering.md`](docs/06-service-layering.md): which Serenity service belongs in `libgui-wayland` vs. the SDE session; the "prefer the session service, else in-process fallback" rule.
+- [`docs/07-systemserver-roles.md`](docs/07-systemserver-roles.md): every place SDE stands in for a SerenityOS `SystemServer` role, and how each maps to systemd on a real Linux session.
+- [`docs/08-compositor-gaps.md`](docs/08-compositor-gaps.md): what is missing from the plan for `WindowServer` as a general-purpose compositor: session/seat, robustness, ecosystem protocols, portals, input/IME, accessibility, output/render depth, testing.
+- [`docs/09-r3-implementation-plan.md`](docs/09-r3-implementation-plan.md): execution companion to `05`: foundation-first sequencing, the de-risking spikes, feature order, and what to pull forward.
+- [`docs/10-font-parity-decision.md`](docs/10-font-parity-decision.md): the R3 font-parity decision (bitmap Katica, no size-based zoom) and the R4/G5 path to scalable fonts.
+- [`docs/11-r4-implementation-plan.md`](docs/11-r4-implementation-plan.md): the R4 (Session & settings) execution plan, delivered as milestones R4.1–R4.9.
+- [`docs/12-r4.3-portable-session-integration.md`](docs/12-r4.3-portable-session-integration.md): the R4.3 design: logind/systemd optional; portable session env, seat/DRM/VT via `libseat` backends, power provider chain, optional portals.
+- [`docs/13-native-session-and-aur-packaging.md`](docs/13-native-session-and-aur-packaging.md): plan to run SDE natively (DRM/KMS) and package it for Arch/EndeavourOS (AUR) with an SDDM session entry.
+- [`docs/14-r4.4-config.md`](docs/14-r4.4-config.md): the compositor configuration seam: a validated, live-reloading `WindowServer.ini` and `scripts/sde-config`.
+- [`docs/15-xdg-desktop-portal-serenity.md`](docs/15-xdg-desktop-portal-serenity.md): the SDE xdg-desktop-portal backend and its LibGUI dialogs (R5).
+- [`docs/16-battery-applet.md`](docs/16-battery-applet.md): the battery status applet for the Taskbar's applet area.
+- [`docs/19-wifi-applet.md`](docs/19-wifi-applet.md): the Wi-Fi applet for the Taskbar's applet area (a LibGUI frontend to NetworkManager, modeled on KDE Plasma's Networks applet).
+- [`docs/20-xwayland-next-steps.md`](docs/20-xwayland-next-steps.md): XWayland state and the remaining work toward KWin/Plasma parity (the resume point for the R5 X11 effort).
+- [`docs/21-r5-protocol-parity-plan.md`](docs/21-r5-protocol-parity-plan.md): the standard-protocol parity plan and the wlroots version policy (pin the release Arch ships; what lands in 0.21).
+- [`docs/22-input-method.md`](docs/22-input-method.md): text input / IME (`wp_text_input_v3` + `zwp_input_method_v2`): the compositor as relay, and how it is tested.
+- [`docs/23-wayland-protocols.md`](docs/23-wayland-protocols.md): the complete list of Wayland protocols the SDE compositor advertises and supports.
+- [`docs/24-libgui-wayland-sde-boundary.md`](docs/24-libgui-wayland-sde-boundary.md): keeping the SDE out of libgui-wayland: what is SDE-specific in the application framework and the work to move it back across the line.
+- [`docs/25-performance.md`](docs/25-performance.md): the performance & latency budget (N3): what is measured, the reference numbers, how to run it, and what keeps the compositor inside 60 Hz.
+- [`docs/26-ci.md`](docs/26-ci.md): CI (N6): the test driver, what runs on a push versus nightly, the prebuilt image, and what a runner cannot cover.
 
 ## Status
 
 Implementation is underway. This repo contains:
 
-- **`WindowServer/`** — the wlroots-based SDE Wayland compositor: `xdg-shell` and
+- **`WindowServer/`**: the wlroots-based SDE Wayland compositor: `xdg-shell` and
   `layer-shell`, `xdg-decoration` negotiation, focus/stacking, compositor-drawn
   Serenity SSD frames, the compositor-side window menu (minimize / maximize /
   restore / move / roll up / menu bar / always on top / close), fullscreen, and
   the `serenity-window` menu-bar protocol.
-- **`src/LibSerenitySystem/`** — host integration helpers.
-- **`BatteryApplet/`** — the battery status applet for the Taskbar's applet area
+- **`src/LibSerenitySystem/`**: host integration helpers.
+- **`BatteryApplet/`**: the battery status applet for the Taskbar's applet area
   (a LibGUI app modeled on KDE's battery applet; see
   [`docs/16-battery-applet.md`](docs/16-battery-applet.md)).
-- **`WifiApplet/`** — the Wi-Fi applet for the Taskbar's applet area, just left of
+- **`WifiApplet/`**: the Wi-Fi applet for the Taskbar's applet area, just left of
   the battery applet (a LibGUI frontend to NetworkManager, modeled on KDE
   Plasma's Networks applet; see
   [`docs/19-wifi-applet.md`](docs/19-wifi-applet.md)).
-- **`patches/`**, **`scripts/`** — SerenityOS host-build patches and the
+- **`patches/`**, **`scripts/`**: SerenityOS host-build patches and the
   build / run / test scripts.
 
 Today the unmodified SerenityOS **Taskbar** runs as a `layer-shell` panel and
@@ -72,11 +72,11 @@ Milestone progress (see [`docs/01-objectives.md`](docs/01-objectives.md) §11):
 | # | Milestone | Status |
 |---|---|---|
 | **R0** | Design | Done |
-| **R1** | Compositor bring-up | Done — nested, headless (CI-tested) and DRM/libinput session paths |
-| **R2** | Shell v1 | Done — Taskbar, WindowManagerServer, wallpaper, Desktop, file icons, Launch |
-| **R3** | Serenity look & behaviours | Done — window chrome, switcher, snapping, workspaces, applet area, notifications, tooltips; font-parity decision recorded (zoom deferred to R4/G5) |
-| **R4** | Session & settings | **Done** (R4.1–R4.9 landed) — safety net (idle/inhibit/DPMS + `ext-session-lock-v1`), session supervisor/autostart/power/restore, portable session, config + live reload, display/input/appearance/workspaces settings, Terminal/SystemMonitor/Debugger/CrashReporter; see `docs/11-r4-implementation-plan.md`. Deferred: CrashReporter *crash delivery*, real-hardware `seatd`/`builtin` verification. |
-| **R5** | Compatibility & ecosystem | Started — the native-app protocol matrix (incl. pointer-constraints, pointer-gestures, touch, tablet/tablet-pad, data-control, primary selection, xdg-activation/foreign, presentation-time, fractional-scale, content-type, tearing-control, **`xdg-toplevel-icon-v1`, `xdg-system-bell-v1`, `wp_text_input_v3` + `zwp_input_method_v2` (IME)**) and two-way drag-and-drop are in place. **XWayland is a first-class window manager** (Alt-Tab, workspaces, `_NET_WM_ICON`/`WM_CLASS`, override-redirect, `PRIMARY`/`CLIPBOARD` bridge, `_NET_WM_STATE`+transients, `_NET_WORKAREA`) — see `docs/20-xwayland-next-steps.md`. The **portal Phase 2** set (ScreenCast/RemoteDesktop/InputCapture/GlobalShortcuts/DynamicLauncher/FileChooser/Print) and a **real USB broker** are in place. Remaining: **accessibility** (AT-SPI, sticky keys, magnifier, high contrast) and XDND/pointer-warp/background-effect (wlroots-gated — `docs/21-r5-protocol-parity-plan.md`). |
+| **R1** | Compositor bring-up | Done: nested, headless (CI-tested) and DRM/libinput session paths |
+| **R2** | Shell v1 | Done: Taskbar, WindowManagerServer, wallpaper, Desktop, file icons, Launch |
+| **R3** | Serenity look & behaviours | Done: window chrome, switcher, snapping, workspaces, applet area, notifications, tooltips; font-parity decision recorded (zoom deferred to R4/G5) |
+| **R4** | Session & settings | **Done** (R4.1–R4.9 landed): safety net (idle/inhibit/DPMS + `ext-session-lock-v1`), session supervisor/autostart/power/restore, portable session, config + live reload, display/input/appearance/workspaces settings, Terminal/SystemMonitor/Debugger/CrashReporter; see `docs/11-r4-implementation-plan.md`. Deferred: CrashReporter *crash delivery*, real-hardware `seatd`/`builtin` verification. |
+| **R5** | Compatibility & ecosystem | Started: the native-app protocol matrix (incl. pointer-constraints, pointer-gestures, touch, tablet/tablet-pad, data-control, primary selection, xdg-activation/foreign, presentation-time, fractional-scale, content-type, tearing-control, **`xdg-toplevel-icon-v1`, `xdg-system-bell-v1`, `wp_text_input_v3` + `zwp_input_method_v2` (IME)**) and two-way drag-and-drop are in place. **XWayland is a first-class window manager** (Alt-Tab, workspaces, `_NET_WM_ICON`/`WM_CLASS`, override-redirect, `PRIMARY`/`CLIPBOARD` bridge, `_NET_WM_STATE`+transients, `_NET_WORKAREA`); see `docs/20-xwayland-next-steps.md`. The **portal Phase 2** set (ScreenCast/RemoteDesktop/InputCapture/GlobalShortcuts/DynamicLauncher/FileChooser/Print) and a **real USB broker** are in place. Remaining: **accessibility** (AT-SPI, sticky keys, magnifier, high contrast) and XDND/pointer-warp/background-effect (wlroots-gated; see `docs/21-r5-protocol-parity-plan.md`). |
 | **R6** | Hardening & packaging | Not started |
 
 ## Running
@@ -94,7 +94,7 @@ Both `build-libgui.sh` and `build.sh` apply *their* patch set to the shared
 SerenityOS checkout, and the shim (`windowserver`) needs both: header inclusion is
 invisible to the build system, so `build-libgui.sh` names the endpoint generators
 explicitly and builds them before the shim. On a machine where an earlier build
-left those headers behind, the difference never shows — which is why the CI image
+left those headers behind, the difference never shows, which is why the CI image
 (a clean tree every time) is what found it.
 
 Build the compositor (links the `libgui-wayland` userland libraries and the
@@ -116,7 +116,7 @@ build/WindowServer/WindowServer -n sde \
   -s "$BUILD/bin/Taskbar & $BUILD/bin/FileManager -d & $BUILD/bin/TextEditor"
 ```
 
-(`FileManager -d` is the SerenityOS Desktop — icons over the wallpaper.)
+(`FileManager -d` is the SerenityOS Desktop: icons over the wallpaper.)
 
 **The suite.** `scripts/run-all-tests.sh` runs the `scripts/run-*-test.sh` tests by
 tier (all of them are headless): the `fast` tier is what CI gates a push on, and
@@ -126,7 +126,7 @@ while a session is live. See [`docs/26-ci.md`](docs/26-ci.md).
 
 **Headless, single test.** `scripts/run-headless-test.sh` runs the compositor with the
 headless backend and asserts that it hosts a LibWindowServer app, a layer-shell
-panel and a native Wayland app — the R1 exit criterion, with no display needed.
+panel and a native Wayland app (the R1 exit criterion), with no display needed.
 
 **Real hardware (DRM/KMS + libinput).** From a TTY (`Ctrl+Alt+F3`) or a display
 manager session entry:
