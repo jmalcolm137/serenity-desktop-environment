@@ -2700,7 +2700,10 @@ static void x11_set_class(wl_listener* listener, void*)
 {
     X11Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, set_class);
+    auto const previous = ByteString::formatted("{}:{}", toplevel->wm_class, toplevel->wm_instance);
     x11_update_class(*toplevel);
+    if (previous == ByteString::formatted("{}:{}", toplevel->wm_class, toplevel->wm_instance))
+        return;
     // WM_CLASS arrives asynchronously, exactly like the title, and the Taskbar
     // groups X11 windows by it (WindowManager::emit_window_state passes it as the
     // app id). Without re-emitting, the button keeps the empty app id the window
@@ -8098,11 +8101,23 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     // (the session supervisor sets it), so nested/headless runs are unaffected.
     if (auto const* heartbeat = getenv("SDE_HEARTBEAT_FILE"); heartbeat && *heartbeat) {
         ByteString heartbeat_path { heartbeat };
+        // A repeating timer runs on the event loop, so a late callback means the
+        // loop was blocked — which is what the session supervisor's watchdog
+        // restarts the compositor for ("compositor heartbeat stale"). Say so, with
+        // how late and how many frames ago, so the next wedge is diagnosable from
+        // the log rather than inferred from the supervisor's side.
+        static time_t last_beat;
         auto beat = [heartbeat_path] {
+            auto const now = ::time(nullptr);
+            if (last_beat != 0 && now - last_beat > 2) {
+                dbgln("WindowServer: WARNING: event loop stalled for {}s (the session watchdog restarts at 10s)",
+                    static_cast<long>(now - last_beat));
+            }
+            last_beat = now;
             auto file = Core::File::open(heartbeat_path, Core::File::OpenMode::Write);
             if (file.is_error())
                 return;
-            auto text = ByteString::number(static_cast<long>(::time(nullptr)));
+            auto text = ByteString::number(static_cast<long>(now));
             (void)file.value()->write_until_depleted(text.bytes());
         };
         beat();
