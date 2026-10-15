@@ -49,12 +49,20 @@ RUN git clone --depth 1 --branch "$SDE_REVISION" "$SDE_REPO" /opt/sde \
 #     libraries, then every endpoint generator the shim's headers include, then the
 #     shim itself (see that script — header inclusion is invisible to ninja);
 #   * build.sh applies the *SDE's* patches, configures Lagom with SDE_ROOT and
-#     builds its application stack (its default target is Terminal).
+#     builds its application stack (its default target is Terminal);
+#   * ci-build.sh adds the services, applets, tools and test clients the suite
+#     starts.
+#
+# The *applications* (Browser, Terminal, the demos/games/DevTools menus) are
+# deliberately not baked in: they are the heaviest part of the tree, only the
+# nightly `full` job needs them, and that job builds them with `--with-apps` where
+# a failure's whole log is visible — a container build truncates the tail, as the
+# first attempt at this step showed.
 RUN cd /opt/libgui-wayland \
     && scripts/build-libgui.sh --no-tests $(/opt/sde/scripts/lagom-libraries.sh) \
     && cd /opt/sde \
     && scripts/build.sh \
-    && scripts/ci-build.sh --with-apps
+    && scripts/ci-build.sh
 
 LABEL org.opencontainers.image.source="https://github.com/jmalcolm137/serenity-desktop-environment" \
       org.opencontainers.image.description="SDE CI: wlroots, the pinned SerenityOS port and the built desktop"
