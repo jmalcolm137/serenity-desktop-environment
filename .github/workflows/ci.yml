@@ -36,7 +36,7 @@ jobs:
             image: ghcr.io/${{ github.repository_owner }}/sde-ci:latest
         timeout-minutes: 75
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
             - name: What this job is running on
               run: scripts/ci-environment.sh
             - name: Build the SDE, applications included
@@ -49,7 +49,7 @@ jobs:
               run: scripts/run-all-tests.sh --tier fast --timeout 300 --log-dir "$GITHUB_WORKSPACE/ci-logs"
             - name: Upload test logs
               if: failure()
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v7
               with:
                   name: smoke-logs
                   path: ci-logs/
@@ -63,7 +63,7 @@ jobs:
             image: ghcr.io/${{ github.repository_owner }}/sde-ci:latest
         timeout-minutes: 180
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
             - name: What this job is running on
               run: scripts/ci-environment.sh
             - name: Build the SDE, applications included
@@ -72,7 +72,7 @@ jobs:
               run: scripts/run-all-tests.sh --tier full --timeout 600 --log-dir "$GITHUB_WORKSPACE/ci-logs"
             - name: Upload test logs
               if: failure()
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v7
               with:
                   name: full-logs
                   path: ci-logs/
@@ -91,7 +91,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 90
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
             - name: What this job is running on
               run: scripts/ci-environment.sh
             - name: Build the SDE

@@ -52,6 +52,18 @@ done
 # Let the Taskbar map its layer surfaces.
 sleep 4
 
+# A headless seat has no input devices until the virtual pointer is hot-plugged, so
+# the Taskbar binds its wl_pointer only once that capability arrives. Clicking in the
+# same breath races that bind: on a slow runner the press reaches a client with no
+# pointer yet and is dropped, while the release (after the bind) arrives alone. Plug a
+# pointer in over the button first and wait for the Taskbar to see it.
+env WAYLAND_DISPLAY="$SOCK" "$VI" --extent "$WIDTH" "$HEIGHT" \
+    --move 20 $((HEIGHT - 14)) --linger 200 >/dev/null 2>&1
+for _ in $(seq 1 50); do
+    grep -q 'pointer entered window' "$RUNTIME/comp.log" && break
+    sleep 0.1
+done
+
 # 1) Click the Taskbar start button (bottom-left) -> the system menu opens.
 env WAYLAND_DISPLAY="$SOCK" "$VI" --extent "$WIDTH" "$HEIGHT" \
     --move 20 $((HEIGHT - 14)) --button 0x110 press --sleep 80 --button 0x110 release --linger 900 >/dev/null 2>&1

@@ -395,6 +395,12 @@ static void server_new_output(wl_listener* listener, void* data)
             wlr_output_state_set_custom_mode(&state, width, height, refresh_mhz);
         else if (auto* preferred = wlr_output_preferred_mode(wlr_output))
             wlr_output_state_set_mode(&state, preferred);
+        // HiDPI / fractional scale: honour SDE_OUTPUT_SCALE, then [Output] DefaultScale,
+        // then the auto rule. This path runs for every fresh output, and without the
+        // scale here an output with no saved layout comes up at 1x and only reaches the
+        // requested scale on a later config reload -- which is every CI run, since the
+        // state directory is new each time.
+        wlr_output_state_set_scale(&state, resolve_output_scale(wlr_output, wlr_output_preferred_mode(wlr_output), nullptr));
         wlr_output_commit_state(wlr_output, &state);
         wlr_output_state_finish(&state);
     }
