@@ -1,4 +1,4 @@
-# R5 — Text input / IME (`wp_text_input_v3` + `zwp_input_method_v2`)
+# R5: Text input / IME (`wp_text_input_v3` + `zwp_input_method_v2`)
 
 **Status:** done · **Updated:** 2026-10-13
 **Related:** [`04-known-gaps.md`](04-known-gaps.md) (R5) · [`08-compositor-gaps.md`](08-compositor-gaps.md) §4 ·
@@ -32,7 +32,7 @@ sway's `sway/input/text_input.c` (the reference compositor implementation):
   `focus_toplevel` / `focus_x11_toplevel` / `focus_layer_surface` /
   `restore_keyboard_focus` / the session lock). If no input method is connected
   yet the surface is remembered as *pending* and `enter` is sent when one
-  connects — so an input method started after a field is focused still works.
+  connects, so an input method started after a field is focused still works.
 - **Activation.** When the field is enabled (`events.enable`) or commits while
   enabled, the compositor sends the input method `activate` + the field state
   (`surrounding_text` / `text_change_cause` / `content_type`, honouring the
@@ -74,9 +74,9 @@ sway's `sway/input/text_input.c` (the reference compositor implementation):
 `scripts/run-ime-test.sh` (headless, `set -euo pipefail`) builds two Wayland
 clients and drives the whole pipeline:
 
-- `tools/text-input-test.c` — an xdg-shell client with a `wp_text_input_v3`
+- `tools/text-input-test.c`: an xdg-shell client with a `wp_text_input_v3`
   field; prints `enter` / `preedit` / `commit` / `done`.
-- `tools/input-method-test.c` — a `zwp_input_method_v2` client; on activation
+- `tools/input-method-test.c`: a `zwp_input_method_v2` client; on activation
   sends a preedit and a commit, requests the keyboard grab, draws a candidate
   popup, and prints everything it observes.
 
@@ -87,7 +87,7 @@ client), and the compositor survived both clients exiting (grab teardown).
 `scripts/run-protocol-matrix-test.sh` also checks the two globals.
 
 **Manual check (a real input method).** A genuine on-screen/CJK input method is
-worth trying by hand — `maliit-keyboard`/`maliit-server`, `squeekboard`, or
+worth trying by hand: `maliit-keyboard`/`maliit-server`, `squeekboard`, or
 `fcitx5`'s Wayland front end speak `zwp_input_method_v2` (note: `ibus-daemon`
 does **not**; it uses its own D-Bus protocol). Start one inside the session and
 type into any `text-input-v3` client (GTK 4 / Qt 6 apps, the SDE Terminal).
@@ -96,8 +96,8 @@ Not covered by CI, since none of those clients ship on the dev box.
 ## 4. Not done
 
 - **`ext-transient-seat-v1`** for on-screen keyboards that want their own seat /
-  surface routing — the plain `zwp_input_method_v2` path above does not need it.
-- **Text-input-v3 v2 features** (`action`, `language`, `preedit_hint`) — the
+  surface routing; the plain `zwp_input_method_v2` path above does not need it.
+- **Text-input-v3 v2 features** (`action`, `language`, `preedit_hint`); the
   compositor binds v1; the extra events are left to a later pass.
 - Accessibility (AT-SPI) remains out of scope here (see
   [`08-compositor-gaps.md`](08-compositor-gaps.md) §4).

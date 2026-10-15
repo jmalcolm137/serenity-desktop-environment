@@ -1,4 +1,4 @@
-# Serenity Desktop Environment — Compositor Gaps
+# Serenity Desktop Environment: Compositor Gaps
 
 **Status:** Living document · **Date:** 2026-10-10
 **Related:** [`01-objectives.md`](01-objectives.md) · [`02-compositor-decision.md`](02-compositor-decision.md) · [`03-engineering-conventions.md`](03-engineering-conventions.md) · [`04-known-gaps.md`](04-known-gaps.md) · [`05-r3-plan.md`](05-r3-plan.md)
@@ -7,7 +7,7 @@
 This document is the complement: what is missing from the **plan for
 `WindowServer` as a general-purpose Wayland compositor**. The project is
 Serenity-first but commits to running native Wayland apps well (`01-objectives.md`
-G7), so these gaps are not optional polish — they decide whether the result is
+G7), so these gaps are not optional polish; they decide whether the result is
 trustworthy enough to daily-drive.
 
 Entries are grouped by theme and tagged with the goal (`G`) and the milestone
@@ -28,7 +28,7 @@ until proven otherwise.
 R4 says "lock/power" but owns no mechanism. These belong with the session work,
 not R5/R6.
 
-- **logind/`libseat` contract (G6) — mostly resolved.** VT switching, DRM master
+- **logind/`libseat` contract (G6): mostly resolved.** VT switching, DRM master
   handover and device access stay with `libseat`/`wlr_backend_autocreate` (by
   design), but SDE now owns the seat *identity* and the failure story: the
   session derives/exports `XDG_SEAT`/`XDG_VTNR`, namespaces its runtime per seat
@@ -42,7 +42,7 @@ not R5/R6.
 - **System-session integration (G6).** No description of the standard session
   environment (`XDG_SESSION_TYPE=wayland`, `WAYLAND_DISPLAY` propagation,
   `dbus-update-activation-environment` where a bus exists) that apps and portals
-  rely on. Resolved as **portable** — logind/systemd optional, no
+  rely on. Resolved as **portable**: logind/systemd optional, no
   `graphical-session.target` dependency
   ([`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md)).
 
@@ -51,7 +51,7 @@ not R5/R6.
 - **Crash recovery / watchdog (N4).** A compositor crash kills every client and
   loses the session. No plan for a supervisor, restart, session restore, or
   preserving window/app state across a restart.
-- **Safe mode / renderer fallback (N2, N5) — done.** `[Output] Renderer`
+- **Safe mode / renderer fallback (N2, N5): done.** `[Output] Renderer`
   (`auto`/`gles2`/`vulkan`/`pixman`; the `SDE_RENDERER` environment variable
   overrides it) selects the wlroots renderer, and if the GPU path fails the
   compositor falls back to the software (pixman) renderer instead of ending the
@@ -67,8 +67,8 @@ not R5/R6.
   missing.
 - **Compositor configuration system (G1, G3).** No schema for keybindings, focus
   policy, tile/snap behaviour, workspace grid, animations, or output defaults,
-  and no live reload. SerenityOS reads `WindowServer.ini`; SDE has no equivalent
-  — and the R3 workspaces/snapping/keybinding work needs one. The settings
+  and no live reload. SerenityOS reads `WindowServer.ini`; SDE has no equivalent,
+  and the R3 workspaces/snapping/keybinding work needs one. The settings
   "backend seam" only covers write-paths to appearance/display, not the
   compositor's own policy.
 
@@ -82,8 +82,8 @@ protocols, nothing today tests them per-compositor except the community support
 table.
 
 - **No compatibility target or conformance suite (G7, N8).** Add "N reference
-  clients run correctly" as an exit criterion — `weston-simple-*`, a GTK and a Qt
-  app, SDL/games, Firefox — exercised in CI.
+  clients run correctly" as an exit criterion (`weston-simple-*`, a GTK and a Qt
+  app, SDL/games, Firefox), exercised in CI.
 - **Focus/attention (G3, G7).** `xdg-activation-v1` (raise/attention tokens) is
   served; launching from the Taskbar uses it.
 - **Sandbox & portal interop (G7).** `xdg-foreign` v1/v2 (toplevel import, used by
@@ -91,7 +91,7 @@ table.
   (needs a wlroots bump) and `xdg-system-bell` remain.
 - **Clipboard completeness (G4).** `set_selection`, **primary selection**
   (`zwp_primary_selection_device_manager_v1`) and both **data-control** variants
-  (`zwlr_data_control_manager_v1`, `ext_data_control_manager_v1` — for clipboard
+  (`zwlr_data_control_manager_v1`, `ext_data_control_manager_v1`, for clipboard
   managers such as the ClipboardHistory applet) are served. **Explicit
   drag-and-drop** (data-device DnD between windows) is served too: the compositor
   accepts a client's drag, draws its icon above every layer, and routes
@@ -110,14 +110,14 @@ table.
   injects them through an SDE test-only protocol (`serenity-virtual-input`,
   `scripts/run-virtual-touch-test.sh`), which also drives the touch-drag path
   (the drag icon follows the touch point).
-- **Presentation & scaling (N3, N5) — largely done.** `wp-viewporter`,
+- **Presentation & scaling (N3, N5): largely done.** `wp-viewporter`,
   `content-type-v1`, `tearing-control`, `wp-single-pixel-buffer`,
   `wp-alpha-modifier`, **`presentation-time`** (`wp_presentation v2`; the
   compositor feeds wlroots' presentation object from `output_frame`) and
   **`wp-fractional-scale-v1`** are served. The output scale may be fractional
   (`[Output] DefaultScale`, applied live), the compositor renders its chrome at an
   integer supersample, and the client backing store rasters at the output scale
-  (host M8 resolved) — see [`13`](13-native-session-and-aur-packaging.md) Appendix
+  (host M8 resolved); see [`13`](13-native-session-and-aur-packaging.md) Appendix
   A. Still missing: `commit-timing`/`fifo` (needs a wlroots bump) and dmabuf
   feedback/explicit sync (`wp-linux-drm-syncobj`).
 - **Portals (G7).** No `xdg-desktop-portal` strategy. The project's *Serenity*
@@ -131,7 +131,7 @@ table.
   `color-scheme`. The SDE backend is now implemented
   ([`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md)); its
   TTY-only work (DMA-BUF capture, metadata cursor, InputCapture, Device/Camera)
-  is enumerated in that doc's §6 — zero-copy DMA-BUF and the metadata cursor are
+  is enumerated in that doc's §6: zero-copy DMA-BUF and the metadata cursor are
   landed and verified on a live TTY; InputCapture is landed (compositor-hosted
   EIS + the D-Bus backend, [`17-input-capture.md`](17-input-capture.md)); Device
   was superseded by USB and Camera works via the frontend.
@@ -141,7 +141,7 @@ table.
 
 ## 4. Input & accessibility (R4, R5)
 
-- **Text input / IME (G5) — done (R5).** `text-input-v3` (clients) and
+- **Text input / IME (G5): done (R5).** `text-input-v3` (clients) and
   `input-method-v2` (input methods) are served: the compositor relays the focused
   field's state to the input method and applies its preedit/commit back, routes
   the keyboard to the input method's grab, and renders candidate popups. See
@@ -149,7 +149,7 @@ table.
   unblocks CJK input and on-screen keyboards (a real input method client is a
   manual check).
 - **Virtual input (N8, G5).** `wlr-virtual-keyboard`/`wlr-virtual-pointer` are
-  listed in the protocol appendix but owned by no milestone — yet the R3 scripted
+  listed in the protocol appendix but owned by no milestone, yet the R3 scripted
   tests depend on them, and they underpin an on-screen keyboard.
 - **Touch & pen (G7).** No touch or `wlr-tablet` support.
 - **Keyboard management (G5).** `set_keymap` is a stub; multiple layouts,
@@ -172,14 +172,14 @@ table.
   profiles.
 - **Capture & leasing (G3).** Only the R3 switcher needs capture; there is no
   general screencopy/`ext-image-copy-capture` or `wp-drm-lease` (VR) plan.
-- **Performance budget & instrumentation (N3) — done.** The compositor meters
+- **Performance budget & instrumentation (N3): done.** The compositor meters
   its own frame time and the input → present interval; the budget, the method and
   the reference numbers are in [`25-performance.md`](25-performance.md), and
   `scripts/run-perf-test.sh` enforces it headless on the software renderer
   (including "no frames while idle").
-- **Multi-output / hotplug (N5) — coarse.** The compositor handles several
+- **Multi-output / hotplug (N5): coarse.** The compositor handles several
   outputs and a saved layout, but per-output mode/scale and hotplug behaviour is
-  basic. **HiDPI** itself is done — fractional output scale, the client backing
+  basic. **HiDPI** itself is done: fractional output scale, the client backing
   store and host M8 all landed (see the scaling section above and
   [`13-native-session-and-aur-packaging.md`](13-native-session-and-aur-packaging.md)).
 
@@ -228,7 +228,7 @@ table.
 | Architecture docs, observability | **R6** | |
 | Testing & CI breadth | **R6** | satisfies N8 |
 
-R5 and R6 exist because the original single "R5 — Hardening & packaging"
+R5 and R6 exist because the original single "R5: Hardening & packaging"
 milestone bundled two independent bodies of work (ecosystem compatibility and
 hardening/packaging) that would otherwise compete for the same effort and let
 the compatibility work stall. See [`01-objectives.md`](01-objectives.md) §11.

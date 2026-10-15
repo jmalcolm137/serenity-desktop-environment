@@ -1,15 +1,15 @@
-# Serenity Desktop Environment — R3 Plan (Serenity look & behaviours)
+# Serenity Desktop Environment: R3 Plan (Serenity look & behaviours)
 
 **Status:** Draft v0.1 · **Date:** 2026-10-10
 **Related:** [`01-objectives.md`](01-objectives.md) · [`02-compositor-decision.md`](02-compositor-decision.md) · [`03-engineering-conventions.md`](03-engineering-conventions.md) · [`04-known-gaps.md`](04-known-gaps.md)
 
-This document is the working plan for milestone **R3 — Serenity look &
+This document is the working plan for milestone **R3: Serenity look &
 behaviours** (`01-objectives.md` §11). It turns the R3 entries in
 `04-known-gaps.md` into an ordered set of work items with mechanisms, the
 SerenityOS reference code they mirror, and an exit/test for each.
 
-For *sequencing* — the foundation-first order, the de-risking spikes, and what to
-pull forward — see the companion [`09-r3-implementation-plan.md`](09-r3-implementation-plan.md).
+For *sequencing* (the foundation-first order, the de-risking spikes, and what to
+pull forward), see the companion [`09-r3-implementation-plan.md`](09-r3-implementation-plan.md).
 This document owns **scope**; that one owns **the critical path**.
 
 ---
@@ -81,7 +81,7 @@ four policy areas that SerenityOS keeps as separate classes. Before adding them:
 
 ## 4. Work items
 
-### WS1 — Workspaces (before the switcher)
+### WS1: Workspaces (before the switcher)
 
 Serenity models workspaces as a **grid of window stacks** (`WindowManager`:
 default 2×2, max 16×16, from `[Workspaces]` in `WindowServer.ini`); each window
@@ -90,7 +90,7 @@ belongs to a stack, and only the current stack is visible.
 - Add the stack grid to the compositor: `rows`/`columns` from
   `WindowServer.ini [Workspaces]`, per-`Toplevel` `(row, column)` (default to the
   current stack), current stack. Scene visibility = only the current stack's
-  nodes enabled — the same mechanism `show_desktop` already uses
+  nodes enabled, the same mechanism `show_desktop` already uses
   (`main.cpp:2370`).
 - Keybindings (Serenity `WindowManager.cpp:1753`): **Ctrl+Alt+arrows** switch
   stacks; **Ctrl+Alt+Shift+arrows** carry the focused window; briefly show
@@ -109,7 +109,7 @@ belongs to a stack, and only the current stack is visible.
 grid, keybindings), `WindowStackSwitchOverlay` in `Overlays.h`,
 `WindowManagerServer.ipc` / `WindowManagerClient.ipc`.
 
-### WS2 — Snapping (tiling) + overlays
+### WS2: Snapping (tiling) + overlays
 
 Serenity's `WindowTileType` has Left/Right/Top/Bottom and corners
 (`Window.h:45`); **Super+↑** maximizes, **Super+↓** minimizes, **Super+←/→**
@@ -137,9 +137,9 @@ handling), `WindowServer/Overlays.{h,cpp}` (`TileWindowOverlay`,
 > release), the resize path from `update_resize_hud()`, and `start_window_resize`
 > routes through `toplevel_begin_interactive`.
 
-### WS3 — Window switcher with live thumbnails
+### WS3: Window switcher with live thumbnails
 
-Compositor-side by decision — Serenity's `WindowSwitcher` is `WindowServer`
+Compositor-side by decision: Serenity's `WindowSwitcher` is `WindowServer`
 code (`02-compositor-decision.md` §7 and open question §12.7).
 
 - Trigger: **Alt+Tab** = current workspace, **Super+Tab** = all workspaces,
@@ -158,7 +158,7 @@ code (`02-compositor-decision.md` §7 and open question §12.7).
 **Reference:** `Userland/Services/WindowServer/WindowSwitcher.{h,cpp}`,
 `WindowManager::set_highlight_window`.
 
-### WS4 — Applet area / system tray parity
+### WS4: Applet area / system tray parity
 
 Serenity's `AppletManager` lays applets right-to-left in an applet area, sizes
 it, and warns the Taskbar via `applet_area_size_changed`; the Taskbar replies
@@ -179,7 +179,7 @@ with `set_applet_area_position` (`Taskbar/TaskbarWindow.cpp:208`,
 `Base/etc/WindowServer.ini` (`[Applet] Order`, `[Workspaces]`),
 `Userland/Services/Taskbar/TaskbarWindow.cpp`.
 
-### WS5 — Notifications
+### WS5: Notifications
 
 `NotificationServer` was a stub; it is now the **unmodified** SerenityOS service,
 reused (see below). The protocol is
@@ -189,7 +189,7 @@ reused (see below). The protocol is
 
 - **Preferred (maximum parity):** run the **unmodified SerenityOS
   `NotificationServer`** as a session client served on the portal bus, and give
-  the compositor `WindowType::Notification` semantics — undecorated banner,
+  the compositor `WindowType::Notification` semantics: undecorated banner,
   top-right, above normal windows, excluded from the window list and switcher,
   click launches the URL, auto-dismiss.
 - **Fallback:** a thin SDE `NotificationServer` shim plus a small banner client,
@@ -214,7 +214,7 @@ is a parity gap recorded in `04-known-gaps.md`.
 **Reference:** `Userland/Services/NotificationServer/`,
 `Userland/Libraries/LibGUI/Notification.cpp`.
 
-### WS6 — Tooltips
+### WS6: Tooltips
 
 `GUI::Application::show_tooltip()` was a no-op in the port
 (`04-known-gaps.md`), so the Taskbar quick-launch, clock, window-title buttons
@@ -223,7 +223,7 @@ and applets showed no hover text.
 - **Host (libgui-wayland):** wire `show_tooltip` to a `WindowType::Tooltip`
   surface, using the timing `Application` already implements
   (`LibGUI/Application.cpp:157`).
-- **Compositor:** give `WindowType::Tooltip` semantics — undecorated, always on
+- **Compositor:** give `WindowType::Tooltip` semantics: undecorated, always on
   top, non-focusable, positioned near the cursor/requested point, excluded from
   the window list and switcher; follow the cursor while visible.
 - Note: **window-title button tooltips are compositor chrome**, so the
@@ -248,10 +248,10 @@ window-title-button tooltips are not drawn yet.
 **Reference:** `Userland/Libraries/LibGUI/Application.cpp`
 (`show_tooltip`/`TooltipWindow`).
 
-### WS7 — Font parity / size-based zoom (decision only)
+### WS7: Font parity / size-based zoom (decision only)
 
 Fixed to bitmap Katica; `set_font_size` resolves to nothing, so zoom is a no-op
-(matches upstream — `02-compositor-decision.md` §11). The real fix needs a
+(matches upstream; see `02-compositor-decision.md` §11). The real fix needs a
 scalable face (`SerenitySans-Regular.ttf`) and a font selector, which is
 **R4/G5**, not R3. For R3: **confirm and document the parity decision**; do not
 block the milestone on it.
@@ -264,15 +264,15 @@ the SDE's `libwm-font-parity-test` (`scripts/run-font-parity-test.sh`).
 
 ## 5. Sequencing
 
-1. **Foundation** — module split + overlay/thumbnail/snapshot infrastructure.
-2. **WS1 workspaces** — unblocks switcher "all windows", WorkspacePicker, and
+1. **Foundation**: module split + overlay/thumbnail/snapshot infrastructure.
+2. **WS1 workspaces**: unblocks switcher "all windows", WorkspacePicker, and
    the Super-key WMS events.
-3. **WS2 snapping + overlays** — shares the overlay infrastructure.
-4. **WS3 switcher + thumbnails** — shares both.
-5. **WS4 applet area** — independent; needs the placement-channel decision.
-6. **WS5 notifications** — independent; feasibility spike first.
-7. **WS6 tooltips** — cross-repo; independent.
-8. **WS7** — decision only.
+3. **WS2 snapping + overlays**: shares the overlay infrastructure.
+4. **WS3 switcher + thumbnails**: shares both.
+5. **WS4 applet area**: independent; needs the placement-channel decision.
+6. **WS5 notifications**: independent; feasibility spike first.
+7. **WS6 tooltips**: cross-repo; independent.
+8. **WS7**: decision only.
 
 ## 6. Test strategy
 

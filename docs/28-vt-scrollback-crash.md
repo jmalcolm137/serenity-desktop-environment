@@ -1,6 +1,6 @@
 # The Terminal scrollback-ring crash
 
-Status: fixed — `libgui-wayland` patch `0064-libvt-history-ring-index.patch`, guarded
+Status: fixed: `libgui-wayland` patch `0064-libvt-history-ring-index.patch`, guarded
 by `scripts/run-vt-history-test.sh` (test/VtHistoryTest.cpp).
 
 ## The crash
@@ -33,8 +33,8 @@ m_history_start = (m_history_start + 1) % m_history.size();
 Two other paths, however, mutate `m_history` as an *ordered list* and never touch
 `m_history_start`:
 
-* `Terminal::clear_to_mark()` — **Clear to previous mark** — `m_history.remove(...)`,
-* `Terminal::set_size()` — the rewrap on resize — `extend` / `take_last` / `prepend`.
+* `Terminal::clear_to_mark()` (**Clear to previous mark**): `m_history.remove(...)`,
+* `Terminal::set_size()` (the rewrap on resize): `extend` / `take_last` / `prepend`.
 
 Once the ring has wrapped (`m_history_start != 0`), either can leave fewer lines
 than the index. The next `add_line_to_history()` then computes `m_history_start - 1`,
@@ -45,7 +45,7 @@ after the ring has overwritten the line it was on (`m_valid_marks` is only prune
 `clear_to_mark`, `mark_cursor` and clearing). So `clear_to_previous_mark` can hand
 `clear_to_mark` a mark that is in neither the active buffer nor the history;
 `clear_to_mark` then drops the *whole* history while `m_history_start` stays put, and
-the **next** newline — plain output in a shell — is the crash. That is the shape of a
+the **next** newline, plain output in a shell, is the crash. That is the shape of a
 crash a user hits while working: use the terminal until the scrollback has wrapped,
 clear to a mark, and the next line of output traps.
 
@@ -54,8 +54,8 @@ mark search and the resize rewrap were already wrong. The crash is the loud symp
 
 ## The fix
 
-`normalize_history()` linearises the ring — rotating `m_history` so the oldest line is
-first and `m_history_start` becomes 0 — and is called wherever the ring is about to be
+`normalize_history()` linearises the ring, rotating `m_history` so the oldest line is
+first and `m_history_start` becomes 0, and is called wherever the ring is about to be
 used as a list: at the top of `clear_to_mark()`, and before the rewrap in `set_size()`.
 `add_line_to_history()` also clamps a stale index, so the insert cannot go out of bounds
 even if a third path is missed.

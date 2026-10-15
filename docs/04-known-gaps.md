@@ -1,4 +1,4 @@
-# Serenity Desktop Environment — Known Gaps & Remaining Work
+# Serenity Desktop Environment: Known Gaps & Remaining Work
 
 **Status:** Living document · **Date:** 2026-10-15
 **Related:** [`01-objectives.md`](01-objectives.md) · [`02-compositor-decision.md`](02-compositor-decision.md) · [`03-engineering-conventions.md`](03-engineering-conventions.md) · [`05-r3-plan.md`](05-r3-plan.md) · [`07-systemserver-roles.md`](07-systemserver-roles.md) · [`08-compositor-gaps.md`](08-compositor-gaps.md)
@@ -11,7 +11,7 @@ ones as they are found.
 Legend: **R?** = milestone; **(host)** = a gap in the `libgui-wayland` port
 rather than in this repository.
 
-## R2 — Shell v1 (complete)
+## R2: Shell v1 (complete)
 
 Done: Taskbar (system menu, quick-launch, window list, clock), WindowManagerServer
 (served by the compositor), wallpaper/desktop background, Desktop
@@ -24,38 +24,38 @@ Done: Taskbar (system menu, quick-launch, window list, clock), WindowManagerServ
   alternate. There is no `.af` `AppFile` database, so an app-declared handler set
   (and any real "Open with" chooser beyond the editor) is not available.
 
-## R2 follow-up — shell v1 loose ends
+## R2 follow-up: shell v1 loose ends
 
 R2 is complete. The `WindowManagerServer` requests the unmodified Taskbar still
 calls are now either handled or explicitly reassigned:
 
-- **Window-list context menu (G1 / W2) — done.** Right-clicking a Taskbar
+- **Window-list context menu (G1 / W2): done.** Right-clicking a Taskbar
   window-list button calls `popup_window_menu(client_id, window_id, position)`
   (`Userland/Services/Taskbar/TaskbarButton.cpp`). It now opens the compositor's
   window menu for the requested window at the requested position; the menu layout
   clamps it on-screen, so it appears above the Taskbar.
-- **Taskbar button geometry for minimize/restore (G1 / W2) — done.** The Taskbar
+- **Taskbar button geometry for minimize/restore (G1 / W2): done.** The Taskbar
   reports each window button's rect (`set_window_taskbar_rect`); the compositor
   stores it and animates the minimize/restore outline between the window and that
   button (SerenityOS `Window::start_minimize_animation`). See "Window animations"
   in the R4 "Recently resolved" list.
-- **`start_window_resize` (G3 / W1)** — folded into R3 (snapping/resize; see
+- **`start_window_resize` (G3 / W1)**: folded into R3 (snapping/resize; see
   [`05-r3-plan.md`](05-r3-plan.md) §4 WS2).
-- **`set_keymap` (G5 / W4)** — belongs with the R3/R4 keymap-switching work, not R2.
+- **`set_keymap` (G5 / W4)**: belongs with the R3/R4 keymap-switching work, not R2.
 
 The stale, unreachable "right-clicking the titlebar opens the window menu (not
 implemented yet)" branch in `WindowServer/src/main.cpp` has been removed (right
 click was already handled and returned earlier).
 
-- **Taskbar teardown crash — closed, not reproducible.** A SIGSEGV on Taskbar
+- **Taskbar teardown crash: closed, not reproducible.** A SIGSEGV on Taskbar
   teardown was suspected. It could not be reproduced across compositor loss
-  (`WaylandClient` now quits cleanly — libgui-wayland `90af711`), `SIGKILL` of the
+  (`WaylandClient` now quits cleanly; libgui-wayland `90af711`), `SIGKILL` of the
   Taskbar, or closing a listed window (stress-tested; all clean). Reopen with a
   reproduction if it is seen again.
 
-## R3 — Serenity look & behaviours (done)
+## R3: Serenity look & behaviours (done)
 
-- **Window switcher with live thumbnails** — done (WS3). Alt+Tab (current
+- **Window switcher with live thumbnails**: done (WS3). Alt+Tab (current
   workspace) / Super+Tab (all workspaces), Shift reverses, activate on modifier
   release; a Serenity-style list of live thumbnails, title and geometry drawn
   through a `ChromeNode` overlay, most-recently-focused first, refreshed on
@@ -71,7 +71,7 @@ click was already handled and returned earlier).
   Taskbar over the WindowManagerServer as `window_icon_bitmap_changed`); clients
   that do not send one show none. The `libgui-wayland` port sends it from
   `GUI::Window::set_icon` via the WindowServer `set_window_icon_bitmap` API.
-- **Snapping** — done (WS2). `WindowTileType` + Super+arrows
+- **Snapping**: done (WS2). `WindowTileType` + Super+arrows
   (maximize/minimize/tile, Super+Alt horizontal/vertical maximize), drag-to-edge
   snapping with a LibGfx tile preview, `xdg_toplevel` tiled/maximized state, a
   geometry HUD (a `ChromeNode` size readout shown while moving/resizing), and
@@ -79,13 +79,13 @@ click was already handled and returned earlier).
   when the pointer is close to the edge (`[Tiling] EdgeThreshold`, default 16px)
   and is disabled entirely by `[Tiling] DragToEdge=false`; covered by
   `scripts/run-edge-snap-test.sh`.
-- **Workspaces** — done (WS1). The stack grid comes from `[Workspaces]` in
+- **Workspaces**: done (WS1). The stack grid comes from `[Workspaces]` in
   `WindowServer.ini`; `set_workspace`/`workspace_changed` and the real `(row,
   column)` in `window_state_changed` drive the Taskbar; Ctrl+Alt+arrows switch
   (Shift carries the focused window); the Super-key WMS events are emitted; and
   the grid size reaches clients in `fast_greet`, so the unmodified
   WorkspacePicker applet renders and switches.
-- **Notifications** — done (WS5). The notify portal spawns the **unmodified
+- **Notifications**: done (WS5). The notify portal spawns the **unmodified
   SerenityOS `NotificationServer`** (an `IPC::MultiServer`, like `SQLServer`), and
   the shim maps `WindowType::Notification` to an undecorated **overlay** layer
   surface (`serenity-notification`) at the client's requested position. A
@@ -93,12 +93,12 @@ click was already handled and returned earlier).
   because it is a layer surface rather than a toplevel it is absent from the
   window list and the switcher. The client path is `LibGUI::Notification`;
   `show()` makes a **synchronous** IPC call, so it needs a running
-  `Core::EventLoop` (a `GUI::Application`) — every real client (the `notify`
+  `Core::EventLoop` (a `GUI::Application`); every real client (the `notify`
   utility, the Network applet) already provides one. Clicking the banner calls
   `Desktop::Launcher::open` through the launch portal, and hovering expands it;
   this snapshot of the server has no auto-dismiss timer (it closes on click or
   `close_notification`). Covered by `scripts/run-notification-test.sh`.
-- **Tooltips** — done (WS6). `GUI::Application::show_tooltip()` was inert because
+- **Tooltips**: done (WS6). `GUI::Application::show_tooltip()` was inert because
   the port's `fast_greet` advertised every system effect as disabled; tooltips are
   now enabled, so the Taskbar quick-launch/clock, widgets and applets show hover
   text. A tooltip is a `WindowType::Tooltip` window the client positions near the
@@ -113,35 +113,35 @@ click was already handled and returned earlier).
     is no longer stale when the applet area moves it. Window-title button
     tooltips are **not** a gap: SerenityOS's `WindowFrame` sets no button
     tooltips either.
-- **Applet area / system tray parity** — done (WS4). The compositor lays applets
+- **Applet area / system tray parity**: done (WS4). The compositor lays applets
   out (AppletManager) right-to-left by `[Applet] Order`, emits
   `applet_area_size_changed` and consumes `set_applet_area_position`, with the
   Taskbar sizing and positioning the area. Applets are identified by the
   `serenity-applet:<name>` layer namespace.
-- **Layer-surface configure storm** — fixed. `layer_surface_commit` now
+- **Layer-surface configure storm**: fixed. `layer_surface_commit` now
   re-arranges only when the committed state changes the layout (desired size,
   committed size, anchor, margins, exclusive zone, layer), so a content-only
   commit no longer re-configures every layer surface. (Previously
   `arrange_layers` ran on every commit, spinning any client that commits in
   response to a configure.) The committed size is tracked so an applet that
   sizes itself after `show()` (the Audio applet) is re-laid out; see docs/18.
-- **Font parity (WS7)** — decided: fixed to the bitmap Katica family, so
+- **Font parity (WS7)**: decided: fixed to the bitmap Katica family, so
   size-based zoom is a no-op. This matches upstream SerenityOS (also Katica) and
   does not block R3; the evidence and the R4/G5 path are in
   [`10-font-parity-decision.md`](10-font-parity-decision.md), with the guard test
   `scripts/run-font-parity-test.sh`.
-- **Theme switching (Taskbar ▸ Themes)** — works: the list is read under the resource
+- **Theme switching (Taskbar ▸ Themes)**: works: the list is read under the resource
   root, the theme is loaded/recoloured in-process, and a shared broker file
   (`$XDG_RUNTIME_DIR/sde-theme`) is watched by every client and the compositor so
   a switch restyles all running apps and the window chrome. As in SerenityOS
   (`keep_desktop_background=false` clears `Background/Color`), a theme switch
-  changes the desktop **colour** but does not replace a wallpaper **image** — a
+  changes the desktop **colour** but does not replace a wallpaper **image**; a
   set wallpaper stays and covers the colour. This is intentional parity, not a
   bug.
 
 ### SerenityOS window-manager behaviours
 
-The window chrome and the interactions are done — titlebar buttons, the window
+The window chrome and the interactions are done: titlebar buttons, the window
 menu (minimize / maximize / restore / move / roll-up / menu bar / always on top /
 close), the icon-click menu, double-click-titlebar maximize, move and resize by
 the frame, **`Super`+left-drag to move / `Super`+right-drag to resize from
@@ -156,7 +156,7 @@ the behaviours from SerenityOS's
 `Userland/Services/WindowServer/{WindowManager,Window,Compositor}.cpp` that SDE
 still does **not** reproduce in full.
 
-- **Modal and transient (parent/child) windows** — **done.** The client's
+- **Modal and transient (parent/child) windows**: **done.** The client's
   SerenityOS `WindowMode` reaches the compositor over `serenity-window`
   (`serenity_toplevel.set_window_mode`), and its `xdg_toplevel.parent` marks the
   transient parent. A **blocking** modal preempts its modal chain: input behind
@@ -164,8 +164,8 @@ still does **not** reproduce in full.
   it), the modal cannot be minimized, and a transient stays above its parent
   (SerenityOS `Window::blocking_modal_window()`). The blocked state is reported
   to the Taskbar. Covered by `scripts/run-modal-test.sh`.
-  (Not yet: cross-client modal chains — an X11 modal blocking an xdg window and
-  vice versa — and SerenityOS's explicit "lower the blockers" pass.)
+  (Not yet: cross-client modal chains (an X11 modal blocking an xdg window and
+  vice versa) and SerenityOS's explicit "lower the blockers" pass.)
 - **Automatic cursor tracking windows.** SerenityOS's
   `set_automatic_cursor_tracking_window` keeps delivering pointer events to the
   window that received a press until every button is released (and lets several
@@ -179,7 +179,7 @@ Not gaps, for the record: SDE's drag-to-edge snapping is an *addition* over stoc
 SerenityOS (which tiles only through `Super`+arrows), and the minimal
 `serenity-window` chrome is a deliberate P8 choice, not a missing behaviour.
 
-## R4 — Session & settings (substantially done)
+## R4: Session & settings (substantially done)
 
 R4 is broken into milestones **R4.1–R4.9** with sequencing, de-risking spikes and
 exit tests in [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md).
@@ -190,22 +190,22 @@ keymap/IME, input-device config) are catalogued in
 **Session integration is portable (R4.3).** logind and systemd are **optional,
 runtime-detected, never required**: the session sets the standard environment,
 uses `libseat` (`seatd`/`builtin`) for seat/DRM/VT, routes power through a
-provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
+provider chain, and degrades gracefully with no `xdg-desktop-portal`; see
 [`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md).
 
-- **Session safety net (R4.1)** — compositor side landed: `WindowServer` now
+- **Session safety net (R4.1)**: compositor side landed: `WindowServer` now
   serves `ext-idle-notify-v1`, `zwp_idle_inhibit_v1`, `wlr-output-power-management`
   (DPMS) and `ext-session-lock-v1` (per-output lock surfaces, `locked` once every
   output is covered, input routed to the lock surface on the output under the
   cursor; `Super+L` locks). It is a **standard** `ext-session-lock-v1` server, so
-  any conformant locker works — the session uses **swaylock** for now via
+  any conformant locker works; the session uses **swaylock** for now via
   `SDE_LOCK_CMD`. Verified by `scripts/run-idle-test.sh` and
   `scripts/run-lock-test.sh` (including a two-output lock). **Future deliverable:**
   a native SDE lock client (still a plain `ext-session-lock-v1` client, portable to
   other compositors); see [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md)
   §9. Remaining: dim/blank before lock, and re-configuring lock surfaces on output
   resize/scale.
-- **Session lifecycle & supervisor (R4.2)** — started: `scripts/sde-session.sh`
+- **Session lifecycle & supervisor (R4.2)**: started: `scripts/sde-session.sh`
   runs XDG Autostart entries, sets the session environment, restarts the
   compositor on a fault (bounded), and arms **idle-to-lock** via the portable
   `sde-idle` daemon (`ext-idle-notify-v1`); `scripts/sde-power.sh` routes
@@ -218,22 +218,22 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
   **Session restore** (`xdg-session-management-v1`, R4.2) landed: the compositor
   serves the standard protocol and persists per-session toplevel geometry under
   `$SDE_STATE_DIR/sessions`, so an app that opts in restores its toplevels across
-  a compositor restart — verified by `scripts/run-session-management-test.sh`
+  a compositor restart, verified by `scripts/run-session-management-test.sh`
   (which restarts the compositor). **Full session restore now completes**: the
   compositor records the applications that have a mapped window
   (`$SDE_STATE_DIR/session-apps`, rewritten as windows come and go), and the
-  supervisor relaunches them once the compositor socket is up — on a restart, and
+  supervisor relaunches them once the compositor socket is up: on a restart, and
   on the next login. Apps that opted into `xdg-session-management-v1` then restore
   their toplevels' geometry; an app the user closed is not restored, one that is
   no longer installed is skipped, and the apps the session's own startup command
   launches are not duplicated. The supervisor still (re)launches XDG Autostart
   entries the same way; supervising long-running apps beyond that is not done.
 
-- **Session lifecycle (G6 / W5) — resolved (R4.1–R4.9).** Greet/login stays the
+- **Session lifecycle (G6 / W5): resolved (R4.1–R4.9).** Greet/login stays the
   display manager's; the session now starts, autostarts, locks, idles, saves/
   restores toplevels (`xdg-session-management-v1`) and powers off/reboots, with
   logind optional. See [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md).
-- **Settings & appearance (G5 / W6) — resolved (R4.4–R4.7).** Display (mode/scale/
+- **Settings & appearance (G5 / W6): resolved (R4.4–R4.7).** Display (mode/scale/
   arrangement), input (libinput/keymaps), appearance/effects and cursor settings
   backends are in, driven by a live-reloadable config and exposed via the Settings
   portal; the session **font broker** now supports a scalable default, so
@@ -246,7 +246,7 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
   resource-root resolution in `stat`/`opendir` (LibCore), the wallpaper
   directory, and a single-output `get_screen_layout()`. Note: apps must be
   launched into the session with `WAYLAND_DISPLAY=sde`, not the host's display,
-  or their windows map on the host compositor — `scripts/run-sde-app.sh` wraps
+  or their windows map on the host compositor; `scripts/run-sde-app.sh` wraps
   that. The Themes tab works (same path as the Taskbar).
 - **Wallpaper & desktop background (W6, host).** The Background tab works: the
   WindowServer shim encodes the chosen image and writes the mode and colour to a
@@ -254,19 +254,19 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
   the compositor watches that directory and repaints. The choice **persists**
   across restarts: the compositor seeds the state from `SDE_WALLPAPER` /
   `SDE_WALLPAPER_MODE` on first run, after which the state is authoritative (so
-  "None" — an empty image — also sticks). `FileManager` additionally exposes
+  "None" (an empty image) also sticks). `FileManager` additionally exposes
   "Set as wallpaper" on an image. Still inert: Fonts / Monitor / Workspaces /
   Effects (no display, input or font backends yet).
-- **ComboBox dropdowns (W6, host).** Resolved — see "Recently resolved".
-- **Wallpaper thumbnails (W6/W7, host).** Resolved — see "Recently resolved"
+- **ComboBox dropdowns (W6, host).** Resolved; see "Recently resolved".
+- **Wallpaper thumbnails (W6/W7, host).** Resolved; see "Recently resolved"
   (`ImageDecoder` is served in-process).
 - **Application enablement (W7).** `SystemMonitor` now runs as a **Linux-native**
   app: it reads `/proc` directly (process list, CPU/memory graphs) and unwinds
-  thread stacks with **libunwind + elfutils** — no Serenity `/sys/kernel` shim —
+  thread stacks with **libunwind + elfutils** (no Serenity `/sys/kernel` shim)
   and no longer links the kernel-specific LibSymbolication/LibDebug. Verified by
   `scripts/run-system-monitor-test.sh`. The **Storage** and **Network** tabs now
-  read the host too — `/proc/mounts` + `statvfs()` and `getifaddrs()` + sysfs +
-  `/proc/net/{tcp,udp,tcp6,udp6}` (`SystemMonitorLinux.cpp`) — instead of
+  read the host too, `/proc/mounts` + `statvfs()` and `getifaddrs()` + sysfs +
+  `/proc/net/{tcp,udp,tcp6,udp6}` (`SystemMonitorLinux.cpp`), instead of
   `/sys/kernel/df` and `/sys/kernel/net/*`. The per-process **Open files** and
   **Memory map** windows read `/proc/<pid>/{fd,fdinfo,smaps}` too; the
   **Unveiled paths** tab is removed on Linux (unveil is a SerenityOS-only
@@ -282,7 +282,7 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
   matches SerenityOS's. `scripts/run-desktop-scene.sh` brings up the desktop
   "scene" (Terminal + File Manager + Firefox + System Monitor on the blue-grid
   wallpaper, headless at the output's size or nested on the host). The
-  **DevTools** — GMLPlayground, SQLStudio, HackStudio and **Profiler** — are
+  **DevTools** (GMLPlayground, SQLStudio, HackStudio and **Profiler**) are
   built too and appear under **Development** (`scripts/run-devtools-test.sh`).
   This needed
   **LibDebug**, **LibELF** (core notes), **LibCoredump** and **LibSymbolication**
@@ -292,7 +292,7 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
   native Linux: `LibSerenitySystem::Profiling` (`src/LibSerenitySystem/
   Profiling.{h,cpp}`) samples with `perf_event_open` (`PERF_SAMPLE_IP|TID|TIME|
   CALLCHAIN`, plus mmap/comm/fork/exit records), seeds the current `/proc/<pid>/
-  maps` mappings, and writes the same perfcore JSON that `Profiler` parses —
+  maps` mappings, and writes the same perfcore JSON that `Profiler` parses,
   replacing SerenityOS's `profiling_enable(pid, mask)` + `/proc/<pid>/
   perf_events`. Timestamps are milliseconds, matching `Profile::length_in_ms()`.
   `Profiler` itself is wired to it under `SDE_ROOT` (the Terminal precedent;
@@ -300,10 +300,10 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
   test.sh`. (Sampling *other* users' processes still needs `CAP_PERFMON`; with
   `perf_event_paranoid=2` a user's own processes profile fine because we exclude
   kernel samples.)
-  The **Debugger** is now Linux-native too: it drives `ptrace` directly —
+  The **Debugger** is now Linux-native too: it drives `ptrace` directly, with
   `PTRACE_GETREGSET`/`NT_PRSTATUS` for the register set (some host kernels reject
   `PTRACE_GETREGS` with `EFAULT`), `__WALL` for `waitpid`, and Linux single-step
-  semantics — built by the port (patches 0050/0052) and verified by
+  semantics. It is built by the port (patches 0050/0052) and verified by
   `scripts/run-debugger-test.sh` (breakpoint, registers, backtrace, disassembly
   against a real host process). The **CrashReporter** GUI is built and reads a
   native Linux ELF core dump: `LibELF` tolerates a section-table-less ELF and
@@ -315,22 +315,22 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
   `|/usr/lib/systemd/systemd-coredump ...`), so nothing launches `CrashReporter`
   automatically. The candidate designs, to be chosen later, are (a) an SDE
   `core_pattern` pipe handler (`|…/sde-coredump`) that saves the core to a
-  per-user drop dir — the closest analogue to SerenityOS's kernel→CrashReporter
+  per-user drop dir, the closest analogue to SerenityOS's kernel→CrashReporter
   path, but a system-wide, privileged install; (b) a session watcher that reads
   new cores via `coredumpctl` (works without privileges, but depends on systemd,
   which R4.3 keeps optional); or (c) a session watcher over the drop dir, with
   (a) feeding it so the root-side handler never has to reach into the user's
   Wayland session. Until one is implemented, `CrashReporter <core>` reads a core
   explicitly.
-- **Web engine / `WebContent` + `RequestServer` + `SQLServer` (W7, host).** Done —
+- **Web engine / `WebContent` + `RequestServer` + `SQLServer` (W7, host).** Done;
   see "Recently resolved". **Help** (Taskbar system menu ▸ Help) renders the man
   pages; **Browser** loads pages (local `file://` and the WebContent pipeline).
 
-## R5 — Compatibility & ecosystem (substantially done)
+## R5: Compatibility & ecosystem (substantially done)
 
 Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.md) §3–4.
 
-- **XWayland (G7)** — **landed, working toward KWin/Plasma parity.** The compositor
+- **XWayland (G7)**: **landed, working toward KWin/Plasma parity.** The compositor
   runs Xwayland lazily; X11 clients map, focus, stack (content, position,
   click-to-focus, close), and get **server-side decoration frames** (unless the
   client asks for no decorations via Motif hints): titlebar drag-to-move, border
@@ -350,25 +350,25 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   (`above`/`skip-taskbar`/`demands-attention`/`modal`) and **transients** are
   honoured (`c69b1ae`); and the **workarea** (`_NET_WORKAREA`) is reported
   (`47f794f`). An exiting X11 client no longer aborts the compositor (the destroy
-  handler detaches its `wlr_xwayland_surface` listeners — `2d557e2`), and iconless
+  handler detaches its `wlr_xwayland_surface` listeners, `2d557e2`), and iconless
   X11 clients report the default "X" icon to the Taskbar/switcher. X11 windows
   carry their **`WM_CLASS`** to the Taskbar, which can **group** a button per
-  application when `[Taskbar] GroupWindows` is on (default off — SerenityOS's
+  application when `[Taskbar] GroupWindows` is on (default off; SerenityOS's
   Taskbar has one button per window; see `docs/14`). See
   [`20-xwayland-next-steps.md`](20-xwayland-next-steps.md).
   **A dead X server can no longer take the compositor down:** `update_xwayland_workareas()`
   now checks `wlr_xwayland_get_xwm_connection()` before reporting the workarea.
   wlroots drops the XWM connection when the X server goes away, and the previous
-  code called into a dead Xwayland from a layer-surface commit — a SIGSEGV that
+  code called into a dead Xwayland from a layer-surface commit, a SIGSEGV that
   killed a live session (found by the CI work, [`26-ci.md`](26-ci.md) §6.2).
   X11 grouping is verified by `run-taskbar-grouping-test.sh` (`a1e3cb9`): an X11
   client's `WM_CLASS` can arrive after it maps (the first state reports
   `class=''`), and the Taskbar moves the window into its group when it does.
   **Still missing for full parity:** Xwayland **keyboard grabs** (in no wlroots
   release), **XDND** drag-and-drop (wlroots 0.21), and focus-stealing prevention
-  (wlroots gives no timestamp) — see
+  (wlroots gives no timestamp); see
   [`21-r5-protocol-parity-plan.md`](21-r5-protocol-parity-plan.md).
-- **Native-app protocol matrix (G7).** **Mostly done** — the compositor advertises
+- **Native-app protocol matrix (G7).** **Mostly done**: the compositor advertises
   (and wlroots implements) `xdg-activation`, `xdg-foreign` (v1 + v2), primary
   selection, `wlr`+`ext` data-control, `keyboard-shortcuts-inhibit`,
   `relative-pointer`, `presentation-time`, `fractional-scale` + `wp-viewporter`,
@@ -378,7 +378,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   `pointer-constraints` (mouse lock/confine for games) is served too: the
   compositor activates the constraint of the surface under the cursor and enforces
   it in the cursor-motion path (locked to the client's hint, or confined to its
-  region) — the only part wlroots leaves to the compositor.
+  region), the only part wlroots leaves to the compositor.
   `pointer-gestures` and **touch** input (routed through the cursor with the drag
   icon following a touch point) are served, along with **switch** devices
   (lid/tablet-mode), **pen/tablet** (`zwp-tablet-v2`) and **tablet-pad**
@@ -391,11 +391,11 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   bridges LibGUI's `DragOperation` onto it both ways, so SerenityOS applications
   offer and accept drag-and-drop interoperably with standard Wayland clients.
   **Still absent:** `xdg-toplevel-drag` (not present in the pinned wlroots); and
-  accessibility (AT-SPI). **Text input / IME is now served** — `text-input-v3` +
+  accessibility (AT-SPI). **Text input / IME is now served**: `text-input-v3` +
   `input-method-v2` (see [`22-input-method.md`](22-input-method.md),
   `scripts/run-ime-test.sh`).
 - **`xdg-desktop-portal` (G7).** Phase 1 landed: **`xdg-desktop-portal-serenity`**
-  (see [`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md)) —
+  (see [`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md)),
   an SDE backend for the freedesktop portals (Settings, Account, Lockdown,
   Background, AppChooser, Email, Location, ProxyResolver, OpenURI, Notification),
   with a `.portal` file and a `portals.conf` mapping; the real frontend routes to
@@ -411,43 +411,43 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   ([`17-input-capture.md`](17-input-capture.md)), and the **USB** portal's backend
   is a real broker (policy + user prompt + remembered grants,
   `tools/portal/usb.cpp`, `scripts/run-usb-portal-test.sh`).
-- **Text input / IME (G5) — done (R5); accessibility (G1) partly.** `text-input-v3`
+- **Text input / IME (G5): done (R5); accessibility (G1) partly.** `text-input-v3`
   / `input-method-v2` are served (see [`22-input-method.md`](22-input-method.md)),
   so an input method can compose CJK text into a focused field. **Sticky keys and
   high contrast are now implemented** (`[Accessibility] StickyKeys` / `HighContrast`,
   `scripts/run-sticky-keys-test.sh` and `scripts/run-high-contrast-test.sh`); AT-SPI
   and the magnifier remain, planned in [`29-accessibility.md`](29-accessibility.md).
 
-## R6 — Hardening & packaging (in progress)
+## R6: Hardening & packaging (in progress)
 
 Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.md) §5–7.
 
-- **Multi-output / hotplug** — the compositor handles several outputs
+- **Multi-output / hotplug**: the compositor handles several outputs
   (`server_new_output`, `wlr_output_layout`), applies a saved per-output layout
   (mode/scale/position from `screenlayout.ini`), and implements
   `zwlr_output_management_v1` (apply and test), persisting what a client changes.
   **Losing an output no longer strands windows**: a window whose output is
   disabled or unplugged is moved onto a surviving output, keeping its offset from
-  the old one, and the primary output is reassigned — before this, those windows
+  the old one, and the primary output is reassigned. Before this, those windows
   sat outside every output (invisible, unreachable without editing the layout) and
   every later placement used a destroyed output. Covered by
   `scripts/run-output-hotplug-test.sh`, which drives the disable through
   `zwlr_output_management_v1` like Display Settings or `wlr-randr` would; a real
-  unplug arrives through the same helper. **HiDPI — integer and fractional output
-  scaling — is done**; see "Recently resolved" below.
+  unplug arrives through the same helper. **HiDPI (integer and fractional output
+  scaling) is done**; see "Recently resolved" below.
   **Still basic:** a re-enabled output does not become primary again (Serenity's
   `MainScreen` index would say otherwise), a maximised window keeps its old size
   when it moves across outputs of different sizes, and per-output mode/scale has
-  no *UI* — DisplaySettings' Monitor tab is still inert
+  no *UI*: DisplaySettings' Monitor tab is still inert
   (`libgui-wayland` patch 0020).
 - **Multi-GPU / render-device selection; color management; direct scanout.**
-- **Renderer selection & fallback (N2/N5) — done.** `[Output] Renderer`
+- **Renderer selection & fallback (N2/N5): done.** `[Output] Renderer`
   (`auto`/`gles2`/`vulkan`/`pixman`, with the `SDE_RENDERER` override) selects the
   wlroots renderer, and a failed GPU path falls back to the software (pixman)
   renderer instead of ending the session; a full software mode is
   `SDE_RENDERER=pixman` + `LIBGL_GPU_DRIVER=softgpu`. Covered by
   `scripts/run-headless-test.sh`.
-- **Performance budget & latency instrumentation (N3) — done.** The compositor
+- **Performance budget & latency instrumentation (N3): done.** The compositor
   meters its frame time and the input → present interval (always on; reported via
   `SDE_PERF_STATS`/`SDE_PERF_LOG`), the budget is documented in
   [`25-performance.md`](25-performance.md), and `scripts/run-perf-test.sh`
@@ -463,26 +463,26 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   the same way (RSS, high-water, per-second growth) and guarded by the test's
   memory phase; `auto` no longer initialises software GL when there is no DRM
   device, which saves ~84 MB (~70 %) idle on a headless session. The meter also
-  reports **per-process PSS** — the session's "who is using memory" report: the
+  reports **per-process PSS**, the session's "who is using memory" report: the
   Taskbar, the Desktop and the applets at ~2.2 MB each and the services it spawns
   (the AudioServer at ~0.3 MB), enforced by `scripts/run-session-memory-test.sh`.
   The Audio applet's old ~9 MB came from two things, both fixed: it linked
   liblagom-audio (→ libpulse + libsndfile) for a backend it never used, so SDE now
   builds a protocol-only `SDEAudioClient` for it; and, the larger half, the shim
   substituted the *screen size* for its unsized window, so it allocated three
-  1280×720 buffers before being reconfigured to 16×16 — the placeholder now
+  1280×720 buffers before being reconfigured to 16×16; the placeholder now
   depends on the window type. The SDE's AudioServer is PipeWire-only too (it linked
   liblagom-audio for three header-only helpers). Session PSS: 53.9 → 46.6 MB (see
   §4 of the doc). The applets themselves have nothing left: all seven are uniform
-  at 2.1–2.4 MB, and §4 now splits the whole session by what the pages are — the
+  at 2.1–2.4 MB, and §4 now splits the whole session by what the pages are: the
   remaining levers are the pixel surfaces (32 %), the framework's per-client
   private cost, and the Taskbar's 1.8 MB heap. That Taskbar heap turned out to be
   a startup *design* cost, not a leak (§4: ~0.6 MB of it is the system menu at
-  8.7 kB per installed app, linear); investigating it did surface a real bug — a
+  8.7 kB per installed app, linear); investigating it did surface a real bug: a
   pinned quick-launch entry whose `.af` is missing crashed the whole shell, fixed
   by `patches/0009-taskbar-quicklaunch-missing-app.patch` and covered by
   `scripts/run-taskbar-quicklaunch-test.sh`.
-- **Crash recovery / watchdog / safe mode (N4) — done.** The R4.2 supervisor
+- **Crash recovery / watchdog / safe mode (N4): done.** The R4.2 supervisor
   restarts a *crashed* compositor; R6 adds a **watchdog** for a *wedged* one (the
   compositor writes a liveness heartbeat, `SDE_HEARTBEAT_FILE`; the supervisor
   restarts it when the heartbeat goes stale) and **safe mode** (after the restart
@@ -490,23 +490,23 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   session policy is configurable in `$XDG_CONFIG_HOME/sde/session.conf`
   (environment overrides). Covered by `run-session-test.sh` phases (H)–(M) and
   the heartbeat assertion in `run-headless-test.sh`. **Full session restore**
-  (relaunching the user's windows after a compositor restart) is done — see the
+  (relaunching the user's windows after a compositor restart) is done; see the
   R4.2 note above.
-- **CI (N6) — started.** `scripts/run-all-tests.sh` runs the 88 `run-*-test.sh`
+- **CI (N6): started.** `scripts/run-all-tests.sh` runs the 88 `run-*-test.sh`
   tests by tier (every test is headless by design), `.github/workflows/ci.yml`
   gates a push on the fast tier and runs the rest nightly, and
   `ci/Containerfile` bakes the dependencies, wlroots and the ~1.2 GB Lagom
   framework build into an image so a job only builds the SDE. Both repositories
   are public, so standard GitHub-hosted runners are free and unlimited (never use
-  a *larger* runner — those are always billed). Each test gets its own
+  a *larger* runner; those are always billed). Each test gets its own
   `SDE_SESSION_DIR` (which fixed `run-setting-test.sh`'s cross-session failure)
   and `SDE_XWAYLAND=0`; the five X11 tests re-exec in a private network namespace,
-  which is what makes them safe — and runnable — next to a live session. That work
+  which is what makes them safe, and runnable, next to a live session. That work
   also found and fixed a real compositor crash (a dead Xwayland taking the session
   down, §R5 above). See [`26-ci.md`](26-ci.md).
   **Landing since:** the image builds green, and the fast tier runs against it rather
   than failing before it starts. Getting there meant fixing four classes of
-  CI-only failure, all the same shape — a fresh configure or a clean environment
+  CI-only failure, all the same shape: a fresh configure or a clean environment
   differing from a development machine: a font root and a headless backend the
   session had been supplying, build output that was being discarded (so failures
   printed a line and a status and nothing else), and three patch-set gaps
@@ -526,9 +526,9 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 - **Packaging** of `WindowServer` and the session; **sanitizers/fuzzing**;
   **compositor design doc** and observability.
 
-## R1 — Compositor bring-up (done)
+## R1: Compositor bring-up (done)
 
-- **Real-hardware leg — exercised.** The DRM/KMS + libinput path
+- **Real-hardware leg: exercised.** The DRM/KMS + libinput path
   (`wlr_backend_autocreate` + `scripts/start-sde-session.sh`, with `libseat`
   granting DRM master and handling VT switching) runs on a real TTY, alongside the
   headless (`scripts/run-headless-test.sh`) and nested
@@ -556,7 +556,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   compositor already served `xdg-session-management-v1` and persisted a
   session-managed toplevel's geometry, but nothing brought the applications
   themselves back after a compositor restart. `SessionManager::update_running_apps`
-  now keeps `$SDE_STATE_DIR/session-apps` (one app id per line — the apps with a
+  now keeps `$SDE_STATE_DIR/session-apps` (one app id per line: the apps with a
   mapped toplevel, rewritten on map/unmap/destroy), and the session supervisor
   relaunches them once the socket is up (`run_restore`, `SDE_SESSION_RESTORE`),
   skipping apps the session's own startup command launches and ones that are no
@@ -577,7 +577,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   client popups are client menus (`serenity-menu` layer surfaces), so the
   compositor asks their owner to dismiss them (`dismiss_fragile_windows()`) on a
   window activation, while the window switcher is open, and on a workspace
-  switch — the same three call sites as SerenityOS's
+  switch, the same three call sites as SerenityOS's
   `request_close_fragile_windows`. `Super+H` now toggles the cursor highlight
   (R4.7), like SerenityOS's `WindowManager`: it flips the configured state and
   falls back to SerenityOS's defaults (radius 25, red at alpha 110) when Mouse
@@ -587,7 +587,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 
 - **Exactly one window is active at a time (R3/R5).** The compositor deactivated
   the previous window only when the seat still reported a focused surface. A seat
-  with no keyboard — headless, or a session's first windows — reports none, so
+  with no keyboard (headless, or a session's first windows) reports none, so
   every window kept its active frame (and raised Taskbar button) as it mapped even
   though it was never focused; the desktop scene showed several windows with
   active titlebars and no window marked active in the Taskbar. Focus now scans the
@@ -608,9 +608,9 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   above).
 
 - **`on_demand` layer surfaces now take keyboard focus (R5).** Layer surfaces
-  with `zwlr_layer_surface_v1` keyboard interactivity `on_demand` — client popups
-  such as the Wi-Fi network list and its passphrase field, or a ComboBox dropdown
-  — were never given keyboard focus by the compositor, so their text fields could
+  with `zwlr_layer_surface_v1` keyboard interactivity `on_demand` (client popups
+  such as the Wi-Fi network list and its passphrase field, or a ComboBox dropdown)
+  were never given keyboard focus by the compositor, so their text fields could
   not be typed into (keys went to whatever toplevel had focus). The compositor now
   focuses such a surface when it maps (and on commit), and restores focus to the
   topmost toplevel when it unmaps; `focus_toplevel` clears the layer focus. Panels,
@@ -629,7 +629,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 - **Every Settings dialog launches and its settings apply (R4).** The Settings
   grid lists 13 `Category=Settings` apps. A launch + backend sweep
   (`scripts/run-settings-test.sh`) found three that could not open at all and two
-  that opened with empty lists — all host-port gaps in `libgui-wayland` patches
+  that opened with empty lists, all host-port gaps in `libgui-wayland` patches
   `0044`–`0047`:
 
   | Dialog | Problem | Fix |
@@ -652,7 +652,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   WindowManagerServer socket. The Taskbar, WorkspacePicker and Keymap connect to
   `/tmp/portal/wm` at startup, so on a real login one of them could lose the race
   and abort with `VERIFICATION FAILED` in
-  `ConnectionToWindowManagerServer::the()` — leaving a session with only the
+  `ConnectionToWindowManagerServer::the()`, leaving a session with only the
   applets that don't use the WM connection. The compositor now calls `listen()` and
   wires the accept handler **before** spawning the shell. Covered by
   `scripts/run-shell-start-test.sh` (runs the session's real startup list).
@@ -664,11 +664,11 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   (`wlr_scene` assigns each surface the output's preferred scale), the compositor
   renders its chrome at an integer supersample and uses bilinear filtering for
   non-integer scales, and the client backing store rasters at the output scale
-  (host M8 resolved — verified: a Serenity client presents `@2x` on a 2x/1.5x
+  (host M8 resolved; verified: a Serenity client presents `@2x` on a 2x/1.5x
   output). A saved size with no matching mode requests a **custom mode**, so
   `scripts/run-desktop-scene.sh --headless --scale 2` captures a 2560x1440 HiDPI
   scene. `DisplaySettings`' Monitor tab is **live**: Resolution, Position (X/Y) and
-  the **Display scale** control (1x/1.25x/1.5x/2x) apply on **Apply** — the shim
+  the **Display scale** control (1x/1.25x/1.5x/2x) apply on **Apply**: the shim
   writes `screenlayout.ini` (mode/position) and `[Output] DefaultScale` (scale,
   as v120 over a new `set_output_scale` IPC; libgui-wayland patch `0042`), and the
   compositor applies both live.
@@ -701,7 +701,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   `scripts/run-multiseat-test.sh`.
 
 - **Session watchdog & safe mode (R6/N4).** The compositor writes a liveness
-  heartbeat (`SDE_HEARTBEAT_FILE` — a `Core::Timer` touching the file each
+  heartbeat (`SDE_HEARTBEAT_FILE`, a `Core::Timer` touching the file each
   second) and the session supervisor restarts it when the heartbeat goes stale,
   so a *wedged* event loop no longer hangs the session. After the restart budget
   the supervisor drops to **safe mode** (a minimal shell via
@@ -740,7 +740,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   writes the same perfcore JSON that `Profiler` parses. Wired under `SDE_ROOT`
   (SDE patch 0004-profiler-libserenitysystem); covered by `scripts/run-profiler-test.sh`. Timestamps must be
   **milliseconds** (`Profile::length_in_ms()` is a raw difference used as a
-  bucket count) — nanoseconds ballooned RSS to several GiB.
+  bucket count); nanoseconds ballooned RSS to several GiB.
 
 - **Taskbar crash on an invalid window icon.** The compositor sent
   `window_icon_bitmap_changed` with an *invalid* bitmap when a window had no
@@ -771,8 +771,8 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 
 - **Apps launched by the session LaunchServer opened on the wrong compositor.** When nested, the session `LaunchServer` was started with the *host* `WAYLAND_DISPLAY`, so the applications it spawns (e.g. the desktop's "Display Settings") connected to the host (their window was created at the `-5000,-5000` sentinel) instead of joining the SDE session. Session services that spawn apps now run with the **session** display (`scripts/start-sde-nested.sh`, `scripts/start-sde-session.sh`); the compositor already sets `WAYLAND_DISPLAY` for its own children.
 - **The session supervisor restarted on SIGTERM** instead of stopping, so the session could not be shut down (e.g. logout). It now treats SIGTERM/SIGINT as "stop": it kills the compositor and exits the loop. Covered by `scripts/run-session-test.sh` phase (F).
-- **ComboBox dropdown** — regression test added (`scripts/run-combo-test.sh`, `libwm-combo-test`): opening a ComboBox popup (the Display Settings wallpaper "Mode" box) must produce a real popup, not a collapsed sliver.
-- **Desktop ▸ "Display Settings" now opens DisplaySettings.** `Desktop::Launcher::open("/bin/DisplaySettings")` (the desktop right-click entry) resolved the URL by file extension — landing on the wildcard handler (`/bin/TextEditor`) — and `stat`ed the host path `/bin/DisplaySettings`, which does not exist, so nothing opened. The port's `LaunchServerConnection::open_url` now runs an **executable regular file** directly (mirroring the upstream `LaunchServer`), mapping Serenity's `/bin/X` to the session app dir like the rest of the port. The desktop entry now launches the same DisplaySettings dialog the Settings app spawns. Verified by `scripts/run-launch-exec-test.sh`.
+- **ComboBox dropdown**: regression test added (`scripts/run-combo-test.sh`, `libwm-combo-test`): opening a ComboBox popup (the Display Settings wallpaper "Mode" box) must produce a real popup, not a collapsed sliver.
+- **Desktop ▸ "Display Settings" now opens DisplaySettings.** `Desktop::Launcher::open("/bin/DisplaySettings")` (the desktop right-click entry) resolved the URL by file extension, landing on the wildcard handler (`/bin/TextEditor`), and `stat`ed the host path `/bin/DisplaySettings`, which does not exist, so nothing opened. The port's `LaunchServerConnection::open_url` now runs an **executable regular file** directly (mirroring the upstream `LaunchServer`), mapping Serenity's `/bin/X` to the session app dir like the rest of the port. The desktop entry now launches the same DisplaySettings dialog the Settings app spawns. Verified by `scripts/run-launch-exec-test.sh`.
 - Compositor: window destroyed before decoration (protocol error); frozen
   "ghost" window (scene tree not torn down); lost mouse-up (implicit pointer
   grab); F11 fullscreen no-op; window menu dismissed on its opening click;
@@ -784,7 +784,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   (and tooltips/popups): they used to collapse to a 2px-tall popup because the
   app clamped an off-screen rect against the desktop. Client menus opened from
   layer surfaces are now also dismissed by an outside press
-  (`serenity_window_manager.dismiss_menus`), instead of appearing stuck open —
+  (`serenity_window_manager.dismiss_menus`), instead of appearing stuck open,
   verified by `scripts/run-menu-dismiss-test.sh`.
 - Display Settings: **Apply no longer freezes.** Wallpapers are now stored as raw
   pixels (PNG-encoding cost ~800 ms on the UI thread); the compositor watches the
@@ -801,20 +801,20 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   patterns (`/etc` absent from the sparse checkout); Serenity `/bin/X` helper
   paths not resolved to host binaries (launching failed with ENOENT); Launch
   service implemented (handler resolution + spawn).
-- **`ImageDecoder` portal** — served in-process by libgui-wayland (its in-process
+- **`ImageDecoder` portal**: served in-process by libgui-wayland (its in-process
   fallback) and, when SDE runs, by the `ImageDecoder/` session service. This fixes
   the `FileSystemModel`/wallpaper thumbnails (`connect: No such file or
   directory`) and lets **ImageViewer** decode images. The in-process host decodes
   **inline on its own thread**: `ImageDecoder`'s upstream job runs on
   `Threading::BackgroundAction`, the single process-global thread that
   `FileSystemModel`'s thumbnail renderer already occupies, so sharing it deadlocked
-  thumbnails — a separate process does not. See `06-service-layering.md` §4.
-- **Out-of-process web engine** — `WebContent` + `RequestServer` are built by
+  thumbnails; a separate process does not. See `06-service-layering.md` §4.
+- **Out-of-process web engine**: `WebContent` + `RequestServer` are built by
   `libgui-wayland` and spawned on demand by `LibWM` (a socketpair handed over via
   `SOCKET_TAKEOVER`); `SQLServer` is hosted with a listening socket handed over
   (see `07-systemserver-roles.md` §2.3). **Help** renders the SerenityOS man pages
   (relocated from `Base/usr/share/man`); **Browser** loads pages, including
-  `https://` — HTTPS verifies against the host trust store (LibTLS patch `0024`).
+  `https://`; HTTPS verifies against the host trust store (LibTLS patch `0024`).
   The session seeds the skeleton user config (`scripts/seed-serenity-home.sh`) that
   `Browser` reads at startup. Known limit: LibTLS cannot parse ECDSA roots
   (`id-ecPublicKey`), so it skips them; RSA roots load and verify fine.

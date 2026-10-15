@@ -1,6 +1,6 @@
-# InputCapture Portal — Design (input capture + EIS)
+# InputCapture Portal: Design (input capture + EIS)
 
-**Status:** **Implemented (P1–P5)** — compositor EIS implementation + private protocol + the `xdg-desktop-portal-serenity` backend · v1 · **Date:** 2026-10-12
+**Status:** **Implemented (P1–P5)**: compositor EIS implementation + private protocol + the `xdg-desktop-portal-serenity` backend · v1 · **Date:** 2026-10-12
 **Related:** [`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md) §5–6 ·
 [`08-compositor-gaps.md`](08-compositor-gaps.md) §3–4 ·
 [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §R5 ·
@@ -75,10 +75,10 @@ the same package, so real apps (and a test client) can drive us.
 | # | Where the EIS implementation runs | Compositor↔backend link | Verdict |
 |---|---|---|---|
 | **A** | **Compositor** (`WindowServer` links `libeis`) | small private Wayland protocol; fd passed through it | **chosen** |
-| B | Backend process links `libeis` | private protocol streams *all* input to the backend and injects back | rejected — see §3.2 |
+| B | Backend process links `libeis` | private protocol streams *all* input to the backend and injects back | rejected (see §3.2) |
 | C | Keep `gtk` fallback | none | rejected for SDE (`gtk` cannot see SDE input) |
 
-### 3.1 Option A — compositor hosts the EIS implementation (chosen)
+### 3.1 Option A: compositor hosts the EIS implementation (chosen)
 
 The component that already has the input, the cursor, the output layout and the
 pointer-barrier logic hosts the EIS server. This is exactly what KWin and Mutter
@@ -107,19 +107,19 @@ compositor: all of that stays in the backend (the "compositor stays pure" rule i
 [`12`](12-r4.3-portable-session-integration.md) §2 is about system integration,
 not input transport).
 
-### 3.2 Option B — backend hosts the EIS implementation (rejected)
+### 3.2 Option B: backend hosts the EIS implementation (rejected)
 
 The backend would link `libeis` and the compositor would stream live input to it
 over a private protocol, receiving emulated injection back. Rejected because:
 
-- it needs a broad "send me every input event" compositor protocol — a larger and
+- it needs a broad "send me every input event" compositor protocol, a larger and
   more dangerous surface than "hand me an EIS fd";
 - zones/barriers/activation are still compositor decisions, so the logic splits
   across two processes for no benefit;
 - every event crosses two process boundaries, adding latency to the exact path
   (input) where it hurts most.
 
-The only argument for B — keeping `libeis` out of the compositor — is weaker than
+The only argument for B, keeping `libeis` out of the compositor, is weaker than
 the correctness/latency cost, since `libeis` is portable and the compositor
 already owns input.
 
@@ -135,7 +135,7 @@ protocol (`§5`), except the prompt.
 | `SupportedCapabilities` | `POINTER \| KEYBOARD` (`1\|2 = 3`). No `TOUCHSCREEN` (SDE has no touch, [`08`](08-compositor-gaps.md) §4). |
 | `CreateSession` (deprecated) / `CreateSession2` | allocate a session; `CreateSession2` returns a not-yet-started session. |
 | `Start` | show the **AccessDialog** ("Allow *<app>* to capture input?" via `SDE_PORTAL_ACCESS_DIALOG`); on allow, return the granted `capabilities` (subset of requested) and, if `persist_mode != 0`, a `restore_data` token (reuse the ScreenCast/RemoteDesktop token store). `clipboard_enabled` is always `false` (clipboard capture is out of scope, §8). |
-| `GetZones` | compositor returns the session's zones — `a(uuii)` `(width,height,x,y)` from the output layout — plus an incrementing `zone_set`. |
+| `GetZones` | compositor returns the session's zones, `a(uuii)` `(width,height,x,y)` from the output layout, plus an incrementing `zone_set`. |
 | `SetPointerBarriers` | compositor stores the barriers (edge lines) for the session; returns `failed_barriers` for any rejected (off-zone / diagonal) barrier. |
 | `Enable` / `Disable` | enable/disable triggering for the session; on activation the compositor emits `Activated`, on stop `Deactivated`. |
 | `Release` | stop an ongoing activation (`activation_id` + suggested `cursor_position`). |
@@ -184,7 +184,7 @@ Compositor behaviour:
   when the pointer would cross a barrier, it **activates**: emits `activated`
   (with an incrementing `activation_id`, the barrier id and the logical cursor
   position) and calls `eis_device_start_emulating(device, activation_id)` on the
-  pointer/keyboard devices **before** the first event — the spec requires the
+  pointer/keyboard devices **before** the first event; the spec requires the
   EIS `sequence` to equal `activation_id`.
 - **While active**, physical pointer (and, if granted, keyboard) events are fed to
   the EIS devices and are **not** delivered to the focused Wayland client. (A
@@ -221,30 +221,30 @@ InputCapture is a **keylogger-class** capability, so:
 
 ## 7. Bring-up order
 
-1. **P1 — fd handoff (landed).** `WindowServer` links `libeis` (optional) and
+1. **P1: fd handoff (landed).** `WindowServer` links `libeis` (optional) and
    offers the `serenity_input_capture` global when `SDE_INPUT_CAPTURE=1`;
    `create_session` + `connect_to_eis` create the EIS implementation
    (`eis_setup_backend_fd`, pumped from the compositor event loop) and return a
    per-session fd. Covered by `scripts/run-input-capture-test.sh`. The D-Bus
    `ConnectToEIS` *relay* lands with the backend interface in P4.
-2. **P2 — pointer zones, barriers, activation (landed).** `get_zones` from the
+2. **P2: pointer zones, barriers, activation (landed).** `get_zones` from the
    output layout (with `zones_changed` on output changes); `set_pointer_barriers`
    (axis-aligned; invalid ones rejected); `enable`/`disable`/`release`; a barrier
    crossing emits `activated` and feeds pointer motion/buttons over EIS until
    release. Covered by `scripts/run-input-capture-test.sh`. (A libei receiver
-   context only receives — there is no app→compositor injection to wire.)
-3. **P3 — keyboard (landed).** The EIS seat advertises KEYBOARD and a virtual
+   context only receives; there is no app→compositor injection to wire.)
+3. **P3: keyboard (landed).** The EIS seat advertises KEYBOARD and a virtual
    keyboard device is created with the configured XKB keymap
    (`eis_device_new_keymap`); while a keyboard-capturing session is active, key
    events and the XKB modifier state are fed over EIS. Covered by the same test.
-4. **P4 — D-Bus end-to-end (landed).** `tools/portal/input-capture.{h,cpp}` implements
+4. **P4: D-Bus end-to-end (landed).** `tools/portal/input-capture.{h,cpp}` implements
    `org.freedesktop.impl.portal.InputCapture` in `xdg-desktop-portal-serenity`:
    session/receiving relay to the compositor over the private protocol, the EIS fd
    from `ConnectToEIS`, the `Activated`/`Deactivated`/`Disabled`/`ZonesChanged`
    signals, the `AccessDialog` prompt, and `portals.conf` now prefers `serenity`
    (also added to `serenity.portal`). Covered by
    `scripts/run-input-capture-portal-test.sh`.
-5. **P5 — persistence (landed).** `Start` mints a restore token when
+5. **P5: persistence (landed).** `Start` mints a restore token when
    `persist_mode != 0` and accepts it back as `restore_data` (the `(suv)` vendor
    blob, reusing the ScreenCast restore-token store); a restored session skips the
    permission prompt. On `ZonesChanged` the compositor stops and disarms capture
@@ -269,7 +269,7 @@ GPU), so CI stays green.
 - `scripts/run-input-capture-portal-test.sh` (headless; **P4 + P5 landed**): starts
   the compositor (`SDE_INPUT_CAPTURE=1`) and the `xdg-desktop-portal-serenity`
   backend on a private session bus, then drives the D-Bus impl interface end to
-  end — `SupportedCapabilities`/`version`, `CreateSession2`, `Start` (with the
+  end: `SupportedCapabilities`/`version`, `CreateSession2`, `Start` (with the
   `AccessDialog` prompt), `GetZones`, `SetPointerBarriers` (diagonal rejected),
   `ConnectToEIS`, `Enable`, the `Activated` signal after a scripted barrier
   crossing, `Disable`, and persistence (`persist_mode` mints a `restore_data`
@@ -283,9 +283,9 @@ GPU), so CI stays green.
 
 ## 9. Out of scope
 
-- **Clipboard capture** (`clipboard_enabled` / `org.freedesktop.portal.Clipboard`)
-  — return `false`; a later increment.
-- **Touchscreen** capture — no touch support ([`08`](08-compositor-gaps.md) §4).
+- **Clipboard capture** (`clipboard_enabled` / `org.freedesktop.portal.Clipboard`):
+  return `false`; a later increment.
+- **Touchscreen** capture: no touch support ([`08`](08-compositor-gaps.md) §4).
 - **`ext-transient-seat-v1` / multi-seat** capture ([`12`](12-r4.3-portable-session-integration.md) §8).
 - X11/`XTest` input capture (no XWayland yet).
 
@@ -305,15 +305,15 @@ GPU), so CI stays green.
 
 ## 11. Risks
 
-- **Privilege** — the whole feature is high-risk; §6 is a prerequisite, not
+- **Privilege**: the whole feature is high-risk; §6 is a prerequisite, not
   polish.
-- **libei availability/version drift** — `libei 1.6.0` is on Arch; pin a minimum
+- **libei availability/version drift**: `libei 1.6.0` is on Arch; pin a minimum
   and degrade to the `gtk` fallback when absent (the compositor builds
   `libeis`-optional so a no-libei build still works).
-- **Activation correctness** — the EIS `sequence == activation_id` ordering and
+- **Activation correctness**: the EIS `sequence == activation_id` ordering and
   `start_emulating`-before-first-event are easy to get subtly wrong; the P2 exit
   test asserts the exact sequence.
-- **Never lose the pointer** — a capture session that never releases would freeze
+- **Never lose the pointer**: a capture session that never releases would freeze
   input; the escape hatch (§6) and thorough `Disable`/`Release` handling are
   mandatory.
 

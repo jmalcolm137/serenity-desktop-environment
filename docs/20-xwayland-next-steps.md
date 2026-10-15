@@ -1,4 +1,4 @@
-# R5 — Xwayland: current state & next steps
+# R5: Xwayland: current state & next steps
 
 **Status:** in progress · **Updated:** 2026-10-13
 
@@ -32,19 +32,19 @@ the compositor maps as a separate scene surface. Landed, in order:
 | `47f794f` | **`_NET_WORKAREA`**. Report the outputs' usable areas to Xwayland (`wlr_xwayland_set_workareas`), so X11 panels/maximized windows respect SDE's panels/docks. |
 | `373e077` | **Window placement + titlebar icon**. X11 windows use the xdg convention (scene tree = *frame* origin; content inset), so a window at `(0,0)` shows its titlebar; the frame is clamped on-screen; the titlebar draws the fetched icon or the **default** window icon (never blank). |
 | `5ad2264` | **Revert the WM_HINTS icon read** (it aborted the compositor; the real cause is fixed in `a95fa67`). |
-| `a95fa67` | **Real `WM_HINTS` icon + X11 default icon.** The abort was not XCB re-entrancy but `Gfx::Bitmap::scanline()` (an `ARGB32*`) used as a byte pointer — `scanline_u8` fixes it. Fetch the legacy `WM_HINTS` icon (xterm's X logo) and listen to `set_hints` (hints are unset at map time); clients with no icon get a distinct X11 default (a window with an "X"). |
-| `2d557e2` | **Client-exit crash fix + default icon.** The X11 destroy handler now detaches every listener it added to the `wlr_xwayland_surface` (and the surface `map`/`unmap` listeners, tracked so a re-association can't double-add them) — wlroots' `xwayland_surface_destroy()` asserts all of those lists are empty, so leaking them aborted the compositor whenever an X11 client exited (`exit` in xterm). The iconless default icon is now a big monochrome **"X"** (no frame, taller than wide; drawn 64x64 → 16x16 in the titlebar text colour) stored on `X11Toplevel::icon`, so the Taskbar and switcher see it (`emit_window_state` re-sends it after the window is reported). Verified by `scripts/run-xwayland-exit-test.sh`. |
+| `a95fa67` | **Real `WM_HINTS` icon + X11 default icon.** The abort was not XCB re-entrancy but `Gfx::Bitmap::scanline()` (an `ARGB32*`) used as a byte pointer; `scanline_u8` fixes it. Fetch the legacy `WM_HINTS` icon (xterm's X logo) and listen to `set_hints` (hints are unset at map time); clients with no icon get a distinct X11 default (a window with an "X"). |
+| `2d557e2` | **Client-exit crash fix + default icon.** The X11 destroy handler now detaches every listener it added to the `wlr_xwayland_surface` (and the surface `map`/`unmap` listeners, tracked so a re-association can't double-add them), because wlroots' `xwayland_surface_destroy()` asserts all of those lists are empty, so leaking them aborted the compositor whenever an X11 client exited (`exit` in xterm). The iconless default icon is now a big monochrome **"X"** (no frame, taller than wide; drawn 64x64 → 16x16 in the titlebar text colour) stored on `X11Toplevel::icon`, so the Taskbar and switcher see it (`emit_window_state` re-sends it after the window is reported). Verified by `scripts/run-xwayland-exit-test.sh`. |
 
 Where the code lives:
 
-- `WindowServer/src/main.cpp` — the X11 model wiring: `server_new_xwayland_surface`,
+- `WindowServer/src/main.cpp`: the X11 model wiring: `server_new_xwayland_surface`,
   the `x11_surface_*` listeners, `focus_x11_toplevel`, `x11_update_frame` /
   `x11_hit_test_frame`, `x11_begin_interactive`, `handle_x11_frame_*`,
   `focus_window_at`, and the `hook_*_x11` calls into the WM.
-- `WindowServer/src/Model.h` — `struct X11Toplevel`.
-- `WindowServer/src/WindowManager.{h,cpp}` — `emit_window_state(X11Toplevel&)`,
+- `WindowServer/src/Model.h`: `struct X11Toplevel`.
+- `WindowServer/src/WindowManager.{h,cpp}`: `emit_window_state(X11Toplevel&)`,
   `find_x11_by_wm_id`, and the Taskbar request routing.
-- `scripts/run-xwayland-test.sh` — X11 client maps, gets a frame, and is reported
+- `scripts/run-xwayland-test.sh`: X11 client maps, gets a frame, and is reported
   to the WM (both with XWayland on and off).
 
 Note: wlroots' `xwayland.h` declares a C field named `class`, a C++ keyword, so
@@ -75,38 +75,38 @@ grid and icon paths) hoist into shared helpers as those land.
 
 ## Remaining for parity (in a suggested order)
 
-1. ~~**Alt-Tab**~~ — **done** (`07027fc`): X11 windows join the `WindowSwitcher`
+1. ~~**Alt-Tab**~~: **done** (`07027fc`): X11 windows join the `WindowSwitcher`
    list (title, live thumbnail, select → focus; the *Highlighted* frame state).
-2. ~~**Workspaces**~~ — **done** (`0cf1933`): an X11 window is assigned to the
+2. ~~**Workspaces**~~: **done** (`0cf1933`): an X11 window is assigned to the
    current stack on map and hides/shows with it (`update_x11_toplevel_visibility`).
-3. **Window icons** — **done** (`b3ac13a`): `_NET_WM_ICON` is fetched
+3. **Window icons**: **done** (`b3ac13a`): `_NET_WM_ICON` is fetched
    (`wlr_xwayland_surface_fetch_icon` + `xcb_ewmh`) and emitted
-   (`emit_window_icon`). **WM_CLASS grouping** — **done, opt-in**: the app id (an
+   (`emit_window_icon`). **WM_CLASS grouping**: **done, opt-in**: the app id (an
    xdg `app_id` / an X11 `WM_CLASS`) is carried in the window state and the
    Taskbar collapses the windows of one application into a single button when
-   `[Taskbar] GroupWindows` is on (default **off** — SerenityOS's Taskbar has one
+   `[Taskbar] GroupWindows` is on (default **off**; SerenityOS's Taskbar has one
    button per window). See `docs/14`; verified by
    `scripts/run-taskbar-grouping-test.sh`.
-4. ~~**Override-redirect polish**~~ — **done** (`cb21165`): menus/tooltips are
+4. ~~**Override-redirect polish**~~: **done** (`cb21165`): menus/tooltips are
    never workspace-hid and stay above their parent.
-5. ~~**Selection / clipboard bridge**~~ — **done** (`6c8e0c9`): the compositor
+5. ~~**Selection / clipboard bridge**~~: **done** (`6c8e0c9`): the compositor
    forwards `PRIMARY` selection requests to the seat and already forwarded
    `CLIPBOARD`, so wlroots' XWM bridges X11 `PRIMARY`/`CLIPBOARD` with the Wayland
    selection. (Wayland-side round-trip covered by `scripts/run-selection-test.sh`.)
-6. **Xwayland keyboard grabs** — **blocked on a wlroots bump**: the pinned wlroots
+6. **Xwayland keyboard grabs**: **blocked on a wlroots bump**: the pinned wlroots
    0.20 exposes no `xwayland-keyboard-grab-v1` manager (its own header notes the
    protocol is unimplemented), so X11 keyboard grabs cannot be honoured yet.
-7. ~~**`_NET_WM_STATE` hints + transients**~~ — **done** (`c69b1ae`): `above`,
+7. ~~**`_NET_WM_STATE` hints + transients**~~: **done** (`c69b1ae`): `above`,
    `skip-taskbar`, `demands-attention` and `modal` are read and honoured, and a
    transient keeps above its parent. (Transient *centering* on the parent is left
    to the X client, which positions override-redirect/popups itself.)
-8. ~~**`_NET_WM_STRUT` workarea**~~ — **done** (`47f794f`): the outputs' usable
+8. ~~**`_NET_WM_STRUT` workarea**~~: **done** (`47f794f`): the outputs' usable
    areas are reported to Xwayland (`wlr_xwayland_set_workareas` / `_NET_WORKAREA`).
-9. **X11 ↔ Wayland drag-and-drop** — **blocked on wlroots 0.21 (unreleased)**: the
+9. **X11 ↔ Wayland drag-and-drop**: **blocked on wlroots 0.21 (unreleased)**: the
    pinned wlroots 0.20 implements no XDND (only the atom names); XDND lands in
    wlroots `master` (0.21.0-dev, `xwayland/selection/dnd.c`) and is wired into the
    seat's drag, so it needs **no** compositor changes once bumped.
-10. **Focus-stealing prevention / `_NET_ACTIVE_WINDOW`** — **limited by wlroots**:
+10. **Focus-stealing prevention / `_NET_ACTIVE_WINDOW`**: **limited by wlroots**:
     its `request_activate` signal carries no timestamp/source, so a timestamp-based
     policy (KWin's) is not possible; only a coarse "recent input" heuristic is,
     which would misfire on user-launched windows. Left for the wlroots 0.21 bump.
@@ -114,7 +114,7 @@ grid and icon paths) hoist into shared helpers as those land.
 ## wlroots version
 
 SDE pins the wlroots **release** (`0.20.2` via `scripts/fetch-wlroots.sh`) to
-match what Arch Linux ships — deliberately a release, not the `master` dev
+match what Arch Linux ships: deliberately a release, not the `master` dev
 branch. wlroots `master` (`0.21.0-dev`, unreleased) adds **XDND**,
 `wp-pointer-warp-v1`, `ext-background-effect-v1`, `xdg-toplevel-icon-v1` and
 `xdg-system-bell-v1`; bump to the 0.21 **release** when it lands and those items
@@ -132,12 +132,12 @@ as in `scripts/run-headless-test.sh`; `scripts/run-virtual-touch-test.sh` +
 `tools/virtual-input-test.c` drive pointer/keyboard.
 
 **Two X clients started together sometimes leave one unmapped.** In the headless
-harness Xwayland announces the second window — the compositor logs its `WM_CLASS` and
-title — but never commits its first buffer, so no map event arrives and the window
+harness Xwayland announces the second window (the compositor logs its `WM_CLASS` and
+title) but never commits its first buffer, so no map event arrives and the window
 never appears. It is not a race with the property set: a ten-second gap between the
 two clients does not help, `xmessage` pairs usually both map, and a minimal
 hand-written `xcb` client's second window reliably does not. It is Xwayland's, below
-the compositor — nothing in the window-announce path is involved.
+the compositor; nothing in the window-announce path is involved.
 `run-taskbar-grouping-test.sh` starts its two `xmessage` clients a few seconds apart
 and asserts grouping, which is what that test is about.
 
@@ -145,5 +145,5 @@ and asserts grouping, which is what that test is about.
 `xmessage`) set `WM_CLASS` before mapping, so the class is already there when the
 window is announced and `WindowManager::emit_window_state` carries it from the start.
 `WindowServer`'s `x11_set_class` re-emit exists for clients that set it *after* the
-map — a slow `xterm` was the original case — and no fast client exercises that path.
+map (a slow `xterm` was the original case), and no fast client exercises that path.
 

@@ -1,10 +1,10 @@
-# 18 — The SDE taskbar applets
+# 18: The SDE taskbar applets
 
 The SerenityOS taskbar applets (**WorkspacePicker, ResourceGraph, Network,
 ClipboardHistory, Keymap, Audio**) are part of the **desktop environment**, not
 of `libgui-wayland`: SDE builds and ships them. Where an applet reached into a
 SerenityOS kernel interface, that interface is replaced with its **Linux
-equivalent** — never shimmed.
+equivalent**, never shimmed.
 
 ## 1. Build
 
@@ -54,14 +54,14 @@ Where an applet only needs a *library* abstraction, that abstraction lives in th
 library (which is not desktop-environment-specific), and the applet stays
 unmodified:
 
-- **LibKeyboard** — the active keymap belongs to the display server on Linux, not
+- **LibKeyboard**: the active keymap belongs to the display server on Linux, not
   the kernel. `CharacterMap::fetch_system_map()` now reads the standard
   `XKB_DEFAULT_LAYOUT` variable (first entry = active layout; `us` fallback) on
   non-Serenity hosts, and `set_system_map()` is a no-op (the layout is changed
   through the display server's own protocol). Port patch
   `0033-libkeyboard-linux-system-map.patch`. The SDE compositor exports
   `XKB_DEFAULT_LAYOUT`/`XKB_DEFAULT_VARIANT` to its children from `[Keyboard]`.
-- **LibAudio / AudioServer** — the Audio applet's mixer protocol
+- **LibAudio / AudioServer**: the Audio applet's mixer protocol
   (`/tmp/session/%sid/portal/audiomanager`) is served by the SDE **`AudioServer`
   service** (spawned on demand by LibWM), backed by the shared `Mixer` (main
   volume/mute applied to the mixed output) and the PipeWire backend. The applet
@@ -82,7 +82,7 @@ on demand, like the SDE-owned `BatteryApplet` (docs/16) and `WifiApplet`
 An applet may size itself **after** `show()` (the Audio applet resizes to
 `16x16`/`44x16` once it knows whether to show the percentage). `layer_surface_commit`
 now also re-arranges when the **committed** surface size changes, not only the
-desired size — otherwise the applet area was computed from the applet's initial
+desired size; otherwise the applet area was computed from the applet's initial
 (full-output) size and never corrected. See docs/04-known-gaps.md.
 
 ## 6. Test

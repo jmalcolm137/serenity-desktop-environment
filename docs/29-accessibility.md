@@ -3,7 +3,7 @@
 **Status:** plan · sticky keys and high contrast implemented · **Date:** 2026-10-15
 
 `docs/04-known-gaps.md` lists four things still absent under R5: **AT-SPI**, **sticky
-keys**, **magnifier** and **high contrast**. This is the plan for them — what each
+keys**, **magnifier** and **high contrast**. This is the plan for them: what each
 actually needs, what already exists to build on, and the order to do them in.
 
 Accessibility here means the desktop-level pieces, not (only) the applications':
@@ -49,7 +49,7 @@ InputCapture. Guarded by `scripts/run-sticky-keys-test.sh`.
 
 When it is on the compositor applies the `Contrast` palette to its own chrome *and*
 publishes it to the theme broker, so every client follows; and a theme change
-through the broker does not turn the mode off — the compositor says so in its log
+through the broker does not turn the mode off; the compositor says so in its log
 and puts the broker back to what is actually applied (only when they differ, so
 this cannot loop). Guarded by `scripts/run-high-contrast-test.sh`, which asserts the
 control (off is inert) as well.
@@ -60,7 +60,7 @@ control (off is inert) as well.
 it captures the screen through `GUI::ConnectionToWindowServer::the()
 .get_screen_bitmap_around_cursor()` / `…_around_location()`, and on the port both
 resolve to the *default stub* in `WindowServerDefaultStub.h`, which returns a null
-bitmap — the compositor serves neither. Measured: `Magnifier` starts, then sits for
+bitmap; the compositor serves neither. Measured: `Magnifier` starts, then sits for
 six seconds without ever mapping a window and without an error, which is what a
 display-link callback blocking on an IPC that is never answered looks like. So the
 work is to serve those two methods rather than to write a magnifier.
@@ -69,7 +69,7 @@ Two options for the source, in order of preference:
 
 1. Serve `get_screen_bitmap(rect, screen_index)` / `…_around_cursor` /
    `…_around_location` from the compositor's own capture machinery
-   (`ext-image-copy-capture-v1` — the same path the screenshot portal and the
+   (`ext-image-copy-capture-v1`, the same path the screenshot portal and the
    Taskbar's window thumbnails already use), and forward them from the shim over the
    existing serenity-window connection. That magnifies the real output with no
    portal round-trip, and lets the magnifier follow the focused output. This is the
@@ -87,9 +87,9 @@ serving it is three pieces, and this is the order that keeps each one testable:
    Nothing in the tree renders the *scene* to a bitmap today: `Overlays.cpp`'s
    `snapshot_toplevel()` reads one client's buffer directly (and gives up on a
    DMA-BUF), which is enough for a window thumbnail and not enough for a screen
-   region. The route is wlroots' own render path —
+   region. The route is wlroots' own render path:
    `wlr_scene_output_build_state()` into a custom buffer, then a readback
-   (`wlr_texture_read_pixels`) — both present in the vendored 0.20. Assert it
+   (`wlr_texture_read_pixels`), both present in the vendored 0.20. Assert it
    headless (render a scene, read a region, compare pixels) before wiring anything to
    it.
 2. *Framework:* the `Messages::WindowServer::GetScreenBitmap*` IPC definitions and
@@ -98,7 +98,7 @@ serving it is three pieces, and this is the order that keeps each one testable:
    `…_around_cursor` / `…_around_location` variants are a rect around a point, so the
    shim can derive them from the one region message; the cursor position is the
    compositor's to answer.
-3. *Test:* a `run-magnifier-test.sh` in the same shape as the other app tests — start
+3. *Test:* a `run-magnifier-test.sh` in the same shape as the other app tests: start
    Magnifier, assert it maps a window and that the captured bitmap matches a known
    scene region.
 
@@ -125,15 +125,15 @@ name, state, actions) and asks for events. Doing this here means:
 
 Designed in [`30-at-spi.md`](30-at-spi.md): LibGUI publishes the tree (the tree *is*
 the widget tree), the transport is the `dbus-1` we already speak, and it lands in
-four steps — read-only tree, then events, then actions, then the text interfaces. It
+four steps: read-only tree, then events, then actions, then the text interfaces. It
 is an order of magnitude more work than 1–3 combined.
 
 ## Order
 
-1. Sticky keys — done.
-2. High contrast — done.
-3. Magnifier — needs the capture path wired, but the application exists.
-4. AT-SPI — design doc first, then LibGUI's tree and the bridge.
+1. Sticky keys: done.
+2. High contrast: done.
+3. Magnifier: needs the capture path wired, but the application exists.
+4. AT-SPI: design doc first, then LibGUI's tree and the bridge.
 
 ## Testing notes
 

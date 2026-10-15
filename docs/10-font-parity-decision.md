@@ -1,13 +1,13 @@
-# Serenity Desktop Environment — Font parity decision (WS7)
+# Serenity Desktop Environment: Font parity decision (WS7)
 
-**Status:** Decided — R4.7 landed the session font broker; **Katica stays the SDE default** (picking a scalable family such as SerenitySans is what enables size zoom) · **Date:** 2026-10-10
+**Status:** Decided: R4.7 landed the session font broker; **Katica stays the SDE default** (picking a scalable family such as SerenitySans is what enables size zoom) · **Date:** 2026-10-10
 **Related:** [`02-compositor-decision.md`](02-compositor-decision.md) §11 · [`04-known-gaps.md`](04-known-gaps.md) · [`05-r3-plan.md`](05-r3-plan.md) §4 WS7 · [`09-r3-implementation-plan.md`](09-r3-implementation-plan.md)
 
 ## 1. Decision
 
 **R3 keeps the bundled bitmap **Katica** family as the default UI font, and
 size-based font zoom remains a no-op.** This is accepted parity with upstream
-SerenityOS — which also defaults to Katica — not a regression, and it does **not**
+SerenityOS (which also defaults to Katica), not a regression, and it does **not**
 block the milestone. Selecting and scaling system fonts is deferred to the
 settings work (objective **G5**, milestone **R4**).
 
@@ -37,14 +37,14 @@ settings work (objective **G5**, milestone **R4**).
 
 - **A scalable face is already bundled.** `Base/res/fonts/SerenitySans-Regular.ttf`
   is a vector font, and `Typeface::get_font()` returns `scaled_font(size)` for it
-  at any size — this is the path to working zoom, not new asset work.
+  at any size; this is the path to working zoom, not new asset work.
 
 ## 3. What this means for R3
 
 - The default UI font, the window-title font and the fixed-width font all render
   correctly at their intended sizes; the shell, apps and chrome look right.
 - **TextEditor Zoom In/Out (`Ctrl+=` / `Ctrl+-`) does nothing** with the stock
-  font — identical to upstream SerenityOS with the default theme.
+  font, identical to upstream SerenityOS with the default theme.
 - **DisplaySettings ▸ Fonts is inert**: the picker lists the available fonts, but
   Apply has no effect.
 - Theme switching (font/colour roles) works and is unaffected by this decision.
@@ -57,7 +57,7 @@ Working size-based zoom and system-font selection require, in order:
    scalable face (`SerenitySans-Regular.ttf`) or let the user pick one of the
    bundled TTFs. The bitmap families stay available at 10/12.
 2. **A session font channel.** Wire `set_system_fonts` to real state applied to
-   every client and the compositor — the same broker pattern as the theme
+   every client and the compositor, the same broker pattern as the theme
    (`$XDG_RUNTIME_DIR/sde-theme`), plus persistence (`WindowServer.ini`
    `[Fonts] Default/FixedWidth/WindowTitle`). Today the shim only accepts the
    call.

@@ -18,14 +18,14 @@ on?**
   in-process portal servers (WindowServer, clipboard, config, launch,
   filesystem-access) over socketpairs.
 
-- **SDE is the session.** Services that are inherently **session-scoped** — a
-  shared handler database, seat/input, notifications, applets — belong in the
+- **SDE is the session.** Services that are inherently **session-scoped** (a
+  shared handler database, seat/input, notifications, applets) belong in the
   compositor/session, **not duplicated inside every application process**.
 
 - **Resolution rule:** *prefer the session service when it is present, otherwise
   fall back to the in-process one.*
 
-> **Naming note — two kinds of "portal".** The paths above are **SerenityOS**
+> **Naming note: two kinds of "portal".** The paths above are **SerenityOS**
 > portals: SDE's own IPC endpoints under `/tmp/session/<id>/portal/…`. They are
 > unrelated to the freedesktop **`xdg-desktop-portal`** D-Bus service
 > (FileChooser, Screenshot, ScreenCast, RemoteDesktop, InputCapture,
@@ -51,18 +51,18 @@ Some services are never served in-process because they are too heavy to embed in
 every application: `LibWM` **spawns** them from the session app directory on
 demand (`WebContent`, `RequestServer`, `SQLServer`, `NotificationServer`, and the
 SDE's **`AudioServer`**, which serves the audio + audiomanager portals from one
-process). Those reach the client the same way — the app connects to the portal,
+process). Those reach the client the same way: the app connects to the portal,
 `LibWM` spawns the service and hands it the listening socket.
 
 ## 3. Applied to `LaunchServer`
 
 - **`libgui-wayland` (fallback):** the in-process `LaunchServerConnection` keeps
-  the behaviour it has always had — resolve handlers from
+  the behaviour it has always had: resolve handlers from
   `/etc/LaunchServer.ini` `[FileType]`/`[Protocol]`, plus the editor as a generic
   alternate, and spawn the matching binary. It must stay able to open files with
   the compositor-agnostic guarantee intact.
 - **SDE (session service):** a `LaunchServer` that owns the launch portal when
-  SDE is running and does the **richer** resolution — the `.af` `AppFile`
+  SDE is running and does the **richer** resolution: the `.af` `AppFile`
   launcher metadata (`[Launcher] FileTypes=` / `MimeTypes=` / `Protocols=`),
   mime types, and later user preferences and the allow-list.
 - **One implementation, two hosts.** To avoid duplicating the resolution, the
@@ -80,18 +80,18 @@ SerenityOS ships an `ImageDecoder` **service**
 (`Userland/Services/ImageDecoder/`) that apps reach over
 `/tmp/session/<id>/portal/image`. It is a *Serenity system service*: `SystemServer`
 spawns it and hands it its client socket, and it serves exactly **one client per
-process** — its `die()` quits the event loop and the background thread when that
+process**: its `die()` quits the event loop and the background thread when that
 client goes away. Under SDE there is no `SystemServer`, so we host the same
 implementation class (`ImageDecoder::ConnectionFromClient`) ourselves in **both**
 roles:
 
 - **libgui-wayland (fallback):** `LibWM` stands up a server-side decoder on the
   `image` socketpair, so an application decodes images with no SDE and no external
-  service — same as the other portals. The class assumes a single-client service
+  service, same as the other portals. The class assumes a single-client service
   process, so the in-process host sets two opt-outs (see patch `0022`):
-  - `set_exit_when_client_disconnects(false)` — a client disconnecting must not
+  - `set_exit_when_client_disconnects(false)`: a client disconnecting must not
     quit the **host application's** event loop and background thread.
-  - `set_decode_on_connection_thread(true)` — decode inline on the connection's
+  - `set_decode_on_connection_thread(true)`: decode inline on the connection's
     own (LibWM portal) thread. The upstream decode job runs on
     `Threading::BackgroundAction`, a **single process-global thread**; LibGUI's
     `FileSystemModel` renders thumbnails *on that same thread* and then blocks in
@@ -116,7 +116,7 @@ neither forks the decoder.
 
 ## 6. Constraints
 
-- The in-process fallback must keep working **unchanged** for stand-alone use —
+- The in-process fallback must keep working **unchanged** for stand-alone use:
   no regression. Cover it with a headless test, with and without an external
   `LaunchServer` present.
 - Prefer a **lean SDE `LaunchServer`** that reuses the shared resolver over
@@ -130,7 +130,7 @@ neither forks the decoder.
 - The **SDE `LaunchServer`** service (`LaunchServer/`, built by
   `scripts/build-launch-server.sh`) owns the launch portal when it runs; it is
   started by `scripts/start-sde-session.sh` and reuses the same protocol
-  implementation (libgui-wayland's `LaunchServerConnection`, compiled in — it
+  implementation (libgui-wayland's `LaunchServerConnection`, compiled in; it
   pulls no LibGUI).
 - `LibWM::make_portal()` **defers to a session service** when a socket exists on
   the portal path, otherwise serves in-process. Verified: an application under
@@ -139,11 +139,11 @@ neither forks the decoder.
   `scripts/build-imagedecoder.sh`) likewise owns the image portal when it runs,
   reusing SerenityOS's `ImageDecoder::ConnectionFromClient`; without it,
   libgui-wayland's in-process decoder answers. Verified both ways.
-- **Stand-alone (no SDE) is unchanged** — the in-process fallback answers.
+- **Stand-alone (no SDE) is unchanged**: the in-process fallback answers.
 
 Covered by a headless test: `scripts/run-services-test.sh` runs the same client
-(the SDE's `libwm-services-test`, `test/`) twice — once with no external service and
-once with the SDE `LaunchServer` and `ImageDecoder` running — and asserts that the
+(the SDE's `libwm-services-test`, `test/`) twice, once with no external service and
+once with the SDE `LaunchServer` and `ImageDecoder` running, and asserts that the
 in-process fallback answers in the first case and LibWM **defers** to the services
 in the second, for both the launch and image portals. It needs no compositor and
 uses a private session directory (`SDE_SESSION_DIR`, patch `0023`) so it never

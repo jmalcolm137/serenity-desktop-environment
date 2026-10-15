@@ -1,4 +1,4 @@
-# 16 — Battery Applet
+# 16: Battery Applet
 
 **Status:** Implemented · **Date:** 2026-10-11
 **Related:** [`05-r3-plan.md`](05-r3-plan.md) §WS4 (applet area) · [`03-engineering-conventions.md`](03-engineering-conventions.md) · [`14-r4.4-config.md`](14-r4.4-config.md)
@@ -31,9 +31,9 @@ and therefore lives in the SDE, not in LibGUI/LibCore (see conventions D4).
 For every directory whose `type` is `Battery` or `UPS` and that is `present`, the
 reader takes:
 
-- `capacity` — the charge percentage;
-- `status` — `Charging`, `Discharging`, `Full` or `Not charging`;
-- `model_name` — shown in the popup;
+- `capacity`: the charge percentage;
+- `status`: `Charging`, `Discharging`, `Full` or `Not charging`;
+- `model_name`: shown in the popup;
 - the time remaining, estimated from `charge_now`/`charge_full`/`current_now`
   (or `energy_now`/`energy_full`/`power_now`), matching what
   `upower`/KDE display: time-to-empty while discharging, time-to-full while
@@ -48,7 +48,7 @@ KDE's battery icon is drawn with LibGfx rather than theme icons, so the applet
 needs no external assets:
 
 - a 16×16 battery body and terminal, filled left-to-right by the charge level;
-- Breeze-inspired charge colours — red at or below 5 %, orange at or below 20 %,
+- Breeze-inspired charge colours: red at or below 5 %, orange at or below 20 %,
   green above (matching KDE's `batteryColor` thresholds);
 - a lightning bolt overlaid while charging;
 - a diagonal slash for "no battery";
@@ -91,10 +91,10 @@ run; they sort with the other unmatched names.
 BatteryApplet [--name <name>] [--icon-only] [--power-supply-root <path>]
 ```
 
-- `--name` — the applet name (the window title), for `[Applet] Order`.
+- `--name`: the applet name (the window title), for `[Applet] Order`.
   Defaults to `Battery`.
-- `--icon-only` — hide the percentage label.
-- `--power-supply-root` — read from another directory instead of
+- `--icon-only`: hide the percentage label.
+- `--power-supply-root`: read from another directory instead of
   `/sys/class/power_supply` (used by the test).
 
 ## 6. Exit test
