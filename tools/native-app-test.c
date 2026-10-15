@@ -142,11 +142,25 @@ static void render(void)
     wl_surface_commit(surface);
 }
 
+// --maximize / --minimize: ask the compositor the way a client's own titlebar does
+// (xdg_toplevel.set_maximized / .set_minimized) — Firefox's buttons.
+static int want_maximize;
+static int want_minimize;
+
 static void xdg_surface_configure(void* data, struct xdg_surface* surf, uint32_t serial)
 {
     (void)data;
     xdg_surface_ack_configure(surf, serial);
     render();
+    // Once, after the first configure: the surface exists and is acked.
+    static int asked;
+    if (!asked && toplevel) {
+        asked = 1;
+        if (want_maximize)
+            xdg_toplevel_set_maximized(toplevel);
+        if (want_minimize)
+            xdg_toplevel_set_minimized(toplevel);
+    }
     configured = 1;
 }
 
@@ -156,7 +170,17 @@ static void toplevel_configure(void* data, struct xdg_toplevel* tl, int32_t w, i
 {
     (void)data;
     (void)tl;
-    (void)states;
+    if (want_maximize) {
+        bool maximized = false;
+        uint32_t* state;
+        wl_array_for_each(state, states)
+        {
+            if (*state == XDG_TOPLEVEL_STATE_MAXIMIZED)
+                maximized = true;
+        }
+        printf("native-app-test: configured maximized=%d %dx%d\n", maximized ? 1 : 0, w, h);
+        fflush(stdout);
+    }
     if (w > 0)
         width = w;
     if (h > 0)
@@ -248,7 +272,11 @@ int main(int argc, char** argv)
     int const want_presentation = argc > 1 && strcmp(argv[1], "--presentation") == 0;
     int const want_fractional = argc > 1 && strcmp(argv[1], "--fractional") == 0;
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--server-side-decorations") == 0)
+        if (strcmp(argv[i], "--maximize") == 0)
+            want_maximize = 1;
+        else if (strcmp(argv[i], "--minimize") == 0)
+            want_minimize = 1;
+        else if (strcmp(argv[i], "--server-side-decorations") == 0)
             want_server_side_decorations = 1;
         else if (strcmp(argv[i], "--blocking") == 0)
             want_blocking = 1;

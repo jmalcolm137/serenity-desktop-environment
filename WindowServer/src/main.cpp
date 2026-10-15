@@ -4601,6 +4601,7 @@ static void toplevel_destroy(wl_listener* listener, void*)
     wl_list_remove(&toplevel->request_move.link);
     wl_list_remove(&toplevel->request_resize.link);
     wl_list_remove(&toplevel->request_maximize.link);
+    wl_list_remove(&toplevel->request_minimize.link);
     wl_list_remove(&toplevel->request_fullscreen.link);
     wl_list_remove(&toplevel->set_title.link);
     wl_list_remove(&toplevel->set_app_id.link);
@@ -5280,8 +5281,42 @@ static void toplevel_request_maximize(wl_listener* listener, void*)
 {
     Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, request_maximize);
-    if (toplevel->xdg_toplevel->base->initialized)
+    if (!toplevel->xdg_toplevel->base->initialized)
+        return;
+    // A client's own titlebar (Firefox's, GTK's) asks through here:
+    // xdg_toplevel.set_maximized. Scheduling a configure *without applying
+    // anything* is what this used to do — the request was noted and thrown away,
+    // so the button did nothing. Apply the state the client asked for, through the
+    // same path the compositor's own titlebar and the Taskbar use.
+    bool const wanted = toplevel->xdg_toplevel->requested.maximized;
+    if (wanted == toplevel->maximized) {
         wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
+        return;
+    }
+    dbgln("WindowServer: '{}' asked to be {}",
+        toplevel->xdg_toplevel->title ? toplevel->xdg_toplevel->title : "",
+        wanted ? "maximized" : "restored");
+    toplevel_toggle_maximized(*toplevel);
+}
+
+static void toplevel_request_minimize(wl_listener* listener, void*)
+{
+    Toplevel* toplevel = nullptr;
+    toplevel = wl_container_of(listener, toplevel, request_minimize);
+    if (!toplevel->xdg_toplevel->base->initialized)
+        return;
+    // xdg_shell has no way for a *compositor* to ask a client to minimise; this is
+    // the client asking (Firefox's minimise button). It had no handler at all, so
+    // the button did nothing.
+    bool const wanted = toplevel->xdg_toplevel->requested.minimized;
+    if (wanted == toplevel->minimized) {
+        wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
+        return;
+    }
+    dbgln("WindowServer: '{}' asked to be {}",
+        toplevel->xdg_toplevel->title ? toplevel->xdg_toplevel->title : "",
+        wanted ? "minimized" : "restored");
+    set_toplevel_minimized(*toplevel->server, *toplevel, wanted);
 }
 
 static void toplevel_request_fullscreen(wl_listener* listener, void*)
@@ -5397,6 +5432,8 @@ static void server_new_xdg_toplevel(wl_listener* listener, void* data)
     wl_signal_add(&xdg_toplevel->events.request_resize, &toplevel->request_resize);
     toplevel->request_maximize.notify = toplevel_request_maximize;
     wl_signal_add(&xdg_toplevel->events.request_maximize, &toplevel->request_maximize);
+    toplevel->request_minimize.notify = toplevel_request_minimize;
+    wl_signal_add(&xdg_toplevel->events.request_minimize, &toplevel->request_minimize);
     toplevel->request_fullscreen.notify = toplevel_request_fullscreen;
     wl_signal_add(&xdg_toplevel->events.request_fullscreen, &toplevel->request_fullscreen);
     toplevel->set_title.notify = toplevel_set_title;
