@@ -165,6 +165,14 @@ export XDG_RUNTIME_DIR="$LOG_DIR/runtime"
 mkdir -p "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
 
+# The SerenityOS resource root every client needs to find its fonts and themes.
+# The session exports it to everything it runs, so on a development machine the
+# tests inherit it and pass -- but on a clean runner nothing sets it, and a client
+# that loads a font then dies in MUST(try_load_from_uri()) with an Illegal
+# instruction. Give the whole run one, so a test only has to say nothing.
+: "${LIBGUI_WAYLAND_ROOT:=$SDE_ROOT/../libgui-wayland}"
+export SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$LIBGUI_WAYLAND_ROOT/serenity/Base/res}"
+
 # Nothing a test starts may reach the live session's files, sockets or services.
 # The session exports these to everything it runs — including the shell this driver
 # is launched from — so drop them and give the tests their own.
