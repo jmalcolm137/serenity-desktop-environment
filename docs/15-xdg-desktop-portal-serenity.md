@@ -97,9 +97,10 @@ extras (dynamic cast target, "block out from screencast") remain.
 
 **Source selection is a LibGUI app.** As with all SDE UI, the picker is a
 SerenityOS **LibGUI** app — `ScreenCastChooser/` (built by
-`scripts/build-screen-cast-chooser.sh`) — launched by the backend when
-`SDE_PORTAL_CHOOSER` is set, with the monitor + window candidates as arguments; it
-prints the chosen index. Window sources use
+`scripts/build-screen-cast-chooser.sh`) — launched asynchronously by the backend
+(`run_command_async()`, like the dialogs — §6.6) when `SDE_PORTAL_CHOOSER` is set,
+with the monitor + window candidates as arguments; it prints the chosen index, and
+`SelectSources` replies from the continuation. Window sources use
 `ext_foreign_toplevel_image_capture_source_manager_v1`, and the embedded cursor
 mode uses the capture session's `PAINT_CURSORS` option.
 
@@ -288,12 +289,15 @@ code in the usual sense:
 These live in §5 and are plain backend work:
 
 - ~~**Async (non-blocking) dialogs**~~ — **done**. Every dialog (FileChooser,
-  AppChooser, ScreenshotOverlay, ColorPicker, Print, Access, and the USB portal's
-  Access) runs through `run_command_async()` with a deferred reply
-  (`MethodCall::take()` → `DeferredReply`), so a modal dialog no longer stalls the
-  backend; the only synchronous helper left is the local `lpstat` query.
-  `scripts/run-portal-test.sh` proves it: with a 2-second dialog open, another
-  portal call is answered in ~3ms.
+  AppChooser, ScreenshotOverlay, ColorPicker, Print, Access, the USB portal's
+  Access, and the ScreenCast source chooser) runs through `run_command_async()`
+  with a deferred reply (`MethodCall::take()` → `DeferredReply`), so a modal dialog
+  no longer stalls the backend; the only synchronous helper left is the local
+  `lpstat` query. The helper is also reaped without blocking (`waitpid(WNOHANG)`,
+  polled off a short timer in the rare case the child outlives its stdout), so even
+  the teardown never stalls the loop. `scripts/run-portal-test.sh` proves it (a
+  2-second dialog open, another portal call answered in ~3ms), as does
+  `run-screencast-test.sh` for the chooser.
 - **Permission-store integration** and the `Request`/`Response` choreography —
   the `Request` object machinery landed with `Inhibit` (`tools/portal/inhibit.cpp`:
   the service serves the request paths, and `Request.Close` releases); the
