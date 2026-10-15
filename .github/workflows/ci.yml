@@ -37,6 +37,8 @@ jobs:
         timeout-minutes: 45
         steps:
             - uses: actions/checkout@v4
+            - name: What this job is running on
+              run: scripts/ci-environment.sh
             - name: Build the SDE against the prebuilt framework
               run: scripts/ci-build.sh
             - name: Fast tier
@@ -58,6 +60,8 @@ jobs:
         timeout-minutes: 180
         steps:
             - uses: actions/checkout@v4
+            - name: What this job is running on
+              run: scripts/ci-environment.sh
             - name: Build the SDE, applications included
               run: scripts/ci-build.sh --with-apps
             - name: Full suite
@@ -84,6 +88,8 @@ jobs:
         timeout-minutes: 90
         steps:
             - uses: actions/checkout@v4
+            - name: What this job is running on
+              run: scripts/ci-environment.sh
             - name: Build the SDE
               run: scripts/ci-build.sh
             - name: Frame and latency budget
