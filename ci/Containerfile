@@ -51,7 +51,7 @@ RUN git clone --depth 1 --branch "$SDE_REVISION" "$SDE_REPO" /opt/sde \
 #   * build.sh applies the *SDE's* patches, configures Lagom with SDE_ROOT and
 #     builds its application stack (its default target is Terminal).
 RUN cd /opt/libgui-wayland \
-    && scripts/build-libgui.sh --no-tests \
+    && scripts/build-libgui.sh --no-tests $(/opt/sde/scripts/lagom-libraries.sh) \
     && cd /opt/sde \
     && scripts/build.sh \
     && scripts/ci-build.sh --with-apps
