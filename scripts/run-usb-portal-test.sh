@@ -21,6 +21,12 @@ if [ "${1:-}" != "--inner" ]; then
     RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-usb.XXXXXX")"
     trap 'rm -rf "$RUNTIME"' EXIT
     export SDE_USB_TEST_RUNTIME="$RUNTIME"
+    # Isolate the freedesktop permission store's database (it lands in
+    # XDG_DATA_HOME) inside the test runtime, so the store the backend writes to is
+    # empty each run and never touches the developer's real grants. Set before the
+    # exec so the bus-activated store daemon inherits it.
+    export XDG_DATA_HOME="$RUNTIME/data"
+    mkdir -p "$XDG_DATA_HOME"
     exec dbus-run-session -- "$0" --inner
 fi
 
@@ -71,6 +77,22 @@ check() {
     if grep -qF "$1" <<<"$2"; then echo "  ok: $1"; else echo "  MISSING ($2): $1"; fail=1; fi
 }
 
+# Query the freedesktop permission store directly (to confirm the backend wrote a
+# grant there). Lookup raises an error for an unknown id, so a reachable store and
+# a missing one are told apart by the error name, not the exit code.
+store_lookup() {
+    gdbus call --session --dest org.freedesktop.impl.portal.PermissionStore \
+        --object-path /org/freedesktop/impl/portal/PermissionStore \
+        --method org.freedesktop.impl.portal.PermissionStore.Lookup "$1" "$2" 2>&1
+}
+STORE_OK=0
+if ! grep -qE "ServiceUnknown|not provided by any" <<<"$(store_lookup usb probe)"; then
+    STORE_OK=1
+    echo "note: a permission store is on the bus; grants go there (flat file is the fallback)"
+else
+    echo "note: no permission store on the bus; grants use the flat-file fallback"
+fi
+
 echo "=== interface ==="
 CASE=base
 start_portal SDE_PORTAL_USB=allow
@@ -101,10 +123,12 @@ asked="$(call $IFACE.AcquireDevices /h "" "org.sde.Test" "$DEVICES" "{}")"
 stop_portal
 check "uint32 0" "$asked"
 check "usb:1-1" "$asked"
-if grep -qF "usb-permissions" "$RUNTIME/portal-ask-allow.log" 2>/dev/null || [ -s "$RUNTIME/usb-permissions" ]; then
-    echo "  ok: the grant was remembered ($(cat "$RUNTIME/usb-permissions" 2>/dev/null | tr '\n' ' '))"
+if [ "$STORE_OK" -eq 1 ] && grep -qF "org.sde.Test" <<<"$(store_lookup usb usb:1-1)"; then
+    echo "  ok: the grant was remembered in the permission store"
+elif [ -s "$RUNTIME/usb-permissions" ]; then
+    echo "  ok: the grant was remembered in the flat-file fallback ($(tr '\n' ' ' < "$RUNTIME/usb-permissions"))"
 else
-    echo "  MISSING: no usb-permissions record"
+    echo "  MISSING: the grant was not remembered"
     fail=1
 fi
 DIALOG_CALLS="$(wc -l < "$DIALOG_LOG")"
@@ -128,6 +152,20 @@ start_portal SDE_PORTAL_ACCESS_DIALOG="$ACCESS_DIALOG" SDE_PORTAL_USB=ask
 refused="$(call $IFACE.AcquireDevices /h "" "org.sde.Other" "[('usb:2-1', {}, {'writable': <false>})]" "{}")"
 stop_portal
 check "uint32 1" "$refused"
+
+echo "=== migration: a legacy flat-file grant is honoured (and migrated) ==="
+CASE=migrate
+printf 'org.sde.Legacy\tusb:9-9\t1\n' > "$RUNTIME/usb-permissions"
+BEFORE_MIGRATE="$(wc -l < "$DIALOG_LOG")"
+start_portal SDE_PORTAL_ACCESS_DIALOG="$ACCESS_DIALOG" SDE_PORTAL_USB=ask
+migrated="$(call $IFACE.AcquireDevices /h "" "org.sde.Legacy" "[('usb:9-9', {}, {'writable': <true>})]" "{}")"
+stop_portal
+check "uint32 0" "$migrated"
+AFTER_MIGRATE="$(wc -l < "$DIALOG_LOG")"
+check "no prompt for a legacy grant" "$([[ "$AFTER_MIGRATE" -eq "$BEFORE_MIGRATE" ]] && echo 'no prompt for a legacy grant' || echo 'prompted')"
+if [ "$STORE_OK" -eq 1 ]; then
+    check "org.sde.Legacy" "$(store_lookup usb usb:9-9)"
+fi
 
 echo "=== ask without a dialog refuses (no way to prompt) ==="
 CASE=ask-nodialog

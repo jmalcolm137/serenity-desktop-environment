@@ -20,14 +20,19 @@
 //   SDE_PORTAL_USB=ask   (default) prompt the user once, then remember the grant
 //   SDE_PORTAL_USB=allow grant without asking
 //   SDE_PORTAL_USB=deny  refuse (the lockdown behaviour)
-// Grants are remembered in usb-permissions in the portal state directory, one
-// "<app id>\t<device id>\t<writable>" line each, so a device is only asked about
-// once (delete the file, or the line, to revoke).
+// Grants are remembered in the freedesktop permission store (table "usb", id =
+// device id, the app's permissions being ["read"] or ["read","write"]), so a
+// device is only asked about once and the grant is visible to the standard
+// tooling (`flatpak permission-show`). When no permission store is on the bus we
+// fall back to the legacy flat file (usb-permissions in the state directory, one
+// "<app id>\t<device id>\t<writable>" line each); a legacy grant is migrated into
+// the store on first use.
 
 #include "usb.h"
 
 #include "host.h"
 #include "introspection.h"
+#include "permission-store.h"
 
 #include <AK/StringBuilder.h>
 #include <LibCore/File.h>
@@ -66,7 +71,9 @@ Optional<ByteString> read_permissions()
     return ByteString { StringView { reinterpret_cast<char const*>(bytes.data()), bytes.size() } };
 }
 
-bool remembered_grant(StringView app_id, StringView device_id, bool& writable)
+// --- the legacy flat-file store (the fallback when no permission store exists) ---
+
+bool legacy_remembered_grant(StringView app_id, StringView device_id, bool& writable)
 {
     auto permissions = read_permissions();
     if (!permissions.has_value())
@@ -83,7 +90,7 @@ bool remembered_grant(StringView app_id, StringView device_id, bool& writable)
     return false;
 }
 
-void remember_grant(StringView app_id, StringView device_id, bool writable)
+void legacy_remember_grant(StringView app_id, StringView device_id, bool writable)
 {
     ByteString existing = read_permissions().value_or(ByteString {});
     auto line = ByteString::formatted("{}\t{}\t{}\n", app_id, device_id, writable ? 1 : 0);
@@ -94,6 +101,51 @@ void remember_grant(StringView app_id, StringView device_id, bool writable)
         return;
     (void)file.value()->write_until_depleted(existing);
     (void)file.value()->write_until_depleted(line);
+}
+
+// --- the permission store, with the flat file as the fallback ----------------
+
+constexpr StringView usb_table = "usb"sv;
+
+Vector<ByteString> grant_permissions(bool writable)
+{
+    Vector<ByteString> permissions;
+    permissions.append("read"sv);
+    if (writable)
+        permissions.append("write"sv);
+    return permissions;
+}
+
+bool remembered_grant(StringView app_id, StringView device_id, bool& writable)
+{
+    auto stored = Portal::PermissionStore::lookup(usb_table, device_id);
+    if (!stored.has_value()) {
+        // No permission store on the bus: the legacy flat file is the fallback.
+        return legacy_remembered_grant(app_id, device_id, writable);
+    }
+
+    if (auto app = stored->get(app_id); app.has_value() && app->contains_slow("read"sv)) {
+        writable = app->contains_slow("write"sv);
+        return true;
+    }
+
+    // The store is authoritative but has no grant here. Migrate a legacy flat-file
+    // grant into it once, so an upgrade does not silently forget it.
+    bool legacy_writable = false;
+    if (legacy_remembered_grant(app_id, device_id, legacy_writable)) {
+        Portal::PermissionStore::set_permission(usb_table, device_id, app_id, grant_permissions(legacy_writable));
+        writable = legacy_writable;
+        return true;
+    }
+    return false;
+}
+
+void remember_grant(StringView app_id, StringView device_id, bool writable)
+{
+    if (Portal::PermissionStore::set_permission(usb_table, device_id, app_id, grant_permissions(writable)))
+        return;
+    // No permission store on the bus: remember in the legacy flat file instead.
+    legacy_remember_grant(app_id, device_id, writable);
 }
 
 // The reply path, shared by the synchronous (policy) and asynchronous (dialog)
