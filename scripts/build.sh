@@ -55,12 +55,21 @@ for patch in "$SDE_ROOT"/patches/*.patch; do
         unverified_names="$unverified_names $name"
     fi
 done
-echo "==> patches: $applied_count applied, $already_count already applied, $unverified_count assumed"
+echo "==> patches: $applied_count applied, $already_count already applied, $unverified_count unverifiable"
 if [[ -n "$unverified_names" ]]; then
-    # Naming them matters: a patch the loop cannot verify may simply not be in
-    # effect, and the failure it causes appears much later and elsewhere. Seeing the
-    # names in one build beats discovering them one 40-minute build at a time.
-    echo "    not verified (they may not be applied at all):$unverified_names"
+    # A patch the loop cannot verify may simply not be in effect, and the failure it
+    # causes appears much later and elsewhere -- as a test failure with no obvious
+    # cause, or as a feature that is silently absent. Naming them beats discovering
+    # them one build at a time, and stopping beats naming: this branch is how the
+    # framework's 0065 (a second copy of 0005-taskbar-window-grouping, overlapping it
+    # on five files) silently displaced 0005 instead of colliding with it.
+    echo "    unverifiable (they would not be applied):$unverified_names" >&2
+    echo "    A patch that neither applies nor reverse-applies no longer matches the tree:" >&2
+    echo "    refresh it against the current revision, or find the patch it now overlaps." >&2
+    if [[ "${ALLOW_UNVERIFIED_PATCHES:-0}" != 1 ]]; then
+        exit 1
+    fi
+    echo "    ALLOW_UNVERIFIED_PATCHES=1: continuing with them unapplied." >&2
 fi
 # Say more only when it is actionable: a checkout that differs from the pin is
 # the case where "unassumable" patches mean something.
