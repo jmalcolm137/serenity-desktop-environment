@@ -24,7 +24,7 @@ APPS=(
     # dump (libgui-wayland patches 0050-0053).
     Calculator PDFViewer
     3DFileViewer Tubes About AnalogClock Assistant Browser BrowserSettings
-    Calendar CalendarSettings CharacterMap ClockSettings DisplaySettings Escalator FileManager
+    Calendar CalendarSettings CertificateSettings CharacterMap ClockSettings DisplaySettings Escalator FileManager
     FontEditor GamesSettings Help HexEditor ImageViewer KeyboardMapper
     KeyboardSettings Mail MailSettings Maps MapsSettings MouseSettings NetworkSettings
     Presenter Run Screenshot Settings SpaceAnalyzer Spreadsheet SoundPlayer Piano

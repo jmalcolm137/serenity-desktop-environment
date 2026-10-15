@@ -272,7 +272,8 @@ check "dialog-information" "$(cat "$RUNTIME/notified.txt" 2>/dev/null || echo '(
 check "()" "$(call org.freedesktop.impl.portal.Notification.RemoveNotification id2)"
 
 # Best-effort: prove the real xdg-desktop-portal frontend routes to us. Skipped
-# when the frontend is not installed.FRONTEND=""
+# when the frontend is not installed.
+FRONTEND=""
 for candidate in /usr/lib/xdg-desktop-portal /usr/libexec/xdg-desktop-portal; do
     [ -x "$candidate" ] && FRONTEND="$candidate" && break
 done
