@@ -7596,10 +7596,42 @@ static void spawn_startup_command(StringView command)
 {
     if (command.is_empty())
         return;
-    auto command_string = command.to_byte_string();
-    if (fork() == 0) {
-        execl("/bin/sh", "/bin/sh", "-c", command_string.characters(), static_cast<char*>(nullptr));
-        _exit(127);
+
+    // Run each "&"-separated command as the *foreground* job of its own shell.
+    //
+    // A single `sh -c "A & B"` sets SIGINT and SIGQUIT to SIG_IGN in A and B: POSIX
+    // requires a non-interactive shell to ignore those for background jobs, and the
+    // ignore is inherited by everything the application goes on to run. A shell
+    // started by our Terminal had SIGINT ignored, which is why Ctrl-C did nothing
+    // in it, or in any program started from it, whatever the terminal did. Spawning
+    // each command as the only job of its own shell leaves the dispositions alone.
+    size_t start = 0;
+    while (start <= command.length()) {
+        size_t end = command.length();
+        for (size_t i = start; i + 3 <= command.length(); ++i) {
+            if (command.substring_view(i, 3) == " & "sv) {
+                end = i;
+                break;
+            }
+        }
+        auto piece = command.substring_view(start, end - start).trim_whitespace();
+        if (!piece.is_empty()) {
+            auto piece_string = piece.to_byte_string();
+            if (fork() == 0) {
+                // The compositor may itself have been started as a background job
+                // (the session supervisor does that), so give the shell that runs
+                // the command default dispositions: a foreground command inherits
+                // them, and otherwise the ignore would reach the application after
+                // all.
+                signal(SIGINT, SIG_DFL);
+                signal(SIGQUIT, SIG_DFL);
+                execl("/bin/sh", "/bin/sh", "-c", piece_string.characters(), static_cast<char*>(nullptr));
+                _exit(127);
+            }
+        }
+        if (end >= command.length())
+            break;
+        start = end + 3;
     }
 }
 

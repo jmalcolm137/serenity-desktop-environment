@@ -1,7 +1,8 @@
 # Terminal key handling: backspace and control characters
 
-Status: both diagnosed, fixed, and now measured in a headless harness
-(`scripts/run-terminal-keys-test.sh`).
+Status: both fixed and verified. Backspace was an encoding bug; Ctrl-C turned out
+to be a *signal-disposition* bug — the byte was always right. Guarded by
+`scripts/run-terminal-keys-test.sh` and `scripts/run-terminal-signals-test.sh`.
 
 ## Backspace: our convention was wrong for the host
 
@@ -30,7 +31,7 @@ programs, which is what this Terminal mostly runs.
 (`register_key_input_callback((char)127, ... erase_character_backwards)`), so
 Serenity's own shell and line editor are unaffected. Ctrl+Backspace is untouched.
 
-## Ctrl-C: made explicit, and measured
+## Ctrl-C: the byte was right; the *signal* was ignored
 
 SerenityOS's WindowServer converted Ctrl+letter into the control character itself,
 so a client sees Ctrl-C as code point **3**, not `'c'` plus a ctrl flag — and
@@ -44,52 +45,98 @@ is presented, leaving already-control characters alone so it cannot double-conve
 That is a consistency fix: it makes our behaviour match the WindowServer's
 regardless of the keymap.
 
-**Measured, at last.** The same headless harness the mouse test uses now works, and
-it says Ctrl-C is correct. A byte recorder (`cat`, raw) as the Terminal's child
-received, for `a`, Ctrl-C, Backspace:
+**The byte is right — measured.** A byte recorder (`cat`, raw) as the Terminal's
+child received, for `a`, Ctrl-C, Backspace:
 
 ```
 61 03 7f      a   003   177
 ```
 
-so the byte is right. In *cooked* mode the byte never reaches the child, because
-the line discipline consumes it — and that is also correct: a child that installs a
-SIGINT handler (resetting the `SIG_IGN` it inherited from being started as a
-background job) reports `GOT signal 2`. So Ctrl-C produces SIGINT end to end.
+Alt-a emits `1b 61` (ESC,a — LibVT prefixes on the *flag* alone) and Ctrl-/ emits
+`1f`, so the shim's derived modifier flags reach the client too. The encoding is
+correct, and `scripts/run-terminal-keys-test.sh` asserts it.
 
-The other modifier flags were probed the same way, because the shim derives them
-from key events rather than from `wl_keyboard.modifiers`, and that derivation was
-the one thing the byte test could not see: Alt+a emits `1b 61` (ESC,a — LibVT
-prefixes on the *flag* alone) and Ctrl+/ emits `1f`. The derived Alt/Ctrl flags
-work.
+**But that is not what Ctrl-C does in a shell.** In a *cooked* shell the line
+discipline consumes `0x03` and sends **SIGINT** to the foreground process group; the
+program never sees the byte. And the session starts its applications as background
+jobs of one non-interactive shell:
 
-**So the Ctrl-C symptom is not reproducible here.** What `od -An -c` shows in a
-*normal* shell is nothing at all for Ctrl-C (and nothing for Backspace either):
-both are line-discipline characters (`intr = ^C`, `erase = ^?`), so the shell
-consumes them before `od` runs. `003` is only visible in a raw tty:
-
-```sh
-stty raw -echo; od -An -c -N3; stty sane   # press Backspace, Ctrl-C, then a
+```
+sh -c "Taskbar & FileManager -d & <applets> & ..."
 ```
 
-expects `177 003 141`. `scripts/run-terminal-keys-test.sh` asserts all of this.
+POSIX requires a non-interactive shell to set **SIGINT and SIGQUIT to `SIG_IGN`** in
+each background job, and a signal that was ignored on entry cannot be un-ignored by a
+shell — or by anything it runs. Measured in the live session:
 
-While probing, one real (if masked) bug surfaced: the conversion range here was
+```
+Terminal  SigIgn = 0x6   (SIGINT|SIGQUIT)
+Taskbar   SigIgn = 0x6
+yay       SigIgn = 0x2   (SIGINT)
+```
+
+So Ctrl-C *was* delivered and `yay` was configured to ignore it. The `^C` the user
+sees is the line discipline's echo, which appears whether or not the signal does
+anything — which is exactly why this looked like a broken terminal.
+
+**`od -An -c` could never have shown it:** in a cooked shell both `^C` and the erase
+character are consumed by the line discipline before `od` runs, so no amount of
+testing there distinguishes a working Ctrl-C from a broken one.
+
+**Fix, in three parts.**
+
+* `patches/0058-libcore-process-reset-signals.patch` — `Core::Process::spawn` resets
+  SIGINT/SIGQUIT in the child. A launcher must hand an application default
+  dispositions; this covers every application the desktop launches, through either
+  LaunchServer.
+* `spawn_startup_command` (the compositor) runs each `&`-separated command as the
+  *foreground* job of its own shell, and resets the signals in the forked child. A
+  single `sh -c "A & B"` cannot be repaired from outside — the shell applies the
+  ignore after we fork, so resetting the shell does not help and neither does job
+  control (`sh -mc` behaves the same).
+* `patches/0059-terminal-reset-signals-for-shell.patch` — the Terminal resets
+  SIGINT/SIGQUIT before exec'ing the shell. A terminal starts a fresh session, so the
+  shell should not inherit the terminal's own dispositions. This is also what makes
+  the fix effective in a *running* session: the LaunchServer is a long-lived service
+  holding the old library, so a new Terminal is what picks it up.
+
+Verified in a headless harness: a spawned application reports `SIG_DFL` even when the
+process that spawned it ignores SIGINT (and the Terminal is deliberately started as a
+background job there, so `scripts/run-terminal-signals-test.sh` fails without the
+reset).
+
+**A latent bug surfaced while probing:** the shim's Ctrl+letter conversion range was
 `'@' .. '_'`, which stops below `'c'` (0x63), so it never fired for *lowercase*
-Ctrl+letters. LibVT converted those itself, which is why it went unnoticed; the
-range now matches LibVT's (`'@' .. <DEL`).
+Ctrl+letters. LibVT converted those itself, which is why it went unnoticed; the range
+now matches LibVT's (`'@' .. <DEL`).
 
 ## Getting the fixes
 
-Both are framework changes (LibVT, and the LibWM shim), so they take effect when the
-framework is rebuilt — and that rebuild is safe while the session runs. Relinking
-*replaces* the library file (a new inode); a process that already has the old one
-mapped keeps that mapping for its whole life and is never rewritten underneath. So
-the only step after a rebuild is to open a **new** Terminal: an existing one still
-has the old libraries mapped and will behave exactly as before. (An earlier version
-of this file claimed the session had to be down for the rebuild — it does not, and
-`scripts/rebuild-framework.sh` does the rebuild and says what to do next.)
+These are framework changes (LibVT, the LibWM shim, LibCore, the Terminal), so they
+take effect when the framework is rebuilt — and that rebuild is safe while the
+session runs. Relinking *replaces* the library file (a new inode); a process that
+already has the old one mapped keeps that mapping for its whole life and is never
+rewritten underneath. So the step after a rebuild is to open a **new** Terminal: an
+existing one still has the old libraries mapped and will behave exactly as before.
+(An earlier version of this file claimed the session had to be down for the rebuild —
+it does not, and `scripts/rebuild-framework.sh` does the rebuild and says what to do
+next.)
+
+For this particular fix, what picks it up depends on the process:
+
+* the **Terminal** change needs only a new Terminal (the binary is a symlink into the
+  build, and the reset happens in the Terminal itself) — so Ctrl-C works in a running
+  session without logging out;
+* the **compositor** and **`Process::spawn`** changes need the *compositor* and the
+  **LaunchServer** restarted, because the startup commands and later launches are
+  spawned by those long-lived processes. Until then a new Terminal is already enough
+  for the reported symptom.
 
 Related, and worth noting because it may be the same machinery: `run-terminal-mouse-test.sh`
 failed in the first CI run with "no SGR mouse event reached the app" — the virtual
 input path, from the test side.
+
+A separate, unrelated failure was seen while verifying this: `run-launch-exec-test.sh`
+resolves `/bin/DisplaySettings` to `TextEditor` and then fails to spawn it, so the
+executable is never run. It is a URL→handler resolution problem, nothing to do with
+the signals above, and it is worth its own investigation.
