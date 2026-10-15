@@ -218,7 +218,11 @@ for name in "${selected[@]}"; do
     # made `run-audio-test.sh` red until it isolated itself). Tests that need
     # their own path still set it and win.
     SDE_SESSION_DIR="$RUN_DIR/session-$name"
-    mkdir -p "$SDE_SESSION_DIR"
+    # The portal directory has to exist before a service is spawned there: LibWM
+    # binds the listening socket for a spawned service (AudioServer, NotificationServer)
+    # at "$SDE_SESSION_DIR/portal/<name>" and gives up silently if the bind fails, so a
+    # missing directory reads as "the service is not there".
+    mkdir -p "$SDE_SESSION_DIR/portal"
     export SDE_SESSION_DIR
 
     # And no X server. Xwayland's display names live in the global

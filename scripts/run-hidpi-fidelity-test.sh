@@ -66,7 +66,9 @@ fi
 
 # The compositor has to have applied the scale at all; otherwise the dump sizes below
 # say only that the client rendered at 1x twice, which is not a fidelity statement.
-if ! grep -qE "output 'HEADLESS-1' [0-9]+x[0-9]+ @2x" "$RUNTIME/comp-2.log" 2>/dev/null; then
+# The output can come up at 1x and be re-scaled afterwards (CI is slow enough that it
+# is), so accept either the initial state or the re-scale.
+if ! grep -qE "output 'HEADLESS-1'.*(@2x|re-scaled to 2x)" "$RUNTIME/comp-2.log" 2>/dev/null; then
     echo "==> HiDPI fidelity test FAILED: the compositor did not report the output at scale 2"
     grep -E "output '" "$RUNTIME/comp-2.log" 2>/dev/null | head -3 || true
     exit 1
