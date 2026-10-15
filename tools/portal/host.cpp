@@ -19,6 +19,7 @@
 #include <LibCore/Notifier.h>
 #include <LibCore/Process.h>
 #include <LibCore/System.h>
+#include <LibCore/Timer.h>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -116,6 +117,7 @@ struct AsyncCommand {
     Core::Process process;
     Function<void(Optional<ByteString>)> on_done;
     RefPtr<Core::Notifier> notifier;
+    RefPtr<Core::Timer> reap_timer;
     StringBuilder buffer;
     int read_fd { -1 };
 };
@@ -124,6 +126,53 @@ Vector<NonnullOwnPtr<AsyncCommand>>& running_commands()
 {
     static Vector<NonnullOwnPtr<AsyncCommand>> commands;
     return commands;
+}
+
+void drop_command(AsyncCommand* command_pointer)
+{
+    auto& commands = running_commands();
+    for (size_t i = 0; i < commands.size(); ++i) {
+        if (commands[i].ptr() == command_pointer) {
+            commands.remove(i);
+            return;
+        }
+    }
+}
+
+// waitpid(WNOHANG): reaped (pid), still running (0), or already gone (ECHILD).
+bool try_reap(pid_t pid)
+{
+    int status = 0;
+    pid_t reaped = ::waitpid(pid, &status, WNOHANG);
+    return reaped == pid || (reaped < 0 && errno == ECHILD);
+}
+
+// Reap the finished helper without ever blocking the backend (docs/15 §6.6). Its
+// output has already been delivered and the exit status is unused, so this exists
+// only to avoid a zombie: WNOHANG now, and — in the rare case the pipe hit EOF
+// while the child is still alive — poll it off a short timer until it exits. The
+// command stays pinned in running_commands() until then.
+void reap_then_drop(AsyncCommand& command)
+{
+    auto* command_pointer = &command;
+    auto pid = command.process.pid();
+
+    if (try_reap(pid)) {
+        // Drop on the next loop turn: our notifier is being dispatched right now,
+        // so destroying it (and the command that owns it) here would be unsafe.
+        Core::deferred_invoke([command_pointer] { drop_command(command_pointer); });
+        return;
+    }
+
+    command.reap_timer = Core::Timer::create_repeating(50, [command_pointer, pid] {
+        if (!try_reap(pid))
+            return;
+        // Stop the timer before dropping the command that owns it (it is firing
+        // right now), and defer the drop to the next loop turn.
+        command_pointer->reap_timer->stop();
+        Core::deferred_invoke([command_pointer] { drop_command(command_pointer); });
+    });
+    command.reap_timer->start();
 }
 
 void async_command_readable(AsyncCommand& command)
@@ -142,8 +191,7 @@ void async_command_readable(AsyncCommand& command)
         break; // EOF (or a read error): the helper is finishing
     }
 
-    int wait_status = 0;
-    (void)::waitpid(command.process.pid(), &wait_status, 0);
+    // The output is complete at EOF, so close the pipe/notifier and deliver it now.
     if (command.notifier)
         command.notifier->close();
     if (command.read_fd >= 0) {
@@ -155,18 +203,7 @@ void async_command_readable(AsyncCommand& command)
     auto on_done = move(command.on_done);
     on_done(output);
 
-    // Drop the command on the next loop turn: its notifier is being dispatched
-    // right now, so destroying it here would be unsafe.
-    auto* command_pointer = &command;
-    Core::deferred_invoke([command_pointer] {
-        auto& commands = running_commands();
-        for (size_t i = 0; i < commands.size(); ++i) {
-            if (commands[i].ptr() == command_pointer) {
-                commands.remove(i);
-                return;
-            }
-        }
-    });
+    reap_then_drop(command);
 }
 
 }
