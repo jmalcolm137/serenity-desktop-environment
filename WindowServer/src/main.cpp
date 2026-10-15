@@ -2697,6 +2697,13 @@ static void x11_set_class(wl_listener* listener, void*)
     X11Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, set_class);
     x11_update_class(*toplevel);
+    // WM_CLASS arrives asynchronously, exactly like the title, and the Taskbar
+    // groups X11 windows by it (WindowManager::emit_window_state passes it as the
+    // app id). Without re-emitting, the button keeps the empty app id the window
+    // was announced with — the compositor knows the class and the Taskbar never
+    // does, so X11 windows never group. Found by run-taskbar-grouping-test.sh.
+    if (toplevel->wm_id != 0)
+        WindowManager::emit_window_state(*toplevel);
 }
 
 // _NET_WM_STATE hints and transiency (docs/20 item 7). wlroots parses the
