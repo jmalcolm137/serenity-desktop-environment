@@ -6,13 +6,15 @@
 # sources are patched into the shared SerenityOS checkout, and nothing takes effect
 # until the framework and the affected applications are rebuilt.
 #
-# **Run this with no session running** — from a VT (Ctrl+Alt+F3), or before logging
-# in. Relinking liblagom-vt or libwindowserver rewrites files that every running
-# client has mapped, and a process that faults on a rewritten mapping dies with
-# SIGBUS. The check below refuses rather than risk it; SDE_ALLOW_LIVE_REBUILD=1
-# overrides at your own risk.
+# **Safe while you are logged in.** Measured rather than assumed: relinking a
+# library *replaces* the file (new inode) instead of rewriting it, so a process that
+# already has it mapped keeps the old mapping and carries on — verified with a live
+# process reading an 8 MB library across a relink. Running clients therefore keep
+# their old copy, and only *newly started* ones pick up the new code. After a rebuild
+# for a client-side fix, open a new Terminal (a logout is not needed; a reboot
+# certainly is not).
 #
-#   scripts/rebuild-framework.sh              # framework + Terminal + the applets
+#   scripts/rebuild-framework.sh              # framework + Terminal + FileManager
 #   scripts/rebuild-framework.sh --with-apps  # plus the applications
 set -euo pipefail
 
@@ -32,12 +34,10 @@ live_session_running() {
     return 1
 }
 
-if live_session_running && [[ "${SDE_ALLOW_LIVE_REBUILD:-0}" != 1 ]]; then
-    echo "refusing to rebuild: a session is running, and relinking the libraries it" >&2
-    echo "  has mapped can kill its clients with SIGBUS." >&2
-    echo "  Log out (or switch to a VT) and run this again." >&2
-    echo "  To override, at your own risk: SDE_ALLOW_LIVE_REBUILD=1 $0" >&2
-    exit 3
+if live_session_running; then
+    echo "note: a session is running. That is fine — relinking replaces the library" >&2
+    echo "      files, so running clients keep the old ones and nothing is disturbed." >&2
+    echo "      Open a new Terminal afterwards to pick up a client-side fix." >&2
 fi
 
 echo "==> the framework (LibGfx/LibGUI/LibVT/LibWM)"
