@@ -136,7 +136,11 @@ Related, and worth noting because it may be the same machinery: `run-terminal-mo
 failed in the first CI run with "no SGR mouse event reached the app" — the virtual
 input path, from the test side.
 
-A separate, unrelated failure was seen while verifying this: `run-launch-exec-test.sh`
-resolves `/bin/DisplaySettings` to `TextEditor` and then fails to spawn it, so the
-executable is never run. It is a URL→handler resolution problem, nothing to do with
-the signals above, and it is worth its own investigation.
+A separate failure turned up while verifying this, and has been fixed: the
+`/bin/X` → session-app-dir mapping built its candidate paths from a dangling
+`StringView` (`LexicalPath::basename()`/`dirname()` return views *into* the
+`LexicalPath`, and several call sites stored one taken from a temporary). The path
+was garbage, so `run-launch-exec-test.sh` fell through to the `TextEditor` handler
+instead of running the executable, and `Process::resolve_executable_path` missed its
+`SDE_SESSION_BIN_DIR`/`SDE_APP_BIN_DIR` lookups. See
+`patches/0060-libcore-lexicalpath-basename-lifetime.patch`.
