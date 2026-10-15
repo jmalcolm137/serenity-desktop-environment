@@ -195,6 +195,10 @@ if [[ -x "$WS" ]]; then
     else
         echo "  FAIL: the workspace did not switch"; fail=1
     fi
+    # The switch animates (200 ms) and the hide lands when the transition finishes,
+    # well after the "switched" line; wait for it rather than sampling the instant the
+    # switch is logged.
+    for _ in $(seq 1 40); do grep -qE "X11 window [0-9]+ workspace 0,0 visible=false" "$R/comp.log" && break; sleep 0.1; done
     if grep -qE "X11 window [0-9]+ workspace 0,0 visible=false" "$R/comp.log"; then
         echo "  ok: the X11 window hid with its workspace"
     else
