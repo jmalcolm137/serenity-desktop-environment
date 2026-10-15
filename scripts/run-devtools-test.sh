@@ -74,11 +74,20 @@ for app in "$BUILD/bin"/*; do
     [[ -e "$app" ]] || continue
     ln -sf "$app" "$APP_BIN/$(basename "$app")"
 done
-if [[ -x "$SDE_ROOT/build/SQLServer/SQLServer" ]]; then
-    ln -sf "$SDE_ROOT/build/SQLServer/SQLServer" "$APP_BIN/SQLServer"
-else
-    echo "  note: SQLServer is not built, so SQLStudio may fault"
-fi
+# The services these tools spawn on demand: SQLStudio needs SQLServer, and
+# HackStudio's WebView asks for WebContent, which in turn wants RequestServer. They
+# are SDE services (build-services.sh builds them into the SDE tree), so point the
+# session app directory at them the way a session does. Without WebContent, LibWM
+# reports "service 'webcontent' not found" and the WebView then trips a
+# release_value_but_fixme_should_propagate_errors() -- a SIGILL, not a failed map.
+"$SDE_ROOT/scripts/build-services.sh" >/dev/null 2>&1 || true
+for service in SQLServer WebContent RequestServer; do
+    if [[ -x "$SDE_ROOT/build/$service/$service" ]]; then
+        ln -sf "$SDE_ROOT/build/$service/$service" "$APP_BIN/$service"
+    else
+        echo "  note: $service is not built, so a tool that needs it may fault"
+    fi
+done
 
 echo "=== each devtool launches into the compositor ==="
 for tool in "${TOOLS[@]}"; do
