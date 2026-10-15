@@ -53,5 +53,7 @@ jobs:
                   tags: |
                       ${{ env.IMAGE }}:latest
                       ${{ env.IMAGE }}:${{ github.sha }}
-                  cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
+                  # ignore-error: the cache does not exist until the first build
+                  # succeeds; without it the importer prints a scary (harmless) error.
+                  cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache,ignore-error=true
                   cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
