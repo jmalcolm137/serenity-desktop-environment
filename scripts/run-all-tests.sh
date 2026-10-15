@@ -119,6 +119,16 @@ if [[ -z "$LOG_DIR" ]]; then
 fi
 mkdir -p "$LOG_DIR"
 
+# Runtime state goes on a *short* path, separate from the logs.
+#
+# A Unix socket address is capped at 108 bytes (sockaddr_un.sun_path). In CI the log
+# directory sits under the workspace -- /__w/<repo>/<repo>/ci-logs -- so a session
+# directory under it made ".../portal/audiomanager" 122 bytes and every connect to it
+# failed with EINVAL ("Could not obtain a sockaddr_un"), which the Audio applet then
+# reported as a fatal error. Logs belong with the logs; sockets do not.
+RUN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sde-suite-run.XXXXXX")"
+chmod 700 "$RUN_DIR"
+
 # --- refusing to run against a live session ---------------------------------
 #
 # These tests start compositors, supervisors, portals and services, and several of
@@ -161,7 +171,7 @@ fi
 # compositor fails to create its Wayland socket — the single largest cause of
 # failure in the first CI run ("could not add socket 'sde-…'"). The tests use it for
 # their sockets and pass the name to their clients, so they need nothing else.
-export XDG_RUNTIME_DIR="$LOG_DIR/runtime"
+export XDG_RUNTIME_DIR="$RUN_DIR/runtime"
 mkdir -p "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
 
@@ -207,7 +217,7 @@ for name in "${selected[@]}"; do
     # services instead of the compositor the test started (the failure mode that
     # made `run-audio-test.sh` red until it isolated itself). Tests that need
     # their own path still set it and win.
-    SDE_SESSION_DIR="$LOG_DIR/session-$name"
+    SDE_SESSION_DIR="$RUN_DIR/session-$name"
     mkdir -p "$SDE_SESSION_DIR"
     export SDE_SESSION_DIR
 
@@ -220,7 +230,7 @@ for name in "${selected[@]}"; do
 
     # And its own liveness heartbeat, so a test that runs a supervisor — or a
     # compositor that stops writing one — can never stall the session's watchdog.
-    export SDE_HEARTBEAT_FILE="$LOG_DIR/heartbeat-$name"
+    export SDE_HEARTBEAT_FILE="$RUN_DIR/heartbeat-$name"
 
     begin="$(date +%s)"
     if timeout -k 10 "$TIMEOUT" bash "$SDE_ROOT/scripts/$name" > "$log" 2>&1; then
@@ -278,6 +288,7 @@ if [[ "$failed" -gt 0 || "$timed_out" -gt 0 ]]; then
     done
 fi
 
+rm -rf "$RUN_DIR"
 if [[ "$keep_logs" -eq 0 ]]; then
     if [[ "$failed" -eq 0 && "$timed_out" -eq 0 ]]; then
         rm -rf "$LOG_DIR"

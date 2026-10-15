@@ -27,8 +27,8 @@ export SDE_STATE_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
 trap 'rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
 
-dump_at() { # $1 = scale, $2 = output png
-    local scale="$1" out="$2" sock="sde-hidpi-$1-$$"
+dump_at() { # $1 = scale, $2 = output png, $3 = expected WxH (optional)
+    local scale="$1" out="$2" sock="sde-hidpi-$1-$$" expected="${3:-}"
     rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$sock" "$out"
     env -u WAYLAND_DISPLAY -u DISPLAY \
         SDE_OUTPUT_SCALE="$scale" \
@@ -40,17 +40,35 @@ dump_at() { # $1 = scale, $2 = output png
         "$COMP" -n "$sock" -s "$APP" > "$RUNTIME/comp-$scale.log" 2>&1 &
     local comp=$!
     for _ in $(seq 1 60); do [[ -s "$out" ]] && break; sleep 0.1; done
+    # The client learns the output scale from the compositor, and its first frame can
+    # be rendered before that arrives -- so the first dump can be a 1x render. Wait for
+    # the dump to reach the size the scale implies rather than taking the first frame.
+    if [[ -n "$expected" ]]; then
+        for _ in $(seq 1 80); do
+            [[ "$(magick identify -format '%wx%h' "$out" 2>/dev/null)" == "$expected" ]] && break
+            sleep 0.1
+        done
+    fi
     pkill -P "$comp" 2>/dev/null || true
     kill "$comp" 2>/dev/null || true
     wait "$comp" 2>/dev/null || true
 }
 
 dump_at 1 "$RUNTIME/1x.png"
-dump_at 2 "$RUNTIME/2x.png"
+read -r W1 H1 <<<"$(magick identify -format '%w %h' "$RUNTIME/1x.png" 2>/dev/null || echo '0 0')"
+dump_at 2 "$RUNTIME/2x.png" "$((W1 * 2))x$((H1 * 2))"
 
 if [[ ! -s "$RUNTIME/1x.png" || ! -s "$RUNTIME/2x.png" ]]; then
     echo "==> HiDPI fidelity test FAILED: no dump (1x: $(stat -c%s "$RUNTIME/1x.png" 2>/dev/null || echo 0) bytes, 2x: $(stat -c%s "$RUNTIME/2x.png" 2>/dev/null || echo 0) bytes)"
     tail -5 "$RUNTIME/comp-2.log" 2>/dev/null || true
+    exit 1
+fi
+
+# The compositor has to have applied the scale at all; otherwise the dump sizes below
+# say only that the client rendered at 1x twice, which is not a fidelity statement.
+if ! grep -qE "output 'HEADLESS-1' [0-9]+x[0-9]+ @2x" "$RUNTIME/comp-2.log" 2>/dev/null; then
+    echo "==> HiDPI fidelity test FAILED: the compositor did not report the output at scale 2"
+    grep -E "output '" "$RUNTIME/comp-2.log" 2>/dev/null | head -3 || true
     exit 1
 fi
 
