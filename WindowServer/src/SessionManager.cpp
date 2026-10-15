@@ -79,7 +79,14 @@ static void save_states(Session const& session)
     auto dir = sessions_dir();
     (void)::mkdir(dir.characters(), 0700); // best effort; EEXIST is fine
 
-    int fd = ::open(state_path(session.id).characters(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    // Write a temporary file and rename it over the state, so the file on disk is
+    // always either the whole previous state or the whole new one. Truncating in place
+    // left an empty file whenever the compositor stopped between the truncate and the
+    // write -- and this runs on every geometry change, so a session could be lost to a
+    // kill or a crash right after it recorded its windows.
+    auto const path = state_path(session.id);
+    auto const temporary = ByteString::formatted("{}.tmp", path);
+    int fd = ::open(temporary.characters(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
     if (fd < 0)
         return;
     for (auto const& it : session.states) {
@@ -88,6 +95,8 @@ static void save_states(Session const& session)
         (void)::write(fd, line.characters(), line.length());
     }
     ::close(fd);
+    if (::rename(temporary.characters(), path.characters()) < 0)
+        (void)::unlink(temporary.characters());
 }
 
 static void load_states(ByteString const& id, HashMap<ByteString, ToplevelState>& out)
