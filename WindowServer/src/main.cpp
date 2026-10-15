@@ -7748,7 +7748,7 @@ static void watch_theme_broker(Server& server)
             Config::set_theme({ LexicalPath(theme_path).title(), theme_path });
         }
     };
-    if (auto directory = LexicalPath(path).dirname(); !directory.is_empty())
+    if (auto directory = LexicalPath(path).dirname().to_byte_string(); !directory.is_empty())
         (void)watcher->add_watch(directory, Core::FileWatcherEvent::Type::ChildCreated);
     // Ensure the file exists so we can watch its content; a write is IN_MODIFY
     // (ContentModified), which a directory watch does not report.
@@ -7816,7 +7816,7 @@ static void watch_fonts_broker(Server& server)
             return;
         read_and_apply_fonts(server);
     };
-    if (auto directory = LexicalPath(path).dirname(); !directory.is_empty())
+    if (auto directory = LexicalPath(path).dirname().to_byte_string(); !directory.is_empty())
         (void)watcher->add_watch(directory, Core::FileWatcherEvent::Type::ChildCreated);
     if (Core::File::open(path, Core::File::OpenMode::Read).is_error())
         (void)Core::File::open(path, Core::File::OpenMode::Write);
@@ -7876,7 +7876,7 @@ static void watch_cursor_state(Server& server)
             return;
         apply_cursor_state(server);
     };
-    if (auto directory = LexicalPath(path).dirname(); !directory.is_empty())
+    if (auto directory = LexicalPath(path).dirname().to_byte_string(); !directory.is_empty())
         (void)watcher->add_watch(directory, Core::FileWatcherEvent::Type::ChildCreated);
     if (Core::File::open(path, Core::File::OpenMode::Read).is_error())
         (void)Core::File::open(path, Core::File::OpenMode::Write);
@@ -7942,7 +7942,7 @@ static void install_crash_report_handler()
         s_crash_log_path = configured;
     else
         s_crash_log_path = ByteString::formatted("{}/WindowServer-crash.log", Config::state_directory());
-    if (auto directory = LexicalPath(s_crash_log_path).dirname(); !directory.is_empty())
+    if (auto directory = LexicalPath(s_crash_log_path).dirname().to_byte_string(); !directory.is_empty())
         (void)Core::Directory::create(directory, Core::Directory::CreateDirectories::Yes);
     struct sigaction action { };
     action.sa_handler = fatal_signal_handler;
@@ -8071,7 +8071,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     // only done for the default path, so a session that exported SDE_WM_PORTAL_PATH
     // =/tmp/portal/wm skipped it and listen() failed - leaving a login with applets
     // but no Taskbar/desktop, as the WM clients could not connect.)
-    if (auto directory = LexicalPath(wm_portal).dirname(); !directory.is_empty())
+    if (auto directory = LexicalPath(wm_portal).dirname().to_byte_string(); !directory.is_empty())
         (void)Core::Directory::create(directory, Core::Directory::CreateDirectories::Yes);
     ::unlink(wm_portal.characters());
     auto wm_server = Core::LocalServer::construct();
