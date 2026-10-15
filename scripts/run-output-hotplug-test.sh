@@ -46,6 +46,34 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# A known layout, written rather than discovered: HEADLESS-2 is the configured main
+# screen (so it is the primary, and the test can watch the setting be honoured), and
+# HEADLESS-1 is deliberately a different size, so a window that moves onto it has to
+# be re-fitted rather than just repositioned.
+mkdir -p "$RUNTIME/state"
+cat > "$RUNTIME/state/screenlayout.ini" <<'INI'
+[Screens]
+MainScreen=0
+
+[Screen0]
+Device=HEADLESS-2
+Width=1280
+Height=720
+Top=0
+Left=0
+Mode=Device
+ScaleFactor=1
+
+[Screen1]
+Device=HEADLESS-1
+Width=800
+Height=600
+Top=1280
+Left=0
+Mode=Device
+ScaleFactor=1
+INI
+
 setsid env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=2 SDE_OUTPUT_SCALE=1 \
     SDE_STATE_DIR="$RUNTIME/state" \
@@ -87,7 +115,7 @@ check "two outputs came up" "2" "$(grep -o 'HEADLESS-[0-9]*' "$RUNTIME/comp.log"
 echo "=== a window on the primary ==="
 env WAYLAND_DISPLAY="$SOCK" LD_LIBRARY_PATH="$BUILD/lib" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-    "$NATIVE" --title "Hotplug A" --linger 20000 > "$RUNTIME/app.log" 2>&1 &
+    "$NATIVE" --title "Hotplug A" --maximize --linger 20000 > "$RUNTIME/app.log" 2>&1 &
 APP_PID=$!
 for _ in $(seq 1 100); do
     grep -q "toplevel mapped" "$RUNTIME/comp.log" && break
@@ -106,6 +134,9 @@ check "the output is disabled" "1" "$(grep -c "output '$PRIMARY' disabled" "$RUN
 check "its window moved to the survivor" "1" \
     "$(grep -c "moved [0-9]* window(s) off the removed output onto '$SURVIVOR'" "$RUNTIME/comp.log")"
 check "the primary was reassigned" "1" "$(grep -c "primary output is now '$SURVIVOR'" "$RUNTIME/comp.log")"
+# It was maximised on 1280x720; the survivor is 800x600, so it has to be re-fitted,
+# not merely moved.
+check "the maximised window was re-fitted" "1" "$(grep -c "configured maximized=1 800x600" "$RUNTIME/app.log")"
 if kill -0 "$COMP_PID" 2>/dev/null; then echo "  ok: the compositor survived"; else echo "  MISSING: the compositor died"; fail=1; fi
 
 echo "=== re-enable it ==="
@@ -121,6 +152,9 @@ else
 fi
 sleep 0.5
 if kill -0 "$COMP_PID" 2>/dev/null; then echo "  ok: the compositor survived the re-enable"; else echo "  MISSING: the compositor died"; fail=1; fi
+# And the configured main screen takes the primacy back (Serenity's MainScreen).
+check "the configured main screen is primary again" "1" \
+    "$(grep -c "primary output is now '$PRIMARY' (the configured main screen)" "$RUNTIME/comp.log")"
 
 kill "$APP_PID" 2>/dev/null || true
 if [[ "$fail" -eq 0 ]]; then

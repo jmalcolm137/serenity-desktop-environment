@@ -260,6 +260,9 @@ static bool window_menu_handle_key(Server&, xkb_keysym_t);
 static void stop_key_repeat();
 static void arrange_layers(Server&, wlr_output*);
 static void update_xwayland_workareas(Server&);
+// Multi-output/hotplug: used by the output helpers before they are defined.
+static void reassign_primary_output(Server&, wlr_output*);
+static void toplevel_maximize_on_primary(Toplevel&);
 static Output* output_for(Server&, wlr_output*);
 static void output_manager_send_configuration(Server&);
 static void persist_screen_layout(Server&);
@@ -3953,6 +3956,41 @@ static void output_request_state(wl_listener* listener, void* data)
 // the layout by hand. Move those windows onto a surviving output, keeping their
 // offset from the old output's origin, so "the window at the top-left" stays the
 // window at the top-left.
+// The user's choice of main screen (`MainScreen` in screenlayout.ini, which
+// Display Settings writes). The primary output is what the workarea, window
+// placement and the X11 workarea come from, so the two should agree — before this
+// the primary was simply the first output the backend created and the setting was
+// ignored.
+static wlr_output* configured_main_output(Server& server, wlr_output* excluding)
+{
+    auto const& outputs = Config::outputs();
+    if (outputs.is_empty())
+        return nullptr;
+    unsigned const index = min(Config::main_screen_index(), outputs.size() - 1);
+    auto const& wanted = outputs[index].device;
+    if (wanted.is_empty())
+        return nullptr;
+    for (auto& output : server.outputs) {
+        if (output->output == excluding || !output->output->enabled || !output->output->name)
+            continue;
+        if (wanted == output->output->name)
+            return output->output;
+    }
+    return nullptr;
+}
+
+// An output appearing — or coming back after a replug — is where the configured
+// main screen gets its primacy (the other half of reassign_primary_output).
+static void maybe_restore_primary_output(Server& server)
+{
+    auto* wanted = configured_main_output(server, nullptr);
+    if (!wanted || server.primary_output == wanted)
+        return;
+    server.primary_output = wanted;
+    dbgln("WindowServer: primary output is now '{}' (the configured main screen)",
+        wanted->name ? wanted->name : "?");
+}
+
 static wlr_output* first_enabled_output(Server& server, wlr_output* excluding)
 {
     for (auto& output : server.outputs) {
@@ -3988,18 +4026,49 @@ static void migrate_toplevels_off_output(Server& server, wlr_box const& gone, wl
     };
 
     unsigned moved = 0;
+    unsigned refitted = 0;
     for (auto& toplevel : server.toplevels) {
-        if (toplevel->scene_tree && !toplevel->minimized && move_if_on_gone_output(toplevel->scene_tree))
-            ++moved;
+        if (!toplevel->scene_tree || toplevel->minimized)
+            continue;
+        if (!move_if_on_gone_output(toplevel->scene_tree))
+            continue;
+        ++moved;
+        // A maximised window's size *is* the old output's workarea, so moving the
+        // origin alone would leave it the wrong size for the output it is now on.
+        if (toplevel->maximized) {
+            toplevel_maximize_on_primary(*toplevel);
+            ++refitted;
+        }
     }
     for (auto& toplevel : server.x11_toplevels) {
-        if (toplevel->scene_tree && move_if_on_gone_output(toplevel->scene_tree))
-            ++moved;
+        if (!toplevel->scene_tree || !move_if_on_gone_output(toplevel->scene_tree))
+            continue;
+        ++moved;
+        if (toplevel->maximized) {
+            // An X11 client fills the workarea we report, so re-ask it now that the
+            // primary — and with it _NET_WORKAREA — has moved.
+            wlr_xwayland_surface_set_maximized(toplevel->xsurface, true, true);
+            ++refitted;
+        }
     }
     if (moved > 0) {
-        dbgln("WindowServer: moved {} window(s) off the removed output onto '{}'",
-            moved, replacement->name ? replacement->name : "?");
+        dbgln("WindowServer: moved {} window(s) off the removed output onto '{}' ({} re-fitted)",
+            moved, replacement->name ? replacement->name : "?", refitted);
     }
+}
+
+// Everything that has to happen when an output is gone: its windows move to the
+// primary (or whatever is left), the primary is reassigned if it was the lost one,
+// and maximised windows that moved are re-fitted to their new output. Order
+// matters — the re-fit maximises onto the primary, so the primary has to be the new
+// one by then.
+static void handle_output_lost(Server& server, wlr_box const& gone, wlr_output* lost)
+{
+    reassign_primary_output(server, lost);
+    wlr_output* target = (server.primary_output && server.primary_output != lost)
+        ? server.primary_output
+        : first_enabled_output(server, lost);
+    migrate_toplevels_off_output(server, gone, target);
 }
 
 // The primary output is the reference for the workarea and for placing new
@@ -4009,7 +4078,11 @@ static void reassign_primary_output(Server& server, wlr_output* gone)
 {
     if (server.primary_output != gone)
         return;
-    server.primary_output = first_enabled_output(server, gone);
+    // Prefer the configured main screen if it is still available; otherwise take
+    // whatever is left, so the primary is never a destroyed output.
+    server.primary_output = configured_main_output(server, gone);
+    if (!server.primary_output)
+        server.primary_output = first_enabled_output(server, gone);
     dbgln("WindowServer: primary output is now '{}'",
         server.primary_output && server.primary_output->name ? server.primary_output->name : "(none)");
 }
@@ -4019,9 +4092,9 @@ static void output_destroy(wl_listener* listener, void*)
     Output* output = nullptr;
     output = wl_container_of(listener, output, destroy);
     auto& server = *output->server;
-    // Take its windows with us before the output is forgotten...
+    // Take its windows and its primacy with us before the output is forgotten...
     wlr_box const gone = output->area;
-    migrate_toplevels_off_output(server, gone, first_enabled_output(server, output->output));
+    handle_output_lost(server, gone, output->output);
     wl_list_remove(&output->frame.link);
     wl_list_remove(&output->request_state.link);
     wl_list_remove(&output->destroy.link);
@@ -4029,8 +4102,6 @@ static void output_destroy(wl_listener* listener, void*)
     if (output->background)
         wlr_scene_node_destroy(&output->background->node);
     remove_owned(server.outputs, output);
-    // ...and only then pick a new primary, from what is left.
-    reassign_primary_output(server, output->output);
     // R5: the InputCapture zones are the outputs.
     InputCapture::on_outputs_changed(server);
 }
@@ -4054,8 +4125,12 @@ static void output_commit(wl_listener* listener, void*)
     if (output->was_enabled && !enabled) {
         dbgln("WindowServer: output '{}' disabled", output->output->name ? output->output->name : "?");
         wlr_box const gone = wlr_box_empty(&output->area) ? previous_area : output->area;
-        migrate_toplevels_off_output(server, gone, first_enabled_output(server, output->output));
-        reassign_primary_output(server, output->output);
+        handle_output_lost(server, gone, output->output);
+    } else if (!output->was_enabled && enabled) {
+        // Back after a replug: if it is the configured main screen, it is primary
+        // again. Serenity's MainScreen index is the user's choice; without this a
+        // replugged monitor kept whatever primacy it had lost.
+        maybe_restore_primary_output(server);
     }
     output->was_enabled = enabled;
     reconfigure_lock_surface(*output->server, output->output);
@@ -4213,6 +4288,7 @@ static void server_new_output(wl_listener* listener, void* data)
 
     if (!server->primary_output)
         server->primary_output = wlr_output;
+    maybe_restore_primary_output(*server);
 
     auto const logical_size = output_logical_size(wlr_output);
     dbgln("WindowServer: output '{}' {}x{} @{}x", wlr_output->name ? wlr_output->name : "?", logical_size.width(), logical_size.height(), wlr_output->scale);
@@ -4827,7 +4903,11 @@ static void set_toplevel_minimized(Server& server, Toplevel& toplevel, bool mini
     start_minimize_animation(server, toplevel, window_rect, minimized);
 }
 
-static void toplevel_toggle_maximized(Toplevel& toplevel)
+// Fill the primary output. Safe to call on a window that is already maximised,
+// which is what re-fitting needs: its old size was the workarea of an output it is
+// no longer on (multi-output/hotplug), so the same work has to be redone against
+// the new one — without clobbering the restore size the first pass saved.
+static void toplevel_maximize_on_primary(Toplevel& toplevel)
 {
     auto& server = *toplevel.server;
     // A rolled-up window can't be meaningfully maximized; unroll it first so the
@@ -4836,25 +4916,41 @@ static void toplevel_toggle_maximized(Toplevel& toplevel)
         toplevel.rolled_up = false;
         toplevel_update_frame(toplevel);
     }
-    if (!toplevel.maximized) {
+    if (!toplevel.maximized)
         toplevel.restore_size = { toplevel.xdg_toplevel->base->geometry.width, toplevel.xdg_toplevel->base->geometry.height };
-        wlr_box box { };
-        wlr_output_layout_get_box(server.output_layout, server.primary_output, &box);
-        if (auto* output_state = output_for(server, server.primary_output); output_state && !wlr_box_empty(&output_state->usable_area))
-            box = output_state->usable_area;
-        toplevel.maximized = true;
-        wlr_xdg_toplevel_set_maximized(toplevel.xdg_toplevel, true);
-        if (server.primary_output)
-            wlr_scene_node_set_position(&toplevel.scene_tree->node, box.x, box.y);
-        toplevel_report_position(toplevel);
-        wlr_xdg_toplevel_set_size(toplevel.xdg_toplevel, box.width - toplevel.frame_left - toplevel.frame_right, box.height - toplevel.frame_top - toplevel.frame_bottom);
-    } else {
-        toplevel.maximized = false;
-        wlr_xdg_toplevel_set_maximized(toplevel.xdg_toplevel, false);
-        wlr_xdg_toplevel_set_size(toplevel.xdg_toplevel, toplevel.restore_size.width(), toplevel.restore_size.height());
-    }
+
+    wlr_box box { };
+    wlr_output_layout_get_box(server.output_layout, server.primary_output, &box);
+    if (auto* output_state = output_for(server, server.primary_output); output_state && !wlr_box_empty(&output_state->usable_area))
+        box = output_state->usable_area;
+    toplevel.maximized = true;
+    wlr_xdg_toplevel_set_maximized(toplevel.xdg_toplevel, true);
+    if (server.primary_output)
+        wlr_scene_node_set_position(&toplevel.scene_tree->node, box.x, box.y);
+    toplevel_report_position(toplevel);
+    wlr_xdg_toplevel_set_size(toplevel.xdg_toplevel, box.width - toplevel.frame_left - toplevel.frame_right, box.height - toplevel.frame_top - toplevel.frame_bottom);
     if (toplevel.foreign_handle)
-        wlr_foreign_toplevel_handle_v1_set_maximized(toplevel.foreign_handle, toplevel.maximized);
+        wlr_foreign_toplevel_handle_v1_set_maximized(toplevel.foreign_handle, true);
+}
+
+static void toplevel_set_maximized(Toplevel& toplevel, bool maximized)
+{
+    if (maximized) {
+        toplevel_maximize_on_primary(toplevel);
+        return;
+    }
+    if (!toplevel.maximized)
+        return;
+    toplevel.maximized = false;
+    wlr_xdg_toplevel_set_maximized(toplevel.xdg_toplevel, false);
+    wlr_xdg_toplevel_set_size(toplevel.xdg_toplevel, toplevel.restore_size.width(), toplevel.restore_size.height());
+    if (toplevel.foreign_handle)
+        wlr_foreign_toplevel_handle_v1_set_maximized(toplevel.foreign_handle, false);
+}
+
+static void toplevel_toggle_maximized(Toplevel& toplevel)
+{
+    toplevel_set_maximized(toplevel, !toplevel.maximized);
 }
 
 static void toplevel_toggle_minimized(Toplevel& toplevel)
@@ -5296,7 +5392,7 @@ static void toplevel_request_maximize(wl_listener* listener, void*)
     dbgln("WindowServer: '{}' asked to be {}",
         toplevel->xdg_toplevel->title ? toplevel->xdg_toplevel->title : "",
         wanted ? "maximized" : "restored");
-    toplevel_toggle_maximized(*toplevel);
+    toplevel_set_maximized(*toplevel, wanted);
 }
 
 static void toplevel_request_minimize(wl_listener* listener, void*)
