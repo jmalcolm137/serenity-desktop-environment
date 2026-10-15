@@ -185,6 +185,7 @@ c++ "${PORTAL_FLAGS[@]}" \
     "$SDE_ROOT/tools/portal/input-capture.cpp" \
     "$SDE_ROOT/tools/portal/global-shortcuts.cpp" \
     "$SDE_ROOT/tools/portal/usb.cpp" \
+    "$SDE_ROOT/tools/portal/inhibit.cpp" \
     "${PORTAL_OBJECTS[@]}" \
     "${PORTAL_LAGOM_LIBS[@]}" \
     $(pkg-config --libs dbus-1 wayland-client libpipewire-0.3 xkbcommon gbm libdrm) \

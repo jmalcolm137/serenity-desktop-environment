@@ -1,6 +1,6 @@
 # xdg-desktop-portal-serenity (R5)
 
-**Status:** Phase 1 + Phase 2 landed. Metadata cursor mode and zero-copy DMA-BUF are in place and verified on a live TTY; Camera works via the frontend (§6); InputCapture is landed (P1–P5, [`17-input-capture.md`](17-input-capture.md)); the USB portal's backend is a real broker (§6.5). ·
+**Status:** Phase 1 + Phase 2 landed. Metadata cursor mode and zero-copy DMA-BUF are in place and verified on a live TTY; Camera works via the frontend (§6); InputCapture is landed (P1–P5, [`17-input-capture.md`](17-input-capture.md)); the USB portal's backend is a real broker (§6.5); `Inhibit` (and the `Request` object machinery) is served (§2). Remaining code-only work: async dialogs, the permission store.
 **Related:** [`08-compositor-gaps.md`](08-compositor-gaps.md) §3,
 [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §R5,
 `contrib/xdg-desktop-portal/`
@@ -70,6 +70,7 @@ portal is the standalone `tools/portal/settings-portal.cpp` binary.
 | `Usb` (v1) | `AcquireDevices` — the **broker**. The frontend enumerates the devices with udev and opens the device node for the app; this backend decides whether it may have it: `SDE_PORTAL_USB` is `ask` (default — prompt once through the Access dialog, then remember the grant in `usb-permissions` in the state directory), `allow` or `deny`, and the results carry the granted subset as `a(sa{sv})`. Covered by `scripts/run-usb-portal-test.sh`. |
 | `DynamicLauncher` (v1) | `RequestInstallToken` (random token), `PrepareInstall` (echoes the name), `Launch` (launches the desktop file). |
 | `Access` (v1) | `AccessDialog` through the LibGUI **AccessDialog** app (`SDE_PORTAL_ACCESS_DIALOG`); returns allowed (0) / denied (1). |
+| `Inhibit` (v1) | `Inhibit` (logout / user-switch / suspend / idle flags). The impl method returns nothing, so the backend exports a `Request` object at the call's handle and the caller `Close`s it to release; the response arrives as the `Request.Response` signal. Inhibiting is layered and best-effort: **logind**'s block inhibitor on the system bus (`shutdown`/`sleep`/`idle`, held as an fd) when logind is available, plus the session seam `SDE_PORTAL_INHIBIT_CMD <flags>` (the OR of the live flags, 0 when none) that the session wires to its own idle/power path (`scripts/sde-idle`, `sde-power`). No `xdg-desktop-portal-gtk` fallback any more. Verified directly and through the real frontend by `scripts/run-portal-test.sh`. |
 
 ### ScreenCast pipeline (niri-inspired)
 
@@ -133,6 +134,9 @@ hard-coding them (the backend stays portable, with fallbacks):
   command that receives the document fd.
 - `SDE_PORTAL_CHOOSER` — the ScreenCast source picker.
 - `SDE_PORTAL_ACCESS_DIALOG` — the permission prompt.
+- `SDE_PORTAL_INHIBIT_CMD <flags>` — run when the set of live Inhibit inhibitors
+  changes (the OR of the flags, 0 when none), so the session can stop/restart its
+  idle handling (`scripts/sde-idle`, `sde-power`).
 - `SDE_PORTAL_APP_CHOOSER` — the application chooser.
 - `SDE_PORTAL_COLOR_PICKER` — the color picker.
 - `SDE_PORTAL_SCREENSHOT_OVERLAY` — the interactive area selector.
@@ -286,17 +290,21 @@ These live in §5 and are plain backend work:
 - **Async (non-blocking) dialogs** — six `g_spawn_sync` call sites across five
   handlers (plus the ScreenCast source picker) block the backend's main loop;
   convert them to an async subprocess helper.
-- **Permission-store integration** and the `Request`/`Response` choreography.
-- **`Inhibit`** — the installed frontend and both the `gtk` and `kde` backends
-  implement it; we still fall back to `gtk`. Wire it to the SDE idle/logind power
-  path (`scripts/sde-idle`, `sde-power`).
+- **Permission-store integration** and the `Request`/`Response` choreography —
+  the `Request` object machinery landed with `Inhibit` (`tools/portal/inhibit.cpp`:
+  the service serves the request paths, and `Request.Close` releases); the
+  permission store itself is still to come.
+- ~~**`Inhibit`**~~ — **done**: the `Inhibit` interface (with the `Request`
+  object) is served, wired to logind and to the `SDE_PORTAL_INHIBIT_CMD` seam
+  (see §2).
 
 ## 7. Test
 
 `scripts/run-portal-test.sh` starts the backend on a private bus and queries every
 Phase-1 interface directly (Settings, Account, Lockdown, Background, AppChooser,
-ProxyResolver, OpenURI, Notification), then — best effort — proves the real
-`xdg-desktop-portal` frontend routes `Settings` to this backend.
+ProxyResolver, OpenURI, Notification) plus `Inhibit` (its `Request` object and the
+seam), then — best effort — proves the real `xdg-desktop-portal` frontend routes
+`Settings` and `Inhibit` to this backend.
 
 `scripts/run-screencast-test.sh` starts a headless SDE compositor and the backend,
 runs a ScreenCast session (CreateSession → SelectSources → Start), asserts the

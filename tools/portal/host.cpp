@@ -51,11 +51,20 @@ ByteString state_file(StringView name)
 
 ErrorOr<Optional<ByteString>> run_command(Vector<ByteString> const& arguments, bool capture_stdout)
 {
+    if (arguments.is_empty())
+        return Error::from_errno(EINVAL);
+
+    // Core::Process::spawn puts the executable in argv[0] itself, so the
+    // arguments it is given are the ones *after* argv[0].
+    Vector<ByteString> child_arguments;
+    for (size_t i = 1; i < arguments.size(); ++i)
+        child_arguments.append(arguments[i]);
+
     Core::ProcessSpawnOptions options {
         .name = arguments.first(),
         .executable = arguments.first(),
         .search_for_executable_in_path = true,
-        .arguments = arguments,
+        .arguments = child_arguments,
     };
 
     int read_fd = -1;
@@ -86,11 +95,20 @@ ErrorOr<Optional<ByteString>> run_command(Vector<ByteString> const& arguments, b
 
 void spawn_async(Vector<ByteString> const& arguments)
 {
+    if (arguments.is_empty())
+        return;
+
+    // Core::Process::spawn puts the executable in argv[0] itself, so the arguments
+    // it is given are the ones *after* argv[0].
+    Vector<ByteString> child_arguments;
+    for (size_t i = 1; i < arguments.size(); ++i)
+        child_arguments.append(arguments[i]);
+
     Core::ProcessSpawnOptions options {
         .name = arguments.first(),
         .executable = arguments.first(),
         .search_for_executable_in_path = true,
-        .arguments = arguments,
+        .arguments = child_arguments,
     };
     (void)Core::Process::spawn(options);
 }

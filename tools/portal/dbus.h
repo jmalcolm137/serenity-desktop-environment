@@ -229,8 +229,18 @@ public:
     // org.freedesktop.DBus.Introspectable.
     void register_interface(ByteString name, MethodHandler, PropertyHandler = {}, Vector<ByteString> property_names = {}, StringView introspection_xml = {});
 
+    // Object paths served besides the service's own: the request objects the impl
+    // portals export (org.freedesktop.impl.portal.Request) live at the handle path
+    // the caller passes in, not at the service's path. Dispatch is by interface.
+    void add_object_path(ByteString path);
+    void remove_object_path(StringView path);
+
     // Emits a signal on `interface`. `arguments` are appended in order.
     void emit_signal(StringView interface, StringView name, Vector<Value> const& arguments = {});
+    // Emits a signal on an arbitrary object path: the request objects the impl
+    // portals export (see org.freedesktop.impl.portal.Request) live outside the
+    // service's own path.
+    void emit_signal_on(StringView path, StringView interface, StringView name, Vector<Value> const& arguments = {});
 
 private:
     Service(DBusConnection*, ByteString bus_name, ByteString object_path);
@@ -249,10 +259,12 @@ private:
     void handle_introspect(MethodCall&);
 
     Interface* interface_named(StringView name);
+    bool owns_path(StringView path) const;
 
     DBusConnection* m_connection { nullptr };
     ByteString m_bus_name;
     ByteString m_object_path;
+    Vector<ByteString> m_object_paths;
     Vector<Interface> m_interfaces;
     RefPtr<Core::Notifier> m_notifier;
 };

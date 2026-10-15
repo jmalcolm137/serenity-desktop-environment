@@ -9,6 +9,8 @@
 #include <AK/StringBuilder.h>
 #include <AK/Vector.h>
 
+#include <string.h>
+
 namespace Portal {
 
 // --- Value ------------------------------------------------------------------
@@ -704,7 +706,12 @@ void Service::register_interface(ByteString name, MethodHandler method_handler, 
 
 void Service::emit_signal(StringView interface, StringView name, Vector<Value> const& arguments)
 {
-    auto* signal = dbus_message_new_signal(m_object_path.characters(), interface.to_byte_string().characters(), name.to_byte_string().characters());
+    emit_signal_on(m_object_path, interface, name, arguments);
+}
+
+void Service::emit_signal_on(StringView path, StringView interface, StringView name, Vector<Value> const& arguments)
+{
+    auto* signal = dbus_message_new_signal(path.to_byte_string().characters(), interface.to_byte_string().characters(), name.to_byte_string().characters());
     if (!signal)
         return;
     DBusMessageIter iter;
@@ -716,6 +723,32 @@ void Service::emit_signal(StringView interface, StringView name, Vector<Value> c
     dbus_message_unref(signal);
 }
 
+void Service::add_object_path(ByteString path)
+{
+    m_object_paths.append(move(path));
+}
+
+void Service::remove_object_path(StringView path)
+{
+    for (size_t i = 0; i < m_object_paths.size(); ++i) {
+        if (m_object_paths[i] == path) {
+            m_object_paths.remove(i);
+            return;
+        }
+    }
+}
+
+bool Service::owns_path(StringView path) const
+{
+    if (m_object_path == path)
+        return true;
+    for (auto const& extra : m_object_paths) {
+        if (extra == path)
+            return true;
+    }
+    return false;
+}
+
 DBusHandlerResult Service::filter(DBusConnection*, DBusMessage* message, void* user_data)
 {
     auto* service = static_cast<Service*>(user_data);
@@ -723,7 +756,7 @@ DBusHandlerResult Service::filter(DBusConnection*, DBusMessage* message, void* u
         return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 
     auto const* path = dbus_message_get_path(message);
-    if (!path || service->m_object_path != path)
+    if (!path || !service->owns_path(StringView { path, strlen(path) }))
         return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 
     service->handle_message(message);
