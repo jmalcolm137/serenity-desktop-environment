@@ -20,7 +20,7 @@ BUILD=(
     # Toolchain
     base-devel cmake ninja meson pkgconf git python
     # Compositor: wlroots + the SDE's own pkg-config requirements
-    wayland wayland-protocols libxkbcommon pixman libdrm libinput libseat
+    wayland wayland-protocols libxkbcommon pixman libdrm libinput seatd
     libdisplay-info libxcb xcb-util-wm
     # Services and portals
     pipewire dbus
