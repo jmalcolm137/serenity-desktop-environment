@@ -42,7 +42,7 @@ unverified_names=""
 for patch in "$SDE_ROOT"/patches/*.patch; do
     [[ -e "$patch" ]] || continue
     name="$(basename "$patch")"
-    if git -C "$SERENITY_SRC" apply --reverse --check "$patch" >/dev/null 2>&1; then
+    if git -C "$SERENITY_SRC" apply -C1 --reverse --check "$patch" >/dev/null 2>&1; then
         echo "==> $name already applied"
         already_count=$((already_count + 1))
     elif git -C "$SERENITY_SRC" apply -C1 --check "$patch" >/dev/null 2>&1; then

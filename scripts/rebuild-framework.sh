@@ -51,6 +51,7 @@ if [[ "${1:-}" == "--with-apps" ]]; then
     "$SDE_ROOT/scripts/build-full-sde.sh" --with-apps
 fi
 
-echo "==> done. Log back in, then check a key nobody else can check for you:"
+echo "==> done. Open a *new* Terminal (an existing one keeps the libraries it already"
+echo "    mapped, so it will behave exactly as before), then check:"
 echo "      od -An -c        # press Backspace, then Ctrl-C, then Ctrl-D"
-echo "    Backspace should be 177 (\\b instead means the old build); Ctrl-C should be 003."
+echo "    Backspace should be 177 (\\b means an old build); Ctrl-C should be 003."
