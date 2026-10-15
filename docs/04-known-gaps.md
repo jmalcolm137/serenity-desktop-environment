@@ -506,6 +506,12 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   `run-profiler-test.sh` must SKIP where `perf_event_open` is blocked, the budget
   jobs stay informational until a runner baseline exists, and the X11 `WM_CLASS`
   grouping failure (§R5) needs a look.
+- **Terminal keys vs the host's conventions.** Plain backspace emitted 0x08 where a
+  host line discipline expects 0x7f (`erase = ^?`), so it did nothing in any
+  raw-mode program (`yay`, `htop`, `vim`); Ctrl+letter is now converted to the
+  control character in the LibWM shim, where Serenity's WindowServer used to do it.
+  See [`27-terminal-keys.md`](27-terminal-keys.md), which also records what could
+  not be measured.
 - **Packaging** of `WindowServer` and the session; **sanitizers/fuzzing**;
   **compositor design doc** and observability.
 
