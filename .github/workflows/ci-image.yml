@@ -39,6 +39,14 @@ jobs:
                   registry: ghcr.io
                   username: ${{ github.actor }}
                   password: ${{ secrets.GITHUB_TOKEN }}
+            - name: Resolve the revisions to bake in
+              # Passed as build args so the clone layers are invalidated when either
+              # repository moves. Leaving them as `main` meant Docker cached the
+              # clones, and the image kept serving a framework from the first build.
+              id: revisions
+              run: |
+                  echo "sde=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+                  echo "framework=$(git ls-remote https://github.com/${{ github.repository_owner }}/libgui-wayland main | cut -f1)" >> "$GITHUB_OUTPUT"
             - name: Set up Buildx
               # The default `docker` driver cannot export a registry cache; the
               # container driver can. Without this the build fails before it starts
@@ -50,6 +58,9 @@ jobs:
                   context: .
                   file: ci/Containerfile
                   push: true
+                  build-args: |
+                      SDE_REVISION=${{ steps.revisions.outputs.sde }}
+                      LIBGUI_WAYLAND_REVISION=${{ steps.revisions.outputs.framework }}
                   tags: |
                       ${{ env.IMAGE }}:latest
                       ${{ env.IMAGE }}:${{ github.sha }}
