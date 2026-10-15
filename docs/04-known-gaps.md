@@ -361,10 +361,9 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   wlroots drops the XWM connection when the X server goes away, and the previous
   code called into a dead Xwayland from a layer-surface commit — a SIGSEGV that
   killed a live session (found by the CI work, [`26-ci.md`](26-ci.md) §6.2).
-  **Open:** `run-taskbar-grouping-test.sh` fails its X11 `WM_CLASS` assertion —
-  the compositor logs `X11 window 0 class='' instance=''` for an `xterm`, so the
-  grouping input is empty even though the native app-id path works. The claim
-  above about X11 grouping needs re-verification.
+  X11 grouping is verified by `run-taskbar-grouping-test.sh` (`a1e3cb9`): an X11
+  client's `WM_CLASS` can arrive after it maps (the first state reports
+  `class=''`), and the Taskbar moves the window into its group when it does.
   **Still missing for full parity:** Xwayland **keyboard grabs** (in no wlroots
   release), **XDND** drag-and-drop (wlroots 0.21), and focus-stealing prevention
   (wlroots gives no timestamp) — see
