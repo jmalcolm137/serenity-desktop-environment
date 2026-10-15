@@ -297,7 +297,7 @@ FRAC_STATUS=0
 env WAYLAND_DISPLAY="$SOCK_FRAC" timeout 4 "$TOOLS_BUILD/native-app-test" --fractional > "$RUNTIME/fractional.log" 2>&1 || FRAC_STATUS=$?
 kill "$FRAC_PID" 2>/dev/null || true
 wait "$FRAC_PID" 2>/dev/null || true
-check_log "scaling 1.5x" "$RUNTIME/comp-frac.log"
+check_log "@1.5x" "$RUNTIME/comp-frac.log"
 if [ "${FRAC_STATUS:-1}" -eq 0 ] && grep -q "preferred_scale=180" "$RUNTIME/fractional.log"; then
     echo "  ok: client learned the 1.5x preferred scale ($(grep -o 'preferred_scale=[0-9]* (.*)' "$RUNTIME/fractional.log" | head -1))"
 else
