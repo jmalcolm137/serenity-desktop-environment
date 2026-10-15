@@ -81,8 +81,13 @@ for _ in $(seq 1 50); do
     sleep 0.1
 done
 
-# A normal client to have a titlebar to click on.
-env WAYLAND_DISPLAY="$SOCK" setsid timeout 8 "$TOOLS_BUILD/native-app-test" --server-side-decorations > "$RUNTIME/native.log" 2>&1 &
+# A normal client to have a titlebar to click on. It must outlive the whole
+# sequence below: every later step assumes a window exists, and one that exits
+# early fails in confusing ways -- with no window left the window switcher's list is
+# empty, so it returns before logging, and the switcher checks report a missing
+# line rather than a missing window. At 8s the client died between the Alt+Tab and
+# Super+Tab legs.
+env WAYLAND_DISPLAY="$SOCK" setsid timeout 30 "$TOOLS_BUILD/native-app-test" --server-side-decorations > "$RUNTIME/native.log" 2>&1 &
 sleep 1
 
 # Right-click the titlebar (the frame's top inset) through a virtual pointer.
