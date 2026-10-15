@@ -49,3 +49,18 @@ int main()
     fflush(stdout);
     return ran ? 1 : 0;
 }
+
+// The same condition one step later, which is what the coredump actually showed:
+// static destructors run *after* the thread-local ones, so by the time a static
+// destructor tears down a widget tree, the stack the deferred work looks for has
+// already been destroyed (not merely emptied). Fixing only the empty case left this
+// one live, and every session restart dumped core again.
+//
+// Running at exit is the point: this whole object exists to be destroyed late.
+struct DeferredWorkOnExit {
+    ~DeferredWorkOnExit()
+    {
+        Core::deferred_invoke([] {});
+    }
+};
+static DeferredWorkOnExit s_deferred_work_on_exit;
