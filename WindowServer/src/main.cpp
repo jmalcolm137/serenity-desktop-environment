@@ -5621,6 +5621,8 @@ static void server_new_xdg_toplevel(wl_listener* listener, void* data)
             .app_id = xdg_toplevel->app_id ? xdg_toplevel->app_id : "",
         };
         toplevel->ext_foreign_handle = wlr_ext_foreign_toplevel_handle_v1_create(server->ext_foreign_toplevel_list, &state);
+        if (toplevel->ext_foreign_handle)
+            toplevel->ext_foreign_handle->data = toplevel.ptr();
     }
 
     toplevel->map.notify = toplevel_map;
@@ -7256,6 +7258,29 @@ static void update_ext_workspace_active(Server& server)
     }
 }
 
+// A client (the ScreenCast portal) asks for a capture source for one window. The
+// source must be created here: an unanswered request leaves the client's new id
+// unbacked, and its next request using it is a protocol error that kills its
+// whole connection. The source is the window's content (the client surface,
+// without the server-side frame).
+static void ext_toplevel_capture_request(wl_listener* listener, void* data)
+{
+    Server* server = wl_container_of(listener, server, ext_toplevel_capture_request);
+    auto* request = static_cast<wlr_ext_foreign_toplevel_image_capture_source_manager_v1_request*>(data);
+    auto* toplevel = request->toplevel_handle ? static_cast<Toplevel*>(request->toplevel_handle->data) : nullptr;
+    wlr_scene_tree* tree = toplevel ? (toplevel->content_tree ? toplevel->content_tree : toplevel->scene_tree) : nullptr;
+    wlr_ext_image_capture_source_v1* source = nullptr;
+    if (tree) {
+        source = wlr_ext_image_capture_source_v1_create_with_scene_node(&tree->node,
+            wl_display_get_event_loop(server->display), server->allocator, server->renderer);
+    }
+    if (!source) {
+        fprintf(stderr, "WindowServer: window capture source unavailable\n");
+        return;
+    }
+    wlr_ext_foreign_toplevel_image_capture_source_manager_v1_request_accept(request, source);
+}
+
 static void ext_workspace_commit(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
@@ -7542,6 +7567,10 @@ static ErrorOr<void> initialize(Server& server)
     server.ext_foreign_toplevel_list = wlr_ext_foreign_toplevel_list_v1_create(server.display, 1);
     // Window capture sources (ext-image-capture-source-v1) for the ScreenCast portal.
     server.ext_toplevel_capture_source_manager = wlr_ext_foreign_toplevel_image_capture_source_manager_v1_create(server.display, 1);
+    if (server.ext_toplevel_capture_source_manager) {
+        server.ext_toplevel_capture_request.notify = ext_toplevel_capture_request;
+        wl_signal_add(&server.ext_toplevel_capture_source_manager->events.new_request, &server.ext_toplevel_capture_request);
+    }
     server.xdg_activation = wlr_xdg_activation_v1_create(server.display);
 
     // R5 protocol parity (docs/21-r5-protocol-parity-plan.md): client window icons

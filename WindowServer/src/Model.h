@@ -659,6 +659,7 @@ struct Server {
     wl_listener new_virtual_keyboard { };
     wl_listener new_virtual_pointer { };
     wl_listener ext_workspace_commit { };
+    wl_listener ext_toplevel_capture_request { };
     wl_listener xdg_activation_activate { };
     wl_listener cursor_shape_request { };
 
