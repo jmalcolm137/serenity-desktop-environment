@@ -42,23 +42,18 @@ RUN git clone "$LIBGUI_WAYLAND_REPO" /opt/libgui-wayland \
 RUN git clone --depth 1 --branch "$SDE_REVISION" "$SDE_REPO" /opt/sde \
     && /opt/sde/scripts/fetch-wlroots.sh
 
-# The two patch sets, in order, then the desktop. This is the order a developer's
-# setup runs in, and both are needed before the shim can exist:
+# The framework, then the desktop — the same sequence a developer runs, and both
+# patch sets land on the shared SerenityOS checkout:
 #
-#   * the *SDE's* patches add its Lagom targets and the Config endpoint generation
-#     (without them: "ninja: error: unknown target 'Taskbar'");
-#   * the *port's* patches add the full-LibGUI build and the other 16 endpoint
-#     generations (without them the shim has no headers to include).
-#
-# build.sh applies the SDE's patches and configures Lagom with SDE_ROOT; building a
-# small library is enough to make that happen. build-libgui.sh then applies the
-# port's patches and builds the framework — libraries first, shim second, which is
-# deterministic on a fresh tree.
-RUN cd /opt/sde \
-    && scripts/build.sh LibConfig \
-    && cd /opt/libgui-wayland \
+#   * build-libgui.sh applies the *port's* patches and builds the framework: the
+#     libraries, then every endpoint generator the shim's headers include, then the
+#     shim itself (see that script — header inclusion is invisible to ninja);
+#   * build.sh applies the *SDE's* patches, configures Lagom with SDE_ROOT and
+#     builds its application stack (its default target is Terminal).
+RUN cd /opt/libgui-wayland \
     && scripts/build-libgui.sh --no-tests \
     && cd /opt/sde \
+    && scripts/build.sh \
     && scripts/ci-build.sh --with-apps
 
 LABEL org.opencontainers.image.source="https://github.com/jmalcolm137/serenity-desktop-environment" \
