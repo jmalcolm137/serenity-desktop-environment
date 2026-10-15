@@ -8,7 +8,7 @@
 # standard /tmp/portal/wm socket and starts the shell.
 #
 # Usage: start-sde-session.sh ["<startup command>"]
-#   The startup command defaults to running the Taskbar and a TextEditor.
+#   The startup command defaults to running the Taskbar and a File Manager.
 #
 # Set SDE_BACKENDS to force a backend list (passed to wlr as WLR_BACKENDS), e.g.
 # SDE_BACKENDS=headless ./start-sde-session.sh
@@ -121,7 +121,7 @@ export SDE_SESSION_IDLE_DPMS_SECONDS="${SDE_SESSION_IDLE_DPMS_SECONDS:-60}"
 # configuration at startup (e.g. Browser) find it.
 SERENITY="$SERENITY" "$SDE_ROOT/scripts/seed-serenity-home.sh"
 
-# Start the Taskbar and a TextEditor, plus the taskbar applets, unless the
+# Start the Taskbar and a File Manager, plus the taskbar applets, unless the
 # caller supplies their own startup command.
 BATTERY_APPLET="$SDE_ROOT/build/BatteryApplet/BatteryApplet"
 if [[ ! -x "$BATTERY_APPLET" ]]; then

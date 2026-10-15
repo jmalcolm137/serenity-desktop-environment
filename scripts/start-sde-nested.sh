@@ -39,6 +39,13 @@ export SDE_APP_BIN_DIR="$BUILD/bin"
 export SDE_WM_PORTAL_PATH="/tmp/portal/wm"
 export SDE_LOCK_CMD="${SDE_LOCK_CMD:-swaylock}"
 export SDE_SESSION_IDLE_SECONDS="${SDE_SESSION_IDLE_SECONDS:-0}"
+# Seed a fresh state directory with the intended default wallpaper, as
+# start-sde-session.sh does: the compositor resolves a bare name under
+# $SERENITY_RES_ROOT/wallpapers. Without this a nested/dev session comes up with
+# no wallpaper at all, which hides a missing asset (patches/0066 restores
+# blue-grid.png).
+export SDE_WALLPAPER="${SDE_WALLPAPER:-blue-grid.png}"
+export SDE_WALLPAPER_MODE="${SDE_WALLPAPER_MODE:-fill}"
 
 # Session services; their children must target the session display.
 LAUNCH_SERVER="$SDE_ROOT/build/LaunchServer/LaunchServer"
@@ -71,7 +78,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-STARTUP="$BUILD/bin/Taskbar & $BUILD/bin/FileManager -d & $BUILD/bin/TextEditor"
+STARTUP="$BUILD/bin/Taskbar & $BUILD/bin/FileManager -d"
 
 # The battery status applet (a LibGUI app in this repo) runs in the Taskbar's
 # applet area. Build it on demand so a fresh checkout still gets it.
