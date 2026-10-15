@@ -80,7 +80,12 @@ check "XDG_VTNR=3" "$(cat "$RUNTIME/env-c" 2>/dev/null || true)"
 echo "== (D) native preflight refuses without a DRM device =="
 # start-sde-session.sh logs to SDE_SESSION_LOG when it has no terminal, so point it
 # at the file we assert on.
-if env SDE_SESSION_LOG="$RUNTIME/d.log" SDE_DRM_GLOB="/nonexistent/card*" "$START" >/dev/null 2>&1; then
+# Clear SDE_BACKENDS/SDE_ALLOW_NO_DRM first: a set SDE_BACKENDS deliberately skips
+# the preflight (it means "use this backend, do not look for DRM"), and the test
+# driver exports SDE_BACKENDS=headless for the whole run. Without this the run
+# started a real session here and hung until the driver killed it at 300s.
+if env -u SDE_BACKENDS -u SDE_ALLOW_NO_DRM \
+    SDE_SESSION_LOG="$RUNTIME/d.log" SDE_DRM_GLOB="/nonexistent/card*" "$START" >/dev/null 2>&1; then
     echo "  FAIL: started without a DRM device"
     fail=1
 else
