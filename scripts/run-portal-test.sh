@@ -54,8 +54,11 @@ EOF
 chmod +x "$PRINTDIALOG"
 
 ACCESSDIALOG="$RUNTIME/accessdialog.sh"
-cat > "$ACCESSDIALOG" <<'EOF'
+cat > "$ACCESSDIALOG" <<EOF
 #!/usr/bin/env bash
+# A dialog that can be made slow, to prove the backend keeps serving other portal
+# calls while it is open (docs/15 §6.6).
+[[ -f "$RUNTIME/slow-dialog" ]] && sleep 2
 echo 0
 EOF
 chmod +x "$ACCESSDIALOG"
@@ -264,6 +267,27 @@ check "org.freedesktop.impl.portal.Request" "$(gdbus introspect --session --dest
 check "()" "$(gdbus call --session --dest "$DEST" --object-path "$INH_HANDLE" --method org.freedesktop.impl.portal.Request.Close 2>&1)"
 sleep 0.4
 check "flags=0" "$(cat "$RUNTIME/inhibited.txt" 2>/dev/null || echo '(no release call)')"
+
+echo "=== async dialogs ==="
+# A modal dialog must not block the backend: start one that takes 2s, then prove
+# another portal call is answered while it is still open (docs/15 §6.6).
+touch "$RUNTIME/slow-dialog"
+call org.freedesktop.impl.portal.Access.AccessDialog /org/freedesktop/portal/desktop/request/portal_test/2 org.example.Slow "" "T" "S" "B" "{}" > "$RUNTIME/slow-access.out" 2>&1 &
+slow_pid=$!
+sleep 0.3
+start_ns="$(date +%s%N)"
+value="$(call org.freedesktop.impl.portal.Settings.Read org.freedesktop.appearance color-scheme)"
+elapsed_ms=$(( ($(date +%s%N) - start_ns) / 1000000 ))
+check "uint32 2" "$value"
+if [ "$elapsed_ms" -lt 1000 ]; then
+    echo "  ok: another portal call was answered in ${elapsed_ms}ms while a dialog was open"
+else
+    echo "  FAIL: a portal call took ${elapsed_ms}ms while a dialog was open"
+    fail=1
+fi
+wait "$slow_pid" 2>/dev/null || true
+check "uint32 0" "$(cat "$RUNTIME/slow-access.out" 2>/dev/null || echo '(no reply)')"
+rm -f "$RUNTIME/slow-dialog"
 
 echo "=== backend declaration ==="
 portals_conf="$SDE_ROOT/contrib/xdg-desktop-portal/portals.conf"

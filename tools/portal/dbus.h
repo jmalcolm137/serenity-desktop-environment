@@ -19,7 +19,9 @@
 #include <AK/Error.h>
 #include <AK/Function.h>
 #include <AK/NonnullOwnPtr.h>
+#include <AK/NonnullRefPtr.h>
 #include <AK/Optional.h>
+#include <AK/RefCounted.h>
 #include <AK/StringView.h>
 #include <AK/Vector.h>
 #include <LibCore/EventReceiver.h>
@@ -150,6 +152,10 @@ struct Value::Entry {
 
 using Dictionary = Value::Dictionary;
 
+// Defined after MethodCall (a call can be taken from its handler, see
+// MethodCall::take()).
+class DeferredReply;
+
 // An incoming method call: the parsed arguments plus reply helpers.
 class MethodCall {
 public:
@@ -163,6 +169,11 @@ public:
     Value const* argument(size_t index) const;
     ByteString string_argument(size_t index) const;
     ByteString object_path_argument(size_t index) const;
+
+    // The handler will finish asynchronously (an external helper is running): take
+    // the call so it outlives the handler, and reply through the returned handle.
+    // The Service then leaves the call unanswered.
+    NonnullRefPtr<DeferredReply> take();
 
     // Replies. Exactly one of these must be called.
     void reply(Vector<Value> const& results = {});
@@ -185,6 +196,7 @@ private:
     ByteString m_sender;
     Vector<Value> m_arguments;
     bool m_replied { false };
+    bool m_deferred { false };
     Dictionary m_results;
 };
 
@@ -193,6 +205,30 @@ enum class Response : u32 {
     Success = 0,
     Cancelled = 1,
     OtherError = 2,
+};
+
+// The reply to a call that was taken from a handler (MethodCall::take()): an
+// asynchronous helper is running and the handler has returned. Copyable, so the
+// continuation that produces the reply can capture it.
+class DeferredReply : public RefCounted<DeferredReply> {
+public:
+    static NonnullRefPtr<DeferredReply> create(DBusConnection* connection, DBusMessage* message)
+    {
+        return adopt_ref(*new DeferredReply(connection, message));
+    }
+
+    ~DeferredReply();
+
+    void reply(Vector<Value> const& results = {});
+    void reply_response(u32 response, Dictionary const& results = {});
+    void reply_error(StringView name, StringView message);
+
+private:
+    DeferredReply(DBusConnection*, DBusMessage*);
+
+    DBusConnection* m_connection { nullptr };
+    DBusMessage* m_message { nullptr };
+    bool m_replied { false };
 };
 
 namespace ErrorName {

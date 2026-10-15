@@ -96,28 +96,26 @@ void remember_grant(StringView app_id, StringView device_id, bool writable)
     (void)file.value()->write_until_depleted(line);
 }
 
-// Ask the user once for the whole request, through the LibGUI AccessDialog (which
-// prints 0 to allow, 1 to deny). Without a dialog configured there is no way to
-// ask, so the request is refused.
-bool prompt_for_access(Vector<RequestedDevice> const& devices, StringView app_id)
+// The reply path, shared by the synchronous (policy) and asynchronous (dialog)
+// paths. The call was taken up front because the dialog may answer later.
+void reply_acquire_devices(NonnullRefPtr<Portal::DeferredReply> reply, Vector<RequestedDevice> const& requested, bool granted, StringView app_id, StringView policy)
 {
-    auto dialog = Portal::environment("SDE_PORTAL_ACCESS_DIALOG"sv);
-    if (!dialog.has_value() || dialog->is_empty()) {
-        dbgln("usb: no SDE_PORTAL_ACCESS_DIALOG; refusing {} device(s) for '{}'", devices.size(), app_id);
-        return false;
+    dbgln("usb: {} {} device(s) for '{}' (policy {})", granted ? "granted" : "refused", requested.size(), app_id, policy);
+    Portal::Dictionary results;
+    if (!granted) {
+        reply->reply_response(to_underlying(Portal::Response::Cancelled), results);
+        return;
     }
 
-    StringBuilder list;
-    for (auto const& device : devices) {
-        if (list.length())
-            list.append('\n');
-        list.append(device.id);
+    // The granted subset: each device's id and its access options.
+    Portal::Value::Container granted_devices;
+    for (auto const& device : requested) {
+        Portal::Dictionary access;
+        access.append(Portal::Value::Entry { "writable", Portal::Value::make_bool(device.writable) });
+        granted_devices.append(Portal::Value::make_struct({ Portal::Value::make_string(device.id), Portal::Value::make_dict(move(access)) }));
     }
-
-    auto output = Portal::run_command({ dialog.value(), "-t", ByteString { "Allow USB access?" }, "-s", app_id.to_byte_string(), "-b", list.to_byte_string() }, true);
-    if (output.is_error() || !output.value().has_value())
-        return false;
-    return output.value().value().to_number<int>().value_or(1) == 0;
+    results.append(Portal::Value::Entry { "devices", Portal::Value::make_array(move(granted_devices), "(sa{sv})"sv) });
+    reply->reply_response(to_underlying(Portal::Response::Success), results);
 }
 
 void handle_acquire_devices(Portal::MethodCall& call)
@@ -142,53 +140,62 @@ void handle_acquire_devices(Portal::MethodCall& call)
         }
     }
 
-    Portal::Dictionary results;
     if (requested.is_empty()) {
         // Nothing to grant: an empty request is the frontend's bug, not a denial.
+        Portal::Dictionary results;
         call.reply_response(to_underlying(Portal::Response::OtherError), results);
         return;
     }
 
     auto policy = usb_policy();
-    bool granted = false;
-    if (policy == "allow"sv) {
-        granted = true;
-    } else if (policy == "deny"sv) {
-        granted = false;
-    } else {
-        // "ask": honour a remembered grant, else prompt once for all of them.
-        bool all_remembered = true;
-        for (auto const& device : requested) {
-            bool remembered_writable = false;
-            if (!remembered_grant(app_id, device.id, remembered_writable) || (device.writable && !remembered_writable))
-                all_remembered = false;
-        }
-        if (all_remembered) {
-            granted = true;
-        } else {
-            granted = prompt_for_access(requested, app_id);
-            if (granted) {
-                for (auto const& device : requested)
-                    remember_grant(app_id, device.id, device.writable);
-            }
-        }
-    }
+    auto pending = call.take();
 
-    dbgln("usb: {} {} device(s) for '{}' (policy {})", granted ? "granted" : "refused", requested.size(), app_id, policy);
-    if (!granted) {
-        call.reply_response(to_underlying(Portal::Response::Cancelled), results);
+    if (policy == "allow"sv) {
+        reply_acquire_devices(pending, requested, true, app_id, policy);
+        return;
+    }
+    if (policy == "deny"sv) {
+        reply_acquire_devices(pending, requested, false, app_id, policy);
         return;
     }
 
-    // The granted subset: each device's id and its access options.
-    Portal::Value::Container granted_devices;
+    // "ask": honour a remembered grant, else prompt once for all of them.
+    bool all_remembered = true;
     for (auto const& device : requested) {
-        Portal::Dictionary access;
-        access.append(Portal::Value::Entry { "writable", Portal::Value::make_bool(device.writable) });
-        granted_devices.append(Portal::Value::make_struct({ Portal::Value::make_string(device.id), Portal::Value::make_dict(move(access)) }));
+        bool remembered_writable = false;
+        if (!remembered_grant(app_id, device.id, remembered_writable) || (device.writable && !remembered_writable))
+            all_remembered = false;
     }
-    results.append(Portal::Value::Entry { "devices", Portal::Value::make_array(move(granted_devices), "(sa{sv})"sv) });
-    call.reply_response(to_underlying(Portal::Response::Success), results);
+    if (all_remembered) {
+        reply_acquire_devices(pending, requested, true, app_id, policy);
+        return;
+    }
+
+    auto dialog = Portal::environment("SDE_PORTAL_ACCESS_DIALOG"sv);
+    if (!dialog.has_value() || dialog->is_empty()) {
+        dbgln("usb: no SDE_PORTAL_ACCESS_DIALOG; refusing {} device(s) for '{}'", requested.size(), app_id);
+        reply_acquire_devices(pending, requested, false, app_id, policy);
+        return;
+    }
+
+    StringBuilder list;
+    for (auto const& device : requested) {
+        if (list.length())
+            list.append('\n');
+        list.append(device.id);
+    }
+
+    // The permission prompt is user-interactive: ask it without blocking the
+    // backend (docs/15 §6.6), then reply from the continuation.
+    auto arguments = Vector<ByteString> { dialog.value(), "-t", ByteString { "Allow USB access?" }, "-s", app_id, "-b", list.to_byte_string() };
+    Portal::run_command_async(move(arguments), [pending, requested = move(requested), app_id, policy](Optional<ByteString> output) {
+        bool granted = output.has_value() && output->to_number<int>().value_or(1) == 0;
+        if (granted) {
+            for (auto const& device : requested)
+                remember_grant(app_id, device.id, device.writable);
+        }
+        reply_acquire_devices(pending, requested, granted, app_id, policy);
+    });
 }
 
 }
