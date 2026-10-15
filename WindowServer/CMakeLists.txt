@@ -106,14 +106,40 @@ add_custom_command(
 
 add_executable(WindowServer
     src/main.cpp
+    src/Animations.cpp
+    src/Appearance.cpp
     src/AppletManager.cpp
+    src/Compositor.cpp
     src/Config.cpp
+    src/CursorHighlight.cpp
+    src/DragAndDrop.cpp
+    src/Focus.cpp
+    src/Frame.cpp
+    src/Idle.cpp
     src/InputCapture.cpp
+    src/InputDevices.cpp
     src/InputMethod.cpp
+    src/Interop.cpp
+    src/Keyboard.cpp
+    src/LayerShell.cpp
+    src/Output.cpp
+    src/OutputManagement.cpp
     src/Overlays.cpp
+    src/Performance.cpp
+    src/Pointer.cpp
+    src/Resources.cpp
+    src/SerenityWindow.cpp
+    src/SessionLock.cpp
     src/SessionManager.cpp
+    src/Tablet.cpp
+    src/VirtualInput.cpp
+    src/Wallpaper.cpp
     src/WindowManager.cpp
+    src/WindowMenu.cpp
     src/WindowSwitcher.cpp
+    src/XWayland.cpp
+    src/XWaylandFrame.cpp
+    src/XdgShell.cpp
     "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-window-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-input-capture-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-virtual-input-protocol.c"
