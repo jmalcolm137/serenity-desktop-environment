@@ -18,12 +18,22 @@ TEST="$SDE_ROOT/build/test/libwm-notify-test"
 
 echo "== building prerequisites =="
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
+"$SDE_ROOT/scripts/build-services.sh" >/dev/null 2>&1 || true
 "$SDE_ROOT/scripts/build-tests.sh" libwm-notify-test >/dev/null 2>&1 || true
+
+# NotificationServer is an SDE service (build-services.sh puts it in the SDE build
+# tree, not the framework's bin/). Assemble the session app directory the way a
+# session does, so LibWM finds it by name wherever it was built.
+APP_BIN="$(mktemp -d "${TMPDIR:-/tmp}/sde-notify-bin.XXXXXX")"
+for service in NotificationServer; do
+    [[ -x "$SDE_ROOT/build/$service/$service" ]] && ln -sf "$SDE_ROOT/build/$service/$service" "$APP_BIN/$service"
+done
+[[ -x "$SDE_ROOT/build/NotificationServer/NotificationServer" ]] || { echo "SKIP: NotificationServer not built"; exit 0; }
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-notify.XXXXXX")"
 export SDE_STATE_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
-trap 'rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
+trap 'rm -rf "$RUNTIME" "$APP_BIN"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
 
 # A private per-session runtime directory (the SDE_SESSION_DIR seam), so the
 # notify portal sockets of a live session are left alone.
@@ -52,7 +62,7 @@ sleep 1
 # update - the whole LibGUI::Notification surface, through the notify portal.
 env WAYLAND_DISPLAY="$SOCK" \
     SDE_SESSION_DIR="$SESSION_DIR" \
-    SDE_APP_BIN_DIR="$BUILD/bin" \
+    SDE_APP_BIN_DIR="$APP_BIN" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     timeout 15 "$TEST" > "$RUNTIME/client.log" 2>&1 || true

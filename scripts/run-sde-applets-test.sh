@@ -20,12 +20,21 @@ APPLETS="$SDE_ROOT/build/Applets"
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 "$SDE_ROOT/scripts/build-applets.sh" >/dev/null
+"$SDE_ROOT/scripts/build-services.sh" >/dev/null 2>&1 || true
+
+# The Audio applet needs the AudioServer service. Assemble the session app directory
+# the way a session does (scripts/sde-session.sh), so LibWM finds the service by name
+# wherever it was built, rather than relying on the framework's bin/.
+APP_BIN="$(mktemp -d "${TMPDIR:-/tmp}/sde-applets-bin.XXXXXX")"
+for service in AudioServer NotificationServer; do
+    [[ -x "$SDE_ROOT/build/$service/$service" ]] && ln -sf "$SDE_ROOT/build/$service/$service" "$APP_BIN/$service"
+done
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-applets.XXXXXX")"
 chmod 700 "$RUNTIME"
 export SDE_STATE_DIR="$RUNTIME"
 WM_PORTAL="${SDE_WM_PORTAL_PATH:-/tmp/portal/wm}"
-trap 'rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock "$WM_PORTAL" 2>/dev/null || true' EXIT
+trap 'rm -rf "$RUNTIME" "$APP_BIN"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock "$WM_PORTAL" 2>/dev/null || true' EXIT
 
 SOCK="sde-applets-$$"
 rm -f "$WM_PORTAL"
@@ -43,7 +52,7 @@ env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless \
     WLR_HEADLESS_OUTPUTS=1 \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-    LD_LIBRARY_PATH="$BUILD/lib" \
+    LD_LIBRARY_PATH="$BUILD/lib" SDE_APP_BIN_DIR="$APP_BIN" \
     "$COMP" -n "$SOCK" -s "$STARTUP" > "$RUNTIME/comp.log" 2>&1 &
 COMP_PID=$!
 

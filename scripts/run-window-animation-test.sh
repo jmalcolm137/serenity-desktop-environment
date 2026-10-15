@@ -39,7 +39,14 @@ check() {
 }
 check_absent() {
     local file="${2:-$RUNTIME/comp.log}"
-    if grep -qF "$1" "$file"; then echo "  UNEXPECTED: $1"; fail=1; else echo "  ok (absent): $1"; fi
+    if grep -qF "$1" "$file"; then
+        echo "  UNEXPECTED: $1"
+        # Say which line; a bare "animation" match is otherwise a mystery.
+        grep -F "$1" "$file" | head -3 | sed 's/^/      /'
+        fail=1
+    else
+        echo "  ok (absent): $1"
+    fi
 }
 
 # Write the WindowServer config and run the compositor with the Taskbar + editor.
@@ -116,7 +123,9 @@ env WAYLAND_DISPLAY="$SCENE_SOCK" "$VI" --extent 1280 720 \
     --key 125 press --sleep 60 --key 108 press --sleep 60 --key 108 release --sleep 60 --key 125 release --linger 800 >/dev/null 2>&1
 sleep 0.6
 echo "=== animations off ==="
-check_absent "animation" "$RUNTIME/off.log"
+check_absent "minimize animation" "$RUNTIME/off.log"
+check_absent "restore animation" "$RUNTIME/off.log"
+check_absent "launch animation" "$RUNTIME/off.log"
 stop_scene
 
 if [[ "$fail" -ne 0 ]]; then

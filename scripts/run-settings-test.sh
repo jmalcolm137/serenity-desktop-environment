@@ -110,6 +110,9 @@ for app in "${SETTINGS_APPS[@]}" "${EXTRA_APPS[@]}"; do
     faults="$(grep -ciE 'Failed to parse IPC message|SIGSEGV|Segmentation fault|ASSERTION FAILED|VERIFICATION FAILED|Runtime error' "$log" || true)"
     if [[ "$faults" -ne 0 ]]; then
         note_fail "$app: $(grep -iE 'Failed to parse IPC message|SIGSEGV|ASSERTION FAILED|VERIFICATION FAILED|Runtime error' "$log" | head -1)"
+        # Say what the application itself did: "Runtime error" alone does not say
+        # which file it could not open.
+        echo "      --- $app log ---"; tail -6 "$log" | sed 's/^/      /' || true
     elif [[ "$after" -le "$before" ]]; then
         note_fail "$app did not map a window (log: $log)"
     else
