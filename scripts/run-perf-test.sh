@@ -44,6 +44,20 @@ HEIGHT=720
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-perf.XXXXXX")"
 chmod 700 "$RUNTIME"
+
+# The runner's XDG_RUNTIME_DIR may not exist or may not be writable -- a container
+# is not a login session -- and then the compositor cannot create its Wayland socket
+# at all. That is exactly how the budget job failed:
+#
+#   WindowServer: failed to create a Wayland socket
+#   ==> perf test FAILED (the compositor wrote no .../perf)
+#
+# The test driver grew this isolation first; this script needs it too, or the
+# budget job can only fail where the tests pass.
+export XDG_RUNTIME_DIR="$RUNTIME/run"
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
+
 COMP_PID=""
 APP_PID=""
 cleanup() {
