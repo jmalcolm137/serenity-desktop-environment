@@ -24,6 +24,12 @@ BUILD=(
     libdisplay-info libxcb xcb-util-wm
     # Services and portals
     pipewire libpipewire dbus
+    # The port's LibAudio keeps its PulseAudio backend, and a test that exercises
+    # audio must see the same build CI does. Without the headers the image silently
+    # builds LibAudio without that backend -- the only optional dependency a fresh
+    # configure fails to find, and exactly the kind of CI/developer divergence that
+    # has cost this project whole days.
+    libpulse
     # Xwayland parity tests
     xorg-xwayland
     # Required by the port's patches, not by the SDE's own CMake: the
