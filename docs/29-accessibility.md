@@ -1,6 +1,6 @@
 # Accessibility
 
-**Status:** plan · sticky keys implemented · **Date:** 2026-10-15
+**Status:** plan · sticky keys and high contrast implemented · **Date:** 2026-10-15
 
 `docs/04-known-gaps.md` lists four things still absent under R5: **AT-SPI**, **sticky
 keys**, **magnifier** and **high contrast**. This is the plan for them — what each
@@ -45,18 +45,14 @@ InputCapture. Guarded by `scripts/run-sticky-keys-test.sh`.
 
 ## 2. High contrast
 
-**Not started.** Make it a mode, not a theme pick:
+**Done.** `[Accessibility] HighContrast` (default off).
 
-* `[Accessibility] HighContrast` (default off). When it is on, the compositor
-  publishes the `Contrast` palette through the theme broker on startup and on every
-  live reload, so every client follows it and a user cannot accidentally leave it
-  off; a changed theme in settings while the mode is on is not applied.
-* The compositor's own chrome (title bars, borders, the Taskbar's window) already
-  draws from the theme palette, so it follows for free — check the metrics
-  (`Contrast.ini` sets near-black/white and thick borders) on the frame path.
-* Test: headless, assert the broker file names `Contrast` (a run with the mode off
-  asserts it is absent/empty), and that the compositor's reported frame colours
-  change.
+When it is on the compositor applies the `Contrast` palette to its own chrome *and*
+publishes it to the theme broker, so every client follows; and a theme change
+through the broker does not turn the mode off — the compositor says so in its log
+and puts the broker back to what is actually applied (only when they differ, so
+this cannot loop). Guarded by `scripts/run-high-contrast-test.sh`, which asserts the
+control (off is inert) as well.
 
 ## 3. Screen magnifier
 
@@ -99,7 +95,7 @@ code lands; it is an order of magnitude more work than 1–3 combined.
 ## Order
 
 1. Sticky keys — done.
-2. High contrast — small, visible, and builds on the theme broker.
+2. High contrast — done.
 3. Magnifier — needs the capture path wired, but the application exists.
 4. AT-SPI — design doc first, then LibGUI's tree and the bridge.
 
