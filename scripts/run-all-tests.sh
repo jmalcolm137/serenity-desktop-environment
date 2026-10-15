@@ -156,6 +156,15 @@ if live_session_running && [[ "${SDE_ALLOW_LIVE_SESSION:-0}" != 1 ]]; then
     exit 3
 fi
 
+# A private runtime directory for the whole run. In a container the one inherited
+# from the runner may not exist or may not be writable, and then *every* test's
+# compositor fails to create its Wayland socket — the single largest cause of
+# failure in the first CI run ("could not add socket 'sde-…'"). The tests use it for
+# their sockets and pass the name to their clients, so they need nothing else.
+export XDG_RUNTIME_DIR="$LOG_DIR/runtime"
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
+
 # Nothing a test starts may reach the live session's files, sockets or services.
 # The session exports these to everything it runs — including the shell this driver
 # is launched from — so drop them and give the tests their own.
