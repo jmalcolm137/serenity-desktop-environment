@@ -60,6 +60,26 @@ for _ in $(seq 1 50); do
     sleep 0.1
 done
 
+# SQLStudio is the one DevTools app with a service dependency: it talks to the
+# ported SQLServer. A session starts that service (sde-session.sh's
+# SESSION_SERVICES), and LibWM also spawns it on demand — but spawning resolves the
+# binary through SDE_SESSION_BIN_DIR, and this test gave the clients none, so the
+# spawn failed and SQLStudio faulted on startup while the other three (which need
+# nothing) mapped their windows. Give them a session app directory with it.
+SESSION_DIR="$RUNTIME/session"
+mkdir -p "$SESSION_DIR/portal"
+APP_BIN="$RUNTIME/app-bin"
+mkdir -p "$APP_BIN"
+for app in "$BUILD/bin"/*; do
+    [[ -e "$app" ]] || continue
+    ln -sf "$app" "$APP_BIN/$(basename "$app")"
+done
+if [[ -x "$SDE_ROOT/build/SQLServer/SQLServer" ]]; then
+    ln -sf "$SDE_ROOT/build/SQLServer/SQLServer" "$APP_BIN/SQLServer"
+else
+    echo "  note: SQLServer is not built, so SQLStudio may fault"
+fi
+
 echo "=== each devtool launches into the compositor ==="
 for tool in "${TOOLS[@]}"; do
     LOG="$RUNTIME/$tool.log"
@@ -67,6 +87,8 @@ for tool in "${TOOLS[@]}"; do
     env WAYLAND_DISPLAY="$SOCK" \
         LD_LIBRARY_PATH="$BUILD/lib" \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
+        SDE_SESSION_DIR="$SESSION_DIR" \
+        SDE_SESSION_BIN_DIR="$APP_BIN" \
         timeout 6 "$BUILD/bin/$tool" > "$LOG" 2>&1 || true
     after="$(grep -c "toplevel mapped" "$RUNTIME/comp.log" || true)"
     if [[ "$after" -gt "$before" ]]; then
