@@ -89,7 +89,7 @@ checkout and a framework-only build cannot produce the WindowServer shim.
 libgui-wayland/scripts/fetch-serenity.sh   # pinned, blobless SerenityOS checkout
 libgui-wayland/scripts/build-libgui.sh     # the port's patches + the framework
 scripts/build.sh                           # the SDE's patches + its app stack (Terminal)
-scripts/full-build.sh --with-apps          # the rest: services, applets, tools, tests, apps
+scripts/build-full-sde.sh --with-apps      # the rest: services, applets, tools, tests, apps
 ```
 
 Both `build-libgui.sh` and `build.sh` apply *their* patch set to the shared

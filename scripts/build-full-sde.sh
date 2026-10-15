@@ -2,8 +2,8 @@
 # Build the whole desktop: every piece the SDE needs, and that the tests expect to
 # exist.
 #
-#   scripts/full-build.sh              # the desktop's services, applets, tools, tests
-#   scripts/full-build.sh --with-apps  # plus the applications
+#   scripts/build-full-sde.sh              # the desktop's services, applets, tools, tests
+#   scripts/build-full-sde.sh --with-apps  # plus the applications
 #
 # The framework (LibGUI/LibGfx/LibWM and the Lagom libraries) is *not* built here:
 # build it once with libgui-wayland's scripts/build-libgui.sh, as the README's
