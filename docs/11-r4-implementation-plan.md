@@ -1,10 +1,10 @@
-# Serenity Desktop Environment — R4 Implementation Plan
+# Serenity Desktop Environment: R4 Implementation Plan
 
 **Status:** Draft v0.3 · **Date:** 2026-10-10
 **Related:** [`01-objectives.md`](01-objectives.md) §6 (P8), §11 · [`04-known-gaps.md`](04-known-gaps.md) · [`07-systemserver-roles.md`](07-systemserver-roles.md) · [`08-compositor-gaps.md`](08-compositor-gaps.md) §1, §4 · [`09-r3-implementation-plan.md`](09-r3-implementation-plan.md) §5
 
 R0–R3 are done (see [`09-r3-implementation-plan.md`](09-r3-implementation-plan.md)).
-This document is the execution plan for **R4 — Session & settings**. It owns both
+This document is the execution plan for **R4: Session & settings**. It owns both
 scope and sequencing for R4 (unlike R3's `05`/`09` split), and it breaks R4 into
 **additional milestones** so the work is ordered and testable. It is written
 against the project-wide interoperability principle **P8** ([`01-objectives.md`](01-objectives.md) §6).
@@ -21,17 +21,17 @@ and **manual verification** where it is not (VT switch, real DRM, PAM). The
 [`01-objectives.md`](01-objectives.md) §11 defines R4 as *"Login/autostart/lock/
 power; display/input/appearance settings; Terminal + SystemMonitor."* That is a
 large, mixed body of work with no ordering, and [`08-compositor-gaps.md`](08-compositor-gaps.md)
-§1 notes R4 "owns no mechanism" for lock/power. The settings **UI already exists**
-— SerenityOS `DisplaySettings` runs with all tabs (Background, Themes, Fonts,
-Monitor, Workspaces, Effects) and only Background/Themes work today — so most of
+§1 notes R4 "owns no mechanism" for lock/power. The settings **UI already exists**:
+SerenityOS `DisplaySettings` runs with all tabs (Background, Themes, Fonts,
+Monitor, Workspaces, Effects) and only Background/Themes work today, so most of
 R4 is building the **backends** the tabs call, not new UI.
 
 Two things are pulled forward because they protect everything else
 ([`09-r3-implementation-plan.md`](09-r3-implementation-plan.md) §5):
 
-- **Idle / inhibit / lock / DPMS** — a desktop you cannot lock is not a daily
+- **Idle / inhibit / lock / DPMS**: a desktop you cannot lock is not a daily
   driver.
-- **A supervisor / restart path** — a compositor fault currently takes the whole
+- **A supervisor / restart path**: a compositor fault currently takes the whole
   session with it (N4).
 
 ## 2. Cross-cutting principle: Wayland-first, standards-first
@@ -43,7 +43,7 @@ preference. Concretely:
 1. **Standard before `wlr-*` before private.** Use stable/staging `xdg_*`, `ext_*`
    and `wp_*` protocols; fall back to a `wlr-*` (wlroots) protocol or an
    SDE-private one **only when no standard exists**, and say why in the code/docs.
-2. **Expose the standard globals.** Third-party clients must work unmodified —
+2. **Expose the standard globals.** Third-party clients must work unmodified:
    panels (`waybar`), lockers (`swaylock`), idle daemons (`swayidle`), clipboard
    managers (`wl-clipboard`), portals, screenshot tools. We already do this for
    session lock (R4.1); we must for workspaces, foreign toplevels and portals too.
@@ -65,10 +65,10 @@ preference. Concretely:
 
 This project has two unrelated things called *portal*:
 
-- **SerenityOS portals** — the in-process IPC endpoints under
+- **SerenityOS portals**: the in-process IPC endpoints under
   `/tmp/session/<id>/portal/…` and `/tmp/portal/wm` (`LibWM::make_portal()`,
   [`06-service-layering.md`](06-service-layering.md)). These are SDE's own.
-- **`xdg-desktop-portal`** — the freedesktop D-Bus portal service that
+- **`xdg-desktop-portal`**: the freedesktop D-Bus portal service that
   sandboxed/toolkit apps use (FileChooser, Screenshot, ScreenCast, RemoteDesktop,
   InputCapture, GlobalShortcuts, **Settings**, …).
 
@@ -89,7 +89,7 @@ legend: **stable** ⊂ wayland-protocols `stable/`; **staging** = ready for adop
 |---|---|---|---|---|
 | Idle detection | `ext-idle-notify-v1` | staging | R4.1 | `wlr_idle_notifier_v1`; newer `get_input_idle_notification` ignores inhibitors |
 | Idle inhibit | `zwp_idle_inhibit_v1` | unstable (standard) | R4.1 | no stable successor yet; widely used |
-| Session lock | `ext-session-lock-v1` | staging | R4.1 | swaylock/gtklock/hyprlock conform — **done** |
+| Session lock | `ext-session-lock-v1` | staging | R4.1 | swaylock/gtklock/hyprlock conform; **done** |
 | Output power / DPMS | `zwlr_output_power_management_v1` | wlroots | R4.1 | no standard yet; `wlopm` speaks it |
 | Session save/restore | `xdg-session-management-v1` | staging | R4.2 | KDE/Firefox implementing; complements the supervisor |
 | Autostart | XDG Autostart spec | spec | R4.2 | `*.desktop` in `autostart/` |
@@ -111,14 +111,14 @@ legend: **stable** ⊂ wayland-protocols `stable/`; **staging** = ready for adop
 | **Portals (capture/input/shortcuts)** | `xdg-desktop-portal` (+ `-wlr`, `-gtk`) | spec (D-Bus) | R5 | Screenshot/ScreenCast/RemoteDesktop/InputCapture/GlobalShortcuts |
 | Layer shell | `zwlr_layer_shell_v1` | wlroots | shell | no standard; universally supported |
 | Decorations | `zxdg_decoration_manager_v1` | unstable | chrome | server-side decorations |
-| Serenity shell parity | `serenity-window` (private) | SDE | R3/R4 | menubar, placement, menu-dismiss — keep minimal (P8.4) |
+| Serenity shell parity | `serenity-window` (private) | SDE | R3/R4 | menubar, placement, menu-dismiss; keep minimal (P8.4) |
 
 ### 2.3 Serenity fidelity first (P9)
 
 The parity target (§11) is a **floor, not a ceiling**. Where SerenityOS does
-something better than other desktops — a richer service model (the `LaunchServer`
+something better than other desktops, be it a richer service model (the `LaunchServer`
 handler database, `NotificationServer`, `WindowManagerServer` semantics), a
-distinct behaviour, or a component others lack — we **reproduce Serenity's
+distinct behaviour, or a component others lack, we **reproduce Serenity's
 behaviour** rather than adopting another ecosystem's weaker equivalent. This is
 **P9** ([`01-objectives.md`](01-objectives.md) §6).
 
@@ -136,17 +136,17 @@ R4 is delivered as **R4.1–R4.9**. Order is dependency-driven (see §4).
 
 | # | Milestone | Outcome | Depends on |
 |---|---|---|---|
-| **R4.1** | **Session safety net** | Idle detection, idle inhibit, session lock and DPMS/dim *(compositor side landed)* | — |
+| **R4.1** | **Session safety net** | Idle detection, idle inhibit, session lock and DPMS/dim *(compositor side landed)* | none |
 | **R4.2** | **Session lifecycle & supervisor** | Session start/autostart, logout/reboot/shutdown, compositor restart + shell relaunch, save/restore *(supervisor/autostart/power + `xdg-session-management-v1` restore landed)* | R4.1 |
-| **R4.3** | **Portable session integration** | logind/systemd **optional** (detected, never required): standard env, seat/VT via `libseat` (`seatd`/`builtin`), power provider chain, optional D-Bus/portals — [`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md) | R4.2 |
-| **R4.4** | **Compositor config & live reload** | `WindowServer.ini` schema + validated live reload; Settings-portal exposure | — |
+| **R4.3** | **Portable session integration** | logind/systemd **optional** (detected, never required): standard env, seat/VT via `libseat` (`seatd`/`builtin`), power provider chain, optional D-Bus/portals; see [`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md) | R4.2 |
+| **R4.4** | **Compositor config & live reload** | `WindowServer.ini` schema + validated live reload; Settings-portal exposure | none |
 | **R4.5** | **Display / output settings** (landed; fractional scale deferred) | Mode/scale/rotation/arrangement backend (Monitor tab) + fractional scale | R4.4 |
 | **R4.6** | **Input settings & keymaps** (landed) | libinput device config + keyboard layouts/keymap + MouseSettings | R4.4 |
 | **R4.7** | **Appearance, effects & fonts** (landed) | Scrollable fonts/zoom, Effects, cursor; exposed via Settings portal | R4.4 |
 | **R4.8** | **Workspaces & toplevels** (landed) | Workspaces tab drives the grid; expose `ext-workspace-v1` + `ext-foreign-toplevel-list-v1` | R4.4 |
 | **R4.9** | **Applications enablement** (landed; crash delivery deferred) | Terminal, SystemMonitor (Linux-native), Debugger + CrashReporter (Linux-native) | R4.1–R4.3 |
 
-### R4.1 — Session safety net
+### R4.1: Session safety net
 
 Compositor-side, all standard (wlroots 0.20 provides the pieces):
 `ext-idle-notify-v1` (`wlr_idle_notifier_v1`), `zwp_idle_inhibit_v1`
@@ -164,8 +164,8 @@ uses **swaylock** today (`SDE_LOCK_CMD`); a native SDE lock client is a document
 future deliverable (§10) and must itself be a plain `ext-session-lock-v1` client.
 
 **Interop rule (P8).** Do **not** build idle-to-lock into the compositor. Expose
-`ext-idle-notify-v1` + `ext-session-lock-v1` so the standard stack — `swayidle` +
-`swaylock` — works, and optionally ship a portable SDE idle daemon (`R4.2`).
+`ext-idle-notify-v1` + `ext-session-lock-v1` so the standard stack (`swayidle` +
+`swaylock`) works, and optionally ship a portable SDE idle daemon (`R4.2`).
 
 - **Exit test:** `scripts/run-idle-test.sh` (idle fires; an inhibitor suppresses
   it; DPMS off/on) and `scripts/run-lock-test.sh` (a standard lock client covers
@@ -188,13 +188,13 @@ per-frame `output.commit`). Verified by `scripts/run-idle-test.sh` (blank +
 resume) and `scripts/run-lock-test.sh` phase (C) (resize while locked →
 `surface configured 1024x768`).
 
-### R4.2 — Session lifecycle & supervisor
+### R4.2: Session lifecycle & supervisor
 
 - **Autostart:** a session init that launches the shell (Taskbar, Desktop) plus
   **XDG Autostart** entries (`$XDG_CONFIG_HOME/autostart/*.desktop`), replacing
   the hand-rolled startup command in `scripts/start-sde-session.sh`.
 - **Power:** Log out / Reboot / Shut down from the Taskbar system menu
-  (`ShutdownDialog` spawns `/bin/shutdown`, `/bin/reboot`, `/bin/logout` — route
+  (`ShutdownDialog` spawns `/bin/shutdown`, `/bin/reboot`, `/bin/logout`; route
   these to **`org.freedesktop.login1`** D-Bus calls, not host binaries).
 - **Supervisor:** wrap the compositor; on exit/fault restart it and relaunch the
   shell. Pair with **`xdg-session-management-v1`** (staging) so clients that
@@ -203,7 +203,7 @@ resume) and `scripts/run-lock-test.sh` phase (C) (resize while locked →
 - **Idle-to-lock:** ship a small, portable idle daemon (or document using
   `swayidle`) driven by R4.1's `ext-idle-notify-v1`.
 
-- **Exit test:** `scripts/run-session-test.sh` — autostart entries launch; power
+- **Exit test:** `scripts/run-session-test.sh`: autostart entries launch; power
   actions are routed (mocked) and asserted; the supervisor restarts a killed
   compositor.
 
@@ -213,7 +213,7 @@ the session environment (`XDG_SESSION_TYPE`, `XDG_CURRENT_DESKTOP`,
 honouring `Hidden=true` and field-code stripping), starts the compositor, and
 restarts it on a non-zero exit within a bounded budget. It arms **idle-to-lock**
 by running the portable **`sde-idle`** daemon (`tools/sde-idle.c`, built by
-`scripts/build-tools.sh`) — a plain `ext-idle-notify-v1` client that runs the lock
+`scripts/build-tools.sh`), a plain `ext-idle-notify-v1` client that runs the lock
 command after `SDE_SESSION_IDLE_SECONDS`. `scripts/sde-power.sh` routes
 `logout|reboot|shutdown|suspend` to **logind** (`loginctl`, else `busctl` on
 `org.freedesktop.login1`), with `SDE_POWER_CMD` as the seam.
@@ -230,7 +230,7 @@ by `scripts/run-binpath-test.sh` (port-side `/bin` shadow) and
 `scripts/run-session-test.sh` phase (E).
 
 **Bug fixed along the way (R4.1):** releasing an idle inhibitor left the seat
-*permanently inhibited* — wlroots unlinks an inhibitor only *after* its destroy
+*permanently inhibited*: wlroots unlinks an inhibitor only *after* its destroy
 signal, so the compositor's `wl_list_empty` check still saw it. The compositor now
 excludes the dying inhibitor when recomputing the inhibited state
 (`WindowServer/src/main.cpp`).
@@ -249,31 +249,31 @@ resolves the toplevel via `wlr_xdg_toplevel->resource`. Verified by
 `scripts/run-session-management-test.sh`, which **restarts the compositor**
 between creating and restoring a session.
 
-### R4.3 — Portable session integration (logind/systemd optional)
+### R4.3: Portable session integration (logind/systemd optional)
 
-**Reframed — see
+**Reframed: see
 [`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md).**
-logind and systemd are **optional, runtime-detected accelerators — never
+logind and systemd are **optional, runtime-detected accelerators, never
 dependencies** (P4). The session must start, run, lock and (where the OS permits)
 power off with **no logind/systemd at all**, degrading gracefully. In summary:
 
 - **Environment:** always set `XDG_SESSION_TYPE`, `XDG_SESSION_CLASS`,
   `WAYLAND_DISPLAY`, `XDG_CURRENT_DESKTOP`/`XDG_SESSION_DESKTOP`,
   `DESKTOP_SESSION`; push them onto the **D-Bus activation environment** only if a
-  session bus and helper exist. **No `graphical-session.target`** — the supervisor
+  session bus and helper exist. **No `graphical-session.target`**; the supervisor
   (`scripts/sde-session.sh`) owns ordering.
 - **Seat / DRM / VT:** keep using **`libseat`** (`logind`/`seatd`/`builtin`
   backends; `seatd` recommended, `builtin` for a bare TTY). Never reimplement DRM
   master or VT switching. Nested needs no seat at all.
-- **Power:** an ordered **provider chain** in `sde-power.sh` — `SDE_POWER_CMD` →
-  logind (D-Bus) → portable fallbacks → *unavailable* — behind the existing `/bin`
+- **Power:** an ordered **provider chain** in `sde-power.sh` (`SDE_POWER_CMD` →
+  logind (D-Bus) → portable fallbacks → *unavailable*) behind the existing `/bin`
   shadow helpers, so the unmodified Taskbar menu stays provider-agnostic.
 - **Portals / D-Bus:** **optional**. `xdg-desktop-portal` activates over D-Bus
   where present; absent portals must not break the session (the in-process
   Serenity shims carry on). `ext-transient-seat-v1` stays future/optional.
 
-- **Exit tests:** headless with logind/systemd/D-Bus absent (mocked) — standard env
-  set, provider chain selected, capability probe correct, graceful degradation —
+- **Exit tests:** headless with logind/systemd/D-Bus absent (mocked): standard env
+  set, provider chain selected, capability probe correct, graceful degradation,
   plus manual verification on real hardware for each `libseat` backend (`seatd`,
   `builtin`) and nested. Details in
   [`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md) §5.
@@ -291,7 +291,7 @@ availability (`key=value` or `--json`). Verified by
 `scripts/run-session-test.sh`. Manual real-hardware seatd/builtin verification
 remains.
 
-### R4.4 — Compositor configuration & live reload
+### R4.4: Compositor configuration & live reload
 
 Extend the R3 `WindowServer.ini` (`[Workspaces]`, `[Applet]`) into a documented
 schema for **keybindings, focus policy, snap/tile behaviour, workspace grid,
@@ -300,7 +300,7 @@ effects, output defaults**, with validation and live reload, plus a
 
 **Interop (P8).** Expose the appearance subset through an
 **`org.freedesktop.portal.Settings` backend** (`color-scheme`, `accent-color`,
-`contrast`) so GTK/Qt/Flatpak apps match the SDE theme — the standard channel
+`contrast`) so GTK/Qt/Flatpak apps match the SDE theme, the standard channel
 toolkits already read. Also keep the `serenity-window`/theme-broker path for the
 Serenity shell.
 
@@ -308,7 +308,7 @@ Serenity shell.
   config is rejected with a clear error; a Settings-portal query returns the SDE
   colour scheme.
 
-### R4.5 — Display / output settings
+### R4.5: Display / output settings
 
 Implement the WindowServer protocol `get_screen_layout` / `set_screen_layout`
 (previously a single-output stub) against **`zwlr_output_management_v1`** (no
@@ -317,7 +317,7 @@ rotation, arrangement, primary; persisted. Pair integer scaling with
 **`wp-fractional-scale-v1`** + `wp_viewporter` (stable) for fractional scale where
 the host supports it.
 
-- **Exit test:** `scripts/run-output-test.sh` — a scripted layout change
+- **Exit test:** `scripts/run-output-test.sh`: a scripted layout change
   reconfigures the (headless) output; manual on DRM.
 
 > **Landed (R4.5).** The compositor persists the live layout to
@@ -332,13 +332,13 @@ the host supports it.
 > `scripts/run-output-test.sh` and a Monitor screenshot against a headless
 > session on `HEADLESS-1`.
 >
-> **Deferred:** rotation/primary persistence — the Serenity ScreenLayout model has
+> **Deferred:** rotation/primary persistence; the Serenity ScreenLayout model has
 > no rotation field. (Fractional scale landed in R6: `wp-fractional-scale-v1` is
 > served and `[Output] DefaultScale` accepts a fractional value; the Serenity
 > `DisplaySettings` Monitor tab remains display-only and its integer `ScaleFactor`
-> cannot express 1.5 — see [`13`](13-native-session-and-aur-packaging.md) App. A.)
+> cannot express 1.5; see [`13`](13-native-session-and-aur-packaging.md) App. A.)
 
-### R4.6 — Input settings & keymaps
+### R4.6: Input settings & keymaps
 
 `libinput` device configuration (accel profile/speed, tap-to-click, natural
 scroll, button mapping, disable-while-typing, left-handed) with persistence, and
@@ -387,7 +387,7 @@ shortcut inhibition (`zwp_keyboard_shortcuts_inhibit_manager_v1`) and IME
 > writing `input.ini [Keyboard]` (`set_keyboard_layout`), instead of the
 > modeless `/sys/kernel/keymap`, `/etc/Keyboard.ini` and `/bin/keymap`.
 
-### R4.7 — Appearance, effects & fonts
+### R4.7: Appearance, effects & fonts
 
 Close the R3 font deferral ([`10-font-parity-decision.md`](10-font-parity-decision.md)):
 a **session font broker** (like the theme broker) so `set_system_fonts` applies a
@@ -400,9 +400,9 @@ cursor settings (theme/size via `XCURSOR_*`; client cursors via
 **Interop (P8).** Publish the chosen appearance through the **Settings portal**
 (R4.4) so non-Serenity apps follow; keep the theme broker for the Serenity shell.
 
-- **Exit test:** `scripts/run-fonts-test.sh` — a system-font change applies and
+- **Exit test:** `scripts/run-fonts-test.sh`: a system-font change applies and
   TextEditor zoom changes the size (update `libwm-font-parity-test`);
-  `scripts/run-effects-test.sh` — an effect toggles live.
+  `scripts/run-effects-test.sh`: an effect toggles live.
 
 > **Landed (R4.7).** A session **font broker** (`$XDG_RUNTIME_DIR/sde-fonts`)
 > applies a chosen default / fixed-width / window-title font to every client
@@ -430,12 +430,12 @@ cursor settings (theme/size via `XCURSOR_*`; client cursors via
 > watchers added a file watch before the file existed, so only the first change
 > reloaded (affects R4.4–R4.6 watchers too).
 
-### R4.8 — Workspaces & toplevels
+### R4.8: Workspaces & toplevels
 
 Connect DisplaySettings ▸ **Workspaces** to the compositor grid (`[Workspaces]`),
 applied live and persisted.
 
-**Interop (P8) — the important one.** Also implement the standard
+**Interop (P8): the important one.** Also implement the standard
 **`ext-workspace-v1`** (via `wlr_ext_workspace_v1`) and
 **`ext-foreign-toplevel-list-v1`**, mapping them onto SDE's workspaces and window
 list, so third-party panels (`waybar`) and automation work. Keep the Serenity
@@ -449,8 +449,8 @@ standard protocols become the primary interop surface. Pair activation with
 > **Landed (R4.8).** Display Settings ▸ Workspaces reads the live grid and
 > `apply_workspace_settings` writes `[Workspaces]`, which the compositor
 > live-reloads and persists. The standard **`ext-workspace-v1`**
-> (`wlr_ext_workspace_v1`) publishes the grid — one group for the outputs and one
-> workspace per cell, with grid coordinates and the active state — and activation
+> (`wlr_ext_workspace_v1`) publishes the grid (one group for the outputs and one
+> workspace per cell, with grid coordinates and the active state), and activation
 > requests switch the compositor. **`ext-foreign-toplevel-list-v1`** publishes the
 > window list (title/app_id), and **`xdg-activation-v1`** focuses a requesting
 > toplevel and switches to its workspace. The Serenity `WindowManagerServer` path
@@ -458,7 +458,7 @@ standard protocols become the primary interop surface. Pair activation with
 > `scripts/run-workspaces-test.sh` (a scripted `ext-workspace-v1` client) and a
 > Workspaces-tab screenshot.
 
-### R4.9 — Applications enablement
+### R4.9: Applications enablement
 
 `Terminal` runs; make **SystemMonitor** work (`/proc` mapping), and assess
 `CrashReporter` / `Debugger` feasibility (both may need shims). Deliver what is
@@ -471,18 +471,18 @@ reasonable; record what is not.
 > 0050/0052, `scripts/run-debugger-test.sh`) and `CrashReporter` reads a native
 > ELF core dump via a Linux `LibCoredump` backend (patch 0053,
 > `scripts/run-crashreporter-test.sh`). **Deferred:** the *delivery* of a crash to
-> `CrashReporter` — on Linux that is `kernel.core_pattern`, and the candidate
+> `CrashReporter`: on Linux that is `kernel.core_pattern`, and the candidate
 > designs are recorded in [`04-known-gaps.md`](04-known-gaps.md) (R4.9).
 
 **Interop (P8).** Prefer `xdg-desktop-portal` interfaces over SDE-private
 services where an app expects a portal (e.g. OpenURI/FileChooser via `-gtk`).
 
-**Addendum (P9 — Serenity fidelity first).** We optimise for **fidelity to how
-SerenityOS works**, especially where SerenityOS does *more* than other solutions
-— e.g. a real `LaunchServer` with a shared handler database, `NotificationServer`,
+**Addendum (P9: Serenity fidelity first).** We optimise for **fidelity to how
+SerenityOS works**, especially where SerenityOS does *more* than other solutions,
+e.g. a real `LaunchServer` with a shared handler database, `NotificationServer`,
 `WindowManagerServer` semantics, the applet model, `SystemMonitor`. If matching
 SerenityOS means writing an app or service ourselves, we do, and we build it as a
-**standards-based Wayland/D-Bus component that other compositors can use too** —
+**standards-based Wayland/D-Bus component that other compositors can use too**:
 **standard protocols, not another ecosystem's private protocols** (no
 `org_kde_kwin_*`, no GNOME-private interfaces). Concretely:
 
@@ -491,7 +491,7 @@ SerenityOS means writing an app or service ourselves, we do, and we build it as 
   sockets; where a standard exists (portal, `ext-workspace-v1`, D-Bus), use it.
 - Apps that SerenityOS ships but Linux lacks equivalents for are **ported**
   (unmodified where possible) rather than replaced by a Linux app with different
-  behaviour — matching P2.
+  behaviour, matching P2.
 - Where another ecosystem's *private* protocol would be the easy path (e.g. a
   KDE/GNOME-specific service interface), prefer the standard protocol or our own
   interoperable one, even at some cost.
@@ -522,18 +522,18 @@ R4.9 can run alongside once the session is safe and startable.
 
 | Spike | Question | Decision it unblocks |
 |---|---|---|
-| **Lock client** | SerenityOS has no lock screen; port one, write one, or use an external locker? | R4.1 — **resolved: use a standard client (swaylock) now**; native client deferred (§10) |
+| **Lock client** | SerenityOS has no lock screen; port one, write one, or use an external locker? | R4.1, **resolved: use a standard client (swaylock) now**; native client deferred (§10) |
 | **Restart semantics** | What can the supervisor preserve across a restart? Use `xdg-session-management-v1` or a private restore? | R4.2 scope |
 | **Portals** | Which `xdg-desktop-portal` backend(s) and `portals.conf` for SDE? Does `-wlr` suffice once capture protocols land? | R4.3/R5 |
 | **Output management on nested vs DRM** | How much of the Monitor tab is meaningful headless/nested vs real hardware? | R4.5 exit test |
 | **Font broker** | Broker file shape and relayout trigger for a live system-font change | R4.7 |
-| **logind availability** | Is logind present in the target environments, and what is the fallback? | R4.2/R4.3 — **resolved:** logind is optional; portable providers (`seatd`/`builtin`, power chain) in [`12`](12-r4.3-portable-session-integration.md) |
+| **logind availability** | Is logind present in the target environments, and what is the fallback? | R4.2/R4.3, **resolved:** logind is optional; portable providers (`seatd`/`builtin`, power chain) in [`12`](12-r4.3-portable-session-integration.md) |
 
 ## 6. Testing strategy
 
 - **Compositor behaviours** (idle, inhibit, lock, DPMS, output, input, effects)
   get scripted clients under the headless backend, asserting compositor log lines
-  and, where useful, state dumps — the pattern R3 established
+  and, where useful, state dumps, the pattern R3 established
   (`run-input-test.sh`, `run-applet-test.sh`, `run-tooltip-test.sh`).
 - **Standard-protocol interop** gets its own generic clients (a lock client, an
   `ext-workspace-v1` client, an `org.freedesktop.portal.Settings` query) so we
@@ -554,15 +554,15 @@ R4 is done when:
    D-Bus activation env pushed where present) **without requiring logind or
    systemd**, degrading gracefully when `xdg-desktop-portal` is absent
    ([`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md));
-4. DisplaySettings is **functional end to end** — Monitor, Fonts (working zoom),
-   Input, Appearance/Effects, Workspaces — driven by a documented,
+4. DisplaySettings is **functional end to end** for Monitor, Fonts (working zoom),
+   Input, Appearance/Effects and Workspaces, driven by a documented,
    live-reloadable config, with appearance exposed via the Settings portal;
 5. **standard protocols are exposed** so third-party tools work: `swaylock`,
    `ext-workspace-v1` panels (`waybar`), `wl-clipboard`, `xdg-desktop-portal`;
-6. the **KDE Plasma (KWin) parity target** (§11) is met for the R4-scoped rows —
-   `xdg-session-management-v1`, `viewporter`, `wp-fractional-scale-v1`,
+6. the **KDE Plasma (KWin) parity target** (§11) is met for the R4-scoped rows
+   (`xdg-session-management-v1`, `viewporter`, `wp-fractional-scale-v1`,
    `wp-cursor-shape-v1`, `ext-workspace-v1`, `ext-foreign-toplevel-list-v1`,
-   `xdg-activation-v1` — with the rest scheduled in R5/R6;
+   `xdg-activation-v1`), with the rest scheduled in R5/R6;
 7. `Terminal` and (at least) `SystemMonitor` run;
 8. every scriptable behaviour has a headless test, and the R1–R3 suites still
    pass.
@@ -571,7 +571,7 @@ R4 is done when:
 
 | Risk / decision | Owner | Note |
 |---|---|---|
-| Standard-vs-`wlr-*` for output management | R4.5 | No standard yet; `zwlr_output_management_v1` is de-facto — revisit as a standard lands |
+| Standard-vs-`wlr-*` for output management | R4.5 | No standard yet; `zwlr_output_management_v1` is de-facto; revisit as a standard lands |
 | A standard workspace protocol would supersede the private one | R4.8 | Adopt `ext-workspace-v1` as primary **and** keep `WindowManagerServer` for parity |
 | No SerenityOS lock screen | R4.1 | Use a standard locker; native client is future work (§10) |
 | Lock needs authentication (PAM) | R4.1 | Native client only; swaylock already does PAM |
@@ -583,9 +583,9 @@ R4 is done when:
 
 ## 9. Out of scope for R4
 
-R5/R6 breadth — XWayland, capture/screencast, data-control, IME/accessibility,
+R5/R6 breadth (XWayland, capture/screencast, data-control, IME/accessibility,
 HiDPI/fractional scaling **implementation**, multi-GPU, color management,
-packaging, CI matrix, sanitizers/fuzzing — remains where
+packaging, CI matrix, sanitizers/fuzzing) remains where
 [`08-compositor-gaps.md`](08-compositor-gaps.md) assigns it. Do not pull R5/R6
 work into R4 (the protocol *choices* above are noted so R4 does not paint R5 into
 a corner).
@@ -608,27 +608,27 @@ Documented so they are not lost; none blocks R4.
 - **A native SDE lock client.** SDE uses **swaylock** (or any conformant locker)
   today: the compositor is a standard `ext-session-lock-v1` server. A native
   client is future work and **must be a plain Wayland `ext-session-lock-v1`
-  client** — no SDE-specific protocols — so it runs under **any** compositor
+  client** (no SDE-specific protocols), so it runs under **any** compositor
   (sway, Hyprland, KWin, SDE) and so SDE keeps working with third-party lockers.
   Intended shape: Serenity-themed screen over every output (per-output wallpapers,
   dim/blur); **PAM** authentication; multi-output + hotplug; idle-to-lock. Until
   then `SDE_LOCK_CMD` (default `swaylock`) selects the client.
 - **A portable SDE idle daemon** (`swayidle`-equivalent) for idle-to-lock/blank.
-- **Multi-seat & VT-switch polish — done.** `scripts/sde-seat.sh` derives
+- **Multi-seat & VT-switch polish: done.** `scripts/sde-seat.sh` derives
   `XDG_SEAT`/`XDG_VTNR` (from the display manager, else logind, else the active
-  VT) and the session namespaces its runtime **per seat** — the Wayland socket,
+  VT) and the session namespaces its runtime **per seat**: the Wayland socket,
   the supervisor pid file, the `/bin` shadow dir and the WindowManagerServer
   socket (`SDE_SESSION_DISPLAY`/`SDE_WM_PORTAL_PATH`, with `seat0` keeping the
   bare names). `start-sde-session.sh` preflights the DRM device and gives
   actionable guidance (and the compositor explains a failed backend). Covered by
   `scripts/run-multiseat-test.sh`; the port relocates the WM portal socket
   (libgui-wayland patch `0041`).
-- **Suspend/resume hooks — done.** `scripts/sde-sleep.sh` watches logind's
+- **Suspend/resume hooks: done.** `scripts/sde-sleep.sh` watches logind's
   `PrepareForSleep` (via `gdbus`/`dbus-monitor`) and locks the session on suspend
   and re-applies state on resume (`sde-dpms on` plus optional
   `suspend_hook`/`resume_hook`); `session.conf` keys `lock_on_suspend`,
   `suspend_hook`, `resume_hook`. Covered by `run-session-test.sh` phase (L).
-- **Serial console** — R4.3, still open.
+- **Serial console**: R4.3, still open.
 
 ## 11. Parity target: KDE Plasma (KWin)
 
@@ -638,11 +638,11 @@ beta), so that applications, toolkits, portals and tooling behave the same as on
 Plasma. Reference: KWin's `src/wayland/` implementation set (v6.7.5 + master) and
 `xdg-desktop-portal-kde`.
 
-**Rules.** (a) Parity means the **standard/staging** protocols KWin exposes — the
+**Rules.** (a) Parity means the **standard/staging** protocols KWin exposes; the
 KDE-private protocols (below) are **not** parity targets, because they only serve
 KDE's own shell; SDE keeps its own minimal `serenity-window` for that role.
 (b) Where KWin uses a private protocol for a job that has a standard one, we
-prefer the **standard** (P8) — SDE may thus *exceed* KWin on interoperability.
+prefer the **standard** (P8); SDE may thus *exceed* KWin on interoperability.
 (c) Parity is scoped by milestone: R4 covers the session/appearance subset it
 needs; the rest is R5/R6.
 
@@ -651,11 +651,11 @@ Legend: **✓** have · **↗** planned R4 · **→** planned R5 · **·** plann
 
 | Protocol | KWin | SDE | Milestone |
 |---|---|---|---|
-| `xdg-shell` | ✓ | ✓ | — |
-| `xdg-decoration` | ✓ | ✓ | — |
-| `xdg-output` | ✓ | ✓ | — |
-| `wlr-layer-shell` | ✓ | ✓ | — |
-| `linux-dmabuf` | ✓ | ✓ | — |
+| `xdg-shell` | ✓ | ✓ | none |
+| `xdg-decoration` | ✓ | ✓ | none |
+| `xdg-output` | ✓ | ✓ | none |
+| `wlr-layer-shell` | ✓ | ✓ | none |
+| `linux-dmabuf` | ✓ | ✓ | none |
 | `presentation-time` | ✓ | ✓ | R6 (landed) |
 | `tablet-v2` | ✓ | ✗ | R5 |
 | `viewporter` | ✓ | ✓ | R4.5 |

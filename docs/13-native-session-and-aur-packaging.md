@@ -12,8 +12,8 @@ current build, and the order to bring it up safely.
 
 > **Scope note.** Packaging is nominally **R6** ("Hardening & packaging",
 > [`01-objectives.md`](01-objectives.md) §11) and is not started. This plan pulls
-> enough of it forward to satisfy the concrete goal — *install SDE from the AUR on
-> EndeavourOS, log out of KDE Plasma, and choose SDE at the login screen* — without
+> enough of it forward to satisfy the concrete goal (*install SDE from the AUR on
+> EndeavourOS, log out of KDE Plasma, and choose SDE at the login screen*) without
 > claiming R6 is done.
 
 ---
@@ -128,7 +128,7 @@ session/sde-session.in        the launcher (@SDE_ROOT@ substituted)
 scripts/install-session.sh    installs both (or --uninstall / --dry-run)
 ```
 
-Install (system-wide; needs root — SDDM scans `/usr/share/wayland-sessions`):
+Install (system-wide; needs root; SDDM scans `/usr/share/wayland-sessions`):
 
 ```sh
 sudo scripts/install-session.sh
@@ -177,7 +177,7 @@ SIGTERM check.
 
 Launched by SDDM, the session is registered with **`systemd-logind`**, so
 `wlr_backend_autocreate` + **libseat** (`logind` backend) grants DRM master and
-handles VT switching — no extra work. This is exactly the "opportunistic logind"
+handles VT switching, no extra work. This is exactly the "opportunistic logind"
 case in [`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md);
 the portable `seatd`/`builtin` path is the fallback for no-logind machines, not
 required here.
@@ -186,12 +186,12 @@ required here.
 
 ## 8. Bring-up order (validate before packaging)
 
-1. **Nested** (already works): `scripts/start-sde-nested.sh` — proves the shell
+1. **Nested** (already works): `scripts/start-sde-nested.sh` proves the shell
    and apps.
 2. **Native from a TTY** (no packaging): from a spare VT (`Ctrl+Alt+F3`), run
    `scripts/start-sde-session.sh`. With `WAYLAND_DISPLAY`/`DISPLAY` unset this
    selects DRM+libinput and libseat grants DRM master. **If this does not come
-   up, no PKGBUILD will save you** — fix the compositor first.
+   up, no PKGBUILD will save you**: fix the compositor first.
 3. **Local packages**, then install with `pacman -U`.
 4. **From SDDM**: log out of Plasma, pick *Serenity Desktop Environment*.
 
@@ -202,10 +202,10 @@ Keep `Ctrl+Alt+F2` as the escape hatch throughout; if SDE hangs, switch VT and
 
 ## 9. PKGBUILD sketches (outline)
 
-**`wlroots0.20`** — source `wlroots` `0.20.2`; `meson` build; install the shared
+**`wlroots0.20`**: source `wlroots` `0.20.2`; `meson` build; install the shared
 lib and `wlroots-0.20.pc` under `/usr` (so other packages' `pkg-config` finds it).
 
-**`serenity-lagom-git`** — sources: `libgui-wayland` (git) + its pinned
+**`serenity-lagom-git`**: sources: `libgui-wayland` (git) + its pinned
 `serenity` revision + `patches/`. Build via the project's
 `scripts/fetch-serenity.sh` + `scripts/build-libgui.sh` (CMake/Ninja, Lagom).
 `package()` copies `build/lagom/lib` → `/usr/lib/sde/lib` (stripped),
@@ -213,7 +213,7 @@ lib and `wlroots-0.20.pc` under `/usr` (so other packages' `pkg-config` finds it
 `/usr/lib/sde/share/res`, and (per trap 6) the Serenity headers + build tree to a
 known prefix for the compositor build.
 
-**`serenity-desktop-environment-git`** — source: this repo. `makedepends` include
+**`serenity-desktop-environment-git`**: source: this repo. `makedepends` include
 `serenity-lagom-git` (for `SERENITY_SRC`/`SERENITY_BUILD_DIR`) and `wlroots0.20`.
 `build()` runs `scripts/build-window-server.sh` plus the `LaunchServer`/
 `ImageDecoder`/tools builds. `package()` installs `WindowServer`, the services and
@@ -253,24 +253,24 @@ RUNPATH to `/usr/lib/sde/lib`.
 
 ## 12. References
 
-- [`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md)
-  — session env, seat (`libseat`) and the no-logind path.
-- [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) — R4 milestones
+- [`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md):
+  session env, seat (`libseat`) and the no-logind path.
+- [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md): R4 milestones
   (R4.2 supervisor/services are reused here).
-- [`08-compositor-gaps.md`](08-compositor-gaps.md) §1 — session/seat contract.
-- `libgui-wayland` — `DESIGN.md`, `scripts/build-libgui.sh`,
+- [`08-compositor-gaps.md`](08-compositor-gaps.md) §1: session/seat contract.
+- `libgui-wayland`: `DESIGN.md`, `scripts/build-libgui.sh`,
   `scripts/fetch-serenity.sh`.
-- Arch packaging — `PKGBUILD(5)`, `makepkg(8)`, `patchelf`, SDDM
+- Arch packaging: `PKGBUILD(5)`, `makepkg(8)`, `patchelf`, SDDM
   `wayland-sessions`.
 
 ---
 
-## Appendix A — HiDPI and fractional output scale
+## Appendix A: HiDPI and fractional output scale
 
 **Status:** implemented · `WindowServer/src/main.cpp`, `docs/11` §11.
 
 Serenity's LibGUI renders on the CPU and its fonts are fixed bitmaps, so a
-high-DPI panel is made usable by **scaling the output** — integer by default,
+high-DPI panel is made usable by **scaling the output**: integer by default,
 fractional supported:
 
 - **Auto rule** (`auto_output_scale`): 2x when the panel's true DPI is `>= 144`
@@ -285,7 +285,7 @@ fractional supported:
 - **Protocol:** `wp-fractional-scale-v1` is served. `wlr_scene` assigns each
   mapped surface the output's preferred scale, so every client (native or
   Serenity) learns the exact scale; `wl_output.scale` is the integer ceiling.
-- **Client rendering (host M8) — done.** The libgui-wayland shim reads the output
+- **Client rendering (host M8): done.** The libgui-wayland shim reads the output
   scale and rasters the backing store at it (`Window::set_backing_store_scale`),
   presenting a physical buffer with `wl_surface.set_buffer_scale`, so client text
   is rendered at native resolution, not upscaled. At a fractional scale the client
@@ -299,7 +299,7 @@ fractional supported:
   no-op at 1x, crisp at 2x); a fractional scale uses bilinear.
 - **Pixel-art chrome (R6).** The classic style painter drew radio buttons (the
   circle and the selection dot) and tab corners with `Painter::set_pixel`, which
-  takes **physical** coordinates — so at 2x the pixel-art landed in the wrong place
+  takes **physical** coordinates, so at 2x the pixel-art landed in the wrong place
   and a selected radio appeared blank. Those pixels now go through
   `fill_rect({p,{1,1}})`, which honours the backing-store scale (libgui-wayland
   patch `0043`).
@@ -316,7 +316,7 @@ fractional supported:
 control (1x / 1.25x / 1.5x / 2x), take effect when you press **Apply**: the shim
 writes `screenlayout.ini` (mode + position) and `[Output] DefaultScale` (scale),
 and the compositor applies both live (it watches the files). We deliberately skip
-SerenityOS's "Do you want to keep the new screen layout?" revert dialog —
+SerenityOS's "Do you want to keep the new screen layout?" revert dialog:
 `SettingsWindow` applies every tab, so a modal there would freeze the window. The
 scale is also sent as v120 over a `set_output_scale` WindowServer-IPC method
 (libgui-wayland patch `0042`) because Serenity's `ScreenLayout` `ScaleFactor` is an

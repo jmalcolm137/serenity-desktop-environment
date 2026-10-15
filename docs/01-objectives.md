@@ -1,4 +1,4 @@
-# Serenity Desktop Environment on Linux — Objectives
+# Serenity Desktop Environment on Linux: Objectives
 
 **Status:** Draft v0.1 · **Date:** 2026-10-09
 **Related:** [`02-compositor-decision.md`](02-compositor-decision.md) · [`libgui-wayland` DESIGN.md](https://github.com/jmalcolm137/libgui-wayland/blob/main/DESIGN.md)
@@ -8,7 +8,7 @@
 ## 1. Vision
 
 Bring the **SerenityOS desktop experience to Linux** as a first-class Wayland
-session: a faithful, coherent, late-1990s-workstation feel — one consistent
+session: a faithful, coherent, late-1990s-workstation feel: one consistent
 theme, one font family, a taskbar and applets, classic server-drawn window
 frames, an alt-tab switcher, and a suite of applications that all share a
 single design language.
@@ -35,13 +35,13 @@ service**.
 `libgui-wayland` has already proven the central idea: because `LibGUI`'s entire
 platform surface is that protocol, you can keep `LibGUI`, `LibGfx`, and the
 applications **byte-for-byte unmodified** and replace the *far side* of the
-protocol — the WindowServer — with a library (`LibWindowServer`) that speaks the
+protocol (the WindowServer) with a library (`LibWindowServer`) that speaks the
 WindowServer protocol on one side and Wayland on the other. That project runs
 44 of the 49 applications in `Userland/Applications`; the SDE adds the
 out-of-process services they need (the `AudioServer`, docs/06).
 
-What LibWindowServer explicitly does **not** do — because on Wayland it is the
-compositor's job — is everything *global*: window management, the shell, the
+What LibWindowServer explicitly does **not** do (because on Wayland it is the
+compositor's job) is everything *global*: window management, the shell, the
 taskbar, applets, alt-tab, workspaces, wallpaper, global shortcuts, screen
 capture, display/input configuration, the session/login lifecycle, and the
 system services that a handful of applications still need. **That missing
@@ -51,20 +51,20 @@ system side is this project.**
 
 A **session** composed of:
 
-1. **A Wayland compositor** — `WindowServer` (the subject of the
+1. **A Wayland compositor**: `WindowServer` (the subject of the
    companion decision document).
-2. **A desktop shell** — the *actual* SerenityOS shell applications and widgets:
+2. **A desktop shell**: the *actual* SerenityOS shell applications and widgets:
    the `Userland/Services/Taskbar` panel (system-menu/start button, quick-launch,
    window list, applet area, clock, show-desktop), its applets, the Desktop, and
    the settings apps. Same widgets, same behaviour; not a redesign.
-3. **System services** — the Serenity services that applications expect, either
+3. **System services**: the Serenity services that applications expect, either
    as in-process shims (following the LibWindowServer pattern) or as session daemons:
    WindowManagerServer, Clipboard, Config, Launch, Notification, FileSystemAccess,
    ImageDecoder, AudioManager, and a Serenity-compatible pseudo-terminal for
    `Terminal`.
-4. **A session manager** — login/autostart, session save/restore, lock, logout,
+4. **A session manager**: login/autostart, session save/restore, lock, logout,
    reboot/shutdown.
-5. **Settings and per-compositor backends** — display, input/pointer, keyboard,
+5. **Settings and per-compositor backends**: display, input/pointer, keyboard,
    appearance, cursor, wallpaper.
 
 Together these make a Serenity app (`Calculator`, `TextEditor`, `PDFViewer`,
@@ -76,8 +76,8 @@ Together these make a Serenity app (`Calculator`, `TextEditor`, `PDFViewer`,
 
 | # | Goal | Notes |
 |---|---|---|
-| **G1** | **Faithful shell chrome — the same widgets and behaviour as SerenityOS.** Reuse the real shell applications: `Userland/Services/Taskbar` (system-menu/start button, quick-launch, window list, applet area, clock, show-desktop), its applets, the Desktop and Settings. | Structural and behavioural parity from the actual SerenityOS code, not a bespoke panel. Widget painting comes from the `LibGfx` `WindowTheme`; window frames are compositor-drawn. |
-| **G2** | **Run unmodified Serenity applications — including the shell apps.** Reuse `libgui-wayland` (LibWindowServer) and run the real `Taskbar`, applets and settings; add the remaining service shims the deferred apps need. | Preserve the "keep Serenity code unmodified" property end-to-end, shell included. |
+| **G1** | **Faithful shell chrome: the same widgets and behaviour as SerenityOS.** Reuse the real shell applications: `Userland/Services/Taskbar` (system-menu/start button, quick-launch, window list, applet area, clock, show-desktop), its applets, the Desktop and Settings. | Structural and behavioural parity from the actual SerenityOS code, not a bespoke panel. Widget painting comes from the `LibGfx` `WindowTheme`; window frames are compositor-drawn. |
+| **G2** | **Run unmodified Serenity applications, including the shell apps.** Reuse `libgui-wayland` (LibWindowServer) and run the real `Taskbar`, applets and settings; add the remaining service shims the deferred apps need. | Preserve the "keep Serenity code unmodified" property end-to-end, shell included. |
 | **G3** | **Serenity window-management semantics.** Stacking, focus, minimize/maximize/zoom, close, fullscreen, window snapping, workspaces, keyboard and mouse chording. | Server-side frames by default, with per-client `xdg-decoration` negotiation. |
 | **G4** | **System services.** Clipboard, Config, Launch, Notification, FileSystemAccess, ImageDecoder, Audio(Manager), pty/Terminal, and the pieces `SystemMonitor`/`MouseSettings`/`Debugger`/`CrashReporter` need where feasible. | Serve the Serenity protocol; implement against Linux/native APIs underneath. |
 | **G5** | **Settings and appearance.** Serenity theme/color-scheme/fonts; MouseSettings; display configuration (mode/scale/rotation); input/pointer settings; cursor theme/size; wallpaper. | Write paths sit behind a per-compositor backend interface. |
@@ -119,44 +119,44 @@ Together these make a Serenity app (`Calculator`, `TextEditor`, `PDFViewer`,
 
 These extend and are consistent with LibWindowServer's existing principles.
 
-- **P1 — The compositor is the source of truth.** Never hardcode outputs, scale,
+- **P1: The compositor is the source of truth.** Never hardcode outputs, scale,
   seat, clipboard or window state; query the real compositor and share state
   back. Placeholder constants are scaffolding only.
-- **P2 — Shim at protocol boundaries; keep Serenity code unmodified.** The
+- **P2: Shim at protocol boundaries; keep Serenity code unmodified.** The
   The WindowServer in-process shim and the out-of-process AudioServer service are
   the model. This includes the shell: the
   `Taskbar` and its applets are SerenityOS applications we run, not panel widgets
   we reimplement. Add a shim before a patch; keep any patch tiny and
   upstreamable.
-- **P3 — Use AK and SerenityOS conventions.** No `std::` where AK suffices; no
+- **P3: Use AK and SerenityOS conventions.** No `std::` where AK suffices; no
   third-party abstraction where AK provides the facility.
-- **P4 — Portable protocols first; per-compositor backends behind interfaces.**
+- **P4: Portable protocols first; per-compositor backends behind interfaces.**
   Read standard Wayland; write system settings through a thin backend that has
   one implementation per desktop/compositor.
-- **P5 — Own the experience, rent the plumbing.** Own the compositor policy and
+- **P5: Own the experience, rent the plumbing.** Own the compositor policy and
   the shell (what makes it *Serenity*); lean on libraries (a compositor toolkit,
   input/output stacks, PipeWire, D-Bus) for the rest.
-- **P6 — Comprehensible and testable.** Follow Serenity's "understandable by one
+- **P6: Comprehensible and testable.** Follow Serenity's "understandable by one
   person" ethos; prefer small, scriptable, headless-testable pieces.
-- **P7 — BSD-2, upstream-friendly.** Every generally useful change is written to
+- **P7: BSD-2, upstream-friendly.** Every generally useful change is written to
   be proposed upstream.
-- **P8 — Wayland-native and interoperable.** Prefer the **standard** protocol:
+- **P8: Wayland-native and interoperable.** Prefer the **standard** protocol:
   use Wayland's stable/staging `xdg_*`, `ext_*` and `wp_*` extensions wherever one
   exists, and fall back to `wlr-*` or an SDE-private protocol **only when there is
-  none** (document why). Expose the standard globals so third-party clients —
-  panels (`waybar`), lockers (`swaylock`), idle daemons (`swayidle`), clipboard
-  managers (`wl-clipboard`), portals, screenshot tools — work unmodified; and make
+  none** (document why). Expose the standard globals so third-party clients work
+  unmodified: panels (`waybar`), lockers (`swaylock`), idle daemons (`swayidle`),
+  clipboard managers (`wl-clipboard`), portals, screenshot tools. And make
   our own components (lock client, idle daemon, settings backends) **portable
   clients** that run under other compositors without SDE-specific protocols. Keep
   the private surface (`serenity-window`) minimal and scoped to Serenity shell
   parity. See [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §2
   for the protocol posture.
-- **P9 — Serenity fidelity, through interoperable building blocks.** Where
+- **P9: Serenity fidelity, through interoperable building blocks.** Where
   SerenityOS does something better than other desktops (a richer service, a
   distinct behaviour, a component others lack), we **reproduce Serenity's
   behaviour** rather than adopting another ecosystem's weaker equivalent. When
   that requires building an app or service ourselves, it must be a **standards-
-  based Wayland/D-Bus citizen** (P8) that runs under other compositors too — and
+  based Wayland/D-Bus citizen** (P8) that runs under other compositors too, and
   we use standard protocols, not another ecosystem's private ones (GNOME's/KDE's).
   Fidelity is the goal; interoperability is how we build it.
 
@@ -189,10 +189,10 @@ These extend and are consistent with LibWindowServer's existing principles.
 The **shell talks to the compositor through protocols** (layer-shell plus the
 Serenity `WindowServer` and `WindowManagerServer` protocols, the latter served
 by the WindowServer itself), not private calls, so the shell applications can be
-reused unmodified and the compositor can evolve underneath them. The **app-like shell surfaces are clients** — Taskbar,
+reused unmodified and the compositor can evolve underneath them. The **app-like shell surfaces are clients**: Taskbar,
 applets, Desktop, Settings, notifications. The compositor keeps the chrome that
-SerenityOS implements *inside* `WindowServer` — server-side window frames, the
-window switcher, and snap/resize overlays — because that is where the unmodified
+SerenityOS implements *inside* `WindowServer` (server-side window frames, the
+window switcher, and snap/resize overlays) because that is where the unmodified
 SerenityOS code lives. See the companion document for protocol details.
 
 ## 8. Scope, constraints, assumptions
@@ -248,7 +248,7 @@ The environment is considered successful when, on a stock Linux machine:
 | **R1** | **Compositor bring-up** | A minimal SDE compositor runs one LibWindowServer app, one layer-shell panel, one native app, on real hardware; frame-perfect and headless. |
 | **R2** | **Shell v1** | Taskbar, clock, window list, system menu, wallpapers; WindowManagerServer. |
 | **R3** | **Serenity look & behaviours** | SSD Serenity frames, switcher with thumbnails, snapping, workspaces, applets, notifications. |
-| **R4** | **Session & settings** | Login/autostart/lock/power; display/input/appearance settings; Terminal + SystemMonitor — delivered as milestones **R4.1–R4.9** ([`11-r4-implementation-plan.md`](11-r4-implementation-plan.md)). |
+| **R4** | **Session & settings** | Login/autostart/lock/power; display/input/appearance settings; Terminal + SystemMonitor, delivered as milestones **R4.1–R4.9** ([`11-r4-implementation-plan.md`](11-r4-implementation-plan.md)). |
 | **R5** | **Compatibility & ecosystem** | XWayland; the native-app protocol matrix; portals; clipboard/DnD/data-control; text-input/IME; accessibility; global shortcuts; capture/recording. |
 | **R6** | **Hardening & packaging** | HiDPI, multi-output, multi-GPU, performance/latency budgets, crash recovery/safe mode, packaging, CI matrix, docs. |
 
@@ -259,8 +259,8 @@ R4's additional milestones:
 
 | # | Milestone |
 |---|---|
-| **R4.1** | Session safety net — idle, inhibit, lock, DPMS (+ a lock client) |
-| **R4.2** | Session lifecycle & supervisor — autostart, logout/reboot/shutdown, restart |
+| **R4.1** | Session safety net: idle, inhibit, lock, DPMS (+ a lock client) |
+| **R4.2** | Session lifecycle & supervisor: autostart, logout/reboot/shutdown, restart |
 | **R4.3** | Portable session integration (logind/systemd optional) |
 | **R4.4** | Compositor configuration & live reload |
 | **R4.5** | Display / output settings (+ Monitor tab) |
@@ -274,49 +274,49 @@ R4's additional milestones:
 Detailed analysis and mitigations live in the companion document; the headline
 risks are:
 
-- **Compositor effort and maturity** — writing/owning a compositor is the
+- **Compositor effort and maturity**: writing/owning a compositor is the
   largest single risk. Mitigated by building on a proven toolkit and by a
   de-risking spike.
-- **Fidelity vs. effort** — the gap between "looks Serenity" and "behaves
+- **Fidelity vs. effort**: the gap between "looks Serenity" and "behaves
   Serenity" is mostly in window management and shell semantics, not rendering.
-- **Deferred applications** — `Terminal`, `SystemMonitor`, `Debugger`,
+- **Deferred applications**: `Terminal`, `SystemMonitor`, `Debugger`,
   `CrashReporter`, `MouseSettings` need service shims or Linux equivalents whose
   feasibility varies. `Profiler` is **resolved**: a native `perf_event_open`
   sampler (with `PERF_SAMPLE_CALLCHAIN` user stacks) in `LibSerenitySystem`
-  replaces SerenityOS's `profiling_enable` + `/proc/<pid>/perf_events` — see
+  replaces SerenityOS's `profiling_enable` + `/proc/<pid>/perf_events`; see
   `04-known-gaps.md`.
-- **Small-team sustainability** — mitigated by owning only the differentiated
+- **Small-team sustainability**: mitigated by owning only the differentiated
   layers and renting the rest, and by keeping the shell protocol-portable.
-- **Multi-output / hotplug** — coarse (HiDPI itself is done: the fractional
+- **Multi-output / hotplug**: coarse (HiDPI itself is done: the fractional
   output scale and the client backing store both landed). Per-output mode/scale
   and hotplug are basic, and multi-GPU / colour management / direct scanout are
-  not done — see `04-known-gaps.md`.
+  not done; see `04-known-gaps.md`.
 
 ## 13. Glossary
 
-- **LibWindowServer** — the in-process WindowServer-protocol shim from `libgui-wayland`.
-- **AudioServer** — the SDE service serving the SerenityOS AudioServer/AudioManager
+- **LibWindowServer**: the in-process WindowServer-protocol shim from `libgui-wayland`.
+- **AudioServer**: the SDE service serving the SerenityOS AudioServer/AudioManager
   protocols over the session portals, backed by PipeWire.
-- **SSD / CSD** — server-side / client-side decorations.
-- **WindowManagerServer** — the Serenity service the Taskbar and window
+- **SSD / CSD**: server-side / client-side decorations.
+- **WindowManagerServer**: the Serenity service the Taskbar and window
   switcher use to observe and control windows.
-- **WindowManagerServer** — our implementation of that protocol over a Wayland
+- **WindowManagerServer**: our implementation of that protocol over a Wayland
   window-management protocol.
-- **Applet** — a small SerenityOS shell widget (workspace picker, CPU/memory/
+- **Applet**: a small SerenityOS shell widget (workspace picker, CPU/memory/
   network graphs, network, clipboard history, audio, keymap) that runs as a
   client window and is laid out by the compositor's applet area.
-- **Lagom** — SerenityOS's host-native build of its userland libraries.
+- **Lagom**: SerenityOS's host-native build of its userland libraries.
 
 ## 14. References
 
-- SerenityOS — <https://github.com/SerenityOS/serenity>; `Userland/Services/WindowServer/{WindowManager,WindowFrame,WindowSwitcher,AppletManager,Overlays,Compositor,ScreenLayout}.cpp`; `Userland/Services/WindowServer/{WindowServer,WindowManagerServer,WindowManagerClient}.ipc`.
-- `libgui-wayland` / LibWindowServer — <https://github.com/jmalcolm137/libgui-wayland> (see `DESIGN.md`).
-- Wayland protocols — <https://wayland.app/protocols/>; the canonical set is
+- SerenityOS: <https://github.com/SerenityOS/serenity>; `Userland/Services/WindowServer/{WindowManager,WindowFrame,WindowSwitcher,AppletManager,Overlays,Compositor,ScreenLayout}.cpp`; `Userland/Services/WindowServer/{WindowServer,WindowManagerServer,WindowManagerClient}.ipc`.
+- `libgui-wayland` / LibWindowServer: <https://github.com/jmalcolm137/libgui-wayland> (see `DESIGN.md`).
+- Wayland protocols: <https://wayland.app/protocols/>; the canonical set is
   `wayland-protocols` (stable/staging), <https://gitlab.freedesktop.org/wayland/wayland-protocols>.
-- `xdg-desktop-portal` (+ backends such as `xdg-desktop-portal-wlr`/`-gtk`) —
+- `xdg-desktop-portal` (+ backends such as `xdg-desktop-portal-wlr`/`-gtk`):
   <https://flatpak.github.io/xdg-desktop-portal/>; the freedesktop D-Bus portals
   (FileChooser, Screenshot, ScreenCast, RemoteDesktop, InputCapture,
   GlobalShortcuts, **Settings**). Distinct from SerenityOS's own IPC "portals"
   (see [`06-service-layering.md`](06-service-layering.md)).
-- `wlroots` — <https://gitlab.freedesktop.org/wlroots/wlroots>; the pinned version
+- `wlroots`: <https://gitlab.freedesktop.org/wlroots/wlroots>; the pinned version
   (`0.20.2`) supplies the standard protocol managers SDE uses.

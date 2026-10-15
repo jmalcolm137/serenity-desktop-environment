@@ -1,4 +1,4 @@
-# Choice of Wayland Compositor — Options and Decision
+# Choice of Wayland Compositor: Options and Decision
 
 **Status:** Draft v0.1 · **Date:** 2026-10-09
 **Related:** [`01-objectives.md`](01-objectives.md)
@@ -23,8 +23,8 @@ aligned with the Serenity/AK stack. It is named `WindowServer`.**
 - **Protocols:** expose standard `wlr-foreign-toplevel-management` for the wider
   ecosystem plus a small Serenity-specific window-management protocol for our
   own shell.
-- **Rendering:** client rendering is CPU-bound — LibGUI draws through the CPU
-  `Gfx::Painter` and there is no client GPU path — so `WindowServer`
+- **Rendering:** client rendering is CPU-bound: LibGUI draws through the CPU
+  `Gfx::Painter` and there is no client GPU path, so `WindowServer`
   composites `wl_shm` surfaces with a GPU renderer for composition/scaling, and
   ships a **required Pixman software fallback** for headless/CI and no-GPU
   systems.
@@ -49,8 +49,8 @@ simultaneously:
 2. a **window manager whose policy is Serenity's**, not i3's, GNOME's or KDE's
    (stacking, minimize/maximize/zoom, server-drawn frames, snapping,
    workspaces, an alt-tab switcher with live thumbnails);
-3. a **platform that runs the real SerenityOS shell** — the unmodified Taskbar
-   and its applets, the Desktop, notifications and Settings — which requires the
+3. a **platform that runs the real SerenityOS shell**, the unmodified Taskbar
+   and its applets, the Desktop, notifications and Settings, which requires the
    Serenity `WindowManagerServer` protocol and Serenity window-type semantics
    (`Taskbar`, `Applet`, `AppletArea`, `Desktop`, `WindowSwitcher`, …); and
 4. a foundation that lets us **reuse SerenityOS userland code** (AK, LibGfx,
@@ -73,7 +73,7 @@ Two facts from `libgui-wayland` constrain every option:
   SerenityOS's WindowServer there is a `Compositor`, a `WindowManager`, a
   `WindowFrame` (decorations), a `WindowSwitcher`, an `AppletManager`, an
   `Overlays` (snap previews), a `MenuManager`/`Menubar`, a `Screen`/
-  `ScreenLayout`, and a `Cursor` — plus a separate **`WindowManagerServer` IPC
+  `ScreenLayout`, and a `Cursor`, plus a separate **`WindowManagerServer` IPC
   protocol** that the Taskbar and switcher use.
 
 That decomposition maps almost one-to-one onto a modern Wayland desktop:
@@ -93,7 +93,7 @@ That decomposition maps almost one-to-one onto a modern Wayland desktop:
 
 **Consequence:** the compositor's job is *global policy and plumbing*. The
 app-like shell surfaces are clients; the chrome SerenityOS implements inside
-`WindowServer` — window frames, the window switcher, snap/resize overlays — stays
+`WindowServer` (window frames, the window switcher, snap/resize overlays) stays
 with the compositor. The compositor owns window-management policy, Serenity
 window-type semantics, and the privileged pieces clients cannot do for
 themselves (input grabs, capture permission, layer ordering), and exposes
@@ -106,7 +106,7 @@ out by WindowServer's `AppletManager` into an `AppletArea`, with the Taskbar
 supplying the position (`set_applet_area_position`) and receiving
 `applet_area_rect_changed` / `WM_AppletAreaSizeChanged`. To get the *same widgets
 and behaviour*, we reuse the Taskbar and applets **unmodified as clients** and
-implement the server side — `WindowManagerServer`, Serenity window-type
+implement the server side: `WindowManagerServer`, Serenity window-type
 semantics, and applet-area layout. This is the concrete meaning of "the rest of
 the shell is clients"; only the switcher/overlays/frames stay compositor-side,
 because that is where SerenityOS keeps them. The applet set is the one from
@@ -131,7 +131,7 @@ constraints, and the raw score is a sanity check rather than the decision.
 
 ## 4. Options
 
-### Option A — KWin (KDE Plasma's compositor)
+### Option A: KWin (KDE Plasma's compositor)
 
 Run KWin as the session compositor and provide a Serenity shell on top.
 
@@ -155,7 +155,7 @@ Run KWin as the session compositor and provide a Serenity shell on top.
 - **Verdict:** the strongest choice for *shipping something quickly*, the
   weakest for *owning and reproducing Serenity*. Excellent interim host.
 
-### Option B — River 0.4 (separate compositor and window manager)
+### Option B: River 0.4 (separate compositor and window manager)
 
 River is a wlroots-based compositor that, since 0.4.0 (2026), deliberately
 **splits the compositor from the window manager**: the compositor provides
@@ -165,14 +165,14 @@ keybindings, focus, server-side decorations). River itself advertises robust
 XWayland support and supports many protocol extensions.
 
 - **Pros:** directly embodies the compositor/WM separation the Serenity
-  architecture already has, and lets us write the "WindowManager" — the part
-  that must be Serenity-shaped — as an ordinary, restartable program (in C++,
+  architecture already has, and lets us write the "WindowManager" (the part
+  that must be Serenity-shaped) as an ordinary, restartable program (in C++,
   linked against AK), while River handles frame-perfect rendering and the hard
   plumbing. A WM crash does not lose the session; WMs are hot-swappable. Stable
   protocol with a growing catalogue of WMs. Far less work than writing a
   compositor.
-- **Cons:** River 0.4 defers *all* window-management policy to the WM — which is
-  exactly the layer we would write — so it saves us the compositor but not the
+- **Cons:** River 0.4 defers *all* window-management policy to the WM, which is
+  exactly the layer we would write, so it saves us the compositor but not the
   window management; and the reference/ecosystem WMs are tiling-first (river
   classic was a tiling compositor), so we would be implementing Serenity's
   stacking semantics in a young protocol field. River 0.4 is **new** (2026),
@@ -180,10 +180,10 @@ XWayland support and supports many protocol extensions.
   or custom shaders "for a year or two", which caps how far we can go on
   switcher/overlay rendering. Shell protocols such as `layer-shell` are
   **mediated through the WM** (`river-layer-shell-v1`), adding an unusual
-  indirection. It is **GPL-3.0-only**: fine as a separate process — our WM is a
-  protocol client and River's Wayland *protocols* are MIT — but River itself
+  indirection. It is **GPL-3.0-only**: fine as a separate process (our WM is a
+  protocol client and River's Wayland *protocols* are MIT), but River itself
   cannot be linked into BSD-2 code. Writing a compositor is replaced by writing
-  a compositor *protocol client* against a young API — a different risk, not no
+  a compositor *protocol client* against a young API: a different risk, not no
   risk.
 - **Verdict:** an elegant and genuinely interesting fit for the *window-manager*
   half. Best used now as a **prototype harness** to validate our
@@ -192,7 +192,7 @@ XWayland support and supports many protocol extensions.
   problem (plus shell-protocol mediation) onto us anyway, and cannot be linked
   into our BSD-2 code.
 
-### Option C — `WindowServer` on `wlroots` (C++)  ← recommended
+### Option C: `WindowServer` on `wlroots` (C++)  ← recommended
 
 Write our own compositor (`WindowServer`) against the `wlroots` library
 (MIT), in C++, starting from a minimal example and growing it into the product
@@ -217,27 +217,27 @@ compositor.
   Effort is the price; it is reduced by borrowing proven code paths (wlroots
   scene/protocol helpers) and by a staged build.
 
-### Option D — Fork/extend an existing wlroots compositor
+### Option D: Fork/extend an existing wlroots compositor
 
 Take an existing wlroots compositor and add Serenity behaviour to it.
 
-- **Candidates:** **labwc** (lightweight, Openbox-inspired, *stacking* — the
+- **Candidates:** **labwc** (lightweight, Openbox-inspired, *stacking*, the
   closest match to Serenity's model, GPL-2.0); **Wayfire** (plugin-oriented,
-  MIT, but Compiz-like); **Sway** (i3-like tiling — poor match, MIT).
+  MIT, but Compiz-like); **Sway** (i3-like tiling, poor match, MIT).
 - **Pros:** a functioning compositor and WM on day one; labwc's stacking model
   is close to Serenity, so much of the window management is already there;
   Wayfire's plugin system is a legitimate extension point and is MIT.
 - **Cons:** we inherit another project's configuration, design and release
   cadence, and must either carry a fork (divergence, rebases) or work through
   limited extension points. labwc's GPL-2.0 would force our compositor to be
-  GPL if we fork it — breaking our BSD-2 goal. The shell work (taskbar,
+  GPL if we fork it, breaking our BSD-2 goal. The shell work (taskbar,
   switcher, theme) is identical to Option C, so the saving is only in the
   compositor core.
 - **Verdict:** the best *fallback* and a good source of reference code, but not
   the cleanest home for Serenity policy if we want both control and a
   permissive licence.
 
-### Option E — `libweston`
+### Option E: `libweston`
 
 Use libweston, whose explicit purpose is building custom environments with a
 replaceable shell.
@@ -249,7 +249,7 @@ replaceable shell.
   less community momentum for a desktop use case.
 - **Verdict:** a reasonable embedded choice, not the best desktop one.
 
-### Option F — Smithay (Rust)
+### Option F: Smithay (Rust)
 
 Build the compositor in Rust on Smithay (MIT), as COSMIC and niri do.
 
@@ -262,13 +262,13 @@ Build the compositor in Rust on Smithay (MIT), as COSMIC and niri do.
 - **Verdict:** technically viable because the shell can be a separate process,
   but a poor fit for a Serenity/AK codebase. Rejected.
 
-### Option G — From scratch on `libwayland-server`
+### Option G: From scratch on `libwayland-server`
 
 Write the display server, input and rendering without a compositor library.
 
 - **Pros:** total control; no dependency.
 - **Cons:** re-implements DRM/KMS, libinput, xdg-shell, layer-shell, output
-  management, capture, XWayland — tens of thousands of lines that `wlroots`
+  management, capture, XWayland: tens of thousands of lines that `wlroots`
   exists to provide. Not rational for this project.
 - **Verdict:** rejected. `wlroots` is, as its own tagline admits, "the 60k lines
   of code you were going to write anyway."
@@ -317,7 +317,7 @@ lets us keep one build system (Lagom) and one set of conventions. Qt/JS (KWin)
 and Rust (Smithay) each create a second world.
 
 **Licensing (C7).** We intend to stay BSD-2, matching Serenity and LibWindowServer.
-`wlroots` is MIT, `libweston` is MIT, `Smithay` is MIT, `Wayfire` is MIT — but
+`wlroots` is MIT, `libweston` is MIT, `Smithay` is MIT, `Wayfire` is MIT, but
 **labwc is GPL-2.0** (a fork forces GPL), **River is GPL-3.0-only** (usable only
 across a process/protocol boundary; its protocols are MIT), and a deep **KWin**
 extension is GPL. This quietly eliminates "fork labwc" and "write a KWin
@@ -352,7 +352,7 @@ Inspecting LibGUI settles the GPU question. `GUI::Painter` is a thin subclass of
 `Gfx::Bitmap`; `LibGUI` links `LibGfx`/`LibCore`/… but **not** `LibGPU` or
 `LibGL`, and `LibGfx` does not either. Serenity's client rendering path is
 therefore software by construction, and it stays that way: an application
-presents a CPU-rendered `BGRA8888`/`BGRx8888` `wl_shm` buffer — exactly what
+presents a CPU-rendered `BGRA8888`/`BGRx8888` `wl_shm` buffer, exactly what
 LibWindowServer already forwards.
 
 So GPU/OpenGL is **not** a whole-project non-goal; it is simply located at the
@@ -371,14 +371,14 @@ compositor, not the client:
   libgui-wayland patch `0007`); **LibGfx** (the CPU `Gfx::Painter`) draws the
   shell's chrome. A full "software mode" is `SDE_RENDERER=pixman` +
   `LIBGL_GPU_DRIVER=softgpu`.
-- The compositor's own chrome — server-side window frames, the window switcher
-  and overlays — is drawn with LibGfx into a bitmap and uploaded as a texture.
+- The compositor's own chrome (server-side window frames, the window switcher
+  and overlays) is drawn with LibGfx into a bitmap and uploaded as a texture.
   Frames are small and change rarely, so CPU drawing is not a bottleneck.
 - **Crisp HiDPI is a client-rendering problem, not a GPU problem.** The fix is to
   plumb the output's device scale into `LibGUI`'s backing store (the existing
   `Window::create_backing_store` FIXME / LibWindowServer M8) so apps rasterise at native
   resolution and the compositor presents 1:1; the renderer does fractional-scale
-  filtering only when it must. *(Done — M8 landed; see
+  filtering only when it must. *(Done: M8 landed; see
   [`13-native-session-and-aur-packaging.md`](13-native-session-and-aur-packaging.md).)*
 - `LibGPU`/`LibSoftGPU`/`LibGL` remain out of scope *for the desktop shell*;
   they matter only if an application (e.g. WebGL in the browser) chooses to use
@@ -391,11 +391,11 @@ on `wlroots` (MIT) in C++, integrated with the AK/LibGfx stack.**
 
 Specifically:
 
-1. **Compositor core** — `WindowServer`, `wlroots` (MIT), C++23, Serenity
+1. **Compositor core**: `WindowServer`, `wlroots` (MIT), C++23, Serenity
    code style, built with Lagom. Started from a minimal example, grown
    responsibility by responsibility.
 2. **Window management policy** is ours: stacking, focus, minimize/maximize/
-   zoom, snap, workspaces, fullscreen — Serenity semantics.
+   zoom, snap, workspaces, fullscreen: Serenity semantics.
 3. **Decorations: server-side by preference, with per-client negotiation.**
    `WindowServer` advertises `xdg-decoration` in server-side mode and
    draws Serenity window frames with LibGfx/theme, so all toplevels (Serenity and
@@ -435,8 +435,8 @@ Specifically:
    maximize, resize borders show resize cursors, and right-clicking the titlebar
    (or clicking the window icon) opens the compositor-rendered window menu
    (Minimize/Maximize/Move/Roll Up/Always on Top/Close).
-8. **Session plumbing** — lock, idle, output management, capture, XWayland,
-   input config — from wlroots/standard protocols, with per-compositor
+8. **Session plumbing** (lock, idle, output management, capture, XWayland,
+   input config) from wlroots/standard protocols, with per-compositor
    backends only where no standard exists (mirroring LibWindowServer's existing
    `DESIGN.md` policy).
 
@@ -510,7 +510,7 @@ Responsibilities in one line each:
 The decision is a direction, not a big-bang commitment. Each phase has an exit
 criterion and a fallback.
 
-**Phase 0 — spike (days), on existing infrastructure.**
+**Phase 0: spike (days), on existing infrastructure.**
 - Run the unmodified Taskbar against a `WindowManagerServer` talking to a
   **River** WM (or KWin's `org_kde_plasma_window_management`) and confirm the
   enumeration/activation/minimize/close model maps.
@@ -520,28 +520,28 @@ criterion and a fallback.
   buffers. **Fallback:** if wlroots integration is blocked, escalate to
   labwc/Wayfire before writing more.
 
-**Phase 1 — compositor core.**
+**Phase 1: compositor core.**
 DRM/libinput/outputs, xdg-shell, layer-shell, xdg-decoration, focus/stacking,
 one SSD Serenity frame, headless backend. **Exit:** run Calculator + a native
 app + a panel, with Serenity frames, on real and headless outputs.
 
-**Phase 2 — window management + shell.**
+**Phase 2: window management + shell.**
 Workspaces, minimize/maximize/zoom, snapping; `WindowManagerServer` and
 window-type semantics; then adopt the **unmodified SerenityOS Taskbar** and its
 applets, plus wallpaper/Desktop. **Exit:** daily-driveable Serenity desktop for
 LibGUI apps.
 
-**Phase 3 — chrome and overlays.**
+**Phase 3: chrome and overlays.**
 Switcher with live thumbnails (`ext-image-copy-capture`), snap overlays,
 applets/system tray, notifications, theming/font parity. **Exit:** structural
 match to Serenity screenshots.
 
-**Phase 4 — session and settings.**
+**Phase 4: session and settings.**
 Login/autostart/lock/power; display/input/appearance/cursor backends;
-Terminal + SystemMonitor; HiDPI (close LibWindowServer M8 — **done**); XWayland.
+Terminal + SystemMonitor; HiDPI (close LibWindowServer M8: **done**); XWayland.
 **Exit:** a complete session.
 
-**Phase 5 — hardening.**
+**Phase 5: hardening.**
 Multi-GPU/multi-output, fractional scaling, packaging, CI matrix, docs.
 
 If, at the end of Phase 1, owning the compositor is proving disproportionate to
@@ -573,7 +573,7 @@ Option D/labwc or to KWin with a KDE backend and lose little of the shell work.
   `FontDatabase::get(..., AllowInexactSizeMatch::No)`, so requesting any other
   size resolves to nothing and the widget falls back to its default size. The
   TextEditor Zoom In/Out actions (`Ctrl+=` / `Ctrl+-`) therefore do nothing with
-  the stock font — matching upstream SerenityOS, which also defaults to Katica.
+  the stock font, matching upstream SerenityOS, which also defaults to Katica.
   Arbitrary sizes (and thus working zoom) need a scalable face such as the
   bundled `SerenitySans-Regular.ttf`; selecting system fonts is part of the
   planned settings work (objective **G5**). See
@@ -597,7 +597,7 @@ Option D/labwc or to KWin with a KDE backend and lose little of the shell work.
    manager to target first.
 4. **Capture permission model** for the switcher's thumbnails: a compositor
    policy/portal so a trusted shell client can capture toplevels.
-5. **Switcher/overlay protocol details** — whether the compositor carries a
+5. **Switcher/overlay protocol details**: whether the compositor carries a
    ready-made thumbnail or the client uses `ext-image-copy-capture` directly.
 6. **Packaging** of `WindowServer` and the session (binary/session names,
    install layout).
@@ -605,7 +605,7 @@ Option D/labwc or to KWin with a KDE backend and lose little of the shell work.
    our recommendation, since `WindowSwitcher` is WindowServer code) versus a
    capture-based shell client.
 
-## 13. Appendix — protocol inventory (target)
+## 13. Appendix: protocol inventory (target)
 
 | Concern | Protocol(s) |
 |---|---|
@@ -617,7 +617,7 @@ Option D/labwc or to KWin with a KDE backend and lose little of the shell work.
 | Activation / attention | `xdg-activation-v1` |
 | Outputs / config | `wl_output`, `zxdg_output_v1`, `wlr-output-management-unstable-v1` |
 | Scaling | `wp-fractional-scale-v1` (staging) + `wp_viewporter` (stable) |
-| Color management | `wp-color-management-v1` (staging; HDR) — R6 |
+| Color management | `wp-color-management-v1` (staging; HDR), R6 |
 | Capture (switcher/screenshots) | `ext-image-copy-capture-v1` + `ext-image-capture-source-v1` / `wlr-screencopy-unstable-v1` (legacy) (+ portal) |
 | Input | `wl_seat`, `wl_pointer`, `wl_keyboard`, `wl_touch`, `wlr-virtual-pointer`, `wlr-virtual-keyboard` |
 | Transient seats | `ext-transient-seat-v1` |
@@ -631,9 +631,9 @@ Option D/labwc or to KWin with a KDE backend and lose little of the shell work.
 | Settings / appearance | `org.freedesktop.portal.Settings` (+ an SDE backend) |
 | Portals (`xdg-desktop-portal`) | Screenshot/ScreenCast/RemoteDesktop/InputCapture/GlobalShortcuts/Settings; backend `xdg-desktop-portal-wlr` (+ `-gtk` fallback) |
 
-For the live support status of each protocol above — and to compare our target
+For the live support status of each protocol above (and to compare our target
 inventory against what wlroots-based compositors (sway, Hyprland, labwc, …) and
-others actually expose — see the community **Wayland protocols support table**
+others actually expose), see the community **Wayland protocols support table**
 in §14. The concrete **parity target is KDE Plasma / KWin** (the broadest standard
 protocol surface): see [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md)
 §11 for the KWin-vs-SDE matrix and the milestone for each protocol. KDE's private
@@ -642,28 +642,28 @@ protocol surface): see [`11-r4-implementation-plan.md`](11-r4-implementation-pla
 
 ## 14. References
 
-- Wayland protocol index — <https://wayland.app/protocols/>
-- **Wayland protocols support table** — a community cross-compositor matrix (which
+- Wayland protocol index: <https://wayland.app/protocols/>
+- **Wayland protocols support table**: a community cross-compositor matrix (which
   compositors implement which protocol/interface, with descriptions and per-compositor
   support percentages), generated from `wayland-explorer`/`wayland.app` data. Use it to
   sanity-check our protocol inventory and see how wlroots-based compositors compare:
   <https://absurdlysuspicious.github.io/wayland-protocols-table/>
   (source: <https://github.com/AbsurdlySuspicious/wayland-protocols-table>).
-- `wlroots` — <https://gitlab.freedesktop.org/wlroots/wlroots> (MIT)
-- KWin — <https://github.com/KDE/kwin>; `kde-plasma-shell`, `org_kde_plasma_window_management`; `wlr-layer-shell` support noted by third-party shell projects.
-- River 0.4 / `river-window-management-v1` — "Separating the Wayland Compositor and Window Manager", Isaac Freund, 2026-03-15 — <https://isaacfreund.com/blog/river-window-management/>; FOSDEM 2026 talk. River is GPL-3.0-only; its Wayland protocols are MIT.
-- River wiki, compatible window managers and `tinyrwm` reference WM — <https://codeberg.org/river/wiki>.
-- labwc — <https://github.com/labwc/labwc> (GPL-2.0); Wayfire — <https://wayfire.org/> (MIT).
-- libweston — Weston documentation, "Libweston" — <https://wayland.pages.freedesktop.org/weston/>.
-- Smithay — <https://github.com/Smithay/smithay> (MIT).
-- Rendering model — `Userland/Libraries/LibGUI/Painter.h` (subclass of `Gfx::Painter`); `Userland/Libraries/LibGfx/Painter.{h,cpp}` (CPU scanline rasteriser); `LibGfx/CMakeLists.txt` and `LibGUI/CMakeLists.txt` (no `LibGPU`/`LibGL` dependency); `Userland/Libraries/LibGPU/` (GPU abstraction used by `LibGL`/`LibSoftGPU`, not LibGUI).
-- Shell — `Userland/Services/Taskbar/{main,TaskbarWindow,TaskbarButton,QuickLaunchWidget,ClockWidget,ShutdownDialog}.cpp`; `Userland/Services/WindowServer/AppletManager.cpp`; `Userland/Services/WindowServer/WindowManagerServer.ipc`; `Base/etc/WindowServer.ini` (`[Applet] Order=…`); `Userland/Services/WindowServer/WindowType.h` (`LibGUI/WindowType.h` re-exports it).
-- `libgui-wayland` / LibWindowServer `DESIGN.md` — <https://github.com/jmalcolm137/libgui-wayland/blob/main/DESIGN.md> (per-compositor backend policy, WindowServer protocol disposition).
-- Service layering (which Serenity service belongs in `libgui-wayland` vs. the SDE session; the "prefer the session service, else in-process fallback" rule) — [`06-service-layering.md`](06-service-layering.md).
+- `wlroots`: <https://gitlab.freedesktop.org/wlroots/wlroots> (MIT)
+- KWin: <https://github.com/KDE/kwin>; `kde-plasma-shell`, `org_kde_plasma_window_management`; `wlr-layer-shell` support noted by third-party shell projects.
+- River 0.4 / `river-window-management-v1`: "Separating the Wayland Compositor and Window Manager", Isaac Freund, 2026-03-15, <https://isaacfreund.com/blog/river-window-management/>; FOSDEM 2026 talk. River is GPL-3.0-only; its Wayland protocols are MIT.
+- River wiki, compatible window managers and `tinyrwm` reference WM: <https://codeberg.org/river/wiki>.
+- labwc: <https://github.com/labwc/labwc> (GPL-2.0); Wayfire: <https://wayfire.org/> (MIT).
+- libweston: Weston documentation, "Libweston", <https://wayland.pages.freedesktop.org/weston/>.
+- Smithay: <https://github.com/Smithay/smithay> (MIT).
+- Rendering model: `Userland/Libraries/LibGUI/Painter.h` (subclass of `Gfx::Painter`); `Userland/Libraries/LibGfx/Painter.{h,cpp}` (CPU scanline rasteriser); `LibGfx/CMakeLists.txt` and `LibGUI/CMakeLists.txt` (no `LibGPU`/`LibGL` dependency); `Userland/Libraries/LibGPU/` (GPU abstraction used by `LibGL`/`LibSoftGPU`, not LibGUI).
+- Shell: `Userland/Services/Taskbar/{main,TaskbarWindow,TaskbarButton,QuickLaunchWidget,ClockWidget,ShutdownDialog}.cpp`; `Userland/Services/WindowServer/AppletManager.cpp`; `Userland/Services/WindowServer/WindowManagerServer.ipc`; `Base/etc/WindowServer.ini` (`[Applet] Order=…`); `Userland/Services/WindowServer/WindowType.h` (`LibGUI/WindowType.h` re-exports it).
+- `libgui-wayland` / LibWindowServer `DESIGN.md`: <https://github.com/jmalcolm137/libgui-wayland/blob/main/DESIGN.md> (per-compositor backend policy, WindowServer protocol disposition).
+- Service layering (which Serenity service belongs in `libgui-wayland` vs. the SDE session; the "prefer the session service, else in-process fallback" rule): [`06-service-layering.md`](06-service-layering.md).
 
 ---
 
-## 15. Addendum — Louvre (C++ compositor library)
+## 15. Addendum: Louvre (C++ compositor library)
 
 Evaluated after implementation started. **Louvre** (<https://github.com/CuarzoSoftware/Louvre>) is a
 C++20 library for building Wayland compositors, developed by Cuarzo Software (v3.0.0, 2026). It
@@ -680,7 +680,7 @@ multi-session, double/triple buffering, persistent clipboard, rootful XWayland.
 **Pros for the SDE.**
 - Native C++ API: no `extern "C"` wrappers and no header patches (wlroots' headers are C-only; we
   had to add `extern "C"` and normalize `[static N]` array parameters and a `namespace` member).
-- Higher-level scene/input handling and sensible defaults — less compositor code to own.
+- Higher-level scene/input handling and sensible defaults, less compositor code to own.
 - Covers the shell-relevant protocols (layer-shell, foreign-toplevel, decoration, output
   management, session lock, idle, fractional scale).
 
@@ -698,14 +698,14 @@ multi-session, double/triple buffering, persistent clipboard, rootful XWayland.
   wlroots too, but wlroots' C renderer boundaries are already proven for us here).
 
 **Verdict.** Louvre is a genuinely good fit for a *C++* compositor and would remove the wlroots C
-boundary almost entirely. But for the SDE's stated priorities — permissive licensing, mature
+boundary almost entirely. But for the SDE's stated priorities (permissive licensing, mature
 protocol coverage (rootless XWayland, capture, virtual input, data-control), and a large
-ecosystem — **wlroots remains the better foundation**. The wlroots C friction is now bounded to
+ecosystem), **wlroots remains the better foundation**. The wlroots C friction is now bounded to
 a small, local wrapper (`extern "C"` plus a documented header normalization), and we should hide
 wlroots behind our own C++ "platform" layer so `WindowServer`'s policy code stays
 Serenity-style C++/AK. Keep Louvre as a documented alternative and, if desired, run a time-boxed
 spike (nested compositor + Calculator + a layer-shell panel) before any future re-evaluation.
 
-Note: the Phase 0 spike was completed on wlroots — the nested `WindowServer` created an
+Note: the Phase 0 spike was completed on wlroots: the nested `WindowServer` created an
 output and ran the unmodified SerenityOS `Calculator` (mapped as a toplevel, frames presented).
 

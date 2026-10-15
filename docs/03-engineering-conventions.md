@@ -1,4 +1,4 @@
-# Serenity Desktop Environment — Engineering Conventions
+# Serenity Desktop Environment: Engineering Conventions
 
 **Status:** Living document · **Date:** 2026-10-09
 **Related:** [`01-objectives.md`](01-objectives.md) · [`02-compositor-decision.md`](02-compositor-decision.md)
@@ -7,7 +7,7 @@ These are binding conventions for all Serenity Desktop Environment (SDE) code in
 repository. They exist so the SDE reads as SerenityOS userland that happens to run on Linux,
 and so it stays upstream-friendly.
 
-## D1 — Build on the SerenityOS libraries
+## D1: Build on the SerenityOS libraries
 
 Every SDE component links the SerenityOS userland libraries built by **`libgui-wayland`**
 (AK, LibCore, LibGfx, LibGUI, LibVT, LibGPU, …). We obtain them from that checkout/build and
@@ -19,11 +19,11 @@ do **not** vendor, fork, or duplicate them.
 - LibGPU is backed by **Mesa/EGL** (`libeglgpu`, with a LibSoftGPU fallback); use it for
   hardware-accelerated drawing.
 - **D-Bus uses the `dbus-1` reference library behind an AK value layer.** SDE services that
-  speak D-Bus (the portals, the Wi-Fi applet) use AK types over `dbus-1` — never GLib/GIO
+  speak D-Bus (the portals, the Wi-Fi applet) use AK types over `dbus-1`, never GLib/GIO
   (`GVariant`, `GDBus`, `GMainLoop`). The shared value/service layer for the portals is
   `tools/portal/dbus.h` (`Portal::Value`, `Portal::MethodCall`, `Portal::Service`).
 
-## D2 — SerenityOS-style `main` (always use LibCore/LibMain)
+## D2: SerenityOS-style `main` (always use LibCore/LibMain)
 
 Every SDE executable **must** be a SerenityOS-style program: link **LibCore** and **LibMain**,
 and define
@@ -47,7 +47,7 @@ not a raw `int main`. This is deliberate and non-negotiable, so that:
 
 `liblagom-main.a` provides the real `main` that calls `serenity_main`.
 
-## D3 — SerenityOS code style
+## D3: SerenityOS code style
 
 All SDE code follows upstream **`Documentation/CodingStyle.md`**
 (<https://github.com/SerenityOS/serenity/blob/master/Documentation/CodingStyle.md>) and the
@@ -62,15 +62,15 @@ project `.clang-format` (use clang-format 20 or later). In particular:
   `m_` prefix.
 - No `std::` where AK suffices; no third-party abstraction where AK provides the facility.
 
-## D4 — Portable libraries stay portable; host differences live in the SDE
+## D4: Portable libraries stay portable; host differences live in the SDE
 
 Serenity-vs-Linux differences (process/`/proc` semantics, utmp, session/`/bin` layout, …) live
 in the SDE (`src/LibSerenitySystem`, shims, services) or in the `libgui-wayland` host-compat /
-build layer — **never** as non-portable code inside LibGUI/LibGfx/LibCore that would break
+build layer, **never** as non-portable code inside LibGUI/LibGfx/LibCore that would break
 SerenityOS. SerenityOS source changes are kept minimal, are SDE-owned patches, and are written
 to be upstreamable.
 
-## D5 — wlroots is a C dependency behind a C++ platform layer
+## D5: wlroots is a C dependency behind a C++ platform layer
 
 `WindowServer` uses **wlroots** for the display/input plumbing. wlroots is a C library,
 so:
@@ -85,7 +85,7 @@ so:
 Louvre (a C++ compositor library) was evaluated and rejected in favour of wlroots
 (licensing/maturity/protocol coverage); see [`02-compositor-decision.md`](02-compositor-decision.md) §15.
 
-## D6 — SerenityOS idioms and patterns
+## D6: SerenityOS idioms and patterns
 
 In addition to the style guide, SDE code follows upstream **`Documentation/Patterns.md`**
 (<https://github.com/SerenityOS/serenity/blob/master/Documentation/Patterns.md>). The patterns
@@ -93,7 +93,7 @@ we commit to:
 
 - **`TRY(...)` for error propagation.** Use `MUST(...)` only where failure is genuinely
   impossible or the program must crash. Where error propagation is not possible *yet*, use
-  `release_value_but_fixme_should_propagate_errors()` — never `MUST(...)` — so the gap is
+  `release_value_but_fixme_should_propagate_errors()`, never `MUST(...)`, so the gap is
   greppable and FIXME-able.
 - **Fallible constructors.** A class whose construction can fail defines a static fallible
   factory, usually `create(...)`, returning `ErrorOr<T>`/`ErrorOr<NonnullOwnPtr<T>>`; the real
@@ -111,19 +111,19 @@ we commit to:
 - **`AK::SourceLocation`** as a defaulted argument (`= SourceLocation::current()`) for debug
   instrumentation, instead of preprocessor macros.
 - **WindowServer IPC methods are append-only.** `WindowServer.ipc`'s `MessageID` is
-  *positional* (an enum generated from the interface order), so a new method — e.g. SDE's
-  `set_output_scale` (patch `0042`) — must be added at the **end** of the interface.
+  *positional* (an enum generated from the interface order), so a new method, e.g. SDE's
+  `set_output_scale` (patch `0042`), must be added at the **end** of the interface.
   Inserting one mid-file shifts every later id and breaks already-built apps ("Failed to
   parse IPC message") until the whole userland is rebuilt. `scripts/run-apps-smoke-test.sh`
   guards this.
 
-## D7 — Verify UI by screenshot (the gold standard), not by bespoke instrumentation
+## D7: Verify UI by screenshot (the gold standard), not by bespoke instrumentation
 
 To verify rendering and UI behaviour, **take a screenshot of the composited output**
 (from a nested or native session) and look at it; for scripted checks, compare
 images. This is the gold standard and the default way we test the UI.
 
-- When something looks wrong, screenshot it and **fix the rendering** — do not grow
+- When something looks wrong, screenshot it and **fix the rendering**; do not grow
   a pile of debug output in its place.
 - Prefer image comparisons over log scraping wherever the behaviour is visual
   (e.g. `scripts/run-hidpi-fidelity-test.sh` renders an app at 1× and 2× and asserts
@@ -131,11 +131,11 @@ images. This is the gold standard and the default way we test the UI.
 - Do **not** add ad-hoc, test-only hooks (`WINDOWSERVER_DUMP_*` / `SDE_*` one-offs,
   per-run debug branches) to the compositor mid-debug. If a capture facility is
   genuinely needed for headless CI, it is **one** small, general, permanent way to
-  capture an output — not a bespoke env var invented to chase one bug.
+  capture an output, not a bespoke env var invented to chase one bug.
 - Make the shot reproducible with scripted input
   (`tools/virtual-input-test` can snap/move/focus) rather than manual steps.
 
-## D8 — Scripts clean up after themselves
+## D8: Scripts clean up after themselves
 
 Every script that starts background processes, allocates a temp dir, or binds a
 resource **must** undo all of it in an `EXIT` trap, so the cleanup also runs when
@@ -151,7 +151,7 @@ the script fails part-way:
   `rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$${,.lock}` (the run's own
   `$$`-suffixed sockets and their lock files).
 
-Leaked sockets accumulate silently — dozens of dead `sde-*` sockets from the test
+Leaked sockets accumulate silently: dozens of dead `sde-*` sockets from the test
 harness were once found in `$XDG_RUNTIME_DIR`. Sockets inside the script's own
 temp dir (when the script points `XDG_RUNTIME_DIR` at it) are covered by
 `rm -rf "$RUNTIME"`; when the compositor uses the real runtime dir, remove them

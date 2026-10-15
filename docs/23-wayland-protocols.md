@@ -1,11 +1,11 @@
-# SDE — the Wayland protocols it implements
+# SDE: the Wayland protocols it implements
 
 **Status:** living · **Updated:** 2026-10-13
 **Related:** [`21-r5-protocol-parity-plan.md`](21-r5-protocol-parity-plan.md) (the standard-protocol
 parity plan and the wlroots version policy) · [`04-known-gaps.md`](04-known-gaps.md)
 
 This is the list of Wayland protocols the SDE compositor (`WindowServer`) **advertises and
-supports** — every global an unmodified client can bind. The compositor is wlroots-based, so a
+supports**: every global an unmodified client can bind. The compositor is wlroots-based, so a
 global is normally created by wlroots and *consumed* by SDE; where SDE supplies the missing
 policy (cursor constraints, layer arrangement, decoration negotiation, the X11 shell surface,
 …) that is noted in [`04-known-gaps.md`](04-known-gaps.md) and
@@ -44,12 +44,12 @@ asserted by `scripts/run-protocol-matrix-test.sh` (the full dump is printed by t
 | Protocol | Advertised | Purpose |
 |---|---|---|
 | `zwp_relative_pointer_manager_v1` | v1 | relative pointer motion (games, pointer lock) |
-| `zwp_pointer_constraints_v1` | v1 | pointer lock / confinement — **enforced by SDE** |
+| `zwp_pointer_constraints_v1` | v1 | pointer lock / confinement, **enforced by SDE** |
 | `zwp_pointer_gestures_v1` | v3 | swipe / pinch / hold gestures |
 | `zwp_tablet_manager_v2` | v1 | graphics tablet tools + tablet pads |
 | `zwp_keyboard_shortcuts_inhibit_manager_v1` | v1 | let a client (e.g. a VM) grab shortcuts |
 | `wp_cursor_shape_manager_v1` | v1 | named cursor shapes |
-| `zwp_text_input_manager_v3` | v1 | text input (text-input-v3) — see [`22-input-method.md`](22-input-method.md) |
+| `zwp_text_input_manager_v3` | v1 | text input (text-input-v3); see [`22-input-method.md`](22-input-method.md) |
 | `zwp_input_method_manager_v2` | v1 | input-method-v2 (on-screen / CJK input methods) |
 | `zwp_virtual_keyboard_manager_v1` | v1 | synthetic keyboard input |
 | `zwlr_virtual_pointer_manager_v1` | v2 | synthetic pointer input |
@@ -94,7 +94,7 @@ asserted by `scripts/run-protocol-matrix-test.sh` (the full dump is printed by t
 
 | Protocol | Advertised | Purpose |
 |---|---|---|
-| `xwayland_shell_v1` | v1 | associate X11 windows with Wayland surfaces — see [`20-xwayland-next-steps.md`](20-xwayland-next-steps.md) |
+| `xwayland_shell_v1` | v1 | associate X11 windows with Wayland surfaces; see [`20-xwayland-next-steps.md`](20-xwayland-next-steps.md) |
 
 ## SDE-specific extensions
 

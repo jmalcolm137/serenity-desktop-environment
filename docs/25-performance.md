@@ -1,6 +1,6 @@
 # Performance & latency budget (R6, N3)
 
-**Status:** landed — metered and enforced by `scripts/run-perf-test.sh`, which now
+**Status:** landed, metered and enforced by `scripts/run-perf-test.sh`, which now
 holds the compositor to a **240 Hz** frame interval (4.167 ms).
 **Related:** [`01-objectives.md`](01-objectives.md) N3 ·
 [`03-engineering-conventions.md`](03-engineering-conventions.md) D7 ·
@@ -28,19 +28,19 @@ reference rate, for a harness or to hold a session to a display it is not on).
 
 | Metric | Budget | What it covers |
 |---|---|---|
-| **Frame time** p99 | **< 1 refresh interval** — 4.167 ms at 240 Hz | The compositor's own work for one frame: scene build, render, commit (`output_frame()`). A client's own drawing happens before its commit. |
+| **Frame time** p99 | **< 1 refresh interval** (4.167 ms at 240 Hz) | The compositor's own work for one frame: scene build, render, commit (`output_frame()`). A client's own drawing happens before its commit. |
 | **Frame time** max | < 1 refresh interval | No frame may overrun it, or a client's commit slips to the next vblank (a visible hitch). |
 | **Frame interval** | ≈ the refresh interval under sustained damage | The compositor must actually keep the cadence, not merely be fast enough per frame. |
 | **Input → present** p95 | < 20 ms | From the compositor handling an input event to the frame that presents it (`notify_activity()` → the next `output_frame()`). Damage renders immediately on a headless output (see §2), so this is the compositor + client share; on real hardware add up to one refresh interval for the vblank. |
-| **Idle frames** | **≤ 3 per second** | A compositor must not render when nothing changed — rendering on damage is what makes high refresh *affordable* rather than a busy loop. |
+| **Idle frames** | **≤ 3 per second** | A compositor must not render when nothing changed; rendering on damage is what makes high refresh *affordable* rather than a busy loop. |
 
-The budget is held on the **software (pixman) renderer** — the fallback N3 asks
+The budget is held on the **software (pixman) renderer**: the fallback N3 asks
 for is the case we hold to it. GLES renders less on the CPU (bound by the GPU
 instead) and is metered by the same code.
 
 ## 2. Instrumentation
 
-The compositor meters itself **always** (two `clock_gettime` calls per frame —
+The compositor meters itself **always** (two `clock_gettime` calls per frame,
 nothing measurable) and reports on demand:
 
 | Variable | Effect |
@@ -53,12 +53,12 @@ nothing measurable) and reports on demand:
 All are off by default, so a normal session pays nothing, and none changes the
 code path being measured (there is no "profiling build").
 
-Each metric keeps a ring of the last 600 samples (~10 s at 60 Hz — fixed memory,
+Each metric keeps a ring of the last 600 samples (~10 s at 60 Hz; fixed memory,
 so a long session cannot grow) plus cumulative totals. The summary carries
 `output_refresh_hz`, the derived `frame_ms_budget`, p50/p95/p99/max and the
 over-budget count for frame time, the frame interval at p50/p95/p99, the
 input → present percentiles with a sample count, and **resident memory**
-(`rss_kb`, the high-water mark, and the change since the last report) — see §4.
+(`rss_kb`, the high-water mark, and the change since the last report); see §4.
 
 ### How the frames are paced
 
@@ -66,11 +66,11 @@ The meter's numbers are only meaningful with the pacing model in mind:
 
 - **Damage renders immediately.** wlroots' scene requests a frame when a buffer
   is committed with damage (a 0-delay frame timer on the headless backend), so the
-  first damage after an idle period is presented with sub-millisecond latency —
+  first damage after an idle period is presented with sub-millisecond latency,
   which is why `input → present` is well under a millisecond here.
 - **The output's refresh then paces sustained frames.** While damage keeps
   arriving, frames settle at one per refresh interval (measured below: 4.06 ms at
-  a 240 Hz output, 16.1 ms at 60 Hz — for the *same* 4 ms damage stream).
+  a 240 Hz output, 16.1 ms at 60 Hz, for the *same* 4 ms damage stream).
 - **A headless output has no vblank**, so the interval equals the damage cadence
   clipped by the refresh: it measures the compositor's pacing, not the display's.
 - **Input → present takes the most recent input**, because that is what the frame
@@ -83,7 +83,7 @@ pixman unless stated); times in milliseconds, from `scripts/run-perf-test.sh`:
 
 | Phase | frame p50 | p95 | p99 | max | over budget | interval p50 |
 |---|---|---|---|---|---|---|
-| Idle (2 s) | — | — | — | — | — | 0 frames rendered |
+| Idle (2 s) | n/a | n/a | n/a | n/a | n/a | 0 frames rendered |
 | Pointer motion (60 Hz output) | 0.03 | 0.06 | 0.11 | 0.25 | 0 | 16.1 (60 Hz) |
 | Drag a decorated window (60 Hz output) | 0.04 | 0.60 | 0.80 | 2.07 | 0 | 16.1 |
 | Drag a decorated window (GLES forced) | 0.03 | 0.73 | 1.02 | 4.80 | 1 | 16.1 |
@@ -93,8 +93,8 @@ pixman unless stated); times in milliseconds, from `scripts/run-perf-test.sh`:
 
 Read across the 240 Hz rows: the compositor **holds a ~4.1–4.6 ms cadence under a
 4 ms damage stream**, and the work per frame is 3–60× inside the 4.167 ms
-interval at p99. The heaviest path we own — dragging a decorated window, where
-every motion step moves the window and re-renders its frame — costs ~0.5 ms at
+interval at p99. The heaviest path we own (dragging a decorated window, where
+every motion step moves the window and re-renders its frame) costs ~0.5 ms at
 p50 on both renderers.
 
 **The one caveat**, and the next target: a single frame of the drag on the
@@ -110,26 +110,26 @@ tools to go deeper:
 
 | Tool | What it gives |
 |---|---|
-| `SDE_PERF_STATS` — `rss_kb` / `rss_high_kb` / `rss_delta_kb` | A live RSS trace of the compositor, with the high-water mark and per-second growth: the cheap shape of a leak. Phase (E) of the test enforces it. |
-| **Profiler** (`SerenitySystem::Profiling`, `scripts/run-profiler-test.sh`) | `perf_event_open` sampling into the perfcore JSON the SerenityOS Profiler app reads — CPU samples with the process's **mappings** (`mmap`/`mmap2` records plus a mapping snapshot), so `/proc` and library contributions are visible alongside time. |
-| **SystemMonitor** | Process list and CPU/memory graphs, and a **memory-map window per process** (reads `/proc/<pid>/smaps`) — the same view a user has. |
+| `SDE_PERF_STATS`: `rss_kb` / `rss_high_kb` / `rss_delta_kb` | A live RSS trace of the compositor, with the high-water mark and per-second growth: the cheap shape of a leak. Phase (E) of the test enforces it. |
+| **Profiler** (`SerenitySystem::Profiling`, `scripts/run-profiler-test.sh`) | `perf_event_open` sampling into the perfcore JSON the SerenityOS Profiler app reads: CPU samples with the process's **mappings** (`mmap`/`mmap2` records plus a mapping snapshot), so `/proc` and library contributions are visible alongside time. |
+| **SystemMonitor** | Process list and CPU/memory graphs, and a **memory-map window per process** (reads `/proc/<pid>/smaps`), the same view a user has. |
 
 ### Reference numbers (headless, 1280×720)
 
 | Configuration | Idle RSS | After 50 window open/close cycles |
 |---|---|---|
 | pixman (the fallback) | **35.9 MB** | 35.9 MB (no growth) |
-| `SDE_RENDERER=gles2` (forced GL, i.e. llvmpipe here) | 119.7 MB | — |
+| `SDE_RENDERER=gles2` (forced GL, i.e. llvmpipe here) | 119.7 MB | n/a |
 
 ### Per-client (session) memory
 
 The meter reports every Wayland client, and then the rest of the session's
-processes — the services LibWM spawns on demand (the AudioServer, the
+processes: the services LibWM spawns on demand (the AudioServer, the
 NotificationServer) that share the compositor's process group but never connect
 as clients. The summary carries `clients`, `client_pss_kb`, `session_pss_kb`
 (compositor + clients + services) and a `client_memory=` breakdown of the twelve
 largest by PSS, labelled by the process name (the shell's clients are panels and
-applets — layer surfaces with no toplevel to name them by). That makes the
+applets: layer surfaces with no toplevel to name them by). That makes the
 compositor's own stats file the session's "who is using memory" report, and
 `scripts/run-session-memory-test.sh` asserts it on the session's real startup
 list (Taskbar + Desktop + applets + BatteryApplet).
@@ -161,8 +161,8 @@ The Audio applet used to be the outlier at 11.0 MB PSS. Neither of the two cause
 was the one we expected:
 
 1. **An audio backend it never used** (~1.5 MB). The applet links
-   `liblagom-audio` for `Audio::ConnectionToManagerServer` — the AudioServer
-   *protocol* client — and that library does
+   `liblagom-audio` for `Audio::ConnectionToManagerServer` (the AudioServer
+   *protocol* client) and that library does
    `target_link_libraries(LibAudio PRIVATE pulse)`, so it DT_NEEDs libpulse
    (+ libpulsecommon + libsndfile), mapped by this process alone and made
    resident by the dynamic linker at startup. The desktop's audio path is
@@ -170,17 +170,17 @@ was the one we expected:
    (`Applets/CMakeLists.txt`) from the one LibAudio translation unit the applets
    need, and the applet links that. libgui-wayland's LibAudio keeps its
    PulseAudio backend, as it should.
-2. **A screen-sized placeholder for an unsized window** (~7 MB — the real cost).
+2. **A screen-sized placeholder for an unsized window** (~7 MB, the real cost).
    The applet is the only one that `show()`s a window without setting a size
    (Keymap calls `resize(16, 16)` first), and the shim substituted *the screen
    size* for an empty size, so the applet allocated three 1280×720 buffers
-   (`1280×720×4` of memfd — exactly three 3.5 MB mappings) and threw them away
+   (`1280×720×4` of memfd, exactly three 3.5 MB mappings) and threw them away
    when the compositor reconfigured it to 16×16. The placeholder now depends on
-   the window type: a panel or applet — which the compositor lays out from its
-   applet area — gets a 16×16 placeholder, and only a window that will fill the
+   the window type: a panel or applet (which the compositor lays out from its
+   applet area) gets a 16×16 placeholder, and only a window that will fill the
    output (fullscreen, or the Desktop, anchored to every edge) assumes the screen
    size.
-3. **The service's own backend** (~9 MB — 0.3 MB now). The SDE's **AudioServer**
+3. **The service's own backend** (~9 MB, 0.3 MB now). The SDE's **AudioServer**
    also linked `liblagom-audio` → libpulse + libpulsecommon + libsndfile, for
    three header-only helpers (`Resampler.h`, `Queue.h`, `Sample.h`). It is
    PipeWire-only by design, so it links no audio library at all now: the service
@@ -209,13 +209,13 @@ libraries" the process's share of the Lagom/shim/libc stack):
 | each applet (×7) | ~2 150 | ~10 | ~1 200 | ~390 | ~550 |
 
 Read the sum, not the rows: **the sum of PSS across the session is the session's
-*unique* resident memory** — a page in a shared library counts once however many
+*unique* resident memory**: a page in a shared library counts once however many
 clients map it. So there are only two levers: private memory (a heap, an
 anonymous region, a pixel surface) and dropping a mapping that *every* client
 maps.
 
-The applets have nothing left to trim. All seven are uniform at 2.1–2.4 MB —
-~1.2 MB of shared stack, ~0.9 MB private — and every one of their 32 DT_NEEDED
+The applets have nothing left to trim. All seven are uniform at 2.1–2.4 MB
+(~1.2 MB of shared stack, ~0.9 MB private), and every one of their 32 DT_NEEDED
 libraries comes from LibGUI's link closure, not from the applet (the applet's
 own binary is ~200 kB of that; `Audio`'s old libpulse/libgstreamer-style outlier
 is gone, above). Dropping a library from *some* clients would save nothing at
@@ -223,35 +223,35 @@ all under the rule above.
 
 Ranked by size × how much of it is actually addressable:
 
-1. **Pixel surfaces — 14.8 MB, 32 % of the session**, and the only term that
+1. **Pixel surfaces: 14.8 MB, 32 % of the session**, and the only term that
    grows with resolution (one 4K output surface is 33 MB). The compositor holds
    two wlroots output buffers (shm on headless, a scanout/GBM buffer on DRM)
    plus a cached full-screen desktop background bitmap; the Desktop holds the one
    backing store a full-screen client needs. Reducible parts: render the
    background per frame instead of caching it, and note that overlays allocate a
-   fresh full-screen `Gfx::Bitmap` on every render (`ChromeNode::render`) — cheap
+   fresh full-screen `Gfx::Bitmap` on every render (`ChromeNode::render`), cheap
    while the tile preview and window switcher are small, not once they are
    output-sized.
-2. **The framework's per-client private cost — ~0.85 MB × 9 clients ≈ 7.5 MB.**
+2. **The framework's per-client private cost: ~0.85 MB × 9 clients ≈ 7.5 MB.**
    ~390 kB heap, ~240 kB of *uniform* anonymous pages (every applet, however
    small, has the same ~132 kB region plus a set of small ones), ~200 kB binary
    text. That uniform part is startup cost every LibGUI client pays; the
-   structural lever is fewer client processes — bundling the seven applets into
-   one would save ~0.85 MB each — which is a deliberate divergence from
+   structural lever is fewer client processes (bundling the seven applets into
+   one would save ~0.85 MB each), which is a deliberate divergence from
    SerenityOS's one-process-per-applet model.
-3. **The shared LibGUI stack — ~16 MB, 34 %**, but it is clean file-backed
+3. **The shared LibGUI stack: ~16 MB, 34 %**, but it is clean file-backed
    memory the kernel reclaims under pressure, and it counts once for the whole
    session, so trimming a DT_NEEDED only pays when *no* client uses it.
-4. **The Taskbar's 1.8 MB heap — 4× an applet's, at startup, with no windows
+4. **The Taskbar's 1.8 MB heap: 4× an applet's, at startup, with no windows
    open.** Measured, and not a leak: it is *live* (glibc's
    `MALLOC_TRIM_THRESHOLD_=0` does not return it), it is small-allocation `brk`
    heap (profiling its startup records no anonymous `mmap` at all, so no
-   screen-sized buffer hides in it — unlike the Audio applet's old three), and it
+   screen-sized buffer hides in it, unlike the Audio applet's old three), and it
    stays at exactly 1 812 kB while thirty clients start and exit.
 
    ~0.6 MB of it is the system menu, at **8.7 kB per installed app**, linear: a
    resource root with 373 app files (300 duplicates) takes the heap to 4 196 kB.
-   That is upstream's eager menu construction — an `AppFile`, a `Gfx::Icon` bitmap
+   That is upstream's eager menu construction: an `AppFile`, a `Gfx::Icon` bitmap
    and a `GUI::Action` per app, built at startup; the SDE only made it visible by
    shipping 73 app files instead of ~40. A lazy menu would trade that memory for a
    first-open hitch, so it is recorded, not changed.
@@ -260,14 +260,14 @@ Ranked by size × how much of it is actually addressable:
    ~390 kB) plus the Taskbar's own chrome. Splitting the 8.7 kB further needs an
    allocation profiler, and that is worth writing down: our `Profiler` is a
    CPU-and-mapping sampler, and the SerenityOS profiling interface's
-   malloc/free events (`Profile::Event::MallocData`) have **no producer on Linux**
-   — on SerenityOS the kernel owns malloc, here glibc does. A small `LD_PRELOAD`
+   malloc/free events (`Profile::Event::MallocData`) have **no producer on Linux**:
+   on SerenityOS the kernel owns malloc, here glibc does. A small `LD_PRELOAD`
    interposer emitting those same events would close the gap for every process,
    not just the Taskbar.
 
    Chasing it did find a real bug, though: a pinned quick-launch entry whose `.af`
    is missing or invalid aborted the whole shell (`AppFile::name()` VERIFYs on an
-   empty name, and the quick-launch path never checked `is_valid()` — the system
+   empty name, and the quick-launch path never checked `is_valid()`; the system
    menu path does). Fixed by `patches/0009-taskbar-quicklaunch-missing-app.patch`;
    `scripts/run-taskbar-quicklaunch-test.sh` runs the shell against a resource root
    with no app files at all and asserts it still comes up.
@@ -282,7 +282,7 @@ gallium/LLVM footprint ([heap] alone was 13.3 MB, plus libgallium and libLLVM)
 that pixman never touches.
 
 `auto` now checks `wlr_backend_get_drm_fd()`: **with no DRM device it takes
-pixman directly**, so the GL stack is never initialised — **84 MB, ~70 %, saved**
+pixman directly**, so the GL stack is never initialised: **84 MB, ~70 %, saved**
 on a headless session with no behaviour change. An explicit `WLR_RENDERER` in the
 environment still wins (the fallback path stays exercised), and
 `SDE_RENDERER=gles2` still forces the GL path for a job that wants to test it.
@@ -319,13 +319,13 @@ scripts/run-perf-test.sh                     # the software fallback (pixman)
 SDE_PERF_RENDERER=auto scripts/run-perf-test.sh
 ```
 
-Five phases: **(A)** idle pacing — nothing changes, so nothing may render;
-**(B)** 60 Hz pointer motion — frame time and input → present inside the budget,
+Five phases: **(A)** idle pacing: nothing changes, so nothing may render;
+**(B)** 60 Hz pointer motion: frame time and input → present inside the budget,
 with the p99 held to the 240 Hz interval; **(C)** dragging a decorated window,
 the heaviest path we own; **(D)** a **240 Hz output** (the compositor is
 restarted with `SDE_OUTPUT_REFRESH=240`) with a 4 ms damage stream, where the
 cadence itself is asserted (~4.17 ms) along with the work fitting inside it;
-**(E)** memory — the idle footprint and that 50 window cycles do not grow it.
+**(E)** memory: the idle footprint and that 50 window cycles do not grow it.
 
 The knobs (`SDE_PERF_FRAME_BUDGET_MS`, `SDE_PERF_LATENCY_BUDGET_MS`,
 `SDE_PERF_IDLE_FRAME_LIMIT`, `SDE_PERF_FAST_MS`, `SDE_PERF_AGGRESSIVE_MS`,
@@ -358,7 +358,7 @@ watch -n1 cat /tmp/sde-perf
   Display Settings is the natural follow-up.
 - **Input-to-photon on real hardware.** The headless number excludes the vblank;
   a DRM measure would need a high-speed capture or a hardware timestamp path.
-- **The drag tail above** — one ~5 ms frame on the GLES path, which is what
+- **The drag tail above**: one ~5 ms frame on the GLES path, which is what
   stands between the current state and an unconditional 240 Hz claim on that
   renderer.
 - **A per-hardware/GPU matrix.** The budget is enforced on one headless

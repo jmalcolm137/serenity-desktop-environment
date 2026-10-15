@@ -3,7 +3,7 @@
 **Status:** design · **Date:** 2026-10-15
 
 The last and largest item in [`29-accessibility.md`](29-accessibility.md). Assistive
-technology — a screen reader, `accerciser`, a speech-to-text tool — talks to
+technology (a screen reader, `accerciser`, a speech-to-text tool) talks to
 applications through AT-SPI over D-Bus. Today nothing here publishes anything, so
 there is no accessibility tree to read: an AT can see the compositor's windows (they
 are just surfaces) and nothing inside them.
@@ -39,18 +39,18 @@ reader needs to read a text field's contents, not a window's pixels.
 
 So:
 
-* **`GUI::AccessibilityServer`** — one per application, created lazily the first time
+* **`GUI::AccessibilityServer`**: one per application, created lazily the first time
   a widget is registered and only if an accessibility bus is present. It owns the
   root object, mirrors the widget tree, and answers queries.
 * **A per-widget opt-in.** Widgets that mean something to an AT publish a role and a
   name; widgets that are pure decoration do not. `GUI::Widget` gets
   `virtual Optional<AccessibilityRole> accessibility_role() const` (default: none)
   and `virtual String accessibility_name() const` (default: the tooltip, else the
-  text). A widget with no role is transparent — its children are spliced into its
+  text). A widget with no role is transparent: its children are spliced into its
   parent's child list, so containers do not add noise.
 * **No bus, no cost.** If the accessibility bus is not there, the server never
   starts and nothing is mirrored. Applications must not fail, slow down, or log
-  because a screen reader is absent — see "Failure is normal" below.
+  because a screen reader is absent; see "Failure is normal" below.
 
 The transport is the D-Bus we already speak (`dbus-1` through AK/LibCore). The
 object model is ours.
@@ -90,11 +90,11 @@ maintains for the app's own widgets.
 1. **Read-only tree.** `AccessibilityServer`, the application node, roles, names,
    geometry, states, and the bus registration. Enough for `accerciser` to show a
    window's widgets and for a screen reader to read a label or a button.
-2. **Events.** `StateChanged` (focus in particular — that is what a screen reader
+2. **Events.** `StateChanged` (focus in particular: that is what a screen reader
    follows), `NameChanged`, `TextChanged`, `ValueChanged`, emitted from the same
    places the widgets already redraw.
 3. **Actions.** `Action::DoAction` for a button's `on_click`, a menu item's
-   `on_activate`, a check box's toggle — so a switch/voice tool can *drive* the UI,
+   `on_activate`, a check box's toggle, so a switch/voice tool can *drive* the UI,
    not only read it.
 4. **Text.** `Text`/`EditableText` on `TextEditor` and `TextBox`: character counts,
    ranges, `SetTextContents`, caret offsets. This is what a screen reader needs to

@@ -1,4 +1,4 @@
-# R5/R6 — Protocol parity & the wlroots version plan
+# R5/R6: Protocol parity & the wlroots version plan
 
 **Status:** living · **Updated:** 2026-10-13
 **Related:** [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §11 (the KDE-parity
@@ -11,8 +11,8 @@ This records **how SDE tracks wlroots** for the standard-protocol parity work
 
 SDE builds against a **pinned wlroots release** (`scripts/fetch-wlroots.sh`,
 currently **0.20.2**), not the `master` branch. This matches what **Arch Linux**
-ships — `wlroots0.20` 0.20.2, updated 2026-07-10, three days after the upstream
-release on 2026-07-07 — so the AUR/native session (`docs/13`) links a version
+ships (`wlroots0.20` 0.20.2, updated 2026-07-10, three days after the upstream
+release on 2026-07-07), so the AUR/native session (`docs/13`) links a version
 distros actually have. We do **not** chase `master`.
 
 wlroots releases a **minor** roughly every 10 months (`0.19.0` 2025-05-15 →
@@ -24,14 +24,14 @@ within days of release.
 
 Diffing `master` (0.21-dev) against `0.20.2`, and checking the pinned headers:
 
-### (a) Available now on 0.20.2 — implement without any bump
+### (a) Available now on 0.20.2: implement without any bump
 
 | Protocol | API present in 0.20.2 |
 |---|---|
 | `xdg-toplevel-icon-v1` | `wlr_xdg_toplevel_icon_manager_v1_create()` |
 | `xdg-system-bell-v1` | `wlr_xdg_system_bell_v1_create()` |
 
-### (b) Lands in wlroots **0.21** — wait for the release, then bump
+### (b) Lands in wlroots **0.21**: wait for the release, then bump
 
 | Protocol | Notes |
 |---|---|

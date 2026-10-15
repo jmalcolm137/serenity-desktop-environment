@@ -1,4 +1,4 @@
-# 19 — The SDE Wi-Fi applet
+# 19: The SDE Wi-Fi applet
 
 **Status:** Implemented · **Date:** 2026-10-12
 **Related:** [`18-sde-applets.md`](18-sde-applets.md) · [`16-battery-applet.md`](16-battery-applet.md) · [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) · [`14-r4.4-config.md`](14-r4.4-config.md)
@@ -12,7 +12,7 @@ of the battery applet**.
 It is a plain SerenityOS LibGUI application (like `BatteryApplet`), built against
 the Serenity userland libraries from the `libgui-wayland` build. It is a
 **standards-based citizen**: it talks to **NetworkManager over the system D-Bus**
-— the same source KDE uses — with libdbus, integrated into LibCore's event loop.
+(the same source KDE uses) with libdbus, integrated into LibCore's event loop.
 
 ## 1. Where it lives
 
@@ -33,16 +33,16 @@ KDE's applet is a frontend to NetworkManager, and this project's interoperabilit
 principle (P8) says to use the standard channel rather than invent a private one.
 `WifiApplet` therefore speaks the same D-Bus API as `plasma-nm`:
 
-- **Manager** `org.freedesktop.NetworkManager` — `WirelessEnabled`,
+- **Manager** `org.freedesktop.NetworkManager`: `WirelessEnabled`,
   `WirelessHardwareEnabled`, `NetworkingEnabled`, `Connectivity`, `Devices`,
   `ActiveConnections`; `AddAndActivateConnection`, `ActivateConnection`.
-- **Device** / **Device.Wireless** — the Wi-Fi device, its `AccessPoints` and
+- **Device** / **Device.Wireless**: the Wi-Fi device, its `AccessPoints` and
   `ActiveAccessPoint`; `Disconnect`, `RequestScan`.
-- **AccessPoint** — `Ssid`, `Strength`, `Frequency`, `Flags`/`WpaFlags`/`RsnFlags`
+- **AccessPoint**: `Ssid`, `Strength`, `Frequency`, `Flags`/`WpaFlags`/`RsnFlags`
   (security), `Mode`.
-- **Settings** — `ListConnections` + `GetSettings`, to know an SSID has a saved
+- **Settings**: `ListConnections` + `GetSettings`, to know an SSID has a saved
   profile (and to reactivate it rather than create a duplicate).
-- **SecretAgent** — the applet registers as a NetworkManager **secret agent**
+- **SecretAgent**: the applet registers as a NetworkManager **secret agent**
   (`AgentManager.Register`), so activating a *saved* WPA network prompts for the
   passphrase through us, exactly like KDE.
 
@@ -58,7 +58,7 @@ the failure and shows the `network-unavailable` state.
 ## 3. The look (Breeze, drawn rather than shipped)
 
 The glyphs are reproduced from the Breeze `network-wireless-*` icons on a 22-unit
-grid — a ring dot at the bottom centre and three concentric arc-bands above it —
+grid (a ring dot at the bottom centre and three concentric arc-bands above it),
 and the signal level fills in the bands, exactly as KDE's `ConnectionIcon` picks
 `network-wireless-0/20/40/60/80/100` (`libs/connectionicon.cpp`). The level →
 signal thresholds match KDE (`==0 → 0`, `<20 → 20`, … `<100 → 100`). The
@@ -75,7 +75,7 @@ Opening the applet (left click) shows a KDE-style popup above it:
 
 - a **toolbar**: the Wi-Fi on/off switch (icon-only), a **search** field, a
   **Hidden…** button and a **Configure** button (spawns `nm-connection-editor`);
-- the **network list** — one row per SSID, strongest access point: the signal
+- the **network list**: one row per SSID, strongest access point: the signal
   fan, the SSID, a subtitle (`Connected` / `Saved` / the strength), and a lock for
   secured networks. The connected network is drawn in the accent colour;
 - clicking a network **connects**; clicking the connected one **disconnects**;
