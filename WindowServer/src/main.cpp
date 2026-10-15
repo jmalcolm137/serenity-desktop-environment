@@ -263,6 +263,7 @@ static void update_xwayland_workareas(Server&);
 // Multi-output/hotplug: used by the output helpers before they are defined.
 static void reassign_primary_output(Server&, wlr_output*);
 static void toplevel_maximize_on_primary(Toplevel&);
+static void apply_saved_settings_to_output(Server&, struct wlr_output*, Config::OutputSettings const&);
 static Output* output_for(Server&, wlr_output*);
 static void output_manager_send_configuration(Server&);
 static void persist_screen_layout(Server&);
@@ -4215,59 +4216,34 @@ static void server_new_output(wl_listener* listener, void* data)
         }
     }
 
-    wlr_output_state state;
-    wlr_output_state_init(&state);
-    wlr_output_state_set_enabled(&state, true);
-    struct wlr_output_mode* mode = nullptr;
-    if (saved && saved->width > 0 && saved->height > 0) {
-        struct wlr_output_mode* candidate;
-        wl_list_for_each(candidate, &wlr_output->modes, link)
-        {
-            if (candidate->width == saved->width && candidate->height == saved->height) {
-                mode = candidate;
-                break;
-            }
-        }
-    }
-    int const refresh_mhz = resolve_output_refresh(saved);
-    if (mode && refresh_mhz == 0)
-        wlr_output_state_set_mode(&state, mode);
-    else if (saved && saved->width > 0 && saved->height > 0)
-        // A saved size with no matching mode (e.g. the headless backend): request
-        // a custom mode, which the backend honours (HiDPI captures need this).
-        wlr_output_state_set_custom_mode(&state, saved->width, saved->height, refresh_mhz);
-    else {
-        // No saved size and no preferred mode: a virtual output (the headless
-        // backend) has no mode list at all — it carries a custom mode from
-        // creation — so re-apply its current size, which is how a chosen refresh
-        // is requested for one.
+    if (saved) {
+        // One helper for "apply this entry to this output", shared with the runtime
+        // path (Config::watch_outputs -> apply_loaded_screen_layout), so a layout
+        // change behaves exactly like a replug.
+        apply_saved_settings_to_output(*server, wlr_output, *saved);
+    } else {
+        // No entry: a virtual output (the headless backend) has no mode list, so
+        // re-apply its current size, which is how a requested refresh is applied.
+        wlr_output_state state;
+        wlr_output_state_init(&state);
+        wlr_output_state_set_enabled(&state, true);
+        int const refresh_mhz = resolve_output_refresh(nullptr);
         int width = wlr_output->width;
         int height = wlr_output->height;
-        auto* preferred = wlr_output_preferred_mode(wlr_output);
-        if (preferred) {
+        if (auto* preferred = wlr_output_preferred_mode(wlr_output)) {
             width = preferred->width;
             height = preferred->height;
         }
         if (refresh_mhz > 0 && width > 0 && height > 0)
             wlr_output_state_set_custom_mode(&state, width, height, refresh_mhz);
-        else if (preferred)
+        else if (auto* preferred = wlr_output_preferred_mode(wlr_output))
             wlr_output_state_set_mode(&state, preferred);
+        wlr_output_commit_state(wlr_output, &state);
+        wlr_output_state_finish(&state);
     }
-    // HiDPI / fractional scale (see resolve_output_scale).
-    float const scale = resolve_output_scale(wlr_output, mode, saved);
-    if (scale != 1.0f) {
-        wlr_output_state_set_scale(&state, scale);
-        dbgln("WindowServer: output '{}' scaling {}x ({})",
-            wlr_output->name ? wlr_output->name : "?", scale, saved ? "saved layout" : "high-DPI");
-    } else if (saved) {
-        dbgln("WindowServer: output '{}' scale 1x (saved layout)", wlr_output->name ? wlr_output->name : "?");
-    }
-    wlr_output_commit_state(wlr_output, &state);
     // Compositor-drawn chrome (frames, overlays, the switcher) is rendered at the
     // output scale so it stays crisp on HiDPI panels.
     set_output_scale(wlr_output->scale);
-    wlr_output_state_finish(&state);
-
     auto output = make<Output>();
     output->server = server;
     output->output = wlr_output;
