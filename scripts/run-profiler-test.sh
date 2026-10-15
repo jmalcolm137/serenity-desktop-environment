@@ -89,6 +89,13 @@ sleep 0.3
 PERFCORE="$(XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$RUNTIME/prof-harness" "$BUSY" 2 2> "$RUNTIME/harness.log" || true)"
 kill "$BUSY" 2>/dev/null || true
 PERFCORE="${PERFCORE:-$XDG_RUNTIME_DIR/sde-perfcore-$BUSY.json}"
+# `perf_event_open` is restricted in containers and on hardened hosts
+# (`perf_event_paranoid`), and a CI runner blocks it outright. That is an
+# environment limitation, not a regression: skip instead of failing.
+if grep -q "enable failed" "$RUNTIME/harness.log" 2>/dev/null; then
+    echo "SKIP: perf_event_open is not permitted here (perf_event_paranoid)"
+    exit 0
+fi
 if [[ ! -s "$PERFCORE" ]]; then
     echo "  FAIL: no perfcore produced (see $RUNTIME/harness.log)"; cat "$RUNTIME/harness.log" 2>/dev/null; exit 1
 fi

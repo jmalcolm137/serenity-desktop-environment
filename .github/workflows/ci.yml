@@ -1,0 +1,92 @@
+name: CI
+
+# The suite is headless by design (no DRM, no host compositor, its own runtime
+# directories), so it runs in a container on a standard GitHub-hosted runner.
+# Both repositories are public, which makes standard runners free and unlimited —
+# never switch these jobs to a *larger* runner, those are always billed.
+#
+# The jobs need the prebuilt image: it carries the pinned SerenityOS checkout,
+# the Lagom framework build (~1.2 GB, an hour or two cold) and wlroots, so a job
+# only builds the SDE and runs tests. See docs/26-ci.md §2 for the cost model and
+# the bootstrap order: run the `ci-image` workflow once, then set the repository
+# variable SDE_CI_IMAGE_READY to `true`.
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+    workflow_dispatch:
+    schedule:
+        # Nightly: the full suite and the (informational) budgets.
+        - cron: "17 4 * * *"
+
+permissions:
+    contents: read
+
+env:
+    CI_IMAGE: ghcr.io/${{ github.repository_owner }}/sde-ci:latest
+
+jobs:
+    smoke:
+        name: smoke (fast tier)
+        # Skipped, not failed, until the image exists (see the header).
+        if: ${{ vars.SDE_CI_IMAGE_READY == 'true' && github.event_name != 'schedule' }}
+        runs-on: ubuntu-latest
+        container:
+            image: ghcr.io/${{ github.repository_owner }}/sde-ci:latest
+        timeout-minutes: 45
+        steps:
+            - uses: actions/checkout@v4
+            - name: Build the SDE against the prebuilt framework
+              run: scripts/ci-build.sh
+            - name: Fast tier
+              run: scripts/run-all-tests.sh --tier fast --timeout 300 --log-dir "$GITHUB_WORKSPACE/ci-logs"
+            - name: Upload test logs
+              if: failure()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: smoke-logs
+                  path: ci-logs/
+                  if-no-files-found: ignore
+
+    full:
+        name: full suite
+        if: ${{ vars.SDE_CI_IMAGE_READY == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+        runs-on: ubuntu-latest
+        container:
+            image: ghcr.io/${{ github.repository_owner }}/sde-ci:latest
+        timeout-minutes: 180
+        steps:
+            - uses: actions/checkout@v4
+            - name: Build the SDE, applications included
+              run: scripts/ci-build.sh --with-apps
+            - name: Full suite
+              run: scripts/run-all-tests.sh --tier full --timeout 600 --log-dir "$GITHUB_WORKSPACE/ci-logs"
+            - name: Upload test logs
+              if: failure()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: full-logs
+                  path: ci-logs/
+                  if-no-files-found: ignore
+
+    budgets:
+        name: budgets (informational)
+        # The frame and memory budgets are machine-sensitive: a shared runner is
+        # not the reference machine, so this job reports rather than gates. The
+        # SDE_PERF_* / SDE_SESSION_*_LIMIT_KB knobs let CI loosen a gate without
+        # weakening the local budget (docs/25-performance.md §6).
+        if: ${{ vars.SDE_CI_IMAGE_READY == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+        runs-on: ubuntu-latest
+        container:
+            image: ghcr.io/${{ github.repository_owner }}/sde-ci:latest
+        continue-on-error: true
+        timeout-minutes: 90
+        steps:
+            - uses: actions/checkout@v4
+            - name: Build the SDE
+              run: scripts/ci-build.sh
+            - name: Frame and latency budget
+              run: scripts/run-perf-test.sh
+            - name: Session memory budget
+              run: scripts/run-session-memory-test.sh

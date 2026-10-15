@@ -41,6 +41,7 @@ The stack is split across a small family of repositories:
 - [`docs/23-wayland-protocols.md`](docs/23-wayland-protocols.md) — the complete list of Wayland protocols the SDE compositor advertises and supports.
 - [`docs/24-libgui-wayland-sde-boundary.md`](docs/24-libgui-wayland-sde-boundary.md) — keeping the SDE out of libgui-wayland: what is SDE-specific in the application framework and the work to move it back across the line.
 - [`docs/25-performance.md`](docs/25-performance.md) — the performance & latency budget (N3): what is measured, the reference numbers, how to run it, and what keeps the compositor inside 60 Hz.
+- [`docs/26-ci.md`](docs/26-ci.md) — CI (N6): the test driver, what runs on a push versus nightly, the prebuilt image, and what a runner cannot cover.
 
 ## Status
 
@@ -101,7 +102,13 @@ build/WindowServer/WindowServer -n sde \
 
 (`FileManager -d` is the SerenityOS Desktop — icons over the wallpaper.)
 
-**Headless (CI).** `scripts/run-headless-test.sh` runs the compositor with the
+**The suite.** `scripts/run-all-tests.sh` runs the `scripts/run-*-test.sh` tests by
+tier (all of them are headless): the `fast` tier is what CI gates a push on, and
+`--tier full` is everything. `--list` shows the selection, `--only`/`--skip`
+narrow it. It gives every test its own session directory, so it is safe to run
+while a session is live. See [`docs/26-ci.md`](docs/26-ci.md).
+
+**Headless, single test.** `scripts/run-headless-test.sh` runs the compositor with the
 headless backend and asserts that it hosts a LibWindowServer app, a layer-shell
 panel and a native Wayland app — the R1 exit criterion, with no display needed.
 
