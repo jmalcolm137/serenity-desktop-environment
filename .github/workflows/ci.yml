@@ -34,13 +34,17 @@ jobs:
         runs-on: ubuntu-latest
         container:
             image: ghcr.io/${{ github.repository_owner }}/sde-ci:latest
-        timeout-minutes: 45
+        timeout-minutes: 75
         steps:
             - uses: actions/checkout@v4
             - name: What this job is running on
               run: scripts/ci-environment.sh
-            - name: Build the SDE against the prebuilt framework
-              run: scripts/build-full-sde.sh
+            - name: Build the SDE, applications included
+              # The applications are not baked into the image (they are the heaviest
+              # part of the tree), and a good third of the fast tier needs them:
+              # without this they failed with "CrashReporter is missing",
+              # "SystemMonitor not built", "TextEditor: No such file or directory".
+              run: scripts/build-full-sde.sh --with-apps
             - name: Fast tier
               run: scripts/run-all-tests.sh --tier fast --timeout 300 --log-dir "$GITHUB_WORKSPACE/ci-logs"
             - name: Upload test logs
