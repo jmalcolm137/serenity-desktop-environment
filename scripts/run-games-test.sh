@@ -84,6 +84,7 @@ for game in "${GAMES[@]}"; do
     fi
     if grep -qiE "SIGSEGV|Segmentation fault|ASSERTION FAILED|VERIFICATION FAILED|Runtime error" "$LOG"; then
         echo "  FAIL: $game reported a fault"
+        echo "      --- $game log ---"; tail -6 "$LOG" 2>/dev/null | sed "s/^/      /" || true
         fail=1
     fi
 done
