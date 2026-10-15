@@ -30,7 +30,8 @@ ByteString state_file(StringView name);
 // Run a command, optionally capturing its (trimmed) stdout.
 ErrorOr<Optional<ByteString>> run_command(Vector<ByteString> const& arguments, bool capture_stdout);
 
-// Run a command without waiting for it.
-void spawn_async(Vector<ByteString> const& arguments);
+// Start a command without waiting for it (fire and forget). Returns an error only
+// when the process could not be started.
+ErrorOr<void> spawn_async(Vector<ByteString> const& arguments);
 
 }

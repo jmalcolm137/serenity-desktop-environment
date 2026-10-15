@@ -93,10 +93,10 @@ ErrorOr<Optional<ByteString>> run_command(Vector<ByteString> const& arguments, b
     return output;
 }
 
-void spawn_async(Vector<ByteString> const& arguments)
+ErrorOr<void> spawn_async(Vector<ByteString> const& arguments)
 {
     if (arguments.is_empty())
-        return;
+        return Error::from_errno(EINVAL);
 
     // Core::Process::spawn puts the executable in argv[0] itself, so the arguments
     // it is given are the ones *after* argv[0].
@@ -110,7 +110,11 @@ void spawn_async(Vector<ByteString> const& arguments)
         .search_for_executable_in_path = true,
         .arguments = child_arguments,
     };
-    (void)Core::Process::spawn(options);
+    auto process = TRY(Core::Process::spawn(options));
+    // We do not wait for it: it is a helper (an opener, a launcher) whose exit
+    // status says nothing about the request.
+    (void)process.disown();
+    return {};
 }
 
 }

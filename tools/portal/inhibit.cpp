@@ -74,7 +74,7 @@ void run_seam()
     auto command = Portal::environment("SDE_PORTAL_INHIBIT_CMD"sv);
     if (!command.has_value() || command->is_empty())
         return;
-    Portal::spawn_async(Vector<ByteString> { command.value(), ByteString::formatted("{}", active_flags()) });
+    (void)Portal::spawn_async(Vector<ByteString> { command.value(), ByteString::formatted("{}", active_flags()) });
 }
 
 // logind's "what" for an inhibit flag, or an empty view when logind cannot
