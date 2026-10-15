@@ -41,6 +41,16 @@ STARTUP="$BUILD/bin/Taskbar & $BUILD/bin/FileManager -d"
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-sessmem.XXXXXX")"
 chmod 700 "$RUNTIME"
+
+# The runner's XDG_RUNTIME_DIR may not exist or may not be writable -- a container is
+# not a login session -- and then the compositor cannot create its Wayland socket at
+# all ("failed to create a Wayland socket"), so the desktop never comes up.
+# run-perf-test.sh isolates itself for exactly this reason; the budget job runs both
+# scripts directly rather than through the test driver, so this one needs it too.
+export XDG_RUNTIME_DIR="$RUNTIME/run"
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
+
 SOCK="sde-sessmem-$$"
 PERF="$RUNTIME/perf"
 COMP_PID=""
