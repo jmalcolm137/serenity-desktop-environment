@@ -204,11 +204,10 @@ Optional<ByteString> filename_from_uri(StringView uri)
 bool launch_uri(ByteString const& uri)
 {
     if (auto opener = environment("SDE_PORTAL_OPENER"sv); opener.has_value() && !opener->is_empty()) {
-        spawn_async({ opener.value(), uri });
+        (void)spawn_async({ opener.value(), uri });
         return true;
     }
-    auto result = run_command({ "xdg-open", uri }, false);
-    return !result.is_error();
+    return !spawn_async({ "xdg-open", uri }).is_error();
 }
 
 // --- Settings ---------------------------------------------------------------
@@ -420,11 +419,10 @@ void handle_email(Portal::MethodCall& call)
     auto uri = ByteString::formatted("mailto:{}", address);
     bool opened = false;
     if (auto opener = environment("SDE_PORTAL_OPENER"sv); opener.has_value() && !opener->is_empty()) {
-        spawn_async({ opener.value(), uri });
+        (void)spawn_async({ opener.value(), uri });
         opened = true;
     } else {
-        auto result = run_command({ "xdg-open", uri }, false);
-        opened = !result.is_error();
+        opened = !spawn_async({ "xdg-open", uri }).is_error();
     }
     call.reply_response(opened ? response_success : response_other_error, {});
 }
@@ -484,11 +482,10 @@ void handle_openuri(Portal::MethodCall& call)
         bool launched = false;
         if (!app_id.is_empty()) {
             if (auto opener = environment("SDE_PORTAL_OPENER"sv); opener.has_value() && !opener->is_empty()) {
-                spawn_async({ opener.value(), app_id });
+                (void)spawn_async({ opener.value(), app_id });
                 launched = true;
             } else {
-                auto result = run_command({ "gio", "launch", app_id }, false);
-                launched = !result.is_error();
+                launched = !spawn_async({ "gio", "launch", app_id }).is_error();
             }
         }
         call.reply_response(launched ? response_success : response_other_error, {});
@@ -519,10 +516,10 @@ void handle_openuri(Portal::MethodCall& call)
 void show_notification(ByteString const& id, ByteString const& title, ByteString const& body, ByteString const& icon)
 {
     if (auto notifier = environment("SDE_PORTAL_NOTIFIER"sv); notifier.has_value() && !notifier->is_empty()) {
-        spawn_async({ notifier.value(), id, title, body, icon });
+        (void)spawn_async({ notifier.value(), id, title, body, icon });
         return;
     }
-    spawn_async({ "notify-send", title, body });
+    (void)spawn_async({ "notify-send", title, body });
 }
 
 void handle_notification(Portal::Service& service, Portal::MethodCall& call)
@@ -1020,8 +1017,7 @@ void handle_dynamic_launcher(Portal::MethodCall& call)
         auto desktop_file_id = call.string_argument(3);
         bool launched = false;
         if (!desktop_file_id.is_empty()) {
-            auto result = run_command({ "gio", "launch", desktop_file_id }, false);
-            launched = !result.is_error();
+            launched = !spawn_async({ "gio", "launch", desktop_file_id }).is_error();
         }
         call.reply_response(launched ? response_success : response_other_error, results);
         return;
