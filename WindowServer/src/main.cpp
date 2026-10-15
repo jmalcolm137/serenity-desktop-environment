@@ -1043,58 +1043,69 @@ static FrameHit x11_hit_test_frame(Server& server, double x, double y);
 static FrameHit hit_test_frame(Server& server, double x, double y)
 {
     FrameHit hit;
-    for (size_t index = server.toplevels.size(); index-- > 0;) {
-        auto& toplevel = *server.toplevels[index];
-        if (toplevel.minimized)
-            continue;
-        // A client-side-decorated window has no compositor frame, so it has no
-        // frame regions to hit-test; the client handles move/resize itself.
-        if (toplevel.client_side_decorations)
-            continue;
 
-        auto* node = &toplevel.scene_tree->node;
-        Gfx::IntRect frame_rect { static_cast<int>(node->x), static_cast<int>(node->y), toplevel.frame_size.width(), toplevel.frame_size.height() };
-        if (frame_rect.is_empty() || !frame_rect.contains({ static_cast<int>(x), static_cast<int>(y) }))
-            continue;
+    // Only the *topmost* window under the pointer may take a press. server.toplevels
+    // is in creation order, not stacking order, and a frame rectangle says nothing
+    // about what is in front of it: a window completely behind another one still
+    // matched, and when the point fell inside its hidden titlebar the press began an
+    // interactive move of the window *behind* -- reported as "trying to click a tab
+    // in Firefox drags the Terminal that is running behind it". Ask the scene graph,
+    // which knows the order and also honours workspace/minimize visibility and
+    // blocking modals.
+    wlr_surface* surface = nullptr;
+    double surface_x = 0;
+    double surface_y = 0;
+    auto* topmost = toplevel_at(server, x, y, &surface, &surface_x, &surface_y);
+    if (!topmost)
+        return hit;
 
-        hit.toplevel = &toplevel;
-        hit.local = { static_cast<int>(x) - static_cast<int>(node->x), static_cast<int>(y) - static_cast<int>(node->y) };
+    auto& toplevel = *topmost;
+    // A client-side-decorated window has no compositor frame, so it has no frame
+    // regions to hit-test; the client handles move/resize itself.
+    if (toplevel.client_side_decorations)
+        return hit;
 
-        for (size_t button_index = 0; button_index < toplevel.button_rects.size(); ++button_index) {
-            if (toplevel.button_rects[button_index].contains(hit.local)) {
-                hit.region = FrameRegion::Button;
-                hit.button_index = static_cast<int>(button_index);
-                return hit;
-            }
-        }
+    auto* node = &toplevel.scene_tree->node;
+    Gfx::IntRect frame_rect { static_cast<int>(node->x), static_cast<int>(node->y), toplevel.frame_size.width(), toplevel.frame_size.height() };
+    if (frame_rect.is_empty() || !frame_rect.contains({ static_cast<int>(x), static_cast<int>(y) }))
+        return hit;
 
-        // The titlebar, expanded two pixels downwards (as in SerenityOS) so the
-        // seam between it and the content is not a resize handle.
-        Gfx::IntRect titlebar_rect {
-            toplevel.frame_left, 0,
-            toplevel.frame_size.width() - toplevel.frame_left - toplevel.frame_right,
-            min(toplevel.frame_top + 2, toplevel.frame_size.height())
-        };
-        if (titlebar_rect.contains(hit.local)) {
-            hit.region = FrameRegion::Titlebar;
+    hit.toplevel = &toplevel;
+    hit.local = { static_cast<int>(x) - static_cast<int>(node->x), static_cast<int>(y) - static_cast<int>(node->y) };
+
+    for (size_t button_index = 0; button_index < toplevel.button_rects.size(); ++button_index) {
+        if (toplevel.button_rects[button_index].contains(hit.local)) {
+            hit.region = FrameRegion::Button;
+            hit.button_index = static_cast<int>(button_index);
             return hit;
         }
+    }
 
-        constexpr int resize_border = 4;
-        uint32_t edges = 0;
-        if (hit.local.x() < resize_border)
-            edges |= WLR_EDGE_LEFT;
-        if (hit.local.x() >= toplevel.frame_size.width() - resize_border)
-            edges |= WLR_EDGE_RIGHT;
-        if (hit.local.y() < resize_border)
-            edges |= WLR_EDGE_TOP;
-        if (hit.local.y() >= toplevel.frame_size.height() - resize_border)
-            edges |= WLR_EDGE_BOTTOM;
-        if (edges) {
-            hit.region = FrameRegion::Border;
-            hit.edges = edges;
-        }
+    // The titlebar, expanded two pixels downwards (as in SerenityOS) so the
+    // seam between it and the content is not a resize handle.
+    Gfx::IntRect titlebar_rect {
+        toplevel.frame_left, 0,
+        toplevel.frame_size.width() - toplevel.frame_left - toplevel.frame_right,
+        min(toplevel.frame_top + 2, toplevel.frame_size.height())
+    };
+    if (titlebar_rect.contains(hit.local)) {
+        hit.region = FrameRegion::Titlebar;
         return hit;
+    }
+
+    constexpr int resize_border = 4;
+    uint32_t edges = 0;
+    if (hit.local.x() < resize_border)
+        edges |= WLR_EDGE_LEFT;
+    if (hit.local.x() >= toplevel.frame_size.width() - resize_border)
+        edges |= WLR_EDGE_RIGHT;
+    if (hit.local.y() < resize_border)
+        edges |= WLR_EDGE_TOP;
+    if (hit.local.y() >= toplevel.frame_size.height() - resize_border)
+        edges |= WLR_EDGE_BOTTOM;
+    if (edges) {
+        hit.region = FrameRegion::Border;
+        hit.edges = edges;
     }
     return hit;
 }
@@ -3075,50 +3086,57 @@ static void x11_update_frame(X11Toplevel& toplevel)
 static FrameHit x11_hit_test_frame(Server& server, double x, double y)
 {
     FrameHit hit;
-    for (size_t index = server.x11_toplevels.size(); index-- > 0;) {
-        auto& toplevel = *server.x11_toplevels[index];
-        if (!toplevel.mapped || !toplevel.frame_decorated)
-            continue;
-        auto* node = &toplevel.scene_tree->node;
-        Gfx::IntRect frame_rect {
-            static_cast<int>(node->x), static_cast<int>(node->y),
-            toplevel.frame_size.width(), toplevel.frame_size.height()
-        };
-        if (frame_rect.is_empty() || !frame_rect.contains({ static_cast<int>(x), static_cast<int>(y) }))
-            continue;
-        hit.x11_toplevel = &toplevel;
-        hit.local = { static_cast<int>(x) - frame_rect.x(), static_cast<int>(y) - frame_rect.y() };
-        for (size_t button_index = 0; button_index < toplevel.button_rects.size(); ++button_index) {
-            if (toplevel.button_rects[button_index].contains(hit.local)) {
-                hit.region = FrameRegion::Button;
-                hit.button_index = static_cast<int>(button_index);
-                return hit;
-            }
-        }
-        Gfx::IntRect titlebar_rect {
-            toplevel.frame_left, 0,
-            toplevel.frame_size.width() - toplevel.frame_left - toplevel.frame_right,
-            min(toplevel.frame_top + 2, toplevel.frame_size.height())
-        };
-        if (titlebar_rect.contains(hit.local)) {
-            hit.region = FrameRegion::Titlebar;
+
+    // Same rule as hit_test_frame: only the topmost window under the pointer may
+    // take the press, and server.x11_toplevels is not in stacking order.
+    wlr_surface* surface = nullptr;
+    double surface_x = 0;
+    double surface_y = 0;
+    if (!x11_surface_at(server, x, y, &surface, &surface_x, &surface_y))
+        return hit;
+    auto* topmost = x11_toplevel_for_wlr_surface(server, surface);
+    if (!topmost || !topmost->mapped || !topmost->frame_decorated)
+        return hit;
+
+    auto& toplevel = *topmost;
+    auto* node = &toplevel.scene_tree->node;
+    Gfx::IntRect frame_rect {
+        static_cast<int>(node->x), static_cast<int>(node->y),
+        toplevel.frame_size.width(), toplevel.frame_size.height()
+    };
+    if (frame_rect.is_empty() || !frame_rect.contains({ static_cast<int>(x), static_cast<int>(y) }))
+        return hit;
+    hit.x11_toplevel = &toplevel;
+    hit.local = { static_cast<int>(x) - frame_rect.x(), static_cast<int>(y) - frame_rect.y() };
+    for (size_t button_index = 0; button_index < toplevel.button_rects.size(); ++button_index) {
+        if (toplevel.button_rects[button_index].contains(hit.local)) {
+            hit.region = FrameRegion::Button;
+            hit.button_index = static_cast<int>(button_index);
             return hit;
         }
-        constexpr int resize_border = 4;
-        uint32_t edges = 0;
-        if (hit.local.x() < resize_border)
-            edges |= WLR_EDGE_LEFT;
-        if (hit.local.x() >= toplevel.frame_size.width() - resize_border)
-            edges |= WLR_EDGE_RIGHT;
-        if (hit.local.y() < resize_border)
-            edges |= WLR_EDGE_TOP;
-        if (hit.local.y() >= toplevel.frame_size.height() - resize_border)
-            edges |= WLR_EDGE_BOTTOM;
-        if (edges) {
-            hit.region = FrameRegion::Border;
-            hit.edges = edges;
-        }
+    }
+    Gfx::IntRect titlebar_rect {
+        toplevel.frame_left, 0,
+        toplevel.frame_size.width() - toplevel.frame_left - toplevel.frame_right,
+        min(toplevel.frame_top + 2, toplevel.frame_size.height())
+    };
+    if (titlebar_rect.contains(hit.local)) {
+        hit.region = FrameRegion::Titlebar;
         return hit;
+    }
+    constexpr int resize_border = 4;
+    uint32_t edges = 0;
+    if (hit.local.x() < resize_border)
+        edges |= WLR_EDGE_LEFT;
+    if (hit.local.x() >= toplevel.frame_size.width() - resize_border)
+        edges |= WLR_EDGE_RIGHT;
+    if (hit.local.y() < resize_border)
+        edges |= WLR_EDGE_TOP;
+    if (hit.local.y() >= toplevel.frame_size.height() - resize_border)
+        edges |= WLR_EDGE_BOTTOM;
+    if (edges) {
+        hit.region = FrameRegion::Border;
+        hit.edges = edges;
     }
     return hit;
 }
