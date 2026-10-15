@@ -81,9 +81,7 @@ Milestone progress (see [`docs/01-objectives.md`](docs/01-objectives.md) §11):
 
 ## Running
 
-**Building from scratch.** The order below is load-bearing, and the CI image
-build is what proved it: *two* patch sets are applied to the shared SerenityOS
-checkout and a framework-only build cannot produce the WindowServer shim.
+**Building from scratch.**
 
 ```sh
 libgui-wayland/scripts/fetch-serenity.sh   # pinned, blobless SerenityOS checkout
