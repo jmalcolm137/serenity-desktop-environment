@@ -40,7 +40,7 @@ jobs:
             - name: What this job is running on
               run: scripts/ci-environment.sh
             - name: Build the SDE against the prebuilt framework
-              run: scripts/ci-build.sh
+              run: scripts/full-build.sh
             - name: Fast tier
               run: scripts/run-all-tests.sh --tier fast --timeout 300 --log-dir "$GITHUB_WORKSPACE/ci-logs"
             - name: Upload test logs
@@ -63,7 +63,7 @@ jobs:
             - name: What this job is running on
               run: scripts/ci-environment.sh
             - name: Build the SDE, applications included
-              run: scripts/ci-build.sh --with-apps
+              run: scripts/full-build.sh --with-apps
             - name: Full suite
               run: scripts/run-all-tests.sh --tier full --timeout 600 --log-dir "$GITHUB_WORKSPACE/ci-logs"
             - name: Upload test logs
@@ -91,7 +91,7 @@ jobs:
             - name: What this job is running on
               run: scripts/ci-environment.sh
             - name: Build the SDE
-              run: scripts/ci-build.sh
+              run: scripts/full-build.sh
             - name: Frame and latency budget
               run: scripts/run-perf-test.sh
             - name: Session memory budget

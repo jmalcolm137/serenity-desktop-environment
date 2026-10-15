@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Build the SDE the way CI needs it: the pieces `scripts/run-*-test.sh` expect to
-# exist, against a prebuilt framework (see ci/Containerfile and docs/26-ci.md).
+# Build the whole desktop: every piece the SDE needs, and that the tests expect to
+# exist.
 #
-#   scripts/ci-build.sh              # the smoke tier's pieces
-#   scripts/ci-build.sh --with-apps  # plus the applications (full tier)
+#   scripts/full-build.sh              # the desktop's services, applets, tools, tests
+#   scripts/full-build.sh --with-apps  # plus the applications
 #
-# The framework (LibGUI/LibGfx/LibWM) is *not* built here: the CI image bakes it,
-# and a developer builds it once with libgui-wayland's scripts/build-libgui.sh.
+# The framework (LibGUI/LibGfx/LibWM and the Lagom libraries) is *not* built here:
+# build it once with libgui-wayland's scripts/build-libgui.sh, as the README's
+# "Building from scratch" describes. The CI image (ci/Containerfile) bakes it so
+# jobs only rebuild what their checkout changes.
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
