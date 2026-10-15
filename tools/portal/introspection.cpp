@@ -661,6 +661,21 @@ constexpr InterfaceIntrospection s_interfaces[] = {
       <arg type='a{sv}' name='results' direction='out'/>
       </method>
       </interface>)XML"sv },
+    { "org.freedesktop.impl.portal.Inhibit"sv,
+      R"XML(<interface name='org.freedesktop.impl.portal.Inhibit'>
+      <property name='version' type='u' access='read'/>
+      <method name='Inhibit'>
+      <arg type='o' name='handle' direction='in'/>
+      <arg type='s' name='app_id' direction='in'/>
+      <arg type='s' name='window' direction='in'/>
+      <arg type='u' name='flags' direction='in'/>
+      <arg type='a{sv}' name='options' direction='in'/>
+      </method>
+      </interface>)XML"sv },
+    { "org.freedesktop.impl.portal.Request"sv,
+      R"XML(<interface name='org.freedesktop.impl.portal.Request'>
+      <method name='Close'/>
+      </interface>)XML"sv },
 };
 
 }

@@ -67,10 +67,19 @@ echo 1
 EOF
 chmod +x "$APPCHOOSER"
 
+# The Inhibit seam: records the flags the backend reports (docs/15 §5), so the
+# test can see both inhibit and release.
+INHIBIT="$RUNTIME/inhibit.sh"
+cat > "$INHIBIT" <<EOF
+#!/usr/bin/env bash
+echo "flags=\$1" >> "$RUNTIME/inhibited.txt"
+EOF
+chmod +x "$INHIBIT"
+
 # Settings reads the theme broker for color-scheme / accent.
 printf '%s\n' "$SERENITY/Base/res/themes/Redmond 2000.ini" > "$RUNTIME/sde-theme"
 
-SDE_STATE_DIR="$RUNTIME" SDE_PORTAL_OPENER="$OPENER" SDE_PORTAL_NOTIFIER="$NOTIFIER" SDE_PORTAL_FILE_CHOOSER="$FILECHOOSER" SDE_PORTAL_PRINT_DIALOG="$PRINTDIALOG" SDE_PORTAL_ACCESS_DIALOG="$ACCESSDIALOG" SDE_PORTAL_APP_CHOOSER="$APPCHOOSER" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
+SDE_STATE_DIR="$RUNTIME" SDE_PORTAL_OPENER="$OPENER" SDE_PORTAL_NOTIFIER="$NOTIFIER" SDE_PORTAL_FILE_CHOOSER="$FILECHOOSER" SDE_PORTAL_PRINT_DIALOG="$PRINTDIALOG" SDE_PORTAL_ACCESS_DIALOG="$ACCESSDIALOG" SDE_PORTAL_APP_CHOOSER="$APPCHOOSER" SDE_PORTAL_INHIBIT_CMD="$INHIBIT" "$PORTAL" > "$RUNTIME/portal.log" 2>&1 &
 PORTAL_PID=$!
 trap 'kill "$PORTAL_PID" 2>/dev/null || true' EXIT
 
@@ -243,6 +252,19 @@ sleep 0.3
 check "mailto:user@example.com" "$(cat "$RUNTIME/opened.txt" 2>/dev/null || echo '(no opener call)')"
 check "uint32 2" "$(call org.freedesktop.impl.portal.Location.CreateSession /h /org/freedesktop/portal/desktop/session/loc app "{}")"
 
+echo "=== Inhibit ==="
+# Request-based: the method returns nothing, the result is the Request.Response
+# signal, and the inhibition lasts until the caller closes the request.
+INH_HANDLE="/org/freedesktop/portal/desktop/request/portal_test/1"
+check "org.freedesktop.impl.portal.Inhibit" "$(gdbus introspect --session --dest "$DEST" --object-path "$OBJ" 2>&1)"
+check "()" "$(call org.freedesktop.impl.portal.Inhibit.Inhibit "$INH_HANDLE" org.example.InhibitTest "" 8 "{'reason': <'test'>}")"
+sleep 0.4
+check "flags=8" "$(cat "$RUNTIME/inhibited.txt" 2>/dev/null || echo '(no inhibit call)')"
+check "org.freedesktop.impl.portal.Request" "$(gdbus introspect --session --dest "$DEST" --object-path "$INH_HANDLE" 2>&1)"
+check "()" "$(gdbus call --session --dest "$DEST" --object-path "$INH_HANDLE" --method org.freedesktop.impl.portal.Request.Close 2>&1)"
+sleep 0.4
+check "flags=0" "$(cat "$RUNTIME/inhibited.txt" 2>/dev/null || echo '(no release call)')"
+
 echo "=== backend declaration ==="
 portals_conf="$SDE_ROOT/contrib/xdg-desktop-portal/portals.conf"
 portal_file="$SDE_ROOT/contrib/xdg-desktop-portal/serenity.portal"
@@ -258,6 +280,13 @@ if grep -qF "org.freedesktop.portal.ScreenCast=serenity" "$portals_conf" \
     echo "  ok: ScreenCast declared and routed to serenity"
 else
     echo "  FAIL: ScreenCast not consistently declared"
+    fail=1
+fi
+if grep -qF "org.freedesktop.portal.Inhibit=serenity" "$portals_conf" \
+    && grep -qF "org.freedesktop.impl.portal.Inhibit;" "$portal_file"; then
+    echo "  ok: Inhibit declared and routed to serenity"
+else
+    echo "  FAIL: Inhibit not consistently declared"
     fail=1
 fi
 
@@ -280,7 +309,7 @@ done
 if [ -n "$FRONTEND" ]; then
     echo "=== frontend integration (best effort) ==="
     mkdir -p "$RUNTIME/config/xdg-desktop-portal" "$RUNTIME/data/xdg-desktop-portal/portals"
-    printf '[preferred]\norg.freedesktop.portal.Settings=serenity\n' > "$RUNTIME/config/xdg-desktop-portal/portals.conf"
+    printf '[preferred]\norg.freedesktop.portal.Settings=serenity\norg.freedesktop.portal.Inhibit=serenity\n' > "$RUNTIME/config/xdg-desktop-portal/portals.conf"
     cp "$SDE_ROOT/contrib/xdg-desktop-portal/serenity.portal" "$RUNTIME/data/xdg-desktop-portal/portals/"
     env XDG_CONFIG_HOME="$RUNTIME/config" XDG_DATA_HOME="$RUNTIME/data" XDG_CURRENT_DESKTOP=Serenity \
         "$FRONTEND" > "$RUNTIME/frontend.log" 2>&1 &
@@ -289,11 +318,23 @@ if [ -n "$FRONTEND" ]; then
     value="$(env XDG_CONFIG_HOME="$RUNTIME/config" XDG_DATA_HOME="$RUNTIME/data" XDG_CURRENT_DESKTOP=Serenity \
         timeout 5 gdbus call --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop \
         --method org.freedesktop.portal.Settings.Read org.freedesktop.appearance color-scheme 2>&1 || true)"
-    kill "$FRONTEND_PID" 2>/dev/null || true
     if grep -qF "uint32 2" <<<"$value"; then
         echo "  ok: frontend routed Settings to the SDE backend ($value)"
     else
         echo "  note: frontend did not route to the SDE backend here ($value) — direct backend tests above cover it"
+    fi
+    # Inhibit exercises the backend's request/response choreography through the
+    # real frontend.
+    rm -f "$RUNTIME/inhibited.txt"
+    inhibit_handle="$(env XDG_CONFIG_HOME="$RUNTIME/config" XDG_DATA_HOME="$RUNTIME/data" XDG_CURRENT_DESKTOP=Serenity \
+        timeout 5 gdbus call --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop \
+        --method org.freedesktop.portal.Inhibit.Inhibit "" 8 "{}" 2>&1 || true)"
+    sleep 0.6
+    kill "$FRONTEND_PID" 2>/dev/null || true
+    if grep -qF "flags=8" "$RUNTIME/inhibited.txt" 2>/dev/null; then
+        echo "  ok: frontend routed Inhibit to the SDE backend ($inhibit_handle)"
+    else
+        echo "  note: frontend did not route Inhibit here ($inhibit_handle)"
     fi
 fi
 

@@ -49,6 +49,7 @@
 #include "global-shortcuts.h"
 #include "introspection.h"
 #include "input-capture.h"
+#include "inhibit.h"
 #include "remote-desktop.h"
 #include "screencast.h"
 #include "usb.h"
@@ -1234,6 +1235,7 @@ ErrorOr<int> serenity_main(Main::Arguments)
         Vector<ByteString> { "version"sv });
 
     Usb::register_interface(*service);
+    Inhibit::register_interface(*service);
     Screencast::register_interface(*service);
     RemoteDesktop::register_interface(*service);
     InputCapture::register_interface(*service);
