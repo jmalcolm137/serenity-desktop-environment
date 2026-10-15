@@ -8114,11 +8114,20 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
                     static_cast<long>(now - last_beat));
             }
             last_beat = now;
+            // The heartbeat is a synchronous file write on the loop it certifies, so
+            // if writing it stalls — I/O contention on a nearly-full filesystem is
+            // the obvious way — the compositor goes stale *because of* the thing
+            // meant to show it is alive, and the supervisor's only evidence is
+            // "heartbeat stale". Time it, and say so when it is materially slow.
+            auto const started = monotonic_time_msec();
             auto file = Core::File::open(heartbeat_path, Core::File::OpenMode::Write);
             if (file.is_error())
                 return;
             auto text = ByteString::number(static_cast<long>(now));
             (void)file.value()->write_until_depleted(text.bytes());
+            auto const elapsed_ms = monotonic_time_msec() - started;
+            if (elapsed_ms > 500)
+                dbgln("WindowServer: WARNING: writing the liveness heartbeat took {}ms", elapsed_ms);
         };
         beat();
         static RefPtr<Core::Timer> heartbeat_timer;
