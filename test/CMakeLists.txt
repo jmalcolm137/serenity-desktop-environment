@@ -96,3 +96,6 @@ add_sde_test(libwm-combo-test SOURCE ComboBoxTest.cpp)
 # Changes a setting the desktop owns and reads it back: the shim must forward it
 # over serenity-window rather than writing the desktop's configuration.
 add_sde_test(libwm-setting-test SOURCE SettingRoundTripTest.cpp)
+
+# A deferred callback with no event loop (the teardown path the coredump showed).
+add_sde_test(libwm-eventloop-teardown-test SOURCE EventLoopTeardownTest.cpp)
