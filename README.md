@@ -81,6 +81,24 @@ Milestone progress (see [`docs/01-objectives.md`](docs/01-objectives.md) §11):
 
 ## Running
 
+**Building from scratch.** The order below is load-bearing, and the CI image
+build is what proved it: *two* patch sets are applied to the shared SerenityOS
+checkout and a framework-only build cannot produce the WindowServer shim.
+
+```sh
+libgui-wayland/scripts/fetch-serenity.sh   # pinned, blobless SerenityOS checkout
+scripts/build.sh LibConfig                 # the SDE's patches + the SDE_ROOT configure
+libgui-wayland/scripts/build-libgui.sh     # the port's patches + the framework
+scripts/ci-build.sh --with-apps            # the desktop: services, applets, tools, tests, apps
+```
+
+The SDE's patches add its Lagom targets and the **Config** endpoint generation;
+the port's add the full-LibGUI build and the other endpoint generations. The shim
+(`windowserver`) includes both, so neither set alone is enough — and on a machine
+where an earlier build left the generated headers behind, that only shows up on a
+clean tree. `scripts/build-libgui.sh` builds the libraries before the shim for the
+same reason.
+
 Build the compositor (links the `libgui-wayland` userland libraries and the
 pinned `wlroots`):
 
