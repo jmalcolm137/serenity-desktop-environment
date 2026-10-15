@@ -54,6 +54,17 @@ if [[ ! -s "$RUNTIME/1x.png" || ! -s "$RUNTIME/2x.png" ]]; then
     exit 1
 fi
 
+# The 2x dump must actually be twice the size of the 1x one; otherwise the scale
+# was never applied and the pixel comparison below has nothing to compare.
+X1="$(magick identify -format '%w %h' "$RUNTIME/1x.png")"
+X2="$(magick identify -format '%w %h' "$RUNTIME/2x.png")"
+read -r W1 H1 <<<"$X1"
+read -r W2 H2 <<<"$X2"
+if [[ "$W2" -ne $((W1 * 2)) || "$H2" -ne $((H1 * 2)) ]]; then
+    echo "==> HiDPI fidelity test FAILED: the 2x dump is ${W2}x${H2}, not twice ${W1}x${H1}"
+    exit 1
+fi
+
 # 2x downscaled by 2 (nearest) should equal 1x.
 magick "$RUNTIME/2x.png" -filter point -resize 50% "$RUNTIME/2x-down.png"
 # magick compare exits non-zero when the images differ, so tolerate that here.

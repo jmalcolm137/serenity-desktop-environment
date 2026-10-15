@@ -183,7 +183,13 @@ env SDE_SESSION_COMPOSITOR="$RUNTIME/hang-comp" \
     SDE_SESSION_RESTART_DELAY=0 \
     "$SDE" > "$RUNTIME/session-h.log" 2>&1 &
 SUP_H=$!
-sleep 6
+# The watchdog needs the heartbeat to age past WATCHDOG_SECONDS, then gives the
+# compositor 2s to die before SIGKILL, and only then does the main loop restart it.
+# A fixed wait is a race against all three; wait for the restart instead.
+for _ in $(seq 1 40); do
+    grep -q "restart 1/5" "$RUNTIME/session-h.log" 2>/dev/null && break
+    sleep 0.5
+done
 kill -TERM "$SUP_H" 2>/dev/null || true
 wait "$SUP_H" 2>/dev/null || true
 cat "$RUNTIME/session-h.log"

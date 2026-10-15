@@ -723,6 +723,15 @@ static int start_pipewire_stream(int width, int height)
         }
     }
 
+    // No PipeWire core means no PipeWire daemon: pw_stream_new() would dereference
+    // the null core and take the whole portal down. Report it instead -- on a
+    // machine without PipeWire, Start is expected to fail, not to crash.
+    if (!g_state.pw_core) {
+        fprintf(stderr, "xdg-desktop-portal-serenity: no PipeWire connection (is pipewire running?)\n");
+        pw_thread_loop_unlock(g_state.pw_loop);
+        return -1;
+    }
+
     if (g_state.stream) {
         pw_stream_destroy(g_state.stream);
         g_state.stream = nullptr;
