@@ -187,6 +187,8 @@ if grep -qF "key 56 release" "$RUNTIME/native.log"; then
     echo "  ok: the Alt release reached the focused client after Alt+Tab"
 else
     echo "  MISSING: Alt release after Alt+Tab (client saw $(grep -c 'native-app-test: key ' "$RUNTIME/native.log" 2>/dev/null) key events)"
+    # Which events it did see: press-vs-release is the whole question here.
+    grep 'native-app-test: key ' "$RUNTIME/native.log" 2>/dev/null | head -4 | sed 's/^/      /' || true
     fail=1
 fi
 # The thumbnail-capture spike (docs/09 §3): the toplevel's pixels were read back
