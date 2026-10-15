@@ -1074,17 +1074,25 @@ static FrameHit hit_test_frame(Server& server, double x, double y)
             continue;
 
         auto& toplevel = *window;
-        if (toplevel.minimized)
-            continue;
-        // A client-side-decorated window has no compositor frame, so it has no frame
-        // regions to hit-test; the client handles move/resize itself.
-        if (toplevel.client_side_decorations)
+        // Hidden windows are not there to hit: minimised, or on another workspace
+        // (their scene node is disabled).
+        if (toplevel.minimized || !toplevel.scene_tree->node.enabled)
             continue;
 
         auto* node = &toplevel.scene_tree->node;
         Gfx::IntRect frame_rect { static_cast<int>(node->x), static_cast<int>(node->y), toplevel.frame_size.width(), toplevel.frame_size.height() };
         if (frame_rect.is_empty() || !frame_rect.contains({ static_cast<int>(x), static_cast<int>(y) }))
             continue;
+
+        // The point is over this window and it is the topmost one, so the press
+        // belongs to it -- and this is where the search must *stop*. A
+        // client-side-decorated window (Firefox) has no compositor frame because it
+        // draws its own titlebar and buttons, so there is no frame region to return
+        // here; carrying on to the next window behind meant a press on Firefox's
+        // titlebar was taken by a window underneath it, which is why clicking there
+        // dragged or maximised the Terminal behind it.
+        if (toplevel.client_side_decorations)
+            return hit;
 
         hit.toplevel = &toplevel;
         hit.local = { static_cast<int>(x) - static_cast<int>(node->x), static_cast<int>(y) - static_cast<int>(node->y) };
@@ -3128,7 +3136,7 @@ static FrameHit x11_hit_test_frame(Server& server, double x, double y)
             continue;
 
         auto& toplevel = *window;
-        if (!toplevel.mapped || !toplevel.frame_decorated)
+        if (!toplevel.mapped || !toplevel.scene_tree->node.enabled)
             continue;
 
         auto* node = &toplevel.scene_tree->node;
@@ -3138,6 +3146,11 @@ static FrameHit x11_hit_test_frame(Server& server, double x, double y)
         };
         if (frame_rect.is_empty() || !frame_rect.contains({ static_cast<int>(x), static_cast<int>(y) }))
             continue;
+
+        // Topmost window, and the search stops here; an X11 window without a
+        // compositor frame owns its own press (see hit_test_frame).
+        if (!toplevel.frame_decorated)
+            return hit;
 
         hit.x11_toplevel = &toplevel;
         hit.local = { static_cast<int>(x) - frame_rect.x(), static_cast<int>(y) - frame_rect.y() };
