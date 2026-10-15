@@ -34,12 +34,22 @@ ENV LIBGUI_WAYLAND_ROOT=/opt/libgui-wayland \
 
 # The framework sources: the port's own patches plus its pinned SerenityOS
 # revision (fetch-serenity.sh is the single source of truth for the pin).
-RUN git clone "$LIBGUI_WAYLAND_REPO" /opt/libgui-wayland \
-    && git -C /opt/libgui-wayland checkout --quiet "$LIBGUI_WAYLAND_REVISION" \
+# Cloned at an explicit revision, passed by the workflow as a commit. With a
+# constant argument (`main`) Docker caches this layer, and the image then carries
+# whatever `main` was the *first* time it was built — which silently withheld a
+# framework fix from every job using the image.
+RUN git init /opt/libgui-wayland \
+    && git -C /opt/libgui-wayland remote add origin "$LIBGUI_WAYLAND_REPO" \
+    && git -C /opt/libgui-wayland fetch --depth 1 origin "$LIBGUI_WAYLAND_REVISION" \
+    && git -C /opt/libgui-wayland checkout --quiet FETCH_HEAD \
     && /opt/libgui-wayland/scripts/fetch-serenity.sh
 
 # wlroots, which the SDE vendors as a build, not as source.
-RUN git clone --depth 1 --branch "$SDE_REVISION" "$SDE_REPO" /opt/sde \
+# Same reason as the framework clone above: an explicit revision, not a branch.
+RUN git init /opt/sde \
+    && git -C /opt/sde remote add origin "$SDE_REPO" \
+    && git -C /opt/sde fetch --depth 1 origin "$SDE_REVISION" \
+    && git -C /opt/sde checkout --quiet FETCH_HEAD \
     && /opt/sde/scripts/fetch-wlroots.sh
 
 # The framework, then the desktop — the same sequence a developer runs, and both
