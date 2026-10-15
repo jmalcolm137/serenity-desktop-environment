@@ -22,7 +22,7 @@ if (NOT DEFINED SERENITY_SRC OR NOT DEFINED SERENITY_BUILD_DIR OR NOT DEFINED LI
     message(FATAL_ERROR "SERENITY_SRC, SERENITY_BUILD_DIR and LIBGUI_WAYLAND_SRC must be set")
 endif()
 
-foreach(_lib ak coreminimal corebasic core gfx gui ipc threading url desktop launch imagedecoderclient)
+foreach(_lib ak coreminimal corebasic core gfx gui ipc threading url desktop launch imagedecoderclient vt)
     find_library(LAGOM_${_lib} NAMES lagom-${_lib} PATHS "${SERENITY_BUILD_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
 endforeach()
 find_library(LAGOM_main NAMES lagom-main PATHS "${SERENITY_BUILD_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
@@ -99,3 +99,6 @@ add_sde_test(libwm-setting-test SOURCE SettingRoundTripTest.cpp)
 
 # A deferred callback with no event loop (the teardown path the coredump showed).
 add_sde_test(libwm-eventloop-teardown-test SOURCE EventLoopTeardownTest.cpp)
+
+# "Clear to previous mark" after the scrollback ring has wrapped (a Terminal crash).
+add_sde_test(libvt-history-test SOURCE VtHistoryTest.cpp LIBS ${LAGOM_vt})
