@@ -31,7 +31,13 @@ chmod 700 "$RUNTIME"
 trap 'rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
 
 SOCK="sde-layer-$$"
-env WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}" \
+# Headless, like every other test: no WAYLAND_DISPLAY/DISPLAY (leaving them set made
+# the compositor come up *nested* against whatever is there), and an explicit
+# headless backend (otherwise it autoselects DRM+libinput, which needs a seat and a
+# free DRM device). This test was the only one that did neither, so it only ran where
+# the machine happened to have a usable GPU.
+env -u WAYLAND_DISPLAY -u DISPLAY \
+    WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$LIBGUI_WAYLAND_ROOT/serenity/Base/res}" \
     "$COMP" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
 COMP_PID=$!
@@ -47,7 +53,9 @@ cat "$RUNTIME/comp.log"
 echo "--- client log ---"
 cat "$RUNTIME/client.log"
 
-if grep -q "usable area for 'WL-1': 1280x690 at 0,0" "$RUNTIME/comp.log"; then
+# The headless output is 'HEADLESS-1' (the nested backend used to call it 'WL-1',
+# which is what this check was written against).
+if grep -q "usable area for 'HEADLESS-1': 1280x690 at 0,0" "$RUNTIME/comp.log"; then
     echo "==> layer-shell exclusive zone test PASSED"
 else
     echo "==> layer-shell exclusive zone test FAILED (expected usable 1280x690)"
