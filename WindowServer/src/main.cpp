@@ -5386,6 +5386,16 @@ static void update_xwayland_workareas(Server& server)
 {
     if (!server.xwayland || !server.xwayland_started)
         return;
+    // `xwayland_started` only records that the X server became ready once — it may
+    // have died since. `wlr_xwayland_set_workareas()` dereferences the XWM
+    // connection, which wlroots drops when the server goes away
+    // (xwm_destroy → xwayland->xwm = nullptr), so asking for it here is a
+    // nullptr dereference and a SIGSEGV in the compositor's event loop. This is
+    // not hypothetical: a test run that disturbed the session's Xwayland took the
+    // whole session down from this line, via arrange_layers → a layer-surface
+    // commit. Report only to a live X server.
+    if (!wlr_xwayland_get_xwm_connection(server.xwayland))
+        return;
     Vector<wlr_box> areas;
     for (auto& output : server.outputs) {
         wlr_box box = output->usable_area;
