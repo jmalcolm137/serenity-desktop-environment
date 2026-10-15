@@ -63,8 +63,11 @@ done
 sleep 0.3
 
 # A stub source chooser: pick the first window (index 1; 0 is the whole screen).
-cat > "$RUNTIME/chooser.sh" <<'EOF'
+# When $RUNTIME/slow-chooser exists it dawdles, so the test can prove the backend
+# keeps answering other calls while the chooser is open (docs/15 §6.6).
+cat > "$RUNTIME/chooser.sh" <<EOF
 #!/usr/bin/env bash
+[[ -f "$RUNTIME/slow-chooser" ]] && sleep 2
 echo 1
 EOF
 chmod +x "$RUNTIME/chooser.sh"
@@ -133,6 +136,26 @@ call "$IFACE.SelectSources" /h /org/freedesktop/portal/desktop/session/c app "{'
 cursor_start="$(call "$IFACE.Start" /h /org/freedesktop/portal/desktop/session/c app "" "{}")"
 check "uint32 0" "$cursor_start"
 check "cursor 2" "$(cat "$RUNTIME/portal.log")"
+
+echo "=== the chooser does not block the backend ==="
+# SelectSources with window sources opens the (now slow) chooser; the backend must
+# keep serving other calls meanwhile, like the dialogs (docs/15 §6.6).
+touch "$RUNTIME/slow-chooser"
+call "$IFACE.CreateSession" /h /org/freedesktop/portal/desktop/session/nb app "{}" >/dev/null
+call "$IFACE.SelectSources" /h /org/freedesktop/portal/desktop/session/nb app "{'types': <uint32 2>}" >/dev/null &
+SEL_PID=$!
+sleep 0.3 # let the backend spawn the chooser
+start_ns=$(date +%s%N)
+call "$IFACE.AvailableSourceTypes" >/dev/null
+elapsed_ms=$(( ($(date +%s%N) - start_ns) / 1000000 ))
+if [ "$elapsed_ms" -lt 1000 ]; then
+    echo "  ok: a portal call was answered in ${elapsed_ms}ms while the chooser was open"
+else
+    echo "  FAIL: a portal call took ${elapsed_ms}ms while the chooser was open"
+    fail=1
+fi
+wait "$SEL_PID" 2>/dev/null || true
+rm -f "$RUNTIME/slow-chooser"
 
 echo "=== window source ==="
 if [ -x "$SDE_ROOT/build/tools/native-app-test" ]; then

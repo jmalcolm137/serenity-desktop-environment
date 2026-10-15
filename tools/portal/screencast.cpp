@@ -31,6 +31,7 @@
 
 #include "screencast.h"
 #include "introspection.h"
+#include "host.h"
 
 #include <AK/HashMap.h>
 #include <AK/Random.h>
@@ -1475,13 +1476,13 @@ static bool ensure_wayland(struct screencast_state* state)
     return true;
 }
 
-// Run the LibGUI source chooser (SDE_PORTAL_CHOOSER) with the candidate labels;
-// returns the chosen index, or 0 when there is no chooser.
-static int run_source_chooser(Vector<ByteString> const& labels)
+// The argv for the LibGUI source chooser (SDE_PORTAL_CHOOSER) with the candidate
+// labels, or empty when no chooser is configured.
+static Vector<ByteString> source_chooser_arguments(Vector<ByteString> const& labels)
 {
     auto chooser = Core::Environment::get("SDE_PORTAL_CHOOSER"sv);
     if (!chooser.has_value() || chooser->is_empty() || labels.is_empty())
-        return 0;
+        return {};
 
     Vector<ByteString> arguments;
     arguments.append(chooser->to_byte_string());
@@ -1489,50 +1490,40 @@ static int run_source_chooser(Vector<ByteString> const& labels)
     arguments.append("Share your screen"sv);
     for (auto const& label : labels)
         arguments.append(label);
+    return arguments;
+}
 
-    Vector<char const*> argv;
-    argv.ensure_capacity(arguments.size() + 1);
-    for (auto const& argument : arguments)
-        argv.append(argument.characters());
-    argv.append(nullptr);
-
-    int pipe_fds[2] { -1, -1 };
-    if (pipe(pipe_fds) != 0)
-        return 0;
-
-    auto pid = fork();
-    if (pid < 0) {
-        close(pipe_fds[0]);
-        close(pipe_fds[1]);
-        return 0;
-    }
-    if (pid == 0) {
-        dup2(pipe_fds[1], STDOUT_FILENO);
-        close(pipe_fds[0]);
-        close(pipe_fds[1]);
-        execvp(argv[0], const_cast<char**>(argv.data()));
-        _exit(127);
-    }
-    close(pipe_fds[1]);
-
-    ByteString output;
-    if (auto file = Core::File::adopt_fd(pipe_fds[0], Core::File::OpenMode::Read); !file.is_error()) {
-        if (auto contents = file.value()->read_until_eof(); !contents.is_error()) {
-            auto bytes = contents.release_value();
-            output = ByteString { StringView { reinterpret_cast<char const*>(bytes.data()), bytes.size() } };
-        }
-    }
-
-    int wait_status = 0;
-    while (waitpid(pid, &wait_status, 0) < 0 && errno == EINTR)
-        ;
-
-    int chosen = 0;
-    if (WIFEXITED(wait_status) && WEXITSTATUS(wait_status) == 0)
-        chosen = atoi(output.characters());
-    if (chosen < 0 || chosen >= static_cast<int>(labels.size()))
+// The index the chooser printed, clamped to the offered range; 0 (entire screen)
+// when it printed nothing or was cancelled (a non-zero exit prints no index).
+static int parse_chosen_index(Optional<ByteString> const& output, size_t label_count)
+{
+    int chosen = output.has_value() ? atoi(output->characters()) : 0;
+    if (chosen < 0 || chosen >= static_cast<int>(label_count))
         chosen = 0;
     return chosen;
+}
+
+// Mint and persist a restore token when the app asked to remember the choice
+// (persist_mode 1 = permanent, 2 = until revoked), then reply. Shared by the
+// synchronous path and the chooser continuation; `session` may be null when the
+// session was closed while the chooser was open.
+static void finish_select_sources(struct session* session, Function<void(u32, Portal::Dictionary const&)> reply)
+{
+    if (session && session->persist_mode != 0 && session->restore_token.is_empty()) {
+        char token[33];
+        for (int i = 0; i < 32; ++i)
+            token[i] = "0123456789abcdef"[AK::get_random_uniform(16)];
+        token[32] = '\0';
+        ByteString source_id;
+        if (session->chosen_toplevel_index >= 0 && (size_t)session->chosen_toplevel_index < g_state.toplevel_count)
+            source_id = g_state.toplevels[session->chosen_toplevel_index].identifier;
+        Screencast::store_restore_token(ByteString { token }, session->types, session->cursor_mode, source_id);
+        session->restore_token = token;
+    }
+    Portal::Dictionary results;
+    if (session && !session->restore_token.is_empty())
+        results.append(Portal::Value::Entry { "restore_token"sv, Portal::Value::make_variant(Portal::Value::make_string(session->restore_token)) });
+    reply(0, results);
 }
 
 // Set up the capture for the requested source (the chosen window, else the
@@ -1676,37 +1667,40 @@ static void handle_screencast(Portal::MethodCall& call)
         }
         // When window sources are offered and a chooser is configured, let the
         // user pick via the LibGUI ScreenCastChooser (index 0 = entire screen).
+        Vector<ByteString> labels;
         auto chooser = Core::Environment::get("SDE_PORTAL_CHOOSER"sv);
         if (session && (session->types & 2) && chooser.has_value() && !chooser->is_empty()) {
             ensure_wayland(&g_state);
-            Vector<ByteString> labels;
             labels.append("Entire screen"sv);
             for (size_t i = 0; i < g_state.toplevel_count; ++i) {
                 labels.append(ByteString::formatted("Window: {}", g_state.toplevels[i].title.is_empty()
                         ? (g_state.toplevels[i].identifier.is_empty() ? ByteString { "Window" } : g_state.toplevels[i].identifier)
                         : g_state.toplevels[i].title));
             }
-            int chosen = run_source_chooser(labels);
-            session->chosen_toplevel_index = chosen - 1; // -1 => entire screen
         }
 
-        // Mint and persist a restore token when the app asked to remember the
-        // choice (persist_mode 1 = permanent, 2 = until revoked).
-        if (session && session->persist_mode != 0 && session->restore_token.is_empty()) {
-            char token[33];
-            for (int i = 0; i < 32; ++i)
-                token[i] = "0123456789abcdef"[AK::get_random_uniform(16)];
-            token[32] = '\0';
-            ByteString source_id;
-            if (session->chosen_toplevel_index >= 0 && (size_t)session->chosen_toplevel_index < g_state.toplevel_count)
-                source_id = g_state.toplevels[session->chosen_toplevel_index].identifier;
-            Screencast::store_restore_token(ByteString { token }, session->types, session->cursor_mode, source_id);
-            session->restore_token = token;
+        auto chooser_arguments = source_chooser_arguments(labels);
+        if (!chooser_arguments.is_empty()) {
+            // The chooser is a LibGUI dialog the user interacts with: run it without
+            // blocking the backend (docs/15 §6.6) and finish from the continuation.
+            // The session can be closed while the chooser is open, so capture its
+            // handle and re-look it up rather than hold the pointer across the gap.
+            auto pending = call.take();
+            auto label_count = labels.size();
+            Portal::run_command_async(move(chooser_arguments), [pending, session_handle, label_count](Optional<ByteString> output) {
+                struct session* session = find_session(session_handle);
+                if (session)
+                    session->chosen_toplevel_index = parse_chosen_index(output, label_count) - 1; // -1 => entire screen
+                finish_select_sources(session, [pending](u32 response, Portal::Dictionary const& results) {
+                    pending->reply_response(response, results);
+                });
+            });
+            return;
         }
-        Portal::Dictionary results;
-        if (session && !session->restore_token.is_empty())
-            results.append(Portal::Value::Entry { "restore_token"sv, Portal::Value::make_variant(Portal::Value::make_string(session->restore_token)) });
-        call.reply_response(0, results);
+
+        finish_select_sources(session, [&call](u32 response, Portal::Dictionary const& results) {
+            call.reply_response(response, results);
+        });
         return;
     }
 
