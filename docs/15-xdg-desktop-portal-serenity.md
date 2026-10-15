@@ -1,6 +1,6 @@
 # xdg-desktop-portal-serenity (R5)
 
-**Status:** Phase 1 + Phase 2 landed. Metadata cursor mode and zero-copy DMA-BUF are in place and verified on a live TTY; Camera works via the frontend (§6); InputCapture is landed (P1–P5, [`17-input-capture.md`](17-input-capture.md)); the USB portal's backend is a real broker (§6.5); `Inhibit` (and the `Request` object machinery) is served (§2). Remaining code-only work: async dialogs, the permission store.
+**Status:** Phase 1 + Phase 2 landed. Metadata cursor mode and zero-copy DMA-BUF are in place and verified on a live TTY; Camera works via the frontend (§6); InputCapture is landed (P1–P5, [`17-input-capture.md`](17-input-capture.md)); the USB portal's backend is a real broker (§6.5); `Inhibit` (and the `Request` object machinery) is served (§2); the dialogs run asynchronously (§6.6). Remaining code-only work: the permission store.
 **Related:** [`08-compositor-gaps.md`](08-compositor-gaps.md) §3,
 [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §R5,
 `contrib/xdg-desktop-portal/`
@@ -287,9 +287,13 @@ code in the usual sense:
 
 These live in §5 and are plain backend work:
 
-- **Async (non-blocking) dialogs** — six `g_spawn_sync` call sites across five
-  handlers (plus the ScreenCast source picker) block the backend's main loop;
-  convert them to an async subprocess helper.
+- ~~**Async (non-blocking) dialogs**~~ — **done**. Every dialog (FileChooser,
+  AppChooser, ScreenshotOverlay, ColorPicker, Print, Access, and the USB portal's
+  Access) runs through `run_command_async()` with a deferred reply
+  (`MethodCall::take()` → `DeferredReply`), so a modal dialog no longer stalls the
+  backend; the only synchronous helper left is the local `lpstat` query.
+  `scripts/run-portal-test.sh` proves it: with a 2-second dialog open, another
+  portal call is answered in ~3ms.
 - **Permission-store integration** and the `Request`/`Response` choreography —
   the `Request` object machinery landed with `Inhibit` (`tools/portal/inhibit.cpp`:
   the service serves the request paths, and `Request.Close` releases); the

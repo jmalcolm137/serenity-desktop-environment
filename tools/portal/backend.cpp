@@ -627,6 +627,13 @@ void handle_filechooser(Portal::MethodCall& call)
     if (is_save_files && files && !files->container().is_empty())
         current_name = files->container().first().as_string();
 
+    // Copy the SaveFiles names: the continuation outlives the call's arguments.
+    Vector<ByteString> save_files_names;
+    if (is_save_files && files) {
+        for (auto const& name : files->container())
+            save_files_names.append(name.as_string());
+    }
+
     auto chooser = environment("SDE_PORTAL_FILE_CHOOSER"sv);
     if (!chooser.has_value() || chooser->is_empty()) {
         call.reply_response(response_other_error, results);
@@ -644,26 +651,33 @@ void handle_filechooser(Portal::MethodCall& call)
     if (multiple)
         arguments.append("--multiple"sv);
 
-    auto command = run_command(arguments, true);
-    u32 response = response_cancelled;
-    if (!command.is_error() && command.value().has_value() && !command.value()->is_empty()) {
-        auto path = command.value().value();
-        Portal::Value::Container uris;
-        uris.append(Portal::Value::make_string(filename_to_uri(path)));
-        // SaveFiles: the remaining files are placed next to the chosen one.
-        if (is_save_files && files) {
-            auto separator = path.find_last('/');
-            auto directory_path = separator.has_value() ? path.substring(0, separator.value()) : ByteString { "." };
-            auto const& file_list = files->container();
-            for (size_t i = 1; i < file_list.size(); ++i)
-                uris.append(Portal::Value::make_string(filename_to_uri(ByteString::formatted("{}/{}", directory_path, file_list[i].as_string()))));
+    // The file chooser is a LibGUI dialog: run it without blocking the backend
+    // (docs/15 §6.6), then reply from the continuation.
+    auto pending = call.take();
+    auto reply_with = [pending, is_save_files, save_files_names = move(save_files_names)](ByteString path, bool spawn_failed) {
+        Portal::Dictionary results;
+        u32 response = response_cancelled;
+        if (!spawn_failed && !path.is_empty()) {
+            Portal::Value::Container uris;
+            uris.append(Portal::Value::make_string(filename_to_uri(path)));
+            // SaveFiles: the remaining files are placed next to the chosen one.
+            if (is_save_files && !save_files_names.is_empty()) {
+                auto separator = path.find_last('/');
+                auto directory_path = separator.has_value() ? path.substring(0, separator.value()) : ByteString { "." };
+                for (size_t i = 1; i < save_files_names.size(); ++i)
+                    uris.append(Portal::Value::make_string(filename_to_uri(ByteString::formatted("{}/{}", directory_path, save_files_names[i]))));
+            }
+            results.append(Portal::Value::Entry { "uris", Portal::Value::make_array(move(uris), "s"sv) });
+            response = response_success;
+        } else if (spawn_failed) {
+            response = response_other_error;
         }
-        results.append(Portal::Value::Entry { "uris", Portal::Value::make_array(move(uris), "s"sv) });
-        response = response_success;
-    } else if (command.is_error()) {
-        response = response_other_error;
-    }
-    call.reply_response(response, results);
+        pending->reply_response(response, results);
+    };
+
+    run_command_async(move(arguments), [reply_with](Optional<ByteString> output) {
+        reply_with(output.has_value() ? output.value() : ByteString {}, !output.has_value());
+    });
 }
 
 // --- Screenshot -------------------------------------------------------------
@@ -750,33 +764,38 @@ void handle_screenshot(Portal::MethodCall& call)
     if (!is_pick_color) {
         if (interactive) {
             auto overlay = environment("SDE_PORTAL_SCREENSHOT_OVERLAY"sv);
-            int x = 0;
-            int y = 0;
-            int w = 0;
-            int h = 0;
-            bool selected = false;
             if (overlay.has_value() && !overlay->is_empty()) {
-                if (auto output = run_command({ overlay.value(), "-i", path }, true); !output.is_error() && output.value().has_value()) {
-                    auto parts = output.value().value().split(' ');
-                    if (parts.size() == 4) {
-                        x = parts[0].to_number<int>().value_or(0);
-                        y = parts[1].to_number<int>().value_or(0);
-                        w = parts[2].to_number<int>().value_or(0);
-                        h = parts[3].to_number<int>().value_or(0);
-                        selected = w > 0 && h > 0;
+                // The area selector is a LibGUI app the user drags: run it without
+                // blocking the backend (docs/15 §6.6).
+                auto pending = call.take();
+                run_command_async({ overlay.value(), "-i", path }, [pending, path, runtime](Optional<ByteString> output) {
+                    int x = 0;
+                    int y = 0;
+                    int w = 0;
+                    int h = 0;
+                    bool selected = false;
+                    if (output.has_value()) {
+                        auto parts = output->split(' ');
+                        if (parts.size() == 4) {
+                            x = parts[0].to_number<int>().value_or(0);
+                            y = parts[1].to_number<int>().value_or(0);
+                            w = parts[2].to_number<int>().value_or(0);
+                            h = parts[3].to_number<int>().value_or(0);
+                            selected = w > 0 && h > 0;
+                        }
                     }
-                }
-            }
-            if (selected) {
-                auto cropped = ByteString::formatted("{}/sde-screenshot-area-{}.png", runtime, getpid());
-                if (crop_png(path, cropped, x, y, w, h)) {
-                    results.append(Portal::Value::Entry { "uri", Portal::Value::make_string(filename_to_uri(cropped)) });
-                    call.reply_response(response_success, results);
-                    return;
-                }
-            } else if (overlay.has_value() && !overlay->is_empty()) {
-                // The overlay ran but the user cancelled: report cancellation.
-                call.reply_response(response_cancelled, results);
+                    Portal::Dictionary results;
+                    if (selected) {
+                        auto cropped = ByteString::formatted("{}/sde-screenshot-area-{}.png", runtime, getpid());
+                        if (crop_png(path, cropped, x, y, w, h)) {
+                            results.append(Portal::Value::Entry { "uri", Portal::Value::make_string(filename_to_uri(cropped)) });
+                            pending->reply_response(response_success, results);
+                            return;
+                        }
+                    }
+                    // The overlay ran but the user cancelled it (or the crop failed).
+                    pending->reply_response(response_cancelled, results);
+                });
                 return;
             }
         }
@@ -785,27 +804,44 @@ void handle_screenshot(Portal::MethodCall& call)
         return;
     }
 
-    int px = -1;
-    int py = -1;
-    if (auto picker = environment("SDE_PORTAL_COLOR_PICKER"sv); picker.has_value() && !picker->is_empty()) {
-        if (auto output = run_command({ picker.value(), "-i", path }, true); !output.is_error() && output.value().has_value()) {
-            auto parts = output.value().value().split(' ');
+    auto picker = environment("SDE_PORTAL_COLOR_PICKER"sv);
+    if (!picker.has_value() || picker->is_empty()) {
+        double r = 0;
+        double g = 0;
+        double b = 0;
+        if (sample_png_color(path, -1, -1, r, g, b)) {
+            results.append(Portal::Value::Entry { "color", Portal::Value::make_struct({ Portal::Value::make_double(r), Portal::Value::make_double(g), Portal::Value::make_double(b) }) });
+            call.reply_response(response_success, results);
+            return;
+        }
+        call.reply_response(response_other_error, results);
+        return;
+    }
+
+    // The colour picker is a LibGUI app the user clicks: run it without blocking
+    // the backend (docs/15 §6.6).
+    auto pending = call.take();
+    run_command_async({ picker.value(), "-i", path }, [pending, path](Optional<ByteString> output) {
+        int px = -1;
+        int py = -1;
+        if (output.has_value()) {
+            auto parts = output->split(' ');
             if (parts.size() == 2) {
                 px = parts[0].to_number<int>().value_or(-1);
                 py = parts[1].to_number<int>().value_or(-1);
             }
         }
-    }
-
-    double r = 0;
-    double g = 0;
-    double b = 0;
-    if (sample_png_color(path, px, py, r, g, b)) {
-        results.append(Portal::Value::Entry { "color", Portal::Value::make_struct({ Portal::Value::make_double(r), Portal::Value::make_double(g), Portal::Value::make_double(b) }) });
-        call.reply_response(response_success, results);
-        return;
-    }
-    call.reply_response(response_other_error, results);
+        Portal::Dictionary results;
+        double r = 0;
+        double g = 0;
+        double b = 0;
+        if (sample_png_color(path, px, py, r, g, b)) {
+            results.append(Portal::Value::Entry { "color", Portal::Value::make_struct({ Portal::Value::make_double(r), Portal::Value::make_double(g), Portal::Value::make_double(b) }) });
+            pending->reply_response(response_success, results);
+            return;
+        }
+        pending->reply_response(response_other_error, results);
+    });
 }
 
 // --- Print ------------------------------------------------------------------

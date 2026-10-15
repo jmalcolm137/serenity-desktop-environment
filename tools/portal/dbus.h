@@ -173,6 +173,9 @@ public:
     // The handler will finish asynchronously (an external helper is running): take
     // the call so it outlives the handler, and reply through the returned handle.
     // The Service then leaves the call unanswered.
+    //
+    // NB: the call's arguments die with the handler, so a continuation must capture
+    // *copies* of anything it needs (never a `Value const*` from argument()).
     NonnullRefPtr<DeferredReply> take();
 
     // Replies. Exactly one of these must be called.
