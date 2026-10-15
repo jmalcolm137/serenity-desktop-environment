@@ -295,6 +295,17 @@ void load()
     if (auto value = read_bool(user, defaults, "Compositor"sv, "XWayland"sv); value.has_value())
         g_compositor.xwayland = value.value();
 
+    // The environment can force Xwayland off (or on) regardless of the config.
+    // Xwayland's socket lives in the *global* /tmp/.X11-unix, so only one X server
+    // can own a display name: a test compositor that starts its own competes with
+    // a live session's, and disturbing a session's Xwayland is how a test run took
+    // the session's compositor down (docs/26-ci.md §6). Tests that do not exercise
+    // X11 therefore run with SDE_XWAYLAND=0.
+    if (auto const* value = getenv("SDE_XWAYLAND"); value && *value) {
+        ByteString const text { value };
+        g_compositor.xwayland = !(text == "0"sv || text == "off"sv || text == "false"sv || text == "no"sv);
+    }
+
     if (auto value = read_bool(user, defaults, "Taskbar"sv, "GroupWindows"sv); value.has_value())
         g_taskbar.group_windows = value.value();
 

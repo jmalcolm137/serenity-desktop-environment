@@ -356,6 +356,15 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   application when `[Taskbar] GroupWindows` is on (default off — SerenityOS's
   Taskbar has one button per window; see `docs/14`). See
   [`20-xwayland-next-steps.md`](20-xwayland-next-steps.md).
+  **A dead X server can no longer take the compositor down:** `update_xwayland_workareas()`
+  now checks `wlr_xwayland_get_xwm_connection()` before reporting the workarea.
+  wlroots drops the XWM connection when the X server goes away, and the previous
+  code called into a dead Xwayland from a layer-surface commit — a SIGSEGV that
+  killed a live session (found by the CI work, [`26-ci.md`](26-ci.md) §6.2).
+  **Open:** `run-taskbar-grouping-test.sh` fails its X11 `WM_CLASS` assertion —
+  the compositor logs `X11 window 0 class='' instance=''` for an `xterm`, so the
+  grouping input is empty even though the native app-id path works. The claim
+  above about X11 grouping needs re-verification.
   **Still missing for full parity:** Xwayland **keyboard grabs** (in no wlroots
   release), **XDND** drag-and-drop (wlroots 0.21), and focus-stealing prevention
   (wlroots gives no timestamp) — see
@@ -469,8 +478,23 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   the heartbeat assertion in `run-headless-test.sh`. **Full session restore**
   (relaunching the user's windows after a compositor restart) is done — see the
   R4.2 note above.
-- **Packaging** of `WindowServer` and the session; **headless CI matrix**;
-  **sanitizers/fuzzing**; **compositor design doc** and observability.
+- **CI (N6) — started.** `scripts/run-all-tests.sh` runs the 88 `run-*-test.sh`
+  tests by tier (every test is headless by design), `.github/workflows/ci.yml`
+  gates a push on the fast tier and runs the rest nightly, and
+  `ci/Containerfile` bakes the dependencies, wlroots and the ~1.2 GB Lagom
+  framework build into an image so a job only builds the SDE. Both repositories
+  are public, so standard GitHub-hosted runners are free and unlimited (never use
+  a *larger* runner — those are always billed). Each test gets its own
+  `SDE_SESSION_DIR` (which fixed `run-setting-test.sh`'s cross-session failure)
+  and `SDE_XWAYLAND=0`; the five X11 tests re-exec in a private network namespace,
+  which is what makes them safe — and runnable — next to a live session. That work
+  also found and fixed a real compositor crash (a dead Xwayland taking the session
+  down, §R5 above). See [`26-ci.md`](26-ci.md). Remaining:
+  `run-profiler-test.sh` must SKIP where `perf_event_open` is blocked, the budget
+  jobs stay informational until a runner baseline exists, and the X11 `WM_CLASS`
+  grouping failure (§R5) needs a look.
+- **Packaging** of `WindowServer` and the session; **sanitizers/fuzzing**;
+  **compositor design doc** and observability.
 
 ## R1 — Compositor bring-up (done)
 
