@@ -732,6 +732,7 @@ struct InteropState {
     wlr_xdg_toplevel_icon_manager_v1* toplevel_icon_manager { nullptr };
     wlr_xdg_system_bell_v1* system_bell { nullptr };
     wl_listener ext_workspace_commit { };
+    wl_listener ext_toplevel_capture_request { };
     wl_listener xdg_activation_activate { };
     wl_listener toplevel_icon_set { };
     wl_listener system_bell_ring { };

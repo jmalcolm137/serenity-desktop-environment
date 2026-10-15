@@ -34,14 +34,23 @@ int start_for_session(ByteString const& session_handle, Stream&);
 // success. Used by the Screenshot portal.
 int capture_png(ByteString const& path);
 
-// Restore-token persistence (screencast-tokens in the state directory), shared
-// with the RemoteDesktop and InputCapture portals.
-struct RestoreToken {
+// Restore data, shared with the RemoteDesktop and InputCapture portals: the
+// `(suv)` a backend returns from Start when the app set `persist_mode`, and is
+// handed back as the `restore_data` option of a later session. The frontend keeps
+// it per application in the permission store (tables `screencast`,
+// `remote-desktop`, `input-capture`), so a remembered choice is listed and revoked
+// by the standard tooling and the backend stores nothing itself. Ours is
+// ("SDE", 2, <a{sv}>) carrying the fields below.
+struct RestoreData {
     u32 types { 0 };
     u32 cursor_mode { 0 };
     ByteString source_id;
 };
-void store_restore_token(ByteString const& token, u32 types, u32 cursor_mode, ByteString const& source_id);
-Optional<RestoreToken> load_restore_token(ByteString const& token);
+Portal::Value make_restore_data(RestoreData const&);
+// Reads `restore_data` out of an options dictionary. Also accepts version 1, whose
+// variant is a token into the legacy screencast-tokens file of the state directory.
+Optional<RestoreData> parse_restore_data(Portal::Value const& options);
+// The persist_mode the backend honours (0 none, 1 while running, 2 until revoked).
+u32 clamp_persist_mode(u32 requested);
 
 }

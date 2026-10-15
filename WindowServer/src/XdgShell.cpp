@@ -504,6 +504,8 @@ static void server_new_xdg_toplevel(wl_listener* listener, void* data)
             .app_id = xdg_toplevel->app_id ? xdg_toplevel->app_id : "",
         };
         toplevel->ext_foreign_handle = wlr_ext_foreign_toplevel_handle_v1_create(server->interop.ext_foreign_toplevel_list, &state);
+        if (toplevel->ext_foreign_handle)
+            toplevel->ext_foreign_handle->data = toplevel.ptr();
     }
 
     toplevel->map.notify = toplevel_map;

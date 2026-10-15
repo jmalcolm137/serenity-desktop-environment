@@ -62,7 +62,7 @@ portal is the standalone `tools/portal/settings-portal.cpp` binary.
 | `FileChooser` (v3) | `OpenFile`/`SaveFile`/`SaveFiles` (directory mode via the `directory` option) through the LibGUI **FileChooserDialog** app (`SDE_PORTAL_FILE_CHOOSER`); returns the chosen `uris`. |
 | `Screenshot` (v2) | `Screenshot` captures the primary output (via the ScreenCast capture pipeline, on its own Wayland connection) into a PNG and returns its `uri`; with `interactive` the LibGUI **ScreenshotOverlay** app (`SDE_PORTAL_SCREENSHOT_OVERLAY`) lets the user drag an area, which is cropped out. `PickColor` freezes the frame and opens the LibGUI **ColorPicker** app (`SDE_PORTAL_COLOR_PICKER`); the clicked pixel is sampled and returned as a `(ddd)` color. |
 | `Print` (v1) | `PreparePrint` via the LibGUI **PrintDialog** app (`SDE_PORTAL_PRINT_DIALOG`; printers from `lpstat`); `Print` feeds the document fd to `SDE_PORTAL_PRINT_CMD` (e.g. `lp`). |
-| `RemoteDesktop` (v2) | `CreateSession`/`SelectDevices`/`Start` (devices + the paired ScreenCast stream) and the `Notify*` input methods (pointer motion/absolute/button/axis and keyboard keycodes), injected via `wlr-virtual-pointer` / `virtual-keyboard`. `ConnectToEIS` (libei) is not supported, so apps use the `Notify*` methods. Restore tokens are persisted and returned from `Start`. |
+| `RemoteDesktop` (v2) | `CreateSession`/`SelectDevices`/`Start` (devices + the paired ScreenCast stream) and the `Notify*` input methods (pointer motion/absolute/button/axis and keyboard keycodes), injected via `wlr-virtual-pointer` / `virtual-keyboard`. `ConnectToEIS` (libei) is not supported, so apps use the `Notify*` methods. `persist_mode` and `restore_data` are returned from `Start` (the frontend keeps them in the permission store). |
 | `InputCapture` (v2) | **Landed** ([`17-input-capture.md`](17-input-capture.md)). The compositor runs the `libeis` implementation (private `serenity_input_capture` protocol) and this backend bridges `org.freedesktop.impl.portal.InputCapture`: zones, pointer barriers, enable/activation, pointer + keyboard capture, the `ConnectToEIS` fd and the `Activated`/`Deactivated`/`Disabled`/`ZonesChanged` signals (`scripts/run-input-capture-test.sh`, `scripts/run-input-capture-portal-test.sh`). |
 | `GlobalShortcuts` (v1) | `CreateSession`/`BindShortcuts`/`ListShortcuts`. Shortcuts are stored in the SDE **config system** (`global-shortcuts.ini`, `[ShortcutN] Session/Id/Trigger`) for the compositor to bind like any other keybinding; activations are reported over a session FIFO (`sde-global-shortcuts.fifo`) and emitted as the `Activated` signal. |
 | `Wallpaper` (v1) | `SetWallpaper` decodes the image and writes the compositor's wallpaper state (`wallpaper.raw`/`.mode`), so a sandboxed app can set the desktop background. |
@@ -90,9 +90,16 @@ Still to add (niri parity, Phase 2b): **DMA-BUF** capture/negotiation is landed
 (§6.2) and the **metadata** cursor mode
 (`ext_image_copy_capture_cursor_session_v1` + `SPA_META_Cursor`) is landed and
 verified (§6.3). The interface advertises **v6** and returns the stream's
-`pipewire-serial`; **restore tokens** are minted when a client sets
-`persist_mode` and persisted under `screencast-tokens` in the state directory
-(returned from `SelectSources`/`Start`, accepted back as `restore_token`). niri
+`pipewire-serial`. **Remembered sources** follow the backend half of the spec:
+when the app sets `persist_mode`, `Start` returns `persist_mode` and a
+self-contained `restore_data` (`("SDE", 2, a{sv})` with the source types, cursor
+mode and window identifier); the frontend keeps it per app in the permission
+store (table `screencast`, so `flatpak permission-show` lists and revokes it) and
+hands it back to `SelectSources`, which then skips the chooser. A remembered
+window that has since closed is not restored: the chooser runs again. The backend
+stores nothing; the old `screencast-tokens` file is only read for version 1 data
+a frontend stored before. RemoteDesktop (`SelectDevices`/`Start`) and InputCapture
+(`Start`) use the same format. niri
 extras (dynamic cast target, "block out from screencast") remain.
 
 **Source selection is a LibGUI app.** As with all SDE UI, the picker is a
@@ -141,7 +148,7 @@ hard-coding them (the backend stays portable, with fallbacks):
 - `SDE_PORTAL_APP_CHOOSER`: the application chooser.
 - `SDE_PORTAL_COLOR_PICKER`: the color picker.
 - `SDE_PORTAL_SCREENSHOT_OVERLAY`: the interactive area selector.
-- `SDE_STATE_DIR`: where wallpaper/shortcut/secret/restore-token state lives.
+- `SDE_STATE_DIR`: where wallpaper/shortcut/secret state lives (and the legacy restore-token file).
 
 ## 4. Install & enable
 
@@ -173,7 +180,7 @@ To reach and surpass `xdg-desktop-portal-kde`:
 
 - **ScreenCast / RemoteDesktop**: monitor + window sources, hidden/embedded/metadata
   cursor, zero-copy DMA-BUF (memfd fallback), `pipewire-serial` (v6), restore
-  tokens and virtual-pointer/keyboard input injection all landed (§6).
+  data (remembered sources) and virtual-pointer/keyboard input injection all landed (§6).
 - **InputCapture**: **landed** ([`17-input-capture.md`](17-input-capture.md)):
   the compositor runs the EIS implementation (`libeis`) and this backend bridges
   `org.freedesktop.impl.portal.InputCapture` over the private
@@ -260,7 +267,7 @@ session (`scripts/run-screencast-live-test.sh`,
   fd from `ConnectToEIS`; zones, barriers and enable/disable travel over the
   private `serenity_input_capture` protocol, the compositor's
   Activated/Deactivated/Disabled/ZonesChanged events are forwarded as D-Bus
-  signals, and `persist_mode`/`restore_data` restore tokens persist permissions.
+  signals, and `persist_mode`/`restore_data` persist permissions.
 
 ### 6.5 Device / Camera
 
