@@ -1,6 +1,6 @@
 # Serenity Desktop Environment — Known Gaps & Remaining Work
 
-**Status:** Living document · **Date:** 2026-10-10
+**Status:** Living document · **Date:** 2026-10-15
 **Related:** [`01-objectives.md`](01-objectives.md) · [`02-compositor-decision.md`](02-compositor-decision.md) · [`03-engineering-conventions.md`](03-engineering-conventions.md) · [`05-r3-plan.md`](05-r3-plan.md) · [`07-systemserver-roles.md`](07-systemserver-roles.md) · [`08-compositor-gaps.md`](08-compositor-gaps.md)
 
 This is a running, greppable list of what is known to be missing or incomplete,
@@ -179,7 +179,7 @@ Not gaps, for the record: SDE's drag-to-edge snapping is an *addition* over stoc
 SerenityOS (which tiles only through `Super`+arrows), and the minimal
 `serenity-window` chrome is a deliberate P8 choice, not a missing behaviour.
 
-## R4 — Session & settings (started)
+## R4 — Session & settings (substantially done)
 
 R4 is broken into milestones **R4.1–R4.9** with sequencing, de-risking spikes and
 exit tests in [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md).
@@ -326,7 +326,7 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal` — see
   see "Recently resolved". **Help** (Taskbar system menu ▸ Help) renders the man
   pages; **Browser** loads pages (local `file://` and the WebContent pipeline).
 
-## R5 — Compatibility & ecosystem (started)
+## R5 — Compatibility & ecosystem (substantially done)
 
 Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.md) §3–4.
 
@@ -417,7 +417,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   so an input method can compose CJK text into a focused field. AT-SPI, sticky
   keys, magnifier and high contrast are still absent.
 
-## R6 — Hardening & packaging (not started)
+## R6 — Hardening & packaging (in progress)
 
 Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.md) §5–7.
 
@@ -502,16 +502,26 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   and `SDE_XWAYLAND=0`; the five X11 tests re-exec in a private network namespace,
   which is what makes them safe — and runnable — next to a live session. That work
   also found and fixed a real compositor crash (a dead Xwayland taking the session
-  down, §R5 above). See [`26-ci.md`](26-ci.md). Remaining:
-  `run-profiler-test.sh` must SKIP where `perf_event_open` is blocked, the budget
-  jobs stay informational until a runner baseline exists, and the X11 `WM_CLASS`
-  grouping failure (§R5) needs a look.
+  down, §R5 above). See [`26-ci.md`](26-ci.md).
+  **Landing since:** the image builds green, and the fast tier runs against it rather
+  than failing before it starts. Getting there meant fixing four classes of
+  CI-only failure, all the same shape — a fresh configure or a clean environment
+  differing from a development machine: a font root and a headless backend the
+  session had been supplying, build output that was being discarded (so failures
+  printed a line and a status and nothing else), and three patch-set gaps
+  (`26-ci.md` §6.6–6.7). The applications now build in the smoke job, which is what
+  lets a third of the tier run at all. Remaining:
+  `run-profiler-test.sh` **does** SKIP where `perf_event_open` is blocked (the
+  condition is implemented; that it still failed in CI is what needs the look), the
+  budget jobs stay informational until a runner baseline exists, and the X11
+  `WM_CLASS` grouping failure (§R5) is still open.
 - **Terminal keys vs the host's conventions.** Plain backspace emitted 0x08 where a
   host line discipline expects 0x7f (`erase = ^?`), so it did nothing in any
   raw-mode program (`yay`, `htop`, `vim`); Ctrl+letter is now converted to the
   control character in the LibWM shim, where Serenity's WindowServer used to do it.
-  See [`27-terminal-keys.md`](27-terminal-keys.md), which also records what could
-  not be measured.
+  See [`27-terminal-keys.md`](27-terminal-keys.md): both were measured in a
+  headless harness afterwards (`scripts/run-terminal-keys-test.sh`), and the Ctrl-C
+  symptom turned out to be a *signal-disposition* bug rather than an encoding one.
 - **Packaging** of `WindowServer` and the session; **sanitizers/fuzzing**;
   **compositor design doc** and observability.
 
