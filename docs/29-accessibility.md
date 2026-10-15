@@ -89,8 +89,10 @@ name, state, actions) and asks for events. Doing this here means:
   `org.a11y.atspi.Accessible` query against a running Terminal or TextEditor, driven
   by a small D-Bus client in `tools/`, needs no display input.
 
-This is the item that should get its own design doc (`docs/30-at-spi.md`) before
-code lands; it is an order of magnitude more work than 1–3 combined.
+Designed in [`30-at-spi.md`](30-at-spi.md): LibGUI publishes the tree (the tree *is*
+the widget tree), the transport is the `dbus-1` we already speak, and it lands in
+four steps — read-only tree, then events, then actions, then the text interfaces. It
+is an order of magnitude more work than 1–3 combined.
 
 ## Order
 
