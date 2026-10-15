@@ -15,7 +15,7 @@ FROM ${BASE}
 
 # Dependencies first: this layer changes rarely.
 COPY scripts/ci-deps.sh /tmp/ci-deps.sh
-RUN /tmp/ci-deps.sh \
+RUN bash /tmp/ci-deps.sh \
     && git config --system --add safe.directory '*' \
     && rm /tmp/ci-deps.sh
 
