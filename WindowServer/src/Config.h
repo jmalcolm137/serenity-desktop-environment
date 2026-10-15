@@ -113,6 +113,14 @@ struct Taskbar {
     bool group_windows { false };
 };
 
+// [Accessibility] - assistive input and presentation (docs/29-accessibility.md).
+struct Accessibility {
+    // Sticky keys: a modifier pressed and released on its own latches, so the next
+    // key press is delivered with it (Shift then 'a' produces 'A'), and clears once
+    // that key is pressed. Off by default.
+    bool sticky_keys { false };
+};
+
 // A persisted screen entry (screenlayout.ini in the state directory). This is
 // the Serenity WindowServer ScreenLayout format ([Screens] MainScreen, then
 // [Screen0] Mode/Device/Left/Top/Width/Height/ScaleFactor) so the port's
@@ -156,6 +164,7 @@ Output const& output();
 Log const& log();
 Compositor const& compositor();
 Taskbar const& taskbar();
+Accessibility const& accessibility();
 
 // The persisted screen layout (R4.5), in the Serenity ScreenLayout format
 // (screenlayout.ini). outputs() is the desired layout; set_outputs() replaces it
