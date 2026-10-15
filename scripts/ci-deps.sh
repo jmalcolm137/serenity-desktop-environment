@@ -23,9 +23,19 @@ BUILD=(
     wayland wayland-protocols libxkbcommon pixman libdrm libinput seatd
     libdisplay-info libxcb xcb-util-wm
     # Services and portals
-    pipewire dbus
+    pipewire libpipewire dbus
     # Xwayland parity tests
     xorg-xwayland
+    # Required by the port's patches, not by the SDE's own CMake: the
+    # SystemMonitor patch unwinds target threads with libunwind's ptrace remote
+    # access and reads ELF with libdw. On Arch libdw ships in the package named
+    # `libelf` (built from elfutils), and the .pc file is libdw.pc.
+    libunwind libelf
+    # Optional in the SDE's CMake (input capture); cheap, and its absence would
+    # only show up as those tests skipping.
+    libei
+    # Build-time helpers for resource archives.
+    zip unzip
 )
 
 # External clients and tools the tests invoke. Without them the tests skip.
