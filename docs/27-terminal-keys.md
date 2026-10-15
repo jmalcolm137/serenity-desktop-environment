@@ -1,7 +1,7 @@
 # Terminal key handling: backspace and control characters
 
-Status: backspace diagnosed and fixed; Ctrl-C fix landed but its *symptom* is
-unmeasured (see "What I could not establish").
+Status: both diagnosed, fixed, and now measured in a headless harness
+(`scripts/run-terminal-keys-test.sh`).
 
 ## Backspace: our convention was wrong for the host
 
@@ -30,7 +30,7 @@ programs, which is what this Terminal mostly runs.
 (`register_key_input_callback((char)127, ... erase_character_backwards)`), so
 Serenity's own shell and line editor are unaffected. Ctrl+Backspace is untouched.
 
-## Ctrl-C: made explicit, symptom unmeasured
+## Ctrl-C: made explicit, and measured
 
 SerenityOS's WindowServer converted Ctrl+letter into the control character itself,
 so a client sees Ctrl-C as code point **3**, not `'c'` plus a ctrl flag — and
@@ -44,34 +44,51 @@ is presented, leaving already-control characters alone so it cannot double-conve
 That is a consistency fix: it makes our behaviour match the WindowServer's
 regardless of the keymap.
 
-**What I could not establish, plainly:** I did not measure the Ctrl-C symptom. My
-probe (a headless session running the Terminal with a byte recorder as its child,
-driven by the virtual-input tool) failed twice for its own reasons — the recorder
-exited before reading anything, and the input tool never registered its devices —
-so it produced no evidence. The code path also *looks* correct for Ctrl-C, which is
-why I am not claiming the shim change explains the symptom. It may, or the cause may
-be elsewhere.
+**Measured, at last.** The same headless harness the mouse test uses now works, and
+it says Ctrl-C is correct. A byte recorder (`cat`, raw) as the Terminal's child
+received, for `a`, Ctrl-C, Backspace:
 
-**A ten-second measurement would settle it,** in your Terminal:
-
-```sh
-od -An -c
+```
+61 03 7f      a   003   177
 ```
 
-then press **Backspace**, then **Ctrl-C**, then Ctrl-D. Expected on a normal
-terminal: `177` (backspace), `003` (Ctrl-C). If you see `010` the backspace
-diagnosis is confirmed; what you see for Ctrl-C tells us whether this fix is the
-right one.
+so the byte is right. In *cooked* mode the byte never reaches the child, because
+the line discipline consumes it — and that is also correct: a child that installs a
+SIGINT handler (resetting the `SIG_IGN` it inherited from being started as a
+background job) reports `GOT signal 2`. So Ctrl-C produces SIGINT end to end.
+
+The other modifier flags were probed the same way, because the shim derives them
+from key events rather than from `wl_keyboard.modifiers`, and that derivation was
+the one thing the byte test could not see: Alt+a emits `1b 61` (ESC,a — LibVT
+prefixes on the *flag* alone) and Ctrl+/ emits `1f`. The derived Alt/Ctrl flags
+work.
+
+**So the Ctrl-C symptom is not reproducible here.** What `od -An -c` shows in a
+*normal* shell is nothing at all for Ctrl-C (and nothing for Backspace either):
+both are line-discipline characters (`intr = ^C`, `erase = ^?`), so the shell
+consumes them before `od` runs. `003` is only visible in a raw tty:
+
+```sh
+stty raw -echo; od -An -c -N3; stty sane   # press Backspace, Ctrl-C, then a
+```
+
+expects `177 003 141`. `scripts/run-terminal-keys-test.sh` asserts all of this.
+
+While probing, one real (if masked) bug surfaced: the conversion range here was
+`'@' .. '_'`, which stops below `'c'` (0x63), so it never fired for *lowercase*
+Ctrl+letters. LibVT converted those itself, which is why it went unnoticed; the
+range now matches LibVT's (`'@' .. <DEL`).
 
 ## Getting the fixes
 
 Both are framework changes (LibVT, and the LibWM shim), so they take effect when the
-framework is rebuilt — **and that rebuild must not happen while your session is
-running**: it relinks `libvt`/`libwindowserver`, which every running client has
-mapped, and rewriting a mapped library under a live process is how you get SIGBUS.
-CI's image gets them on the next dispatch; your machine needs a `build-libgui.sh`
-with the session stopped (from a VT, or before logging in). I can do that for you if
-you would rather not, but it needs the session down first.
+framework is rebuilt — and that rebuild is safe while the session runs. Relinking
+*replaces* the library file (a new inode); a process that already has the old one
+mapped keeps that mapping for its whole life and is never rewritten underneath. So
+the only step after a rebuild is to open a **new** Terminal: an existing one still
+has the old libraries mapped and will behave exactly as before. (An earlier version
+of this file claimed the session had to be down for the rebuild — it does not, and
+`scripts/rebuild-framework.sh` does the rebuild and says what to do next.)
 
 Related, and worth noting because it may be the same machinery: `run-terminal-mouse-test.sh`
 failed in the first CI run with "no SGR mouse event reached the app" — the virtual
