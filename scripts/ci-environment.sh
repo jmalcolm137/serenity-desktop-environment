@@ -30,5 +30,15 @@ if unshare -Urnm true 2>/dev/null; then
 else
     printf '  unprivileged userns : no (the X11 tests run unisolated — fine with no session)\n'
 fi
+# The tests create Wayland sockets under this; in a container it may not exist or
+# not be writable, which is how the first CI run failed every compositor start.
+runtime="${XDG_RUNTIME_DIR:-unset}"
+if [[ "$runtime" == unset ]]; then
+    printf '  runtime dir : unset (a test run supplies its own)\n'
+elif [[ -w "$runtime" ]]; then
+    printf '  runtime dir : %s (writable)\n' "$runtime"
+else
+    printf '  runtime dir : %s (NOT writable — tests must supply their own)\n' "$runtime"
+fi
 printf '  runner dir : %s\n' "${GITHUB_WORKSPACE:-$(pwd)}"
 exit 0
