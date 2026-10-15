@@ -13,5 +13,5 @@ bool x11_surface_at(Server& server, double lx, double ly, wlr_surface** surface,
 void focus_x11_toplevel(Server& server, X11Toplevel* toplevel);
 wlr_surface* window_surface_at(Server& server, double lx, double ly, double* sx, double* sy);
 void focus_window_at(Server& server, double lx, double ly);
-void server_new_xwayland_surface(wl_listener* listener, void* data);
-void xwayland_ready(wl_listener* listener, void*);
+
+void initialize_xwayland(Server&);

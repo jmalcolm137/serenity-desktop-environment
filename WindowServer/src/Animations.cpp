@@ -17,10 +17,6 @@
 
 #include "Wlroots.h"
 
-extern "C" {
-#include "serenity-window-server-protocol.h"
-}
-
 // --- window animations ----------------------------------------------------
 //
 // SerenityOS animates minimize/restore as an inverted outline that interpolates

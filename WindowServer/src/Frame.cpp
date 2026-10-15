@@ -160,11 +160,11 @@ void update_button_hover(Server& server, FrameHit const& hit)
 
 void update_button_pressed(Server& server, FrameHit const& hit)
 {
-    auto* toplevel = server.pressed_button_toplevel;
+    auto* toplevel = server.frame_press.toplevel;
     if (!toplevel)
         return;
-    bool over = hit.toplevel == toplevel && hit.region == FrameRegion::Button && hit.button_index == server.pressed_button_index;
-    int pressed = over ? server.pressed_button_index : -1;
+    bool over = hit.toplevel == toplevel && hit.region == FrameRegion::Button && hit.button_index == server.frame_press.button_index;
+    int pressed = over ? server.frame_press.button_index : -1;
     if (toplevel->pressed_button != pressed) {
         toplevel->pressed_button = pressed;
         toplevel_update_frame(*toplevel);
@@ -390,7 +390,7 @@ bool handle_frame_press(Server& server, uint32_t button, uint32_t time)
         bool icon_click = button == BTN_LEFT && !toplevel->titlebar_icon_rect.is_empty() && toplevel->titlebar_icon_rect.contains(hit.local);
         if (button == BTN_RIGHT || icon_click) {
             focus_toplevel(server, toplevel);
-            server.double_click_pending = false;
+            server.frame_press.double_click_pending = false;
             open_window_menu(server, *toplevel, Gfx::IntPoint { static_cast<int>(server.cursor->x), static_cast<int>(server.cursor->y) });
             return true;
         }
@@ -400,9 +400,9 @@ bool handle_frame_press(Server& server, uint32_t button, uint32_t time)
         if (hit.region == FrameRegion::Button) {
             // Track the button until release, like SerenityOS's Button: the
             // action fires only if the cursor is still over it on mouse up.
-            server.pressed_button_toplevel = toplevel;
-            server.pressed_button_index = hit.button_index;
-            server.double_click_pending = false;
+            server.frame_press.toplevel = toplevel;
+            server.frame_press.button_index = hit.button_index;
+            server.frame_press.double_click_pending = false;
             toplevel->hovered_button = hit.button_index;
             toplevel->pressed_button = hit.button_index;
             toplevel_update_frame(*toplevel);
@@ -413,23 +413,23 @@ bool handle_frame_press(Server& server, uint32_t button, uint32_t time)
             focus_toplevel(server, toplevel);
             // Decide on release whether this is a double click; a first click
             // still starts a move so single-click dragging feels immediate.
-            bool same_window = server.last_titlebar_press_toplevel == toplevel;
-            double dx = server.cursor->x - server.last_titlebar_press_x;
-            double dy = server.cursor->y - server.last_titlebar_press_y;
-            server.double_click_pending = same_window
-                && (time - server.last_titlebar_press_time) < static_cast<uint32_t>(Config::input().mouse.double_click_speed)
+            bool same_window = server.frame_press.last_titlebar_toplevel == toplevel;
+            double dx = server.cursor->x - server.frame_press.last_titlebar_x;
+            double dy = server.cursor->y - server.frame_press.last_titlebar_y;
+            server.frame_press.double_click_pending = same_window
+                && (time - server.frame_press.last_titlebar_time) < static_cast<uint32_t>(Config::input().mouse.double_click_speed)
                 && (dx * dx + dy * dy) <= (6 * 6);
-            server.last_titlebar_press_toplevel = toplevel;
-            server.last_titlebar_press_time = time;
-            server.last_titlebar_press_x = server.cursor->x;
-            server.last_titlebar_press_y = server.cursor->y;
+            server.frame_press.last_titlebar_toplevel = toplevel;
+            server.frame_press.last_titlebar_time = time;
+            server.frame_press.last_titlebar_x = server.cursor->x;
+            server.frame_press.last_titlebar_y = server.cursor->y;
             toplevel_begin_interactive(*toplevel, CursorMode::Move, 0);
             return true;
         }
 
         if (hit.region == FrameRegion::Border) {
             focus_toplevel(server, toplevel);
-            server.double_click_pending = false;
+            server.frame_press.double_click_pending = false;
             toplevel_begin_interactive(*toplevel, CursorMode::Resize, hit.edges);
             return true;
         }
@@ -440,13 +440,13 @@ bool handle_frame_press(Server& server, uint32_t button, uint32_t time)
 
 void handle_frame_release(Server& server, uint32_t)
 {
-    if (server.pressed_button_toplevel) {
-        auto* toplevel = server.pressed_button_toplevel;
-        int index = server.pressed_button_index;
+    if (server.frame_press.toplevel) {
+        auto* toplevel = server.frame_press.toplevel;
+        int index = server.frame_press.button_index;
         bool activate = toplevel->pressed_button == index;
         toplevel->pressed_button = -1;
-        server.pressed_button_toplevel = nullptr;
-        server.pressed_button_index = -1;
+        server.frame_press.toplevel = nullptr;
+        server.frame_press.button_index = -1;
         toplevel_update_frame(*toplevel);
         if (activate) {
             if (index == 0)
@@ -459,10 +459,10 @@ void handle_frame_release(Server& server, uint32_t)
         return;
     }
 
-    if (server.cursor_mode == CursorMode::Move && server.double_click_pending) {
-        if (auto* toplevel = server.grabbed_toplevel)
+    if (server.grab.mode == CursorMode::Move && server.frame_press.double_click_pending) {
+        if (auto* toplevel = server.grab.toplevel)
             toplevel_toggle_maximized(*toplevel);
     }
-    server.double_click_pending = false;
+    server.frame_press.double_click_pending = false;
     reset_cursor_mode(server);
 }

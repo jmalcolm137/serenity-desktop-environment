@@ -10,6 +10,5 @@
 
 bool cycle_keyboard_layout(Server& server);
 void apply_input_settings(Server& server);
-void server_new_input(wl_listener* listener, void* data);
-void server_new_virtual_keyboard(wl_listener* listener, void* data);
-void server_new_virtual_pointer(wl_listener* listener, void* data);
+
+void initialize_input_devices(Server&);

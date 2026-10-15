@@ -198,7 +198,7 @@ static void migrate_toplevels_off_output(Server& server, wlr_box const& gone, wl
             ++refitted;
         }
     }
-    for (auto& toplevel : server.x11_toplevels) {
+    for (auto& toplevel : server.xwayland.toplevels) {
         if (!toplevel->scene_tree || !move_if_on_gone_output(toplevel->scene_tree))
             continue;
         ++moved;
@@ -354,7 +354,7 @@ float resolve_output_scale(struct wlr_output* output, struct wlr_output_mode* mo
     return auto_output_scale(output, mode);
 }
 
-void server_new_output(wl_listener* listener, void* data)
+static void server_new_output(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
     server = wl_container_of(listener, server, new_output);
@@ -434,4 +434,10 @@ void server_new_output(wl_listener* listener, void* data)
     schedule_persist_screen_layout(*server);
     // R5: the InputCapture zones are the outputs.
     InputCapture::on_outputs_changed(*server);
+}
+
+void initialize_outputs(Server& server)
+{
+    server.new_output.notify = server_new_output;
+    wl_signal_add(&server.backend->events.new_output, &server.new_output);
 }

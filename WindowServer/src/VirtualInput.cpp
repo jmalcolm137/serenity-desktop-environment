@@ -63,8 +63,8 @@ static struct serenity_virtual_touch_v1_interface const virtual_touch_implementa
 static void virtual_touch_resource_destroy(wl_resource* resource)
 {
     auto& server = *static_cast<Server*>(wl_resource_get_user_data(resource));
-    if (server.virtual_touch_count > 0)
-        --server.virtual_touch_count;
+    if (server.input.virtual_touch_count > 0)
+        --server.input.virtual_touch_count;
     update_seat_capabilities(server);
 }
 
@@ -78,7 +78,7 @@ static void virtual_input_manager_create_touch(wl_client* client, wl_resource* r
     }
     // Advertise the touch capability while a virtual touch device exists, so
     // clients can bind wl_touch and receive the injected events.
-    ++server.virtual_touch_count;
+    ++server.input.virtual_touch_count;
     update_seat_capabilities(server);
     wl_resource_set_implementation(touch, &virtual_touch_implementation, &server, virtual_touch_resource_destroy);
 }
@@ -158,13 +158,13 @@ static void virtual_tablet_resource_destroy(wl_resource* resource)
     auto& server = *device->server;
     // Tear down the v2 wrappers (they listen on these synthetic signals), then
     // drop the map entries and free.
-    if (server.tablet_tool_map.contains(reinterpret_cast<u64>(&device->tool))) {
+    if (server.tablet.tools.contains(reinterpret_cast<u64>(&device->tool))) {
         wl_signal_emit_mutable(&device->tool.events.destroy, &device->tool);
-        server.tablet_tool_map.remove(reinterpret_cast<u64>(&device->tool));
+        server.tablet.tools.remove(reinterpret_cast<u64>(&device->tool));
     }
-    if (server.tablet_map.contains(reinterpret_cast<u64>(&device->tablet))) {
+    if (server.tablet.tablets.contains(reinterpret_cast<u64>(&device->tablet))) {
         wl_signal_emit_mutable(&device->tablet.base.events.destroy, &device->tablet.base);
-        server.tablet_map.remove(reinterpret_cast<u64>(&device->tablet));
+        server.tablet.tablets.remove(reinterpret_cast<u64>(&device->tablet));
     }
     free(device->tablet.base.name);
     delete device;
@@ -197,7 +197,7 @@ static struct serenity_virtual_input_manager_v1_interface const virtual_input_ma
     .create_tablet = virtual_input_manager_create_tablet,
 };
 
-void virtual_input_manager_bind(wl_client* client, void* data, uint32_t version, uint32_t id)
+static void virtual_input_manager_bind(wl_client* client, void* data, uint32_t version, uint32_t id)
 {
     auto& server = *static_cast<Server*>(data);
     auto* resource = wl_resource_create(client, &serenity_virtual_input_manager_v1_interface, min(version, 1u), id);
@@ -206,4 +206,9 @@ void virtual_input_manager_bind(wl_client* client, void* data, uint32_t version,
         return;
     }
     wl_resource_set_implementation(resource, &virtual_input_manager_implementation, &server, nullptr);
+}
+
+void initialize_virtual_input(Server& server)
+{
+    wl_global_create(server.display, &serenity_virtual_input_manager_v1_interface, 1, &server, virtual_input_manager_bind);
 }

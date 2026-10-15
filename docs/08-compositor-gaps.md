@@ -14,8 +14,8 @@ Entries are grouped by theme and tagged with the goal (`G`) and the milestone
 (`R`) that should own them. Legend: **G?** = goal, **R?** = milestone,
 **(host)** = a gap in `libgui-wayland` rather than this repository.
 
-Context for the current state: `WindowServer/src/main.cpp` `initialize()`
-registers `wl_compositor`, `wl_subcompositor`, `wl_data_device_manager`,
+Context for the current state: `WindowServer/src/main.cpp` `initialize()` (and the
+subsystem `initialize_*()` functions it calls) registers `wl_compositor`, `wl_subcompositor`, `wl_data_device_manager`,
 `wl_output`/`xdg_output_v1`, the scene, `xdg_shell`, `wlr-layer-shell`,
 `xdg-decoration`, `wlr-foreign-toplevel-management`, `wlr-output-management`,
 the cursor and the seat. Everything below that is *not* in that list is absent

@@ -13,5 +13,5 @@ void apply_saved_settings_to_output(Server& server, struct wlr_output* output, C
 void apply_output_scale(Server& server);
 void apply_loaded_screen_layout(Server& server);
 void output_manager_send_configuration(Server& server);
-void output_manager_apply(wl_listener* listener, void* data);
-void output_manager_test(wl_listener* listener, void* data);
+
+void initialize_output_management(Server&);

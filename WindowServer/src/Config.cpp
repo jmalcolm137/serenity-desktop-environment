@@ -318,7 +318,7 @@ void load()
 
     g_log.level = read_entry(user, defaults, "Log"sv, "Level"sv);
     if (!g_log.level.is_empty()) {
-        // R6/N8: the compositor's verbosity (see main.cpp).
+        // R6/N8: the compositor's verbosity (see Compositor.cpp).
         if (g_log.level != "error" && g_log.level != "warn" && g_log.level != "info" && g_log.level != "debug") {
             g_diagnostics.append(ByteString::formatted("[Log] Level='{}' invalid (expected error|warn|info|debug)", g_log.level));
             g_log.level = {};

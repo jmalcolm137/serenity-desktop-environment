@@ -8,4 +8,5 @@
 
 #include "Compositor.h"
 
-void serenity_window_manager_bind(wl_client* client, void* data, uint32_t version, uint32_t id);
+
+void initialize_serenity_window(Server&);

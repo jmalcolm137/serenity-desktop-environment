@@ -74,16 +74,16 @@ static void set_pending_focused_surface(TextInput& text_input, wlr_surface* surf
 
 static wlr_input_method_keyboard_grab_v2* active_keyboard_grab(Server& server)
 {
-    if (!server.input_method)
+    if (!server.ime.input_method)
         return nullptr;
-    return server.input_method->keyboard_grab;
+    return server.ime.input_method->keyboard_grab;
 }
 
 // The text input whose field is currently focused (wlroots set focused_surface
 // when we sent `enter`).
 static TextInput* focused_text_input(Server& server)
 {
-    for (auto& text_input : server.text_inputs) {
+    for (auto& text_input : server.ime.text_inputs) {
         if (text_input->input->focused_surface)
             return text_input.ptr();
     }
@@ -94,7 +94,7 @@ static TextInput* focused_text_input(Server& server)
 // field, but there was no input method to send `enter` to yet).
 static TextInput* focusable_text_input(Server& server)
 {
-    for (auto& text_input : server.text_inputs) {
+    for (auto& text_input : server.ime.text_inputs) {
         if (text_input->pending_focused_surface)
             return text_input.ptr();
     }
@@ -111,7 +111,7 @@ static wlr_scene_node* surface_scene_node(Server& server, wlr_surface* surface)
         if (toplevel->xdg_toplevel && toplevel->xdg_toplevel->base->surface == surface && toplevel->content_tree)
             return &toplevel->content_tree->node;
     }
-    for (auto& toplevel : server.x11_toplevels) {
+    for (auto& toplevel : server.xwayland.toplevels) {
         if (toplevel->xsurface && toplevel->xsurface->surface == surface && toplevel->scene)
             return &toplevel->scene->buffer->node;
     }
@@ -220,7 +220,7 @@ static void popup_destroy(wl_listener* listener, void*)
         popup->scene_tree = nullptr;
     }
     wl_list_remove(&popup->destroy.link);
-    remove_owned_ptr(server.input_popups, popup);
+    remove_owned_ptr(server.ime.input_popups, popup);
 }
 
 static void popup_surface_map(wl_listener* listener, void*)
@@ -263,7 +263,7 @@ static void new_popup_surface(wl_listener* listener, void* data)
     auto popup = make<InputPopup>();
     popup->server = &server;
     popup->popup_surface = popup_surface;
-    popup->scene_tree = wlr_scene_tree_create(server.ime_popup_tree);
+    popup->scene_tree = wlr_scene_tree_create(server.ime.popup_tree);
     if (!popup->scene_tree)
         return;
     if (!wlr_scene_subsurface_tree_create(popup->scene_tree, popup_surface->surface)) {
@@ -281,7 +281,7 @@ static void new_popup_surface(wl_listener* listener, void* data)
     wl_signal_add(&popup_surface->surface->events.unmap, &popup->surface_unmap);
     popup->focused_surface_unmap.notify = popup_focused_surface_unmap;
     wl_list_init(&popup->focused_surface_unmap.link);
-    server.input_popups.append(move(popup));
+    server.ime.input_popups.append(move(popup));
     dbgln("WindowServer: IME: input method popup surface created");
 }
 
@@ -315,11 +315,11 @@ static void input_method_commit(wl_listener* listener, void*)
 static void input_method_grab_destroy(wl_listener* listener, void*)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, input_method_grab_destroy);
-    wl_list_remove(&server->input_method_grab_destroy.link);
-    wl_list_init(&server->input_method_grab_destroy.link);
+    server = wl_container_of(listener, server, ime.grab_destroy);
+    wl_list_remove(&server->ime.grab_destroy.link);
+    wl_list_init(&server->ime.grab_destroy.link);
     s_grab_pressed_keys.clear();
-    auto* keyboard_grab = server->input_method ? server->input_method->keyboard_grab : nullptr;
+    auto* keyboard_grab = server->ime.input_method ? server->ime.input_method->keyboard_grab : nullptr;
     // Hand the keyboard back to the focused client, with the current modifiers.
     if (keyboard_grab && keyboard_grab->keyboard) {
         wlr_seat_set_keyboard(server->seat, keyboard_grab->keyboard);
@@ -336,8 +336,8 @@ static void input_method_grab_keyboard(wl_listener* listener, void* data)
     // set_keyboard sends the keymap and the current modifiers to the grab.
     auto* keyboard = wlr_seat_get_keyboard(server.seat);
     wlr_input_method_keyboard_grab_v2_set_keyboard(keyboard_grab, keyboard);
-    server.input_method_grab_destroy.notify = input_method_grab_destroy;
-    wl_signal_add(&keyboard_grab->events.destroy, &server.input_method_grab_destroy);
+    server.ime.grab_destroy.notify = input_method_grab_destroy;
+    wl_signal_add(&keyboard_grab->events.destroy, &server.ime.grab_destroy);
     dbgln("WindowServer: IME: input method grabbed the keyboard");
 }
 
@@ -352,9 +352,9 @@ static void input_method_destroy(wl_listener* listener, void*)
     wl_list_remove(&client->destroy.link);
     // The grab (if any) is destroyed before the input method, so its listener is
     // already detached; detach defensively (removing a self-linked node is safe).
-    wl_list_remove(&server.input_method_grab_destroy.link);
-    wl_list_init(&server.input_method_grab_destroy.link);
-    server.input_method = nullptr;
+    wl_list_remove(&server.ime.grab_destroy.link);
+    wl_list_init(&server.ime.grab_destroy.link);
+    server.ime.input_method = nullptr;
     s_grab_pressed_keys.clear();
     // Keyboard focus may still be on the field: capture the surface, tell the
     // client it lost its input, and remember it so a later input method can pick
@@ -364,17 +364,17 @@ static void input_method_destroy(wl_listener* listener, void*)
         wlr_text_input_v3_send_leave(text_input->input);
         set_pending_focused_surface(*text_input, surface);
     }
-    for (auto& popup : server.input_popups)
+    for (auto& popup : server.ime.input_popups)
         set_popup_focus(server, *popup, nullptr);
     dbgln("WindowServer: IME: input method disconnected");
-    remove_owned_ptr(server.input_methods, client);
+    remove_owned_ptr(server.ime.input_methods, client);
 }
 
 // --- text input (wp_text_input_v3) ------------------------------------------
 
 static void text_input_send_state(Server& server, wlr_text_input_v3* input)
 {
-    auto* input_method = server.input_method;
+    auto* input_method = server.ime.input_method;
     if (!input_method)
         return;
     if (input->active_features & WLR_TEXT_INPUT_V3_FEATURE_SURROUNDING_TEXT)
@@ -384,16 +384,16 @@ static void text_input_send_state(Server& server, wlr_text_input_v3* input)
     if (input->active_features & WLR_TEXT_INPUT_V3_FEATURE_CONTENT_TYPE)
         wlr_input_method_v2_send_content_type(input_method, input->current.content_type.hint,
             input->current.content_type.purpose);
-    for (auto& popup : server.input_popups)
+    for (auto& popup : server.ime.input_popups)
         set_popup_focus(server, *popup, input->focused_surface);
     wlr_input_method_v2_send_done(input_method);
 }
 
 static void text_input_disable_im(Server& server, TextInput& text_input)
 {
-    if (!server.input_method)
+    if (!server.ime.input_method)
         return;
-    wlr_input_method_v2_send_deactivate(server.input_method);
+    wlr_input_method_v2_send_deactivate(server.ime.input_method);
     text_input_send_state(server, text_input.input);
 }
 
@@ -404,10 +404,10 @@ static void text_input_enable(wl_listener* listener, void*)
     auto& server = *text_input->server;
     if (!text_input->input->focused_surface)
         return;
-    if (!server.input_method)
+    if (!server.ime.input_method)
         return;
     dbgln("WindowServer: IME: text input enabled");
-    wlr_input_method_v2_send_activate(server.input_method);
+    wlr_input_method_v2_send_activate(server.ime.input_method);
     text_input_send_state(server, text_input->input);
 }
 
@@ -420,7 +420,7 @@ static void text_input_commit(wl_listener* listener, void*)
         return;
     if (!text_input->input->current_enabled)
         return;
-    if (!server.input_method)
+    if (!server.ime.input_method)
         return;
     text_input_send_state(server, text_input->input);
 }
@@ -447,7 +447,7 @@ static void text_input_destroy(wl_listener* listener, void*)
     wl_list_remove(&text_input->commit.link);
     wl_list_remove(&text_input->disable.link);
     wl_list_remove(&text_input->destroy.link);
-    remove_owned_ptr(server.text_inputs, text_input);
+    remove_owned_ptr(server.ime.text_inputs, text_input);
 }
 
 static void pending_focused_surface_destroy(wl_listener* listener, void*)
@@ -474,7 +474,7 @@ static void set_pending_focused_surface(TextInput& text_input, wlr_surface* surf
 static void new_text_input(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, text_input_new);
+    server = wl_container_of(listener, server, ime.text_input_new);
     auto* input = static_cast<wlr_text_input_v3*>(data);
     if (input->seat && input->seat != server->seat)
         return;
@@ -491,17 +491,17 @@ static void new_text_input(wl_listener* listener, void* data)
     wl_signal_add(&input->events.destroy, &text_input->destroy);
     text_input->pending_focused_surface_destroy.notify = pending_focused_surface_destroy;
     wl_list_init(&text_input->pending_focused_surface_destroy.link);
-    server->text_inputs.append(move(text_input));
+    server->ime.text_inputs.append(move(text_input));
 }
 
 static void new_input_method(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, input_method_new);
+    server = wl_container_of(listener, server, ime.input_method_new);
     auto* input_method = static_cast<wlr_input_method_v2*>(data);
     if (server->seat != input_method->seat)
         return;
-    if (server->input_method) {
+    if (server->ime.input_method) {
         // Only one input method per seat: tell the newcomer it is second.
         wlr_input_method_v2_send_unavailable(input_method);
         return;
@@ -517,8 +517,8 @@ static void new_input_method(wl_listener* listener, void* data)
     wl_signal_add(&input_method->events.new_popup_surface, &client->new_popup_surface);
     client->destroy.notify = input_method_destroy;
     wl_signal_add(&input_method->events.destroy, &client->destroy);
-    server->input_method = input_method;
-    server->input_methods.append(move(client));
+    server->ime.input_method = input_method;
+    server->ime.input_methods.append(move(client));
     dbgln("WindowServer: IME: input method connected");
     // A field may have been focused while no input method existed: send it the
     // pending enter now.
@@ -535,28 +535,28 @@ void InputMethod::initialize(Server& server)
 {
     // The input-method grab destroy listener is added/removed as grabs come and
     // go; initialise it so a conditional removal is always safe.
-    wl_list_init(&server.input_method_grab_destroy.link);
+    wl_list_init(&server.ime.grab_destroy.link);
 
     // Candidate/preedit popups draw above the shell.
-    server.ime_popup_tree = wlr_scene_tree_create(&server.scene->tree);
-    if (server.ime_popup_tree)
-        wlr_scene_node_raise_to_top(&server.ime_popup_tree->node);
+    server.ime.popup_tree = wlr_scene_tree_create(&server.scene->tree);
+    if (server.ime.popup_tree)
+        wlr_scene_node_raise_to_top(&server.ime.popup_tree->node);
 
-    server.text_input_manager = wlr_text_input_manager_v3_create(server.display);
-    if (server.text_input_manager) {
-        server.text_input_new.notify = new_text_input;
-        wl_signal_add(&server.text_input_manager->events.new_text_input, &server.text_input_new);
+    server.ime.text_input_manager = wlr_text_input_manager_v3_create(server.display);
+    if (server.ime.text_input_manager) {
+        server.ime.text_input_new.notify = new_text_input;
+        wl_signal_add(&server.ime.text_input_manager->events.new_text_input, &server.ime.text_input_new);
     }
-    server.input_method_manager = wlr_input_method_manager_v2_create(server.display);
-    if (server.input_method_manager) {
-        server.input_method_new.notify = new_input_method;
-        wl_signal_add(&server.input_method_manager->events.new_input_method, &server.input_method_new);
+    server.ime.input_method_manager = wlr_input_method_manager_v2_create(server.display);
+    if (server.ime.input_method_manager) {
+        server.ime.input_method_new.notify = new_input_method;
+        wl_signal_add(&server.ime.input_method_manager->events.new_input_method, &server.ime.input_method_new);
     }
 }
 
 void InputMethod::set_focus(Server& server, wlr_surface* surface)
 {
-    for (auto& text_input : server.text_inputs) {
+    for (auto& text_input : server.ime.text_inputs) {
         if (text_input->pending_focused_surface) {
             if (surface != text_input->pending_focused_surface)
                 set_pending_focused_surface(*text_input, nullptr);
@@ -571,17 +571,17 @@ void InputMethod::set_focus(Server& server, wlr_surface* surface)
         // text-input-v3 is per-surface: only the client owning the focused
         // surface gets `enter`.
         if (surface && wl_resource_get_client(text_input->input->resource) == wl_resource_get_client(surface->resource)) {
-            if (server.input_method)
+            if (server.ime.input_method)
                 wlr_text_input_v3_send_enter(text_input->input, surface);
             else
                 set_pending_focused_surface(*text_input, surface);
         }
     }
     if (auto* text_input = focused_text_input(server)) {
-        for (auto& popup : server.input_popups)
+        for (auto& popup : server.ime.input_popups)
             set_popup_focus(server, *popup, text_input->input->focused_surface);
     } else {
-        for (auto& popup : server.input_popups)
+        for (auto& popup : server.ime.input_popups)
             set_popup_focus(server, *popup, nullptr);
     }
 }

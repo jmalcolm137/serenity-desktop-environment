@@ -170,7 +170,7 @@ still does **not** reproduce in full.
   `set_automatic_cursor_tracking_window` keeps delivering pointer events to the
   window that received a press until every button is released (and lets several
   windows track at once). SDE has the single-window form as its **implicit
-  pointer grab** (`Server::pointer_grab_surface` in `WindowServer/src/main.cpp`,
+  pointer grab** (`Server::pointer.grab_surface` in `WindowServer/src/Pointer.cpp`,
   set on a press and cleared when the last button is released, mirroring
   SerenityOS's `process_ongoing_active_input_mouse_event`); SerenityOS's
   multi-window tracking and its `did_popup_a_menu` reset are not reproduced.
@@ -591,7 +591,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   every window kept its active frame (and raised Taskbar button) as it mapped even
   though it was never focused; the desktop scene showed several windows with
   active titlebars and no window marked active in the Taskbar. Focus now scans the
-  window list (`deactivate_other_windows` in `WindowServer/src/main.cpp`) and
+  window list (`deactivate_other_windows` in `WindowServer/src/Focus.cpp`) and
   reports the change to the WindowManagerServer, so exactly one window is active
   and the Taskbar's active/sunken button states follow. Covered by
   `scripts/run-active-window-test.sh`.
@@ -615,7 +615,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   focuses such a surface when it maps (and on commit), and restores focus to the
   topmost toplevel when it unmaps; `focus_toplevel` clears the layer focus. Panels,
   the desktop and applets use `NONE` and are unaffected. See
-  `WindowServer/src/main.cpp` (`focus_layer_surface`).
+  `WindowServer/src/LayerShell.cpp` (`focus_layer_surface`).
 
 - **Wi-Fi applet (G5/W6).** `WifiApplet` is a LibGUI frontend to **NetworkManager**
   over the system D-Bus (libdbus + `Core::Notifier`), modeled on KDE Plasma's

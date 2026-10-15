@@ -166,7 +166,7 @@ static void build_list(Server& server)
     // X11 windows are placed on the workspace grid like xdg toplevels now
     // (docs/20 item 2), so they honour the current-workspace filter too.
     // Override-redirect windows (menus, tooltips) are unmanaged and never listed.
-    for (auto& toplevel : server.x11_toplevels) {
+    for (auto& toplevel : server.xwayland.toplevels) {
         if (!toplevel->mapped || toplevel->override_redirect || toplevel->wm_id == 0)
             continue;
         if (s_mode == Mode::CurrentWorkspace

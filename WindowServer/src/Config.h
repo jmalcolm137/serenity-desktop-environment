@@ -192,7 +192,7 @@ ByteString file_path();
 
 // --- keybindings (R4.4) ------------------------------------------------------
 
-// Modifier bits, independent of wlroots (main.cpp maps WLR_MODIFIER_* to these).
+// Modifier bits, independent of wlroots (Keyboard.cpp maps WLR_MODIFIER_* to these).
 enum Modifier : u32 {
     ModCtrl = 1 << 0,
     ModAlt = 1 << 1,

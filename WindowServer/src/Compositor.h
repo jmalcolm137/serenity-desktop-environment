@@ -6,9 +6,31 @@
 
 #pragma once
 
-// What every compositor subsystem (Keyboard, Pointer, XdgShell, XWayland, ...)
-// shares: the model, the config, the log level and a few process-wide values.
-// Each subsystem's own entry points are in its header.
+// What every compositor subsystem shares: the model, the config, the log level
+// and a few process-wide values. Each subsystem's entry points are in its own
+// header, and its state is a group of Server (see Model.h).
+//
+//   main.cpp              startup: backend, renderer, scene, seat; initialize()
+//                         calls each subsystem's initialize_*()
+//   Output, OutputManagement, Wallpaper, Performance
+//                         outputs, wlr-output-management, desktop background,
+//                         frame timing
+//   XdgShell, LayerShell  xdg toplevels/popups/decorations, layer surfaces
+//   Frame, WindowMenu, Animations
+//                         server-side frames, the window menu, outline animations
+//   Focus                 activation and stacking
+//   InputDevices, Keyboard, Pointer, Tablet, DragAndDrop, CursorHighlight,
+//   VirtualInput          input
+//   XWayland, XWaylandFrame
+//                         X11 clients and their frames
+//   SerenityWindow        the serenity-window protocol (LibWindowServer chrome)
+//   Interop               ext-workspace, foreign toplevels, activation, icons, bell
+//   Idle, SessionLock     the R4.1 safety net
+//   Appearance, Resources theme/font/cursor brokers, shared icons
+//
+// The namespaced modules are separate: WindowManager, WindowSwitcher and
+// AppletManager (window-management policy), and SessionManager, InputMethod and
+// InputCapture (protocols with their own state).
 
 #include <AK/ByteString.h>
 #include <AK/Error.h>

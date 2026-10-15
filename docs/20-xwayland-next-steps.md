@@ -37,11 +37,14 @@ the compositor maps as a separate scene surface. Landed, in order:
 
 Where the code lives:
 
-- `WindowServer/src/main.cpp`: the X11 model wiring: `server_new_xwayland_surface`,
-  the `x11_surface_*` listeners, `focus_x11_toplevel`, `x11_update_frame` /
-  `x11_hit_test_frame`, `x11_begin_interactive`, `handle_x11_frame_*`,
-  `focus_window_at`, and the `hook_*_x11` calls into the WM.
-- `WindowServer/src/Model.h`: `struct X11Toplevel`.
+- `WindowServer/src/XWayland.cpp`: the X11 model wiring: `initialize_xwayland`,
+  `server_new_xwayland_surface`, the `x11_surface_*` listeners,
+  `focus_x11_toplevel` and `focus_window_at`.
+- `WindowServer/src/XWaylandFrame.cpp`: the X11 server-side frames: `x11_update_frame` /
+  `x11_hit_test_frame`, `x11_begin_interactive`, `handle_x11_frame_*`, and the
+  `hook_*_x11` calls into the WM.
+- `WindowServer/src/Model.h`: `struct X11Toplevel`, and `XWaylandState` (held as
+  `Server::xwayland`).
 - `WindowServer/src/WindowManager.{h,cpp}`: `emit_window_state(X11Toplevel&)`,
   `find_x11_by_wm_id`, and the Taskbar request routing.
 - `scripts/run-xwayland-test.sh`: X11 client maps, gets a frame, and is reported

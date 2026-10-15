@@ -17,25 +17,25 @@
 // coordinates. The tool's position is normalised [0,1] over the output layout.
 static wlr_tablet_v2_tablet* v2_tablet_for(Server& server, wlr_tablet* tablet)
 {
-    if (!tablet || !server.tablet_manager)
+    if (!tablet || !server.tablet.manager)
         return nullptr;
     auto key = reinterpret_cast<u64>(tablet);
-    if (auto it = server.tablet_map.find(key); it != server.tablet_map.end())
+    if (auto it = server.tablet.tablets.find(key); it != server.tablet.tablets.end())
         return it->value;
-    auto* v2 = wlr_tablet_create(server.tablet_manager, server.seat, &tablet->base);
-    server.tablet_map.set(key, v2);
+    auto* v2 = wlr_tablet_create(server.tablet.manager, server.seat, &tablet->base);
+    server.tablet.tablets.set(key, v2);
     return v2;
 }
 
 static wlr_tablet_v2_tablet_tool* v2_tablet_tool_for(Server& server, wlr_tablet_tool* tool)
 {
-    if (!tool || !server.tablet_manager)
+    if (!tool || !server.tablet.manager)
         return nullptr;
     auto key = reinterpret_cast<u64>(tool);
-    if (auto it = server.tablet_tool_map.find(key); it != server.tablet_tool_map.end())
+    if (auto it = server.tablet.tools.find(key); it != server.tablet.tools.end())
         return it->value;
-    auto* v2 = wlr_tablet_tool_create(server.tablet_manager, server.seat, tool);
-    server.tablet_tool_map.set(key, v2);
+    auto* v2 = wlr_tablet_tool_create(server.tablet.manager, server.seat, tool);
+    server.tablet.tools.set(key, v2);
     return v2;
 }
 
@@ -124,10 +124,10 @@ void handle_tablet_button(Server& server, wlr_tablet_tool* tool, uint32_t button
     notify_activity(server);
 }
 
-void tablet_tool_axis(wl_listener* listener, void* data)
+static void tablet_tool_axis(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, tablet_tool_axis);
+    server = wl_container_of(listener, server, tablet.tool_axis);
     auto* event = static_cast<wlr_tablet_tool_axis_event*>(data);
     double lx = 0;
     double ly = 0;
@@ -140,10 +140,10 @@ void tablet_tool_axis(wl_listener* listener, void* data)
         handle_tablet_axis(*server, event->tool, event->pressure, event->distance, event->tilt_x, event->tilt_y, event->rotation, event->slider, event->wheel_delta);
 }
 
-void tablet_tool_proximity(wl_listener* listener, void* data)
+static void tablet_tool_proximity(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, tablet_tool_proximity);
+    server = wl_container_of(listener, server, tablet.tool_proximity);
     auto* event = static_cast<wlr_tablet_tool_proximity_event*>(data);
     double lx = 0;
     double ly = 0;
@@ -151,18 +151,18 @@ void tablet_tool_proximity(wl_listener* listener, void* data)
     handle_tablet_proximity(*server, event->tablet, event->tool, event->state == WLR_TABLET_TOOL_PROXIMITY_IN, lx, ly);
 }
 
-void tablet_tool_tip(wl_listener* listener, void* data)
+static void tablet_tool_tip(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, tablet_tool_tip);
+    server = wl_container_of(listener, server, tablet.tool_tip);
     auto* event = static_cast<wlr_tablet_tool_tip_event*>(data);
     handle_tablet_tip(*server, event->tool, event->state == WLR_TABLET_TOOL_TIP_DOWN);
 }
 
-void tablet_tool_button(wl_listener* listener, void* data)
+static void tablet_tool_button(wl_listener* listener, void* data)
 {
     Server* server = nullptr;
-    server = wl_container_of(listener, server, tablet_tool_button);
+    server = wl_container_of(listener, server, tablet.tool_button);
     auto* event = static_cast<wlr_tablet_tool_button_event*>(data);
     handle_tablet_button(*server, event->tool, event->button, event->state == WLR_BUTTON_PRESSED);
 }
@@ -207,5 +207,18 @@ void tablet_pad_destroy(wl_listener* listener, void*)
     wl_list_remove(&pad->ring.link);
     wl_list_remove(&pad->strip.link);
     wl_list_remove(&pad->destroy.link);
-    remove_owned(pad->server->tablet_pads, pad);
+    remove_owned(pad->server->tablet.pads, pad);
+}
+
+void initialize_tablet(Server& server)
+{
+    server.tablet.manager = wlr_tablet_v2_create(server.display);
+    server.tablet.tool_axis.notify = tablet_tool_axis;
+    wl_signal_add(&server.cursor->events.tablet_tool_axis, &server.tablet.tool_axis);
+    server.tablet.tool_proximity.notify = tablet_tool_proximity;
+    wl_signal_add(&server.cursor->events.tablet_tool_proximity, &server.tablet.tool_proximity);
+    server.tablet.tool_tip.notify = tablet_tool_tip;
+    wl_signal_add(&server.cursor->events.tablet_tool_tip, &server.tablet.tool_tip);
+    server.tablet.tool_button.notify = tablet_tool_button;
+    wl_signal_add(&server.cursor->events.tablet_tool_button, &server.tablet.tool_button);
 }

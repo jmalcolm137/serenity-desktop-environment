@@ -134,7 +134,7 @@ FrameHit x11_hit_test_frame(Server& server, double x, double y)
     FrameHit hit;
 
     // Same rule as hit_test_frame: stacking order, topmost first (the X11 windows
-    // are siblings under windows_tree too, and server.x11_toplevels is creation
+    // are siblings under windows_tree too, and server.xwayland.toplevels is creation
     // order).
     wl_list* children = &server.windows_tree->children;
     for (wl_list* link = children->prev; link != children; link = link->prev) {
@@ -146,7 +146,7 @@ FrameHit x11_hit_test_frame(Server& server, double x, double y)
         tree = wl_container_of(child_node, tree, node);
 
         X11Toplevel* window = nullptr;
-        for (auto& candidate : server.x11_toplevels) {
+        for (auto& candidate : server.xwayland.toplevels) {
             if (candidate->scene_tree == tree) {
                 window = candidate.ptr();
                 break;
@@ -212,24 +212,24 @@ FrameHit x11_hit_test_frame(Server& server, double x, double y)
 void x11_begin_interactive(X11Toplevel& toplevel, CursorMode mode, uint32_t edges)
 {
     auto& server = *toplevel.server;
-    server.grabbed_toplevel = nullptr;
-    server.grabbed_x11 = &toplevel;
-    server.cursor_mode = mode;
+    server.grab.toplevel = nullptr;
+    server.grab.x11 = &toplevel;
+    server.grab.mode = mode;
     int width = toplevel.xsurface->width;
     int height = toplevel.xsurface->height;
     if (mode == CursorMode::Move) {
-        server.grab_x = server.cursor->x - toplevel.scene_tree->node.x;
-        server.grab_y = server.cursor->y - toplevel.scene_tree->node.y;
+        server.grab.x = server.cursor->x - toplevel.scene_tree->node.x;
+        server.grab.y = server.cursor->y - toplevel.scene_tree->node.y;
     } else {
         // The scene tree is the frame origin; the frame edge is dragged.
         int const frame_w = toplevel.frame_size.width() > 0 ? toplevel.frame_size.width() : width;
         int const frame_h = toplevel.frame_size.height() > 0 ? toplevel.frame_size.height() : height;
         double border_x = toplevel.scene_tree->node.x + ((edges & WLR_EDGE_RIGHT) ? frame_w : 0);
         double border_y = toplevel.scene_tree->node.y + ((edges & WLR_EDGE_BOTTOM) ? frame_h : 0);
-        server.grab_x = server.cursor->x - border_x;
-        server.grab_y = server.cursor->y - border_y;
-        server.grab_box = { static_cast<int>(toplevel.scene_tree->node.x), static_cast<int>(toplevel.scene_tree->node.y), frame_w, frame_h };
-        server.resize_edges = edges;
+        server.grab.x = server.cursor->x - border_x;
+        server.grab.y = server.cursor->y - border_y;
+        server.grab.box = { static_cast<int>(toplevel.scene_tree->node.x), static_cast<int>(toplevel.scene_tree->node.y), frame_w, frame_h };
+        server.grab.edges = edges;
     }
     wlr_cursor_set_xcursor(server.cursor, server.cursor_manager, mode == CursorMode::Move ? "grabbing" : resize_cursor_name(edges));
 }
@@ -272,8 +272,8 @@ bool handle_x11_frame_press(Server& server, uint32_t button)
     if (!toplevel)
         return false;
     if (button == BTN_LEFT && hit.region == FrameRegion::Button) {
-        server.pressed_button_x11 = toplevel;
-        server.pressed_button_x11_index = hit.button_index;
+        server.frame_press.x11 = toplevel;
+        server.frame_press.x11_button_index = hit.button_index;
         toplevel->hovered_button = hit.button_index;
         toplevel->pressed_button = hit.button_index;
         x11_update_frame(*toplevel);
@@ -294,12 +294,12 @@ bool handle_x11_frame_press(Server& server, uint32_t button)
 
 void handle_x11_frame_release(Server& server, uint32_t button)
 {
-    auto* toplevel = server.pressed_button_x11;
+    auto* toplevel = server.frame_press.x11;
     if (!toplevel)
         return;
-    server.pressed_button_x11 = nullptr;
-    int index = server.pressed_button_x11_index;
-    server.pressed_button_x11_index = -1;
+    server.frame_press.x11 = nullptr;
+    int index = server.frame_press.x11_button_index;
+    server.frame_press.x11_button_index = -1;
     toplevel->pressed_button = -1;
     if (button != BTN_LEFT) {
         x11_update_frame(*toplevel);
@@ -317,7 +317,7 @@ void handle_x11_frame_release(Server& server, uint32_t button)
 void update_x11_button_hover(Server& server, double x, double y)
 {
     auto hit = x11_hit_test_frame(server, x, y);
-    for (auto& toplevel : server.x11_toplevels) {
+    for (auto& toplevel : server.xwayland.toplevels) {
         int hovered = (toplevel.ptr() == hit.x11_toplevel && hit.region == FrameRegion::Button) ? hit.button_index : -1;
         if (toplevel->hovered_button != hovered) {
             toplevel->hovered_button = hovered;

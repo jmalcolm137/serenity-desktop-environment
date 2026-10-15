@@ -432,7 +432,7 @@ static int wallpaper_fd(RefPtr<Gfx::Bitmap> const& bitmap)
     return fd;
 }
 
-void serenity_window_manager_bind(wl_client* client, void* data, uint32_t version, uint32_t id)
+static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t version, uint32_t id)
 {
     auto& server = *static_cast<Server*>(data);
     auto* resource = wl_resource_create(client, &serenity_window_manager_interface, min(version, 1u), id);
@@ -465,4 +465,9 @@ void serenity_window_manager_bind(wl_client* client, void* data, uint32_t versio
         static_cast<uint32_t>(Config::workspaces().rows), static_cast<uint32_t>(Config::workspaces().columns),
         wl_fixed_from_double(Config::input_ranges().accel_min), wl_fixed_from_double(Config::input_ranges().accel_max),
         Config::input_ranges().scroll_step_min, Config::input_ranges().double_click_min, Config::input_ranges().double_click_max);
+}
+
+void initialize_serenity_window(Server& server)
+{
+    wl_global_create(server.display, &serenity_window_manager_interface, 1, &server, serenity_window_manager_bind);
 }

@@ -11,4 +11,5 @@
 void spawn_lock_client();
 LockSurface* lock_surface_at_cursor(Server& server);
 void reconfigure_lock_surface(Server& server, wlr_output* output);
-void session_lock_new_lock(wl_listener* listener, void* data);
+
+void initialize_session_lock(Server&);
