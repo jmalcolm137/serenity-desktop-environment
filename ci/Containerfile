@@ -1,15 +1,17 @@
-# The CI image: everything a job needs except the SDE itself.
+# The CI image: everything a job needs except the SDE's working tree.
 #
 # Building the SerenityOS Lagom framework is ~1.2 GB of artifacts and, cold, an
-# hour or two — far too much to repeat per push. This image bakes in the distro
-# dependencies, the vendored wlroots, the pinned SerenityOS checkout and the
-# framework build, so a job only builds the SDE (61 MB) and runs tests.
+# hour or two — far too much per push. This image bakes in the distro
+# dependencies, wlroots, the pinned SerenityOS checkout and a built framework, so
+# a job only rebuilds what its checkout changes and then runs tests. See
+# docs/26-ci.md.
 #
 #   podman build -f ci/Containerfile -t ghcr.io/jmalcolm137/sde-ci:latest .
 #
-# The `ci-image` workflow builds and pushes it on a schedule and on demand; the
-# pins below are the framework side of the pair, so rebuild the image when
-# libgui-wayland's SerenityOS pin moves. See docs/26-ci.md.
+# It is built the way a developer builds it, and it has to be: the WindowServer
+# shim includes Config endpoint headers that only the *SDE's* patch set generates,
+# so a framework-only build cannot produce it at all (found by the first clean
+# build — the development machine had them already, from an earlier SDE build).
 ARG BASE=archlinux:base-devel
 FROM ${BASE}
 
@@ -19,29 +21,36 @@ RUN bash /tmp/ci-deps.sh \
     && git config --system --add safe.directory '*' \
     && rm /tmp/ci-deps.sh
 
-# wlroots (pinned 0.20.2, cloned and built by the SDE's own script) — the source
-# is not tracked, so a job cannot get it from its checkout.
 ARG SDE_REPO=https://github.com/jmalcolm137/serenity-desktop-environment.git
 ARG SDE_REVISION=main
-RUN git clone --depth 1 --branch "$SDE_REVISION" "$SDE_REPO" /opt/sde \
-    && /opt/sde/scripts/fetch-wlroots.sh
-
-# The framework: the pinned SerenityOS source, the port's patches, a Lagom build
-# of LibGfx/LibGUI/LibWM. `--no-tests` skips upstream's own suite (CI runs the
-# SDE's); the `full` job can run it explicitly.
 ARG LIBGUI_WAYLAND_REPO=https://github.com/jmalcolm137/libgui-wayland.git
 ARG LIBGUI_WAYLAND_REVISION=main
-RUN git clone "$LIBGUI_WAYLAND_REPO" /opt/libgui-wayland \
-    && git -C /opt/libgui-wayland checkout --quiet "$LIBGUI_WAYLAND_REVISION" \
-    && /opt/libgui-wayland/scripts/fetch-serenity.sh \
-    && /opt/libgui-wayland/scripts/build-libgui.sh --no-tests
 
-# A job checks the SDE out into the workspace; point the build scripts at the
-# baked trees by default so a job never rebuilds the framework or wlroots.
+# Where the ports and the build scripts expect to find each other.
 ENV LIBGUI_WAYLAND_ROOT=/opt/libgui-wayland \
     SERENITY_SRC=/opt/libgui-wayland/serenity \
     SERENITY_BUILD_DIR=/opt/libgui-wayland/build/lagom \
     WLROOTS_SRC=/opt/sde/third_party/wlroots
 
+# The framework sources: the port's own patches plus its pinned SerenityOS
+# revision (fetch-serenity.sh is the single source of truth for the pin).
+RUN git clone "$LIBGUI_WAYLAND_REPO" /opt/libgui-wayland \
+    && git -C /opt/libgui-wayland checkout --quiet "$LIBGUI_WAYLAND_REVISION" \
+    && /opt/libgui-wayland/scripts/fetch-serenity.sh
+
+# wlroots, which the SDE vendors as a build, not as source.
+RUN git clone --depth 1 --branch "$SDE_REVISION" "$SDE_REPO" /opt/sde \
+    && /opt/sde/scripts/fetch-wlroots.sh
+
+# The framework and the desktop, via the SDE's own build path: it applies the
+# SDE's patches to the shared checkout (generating the Config endpoints the shim
+# needs) and configures Lagom with SDE_ROOT. Building Taskbar drags in the LibGUI
+# stack and the shim; ci-build.sh adds the services, applets, tools, tests and
+# applications the suite drives. A job's checkout then only rebuilds what it
+# changes.
+RUN cd /opt/sde \
+    && scripts/build.sh Taskbar \
+    && scripts/ci-build.sh --with-apps
+
 LABEL org.opencontainers.image.source="https://github.com/jmalcolm137/serenity-desktop-environment" \
-      org.opencontainers.image.description="SDE CI: wlroots + the pinned SerenityOS Lagom framework, prebuilt"
+      org.opencontainers.image.description="SDE CI: wlroots, the pinned SerenityOS port and the built desktop"
