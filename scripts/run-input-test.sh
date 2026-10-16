@@ -90,61 +90,33 @@ done
 env WAYLAND_DISPLAY="$SOCK" setsid timeout 30 "$TOOLS_BUILD/native-app-test" --server-side-decorations > "$RUNTIME/native.log" 2>&1 &
 sleep 1
 
-# Right-click the titlebar (the frame's top inset) through a virtual pointer.
+# One virtual-input session for the whole sequence. The tool creates its pointer and
+# keyboard when it connects and destroys them when it exits, and the seat drops its
+# keyboard capability -- and with it every client's keyboard focus -- whenever the
+# last keyboard goes (update_seat_capabilities). A device per step therefore hands
+# each step a client that has just lost focus, and a key sent in that window goes to
+# nobody: that is the flake this test used to fail with ("the Alt release after
+# Alt+Tab (client saw 0 key events)"). Holding one session keeps the devices up, so
+# the client binds once and every key is delivered.
+#
+#   1. right-click the titlebar (the frame's top inset) -> the window menu opens
+#   2. Escape dismisses it, so the keybindings below are not swallowed
+#   3. Super+Left tiles the focused window to the left half (WS2)
+#   4. drag the titlebar to the right edge and release: snap tiles it right (WS2)
+#   5. Alt+Tab opens the switcher; releasing Alt activates the selection (WS3)
+#   6. Super+Tab opens it in all-workspaces mode (WS3)
+#   7. Ctrl+Alt+Right switches to the next workspace stack (WS1)
 env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
     --extent 1280 720 \
-    --move 60 10 \
-    --button 0x111 press \
-    --button 0x111 release \
+    --move 60 10 --button 0x111 press --button 0x111 release --sleep 700 \
+    --key 1 press --key 1 release --sleep 700 \
+    --key 125 press --key 105 press --key 105 release --key 125 release --sleep 700 \
+    --move 60 10 --button 0x110 press --move 1275 300 --move 1275 301 --button 0x110 release --sleep 700 \
+    --key 56 press --key 15 press --key 15 release --key 56 release --sleep 700 \
+    --key 125 press --key 15 press --key 15 release --key 125 release --sleep 700 \
+    --key 29 press --key 56 press --key 106 press --key 106 release --key 56 release --key 29 release --sleep 700 \
+    --linger 1000 \
     > "$RUNTIME/input.log" 2>&1 || true
-sleep 1
-
-# Dismiss the window menu (Escape = evdev keycode 1) so the keyboard bindings
-# below are not swallowed by it.
-env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
-    --key 1 press --key 1 release --sleep 200 \
-    > "$RUNTIME/escape.log" 2>&1 || true
-sleep 1
-
-# Super+Left tiles the focused window to the left half (WS2).
-env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
-    --key 125 press --key 105 press \
-    --key 105 release --key 125 release \
-    --sleep 200 \
-    > "$RUNTIME/tile.log" 2>&1 || true
-sleep 1
-
-# Drag the titlebar to the right screen edge and release: drag-to-edge snapping
-# previews the target and tiles on release (WS2, WindowTileType::Right == 2).
-env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
-    --move 60 10 --button 0x110 press \
-    --move 1275 300 --move 1275 301 \
-    --button 0x110 release --sleep 200 \
-    > "$RUNTIME/drag.log" 2>&1 || true
-sleep 1
-
-# Alt+Tab opens the window switcher (current workspace); releasing Alt activates
-# the selection (WS3).
-env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
-    --key 56 press --key 15 press --key 15 release --key 56 release \
-    --sleep 200 \
-    > "$RUNTIME/switcher.log" 2>&1 || true
-sleep 1
-
-# Super+Tab opens it in all-workspaces mode (WS3).
-env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
-    --key 125 press --key 15 press --key 15 release --key 125 release \
-    --sleep 200 \
-    > "$RUNTIME/switcher-all.log" 2>&1 || true
-sleep 1
-
-# Ctrl+Alt+Right switches to the next workspace (WS1).
-env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
-    --key 29 press --key 56 press --key 106 press \
-    --key 106 release --key 56 release --key 29 release \
-    --sleep 200 \
-    > "$RUNTIME/ws.log" 2>&1 || true
-sleep 1
 
 kill "$COMP_PID" 2>/dev/null || true
 wait "$COMP_PID" 2>/dev/null || true
