@@ -198,7 +198,7 @@ static void migrate_toplevels_off_output(Server& server, wlr_box const& gone, wl
             ++refitted;
         }
     }
-    for (auto& toplevel : server.xwayland.toplevels) {
+    for (auto& toplevel : server.x11_toplevels) {
         if (!toplevel->scene_tree || !move_if_on_gone_output(toplevel->scene_tree))
             continue;
         ++moved;

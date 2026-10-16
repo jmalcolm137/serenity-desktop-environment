@@ -12,6 +12,8 @@
 void x11_update_frame(X11Toplevel& toplevel);
 FrameHit x11_hit_test_frame(Server& server, double x, double y);
 void x11_begin_interactive(X11Toplevel& toplevel, CursorMode mode, uint32_t edges);
+// An X11 window is going away: drop a frame-button press held on it.
+void forget_frame_press(Server& server, X11Toplevel& toplevel);
 bool handle_x11_frame_press(Server& server, uint32_t button);
 void handle_x11_frame_release(Server& server, uint32_t button);
 void update_x11_button_hover(Server& server, double x, double y);

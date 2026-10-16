@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include "Model.h"
+#include "Server.h"
 
 #include <AK/NonnullRefPtr.h>
 #include <LibGfx/Forward.h>

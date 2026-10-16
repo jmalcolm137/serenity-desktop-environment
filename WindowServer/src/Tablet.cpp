@@ -168,7 +168,7 @@ static void tablet_tool_button(wl_listener* listener, void* data)
 }
 
 // zwp-tablet-pad-v2: express keys and ring/strip controls.
-void tablet_pad_button(wl_listener* listener, void* data)
+static void tablet_pad_button(wl_listener* listener, void* data)
 {
     TabletPad* pad = nullptr;
     pad = wl_container_of(listener, pad, button);
@@ -179,7 +179,7 @@ void tablet_pad_button(wl_listener* listener, void* data)
                                                : ZWP_TABLET_PAD_V2_BUTTON_STATE_RELEASED);
 }
 
-void tablet_pad_ring(wl_listener* listener, void* data)
+static void tablet_pad_ring(wl_listener* listener, void* data)
 {
     TabletPad* pad = nullptr;
     pad = wl_container_of(listener, pad, ring);
@@ -189,7 +189,7 @@ void tablet_pad_ring(wl_listener* listener, void* data)
             event->source == WLR_TABLET_PAD_RING_SOURCE_FINGER, event->time_msec);
 }
 
-void tablet_pad_strip(wl_listener* listener, void* data)
+static void tablet_pad_strip(wl_listener* listener, void* data)
 {
     TabletPad* pad = nullptr;
     pad = wl_container_of(listener, pad, strip);
@@ -199,7 +199,7 @@ void tablet_pad_strip(wl_listener* listener, void* data)
             event->source == WLR_TABLET_PAD_STRIP_SOURCE_FINGER, event->time_msec);
 }
 
-void tablet_pad_destroy(wl_listener* listener, void*)
+static void tablet_pad_destroy(wl_listener* listener, void*)
 {
     TabletPad* pad = nullptr;
     pad = wl_container_of(listener, pad, destroy);
@@ -208,6 +208,35 @@ void tablet_pad_destroy(wl_listener* listener, void*)
     wl_list_remove(&pad->strip.link);
     wl_list_remove(&pad->destroy.link);
     remove_owned(pad->server->tablet.pads, pad);
+}
+
+void add_tablet_pad(Server& server, wlr_input_device* device)
+{
+    auto pad = make<TabletPad>();
+    pad->server = &server;
+    pad->pad = wlr_tablet_pad_from_input_device(device);
+    pad->v2_pad = server.tablet.manager ? wlr_tablet_pad_create(server.tablet.manager, server.seat, device) : nullptr;
+    pad->button.notify = tablet_pad_button;
+    wl_signal_add(&pad->pad->events.button, &pad->button);
+    pad->ring.notify = tablet_pad_ring;
+    wl_signal_add(&pad->pad->events.ring, &pad->ring);
+    pad->strip.notify = tablet_pad_strip;
+    wl_signal_add(&pad->pad->events.strip, &pad->strip);
+    pad->destroy.notify = tablet_pad_destroy;
+    wl_signal_add(&device->events.destroy, &pad->destroy);
+    server.tablet.pads.append(move(pad));
+}
+
+void forget_tablet_device(Server& server, wlr_tablet& tablet, wlr_tablet_tool& tool)
+{
+    if (server.tablet.tools.contains(reinterpret_cast<u64>(&tool))) {
+        wl_signal_emit_mutable(&tool.events.destroy, &tool);
+        server.tablet.tools.remove(reinterpret_cast<u64>(&tool));
+    }
+    if (server.tablet.tablets.contains(reinterpret_cast<u64>(&tablet))) {
+        wl_signal_emit_mutable(&tablet.base.events.destroy, &tablet.base);
+        server.tablet.tablets.remove(reinterpret_cast<u64>(&tablet));
+    }
 }
 
 void initialize_tablet(Server& server)

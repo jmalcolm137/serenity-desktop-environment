@@ -63,9 +63,7 @@ static struct serenity_virtual_touch_v1_interface const virtual_touch_implementa
 static void virtual_touch_resource_destroy(wl_resource* resource)
 {
     auto& server = *static_cast<Server*>(wl_resource_get_user_data(resource));
-    if (server.input.virtual_touch_count > 0)
-        --server.input.virtual_touch_count;
-    update_seat_capabilities(server);
+    remove_virtual_touch_device(server);
 }
 
 static void virtual_input_manager_create_touch(wl_client* client, wl_resource* resource, uint32_t id)
@@ -78,8 +76,7 @@ static void virtual_input_manager_create_touch(wl_client* client, wl_resource* r
     }
     // Advertise the touch capability while a virtual touch device exists, so
     // clients can bind wl_touch and receive the injected events.
-    ++server.input.virtual_touch_count;
-    update_seat_capabilities(server);
+    add_virtual_touch_device(server);
     wl_resource_set_implementation(touch, &virtual_touch_implementation, &server, virtual_touch_resource_destroy);
 }
 
@@ -158,14 +155,7 @@ static void virtual_tablet_resource_destroy(wl_resource* resource)
     auto& server = *device->server;
     // Tear down the v2 wrappers (they listen on these synthetic signals), then
     // drop the map entries and free.
-    if (server.tablet.tools.contains(reinterpret_cast<u64>(&device->tool))) {
-        wl_signal_emit_mutable(&device->tool.events.destroy, &device->tool);
-        server.tablet.tools.remove(reinterpret_cast<u64>(&device->tool));
-    }
-    if (server.tablet.tablets.contains(reinterpret_cast<u64>(&device->tablet))) {
-        wl_signal_emit_mutable(&device->tablet.base.events.destroy, &device->tablet.base);
-        server.tablet.tablets.remove(reinterpret_cast<u64>(&device->tablet));
-    }
+    forget_tablet_device(server, device->tablet, device->tool);
     free(device->tablet.base.name);
     delete device;
 }

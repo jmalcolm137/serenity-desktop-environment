@@ -199,6 +199,11 @@ static void session_lock_new_lock(wl_listener* listener, void* data)
     wl_signal_add(&lock->events.destroy, &server->lock.destroy);
 }
 
+bool session_locked(Server const& server)
+{
+    return server.lock.locked;
+}
+
 void initialize_session_lock(Server& server)
 {
     server.lock.manager = wlr_session_lock_manager_v1_create(server.display);

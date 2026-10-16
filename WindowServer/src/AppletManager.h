@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include "Model.h"
+#include "Server.h"
 
 #include <AK/ByteString.h>
 #include <LibGfx/Point.h>

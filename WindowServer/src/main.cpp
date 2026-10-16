@@ -159,7 +159,7 @@ static ErrorOr<void> initialize(Server& server)
     server.top_tree = wlr_scene_tree_create(&server.scene->tree);
     server.overlay_tree = wlr_scene_tree_create(&server.scene->tree);
     // Drag icons render above every layer (R5 explicit drag-and-drop).
-    server.drag.icon_tree = wlr_scene_tree_create(&server.scene->tree);
+    server.drag_icon_tree = wlr_scene_tree_create(&server.scene->tree);
     wlr_xdg_output_manager_v1_create(server.display, server.output_layout);
 
     server.cursor = wlr_cursor_create();

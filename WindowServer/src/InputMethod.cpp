@@ -13,7 +13,7 @@
 
 #include <LibGfx/Rect.h>
 
-#include "Model.h"
+#include "Server.h"
 #include "wlr_input_method_v2_cxx.h"
 
 extern "C" {
@@ -111,7 +111,7 @@ static wlr_scene_node* surface_scene_node(Server& server, wlr_surface* surface)
         if (toplevel->xdg_toplevel && toplevel->xdg_toplevel->base->surface == surface && toplevel->content_tree)
             return &toplevel->content_tree->node;
     }
-    for (auto& toplevel : server.xwayland.toplevels) {
+    for (auto& toplevel : server.x11_toplevels) {
         if (toplevel->xsurface && toplevel->xsurface->surface == surface && toplevel->scene)
             return &toplevel->scene->buffer->node;
     }

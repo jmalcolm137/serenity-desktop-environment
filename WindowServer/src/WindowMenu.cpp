@@ -7,6 +7,7 @@
 #include "Compositor.h"
 #include "Focus.h"
 #include "Frame.h"
+#include "Pointer.h"
 #include "Resources.h"
 #include "WindowMenu.h"
 #include "XdgShell.h"
@@ -165,7 +166,7 @@ void open_window_menu(Server& server, Toplevel& toplevel, Gfx::IntPoint position
     menu.ignore_release = true;
     // Opening the menu must not leave a stale frame grab behind: the press that
     // opened it is consumed here, not by an interactive frame drag.
-    server.grab.from_frame = false;
+    cancel_frame_grab(server);
     menu.toplevel = &toplevel;
     menu.hovered_index = -1;
     menu.pressed_index = -1;

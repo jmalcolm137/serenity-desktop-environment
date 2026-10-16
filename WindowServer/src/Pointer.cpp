@@ -70,6 +70,42 @@ void reset_cursor_mode(Server& server)
     WindowManager::hide_geometry_hud();
 }
 
+void begin_grab(Server& server, Toplevel* toplevel, X11Toplevel* x11, CursorMode mode, double offset_x, double offset_y, wlr_box const& box, uint32_t edges)
+{
+    server.grab.toplevel = toplevel;
+    server.grab.x11 = x11;
+    server.grab.mode = mode;
+    server.grab.x = offset_x;
+    server.grab.y = offset_y;
+    if (mode != CursorMode::Move) {
+        server.grab.box = box;
+        server.grab.edges = edges;
+    }
+    wlr_cursor_set_xcursor(server.cursor, server.cursor_manager, mode == CursorMode::Move ? "grabbing" : resize_cursor_name(edges));
+}
+
+Toplevel* moving_toplevel(Server const& server)
+{
+    return server.grab.mode == CursorMode::Move ? server.grab.toplevel : nullptr;
+}
+
+void cancel_frame_grab(Server& server)
+{
+    server.grab.from_frame = false;
+}
+
+void forget_grab_window(Server& server, Toplevel& toplevel)
+{
+    if (server.grab.toplevel == &toplevel)
+        reset_cursor_mode(server);
+}
+
+void forget_grab_window(Server& server, X11Toplevel& toplevel)
+{
+    if (server.grab.x11 == &toplevel)
+        server.grab.x11 = nullptr;
+}
+
 static void process_cursor_move(Server& server)
 {
     if (server.grab.x11) {
@@ -196,7 +232,7 @@ static void new_pointer_constraint(wl_listener* listener, void* data)
 static void process_cursor_motion(Server& server, uint32_t time)
 {
     // While the session is locked, only the lock surface receives input.
-    if (server.lock.locked) {
+    if (session_locked(server)) {
         if (auto* lock = lock_surface_at_cursor(server)) {
             wlr_box box { };
             wlr_output_layout_get_box(server.output_layout, lock->lock_surface->output, &box);
@@ -211,24 +247,8 @@ static void process_cursor_motion(Server& server, uint32_t time)
     // Explicit drag-and-drop: route motion to the surface under the cursor (the
     // drag grab turns it into wl_data_device enter/motion) and follow the cursor
     // with the drag icon.
-    if (server.drag.active) {
-        double dx = 0;
-        double dy = 0;
-        wlr_surface* target = nullptr;
-        toplevel_at(server, server.cursor->x, server.cursor->y, &target, &dx, &dy);
-        if (target != server.drag.target) {
-            server.drag.target = target;
-            if (target)
-                wlr_seat_pointer_notify_enter(server.seat, target, dx, dy);
-            else
-                wlr_seat_pointer_clear_focus(server.seat);
-        } else if (target) {
-            wlr_seat_pointer_notify_motion(server.seat, time, dx, dy);
-        }
-        if (server.drag.icon_node)
-            wlr_scene_node_set_position(server.drag.icon_node, static_cast<int>(server.cursor->x), static_cast<int>(server.cursor->y));
+    if (drag_motion(server, time))
         return;
-    }
 
     if (server.window_menu.open) {
         update_window_menu_hover(server, server.cursor->x, server.cursor->y);
@@ -342,8 +362,8 @@ static void cursor_motion(wl_listener* listener, void* data)
     wlr_cursor_move(server->cursor, &event->pointer->base, event->delta_x, event->delta_y);
     // R5: relative-pointer clients (games) get the raw relative motion. The time
     // is in microseconds (wl_pointer uses milliseconds).
-    if (server->input.relative_pointer_manager)
-        wlr_relative_pointer_manager_v1_send_relative_motion(server->input.relative_pointer_manager, server->seat,
+    if (server->pointer.relative_pointer_manager)
+        wlr_relative_pointer_manager_v1_send_relative_motion(server->pointer.relative_pointer_manager, server->seat,
             static_cast<uint64_t>(event->time_msec) * 1000, event->delta_x, event->delta_y, event->unaccel_dx, event->unaccel_dy);
     move_cursor_highlight(*server);
     // The switcher grabs the pointer while it is open.
@@ -390,8 +410,7 @@ void handle_touch_down(Server& server, uint32_t time_msec, int32_t touch_id, dou
 void handle_touch_motion(Server& server, uint32_t time_msec, int32_t touch_id, double lx, double ly)
 {
     // A touch drag's icon follows the finger (the pointer cursor does not move).
-    if (server.drag.active && server.drag.icon_node)
-        wlr_scene_node_set_position(server.drag.icon_node, static_cast<int>(lx), static_cast<int>(ly));
+    move_drag_icon(server, lx, ly);
     double sx = 0;
     double sy = 0;
     wlr_surface* surface = nullptr;
@@ -623,7 +642,7 @@ static void cursor_button(wl_listener* listener, void* data)
     if (InputCapture::handle_pointer_button(*server, event->button, event->state, event->time_msec))
         return;
 
-    if (server->lock.locked) {
+    if (session_locked(*server)) {
         if (auto* lock = lock_surface_at_cursor(*server)) {
             wlr_box box { };
             wlr_output_layout_get_box(server->output_layout, lock->lock_surface->output, &box);
@@ -794,6 +813,7 @@ static void cursor_shape_request(wl_listener* listener, void* data)
 
 void initialize_pointer(Server& server)
 {
+    server.pointer.relative_pointer_manager = wlr_relative_pointer_manager_v1_create(server.display);
     server.pointer.motion.notify = cursor_motion;
     wl_signal_add(&server.cursor->events.motion, &server.pointer.motion);
     server.pointer.motion_absolute.notify = cursor_motion_absolute;

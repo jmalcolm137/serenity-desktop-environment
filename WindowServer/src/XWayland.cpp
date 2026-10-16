@@ -31,7 +31,7 @@ static void x11_fetch_icon(X11Toplevel& toplevel);
 
 X11Toplevel* x11_toplevel_for_wlr_surface(Server& server, wlr_surface* surface)
 {
-    for (auto& toplevel : server.xwayland.toplevels) {
+    for (auto& toplevel : server.x11_toplevels) {
         if (toplevel->xsurface && toplevel->xsurface->surface == surface)
             return toplevel.ptr();
     }
@@ -62,7 +62,7 @@ bool x11_surface_at(Server& server, double lx, double ly, wlr_surface** surface,
 // the parent is raised. docs/20-xwayland-next-steps.md item 4.
 static void x11_raise_overrides_above(X11Toplevel& parent)
 {
-    for (auto& child : parent.server->xwayland.toplevels) {
+    for (auto& child : parent.server->x11_toplevels) {
         if (!child->mapped || !child->xsurface)
             continue;
         // Override-redirect menus/tooltips follow X's parent; managed transients
@@ -78,7 +78,7 @@ static void x11_raise_overrides_above(X11Toplevel& parent)
 // Keep _NET_WM_STATE_ABOVE windows on top after another window is raised.
 static void x11_raise_above_windows(Server& server)
 {
-    for (auto& toplevel : server.xwayland.toplevels) {
+    for (auto& toplevel : server.x11_toplevels) {
         if (toplevel->mapped && toplevel->always_on_top)
             wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
     }
@@ -269,10 +269,8 @@ static void x11_surface_destroy(wl_listener* listener, void*)
     wl_list_remove(&toplevel->destroy.link);
     if (server.xwayland.focused == toplevel)
         server.xwayland.focused = nullptr;
-    if (server.grab.x11 == toplevel)
-        server.grab.x11 = nullptr;
-    if (server.frame_press.x11 == toplevel)
-        server.frame_press.x11 = nullptr;
+    forget_grab_window(server, *toplevel);
+    forget_frame_press(server, *toplevel);
     if (toplevel->wm_id != 0)
         WindowManager::emit_window_removed(*toplevel);
     if (toplevel->frame_buffer)
@@ -282,13 +280,13 @@ static void x11_surface_destroy(wl_listener* listener, void*)
         toplevel->scene_tree = nullptr;
     }
     // Avoid dangling transient-parent pointers (and our surface back-reference).
-    for (auto& other : server.xwayland.toplevels) {
+    for (auto& other : server.x11_toplevels) {
         if (other->transient_parent == toplevel)
             other->transient_parent = nullptr;
     }
     if (toplevel->xsurface)
         toplevel->xsurface->data = nullptr;
-    remove_owned(server.xwayland.toplevels, toplevel);
+    remove_owned(server.x11_toplevels, toplevel);
 }
 
 // Place the window's frame origin at the client's requested position, keeping the
@@ -627,7 +625,7 @@ static void server_new_xwayland_surface(wl_listener* listener, void* data)
     // WM_CLASS may already be set by the time we associate.
     x11_update_class(*toplevel);
 
-    server->xwayland.toplevels.append(move(toplevel));
+    server->x11_toplevels.append(move(toplevel));
 }
 
 static void xwayland_ready(wl_listener* listener, void*)
@@ -638,6 +636,36 @@ static void xwayland_ready(wl_listener* listener, void*)
     // Now that xwm exists, report the workarea (panels' exclusive zones).
     update_xwayland_workareas(*server);
     dbgln("WindowServer: Xwayland ready (DISPLAY={})", server->xwayland.wlr->display_name);
+}
+
+// Tell Xwayland the usable area(s) (_NET_WORKAREA), so X11 clients (panels,
+// maximized windows, fullscreen) respect SDE's panels/docks. docs/20 item 8.
+void update_xwayland_workareas(Server& server)
+{
+    if (!server.xwayland.wlr || !server.xwayland.started)
+        return;
+    // `xwayland_started` only records that the X server became ready once — it may
+    // have died since. `wlr_xwayland_set_workareas()` dereferences the XWM
+    // connection, which wlroots drops when the server goes away
+    // (xwm_destroy → xwayland->xwm = nullptr), so asking for it here is a
+    // nullptr dereference and a SIGSEGV in the compositor's event loop. This is
+    // not hypothetical: a test run that disturbed the session's Xwayland took the
+    // whole session down from this line, via arrange_layers → a layer-surface
+    // commit. Report only to a live X server.
+    if (!wlr_xwayland_get_xwm_connection(server.xwayland.wlr))
+        return;
+    Vector<wlr_box> areas;
+    for (auto& output : server.outputs) {
+        wlr_box box = output->usable_area;
+        if (wlr_box_empty(&box))
+            wlr_output_layout_get_box(server.output_layout, output->output, &box);
+        areas.append(box);
+    }
+    if (areas.is_empty())
+        return;
+    wlr_xwayland_set_workareas(server.xwayland.wlr, areas.data(), areas.size());
+    dbgln("WindowServer: reported X11 workarea ({} area(s); first {}x{} at {},{}).",
+        areas.size(), areas[0].width, areas[0].height, areas[0].x, areas[0].y);
 }
 
 void initialize_xwayland(Server& server)

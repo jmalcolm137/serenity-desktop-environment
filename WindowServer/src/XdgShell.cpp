@@ -8,6 +8,7 @@
 #include "Animations.h"
 #include "Focus.h"
 #include "Frame.h"
+#include "Interop.h"
 #include "LayerShell.h"
 #include "Output.h"
 #include "Pointer.h"
@@ -127,8 +128,7 @@ static void toplevel_unmap(wl_listener* listener, void*)
     // Hide the compositor-drawn frame along with the client's surface. The frame
     // buffer is a child of this tree and isn't tied to the wl_surface lifetime.
     wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
-    if (toplevel == toplevel->server->grab.toplevel)
-        reset_cursor_mode(*toplevel->server);
+    forget_grab_window(*toplevel->server, *toplevel);
     // An application whose windows have all closed is no longer part of the
     // session to restore.
     SessionManager::update_running_apps(*toplevel->server);
@@ -235,8 +235,6 @@ static void toplevel_destroy(wl_listener* listener, void*)
 void toplevel_begin_interactive(Toplevel& toplevel, CursorMode mode, uint32_t edges)
 {
     auto& server = *toplevel.server;
-    server.grab.toplevel = &toplevel;
-    server.grab.mode = mode;
     if (mode == CursorMode::Move) {
         // SerenityOS: dragging a maximized window restores its size, keeping the
         // cursor at the same horizontal fraction of the window.
@@ -252,21 +250,16 @@ void toplevel_begin_interactive(Toplevel& toplevel, CursorMode mode, uint32_t ed
             wlr_scene_node_set_position(&toplevel.scene_tree->node, new_x, toplevel.scene_tree->node.y);
             toplevel_report_position(toplevel);
         }
-        server.grab.x = server.cursor->x - toplevel.scene_tree->node.x;
-        server.grab.y = server.cursor->y - toplevel.scene_tree->node.y;
-    } else {
-        auto* geometry = &toplevel.xdg_toplevel->base->geometry;
-        double border_x = (toplevel.scene_tree->node.x + geometry->x) + ((edges & WLR_EDGE_RIGHT) ? geometry->width : 0);
-        double border_y = (toplevel.scene_tree->node.y + geometry->y) + ((edges & WLR_EDGE_BOTTOM) ? geometry->height : 0);
-        server.grab.x = server.cursor->x - border_x;
-        server.grab.y = server.cursor->y - border_y;
-        server.grab.box = *geometry;
-        server.grab.box.x += toplevel.scene_tree->node.x;
-        server.grab.box.y += toplevel.scene_tree->node.y;
-        server.grab.edges = edges;
+        begin_grab(server, &toplevel, nullptr, mode, server.cursor->x - toplevel.scene_tree->node.x, server.cursor->y - toplevel.scene_tree->node.y);
+        return;
     }
-
-    wlr_cursor_set_xcursor(server.cursor, server.cursor_manager, mode == CursorMode::Move ? "grabbing" : resize_cursor_name(edges));
+    auto* geometry = &toplevel.xdg_toplevel->base->geometry;
+    double border_x = (toplevel.scene_tree->node.x + geometry->x) + ((edges & WLR_EDGE_RIGHT) ? geometry->width : 0);
+    double border_y = (toplevel.scene_tree->node.y + geometry->y) + ((edges & WLR_EDGE_BOTTOM) ? geometry->height : 0);
+    wlr_box box = *geometry;
+    box.x += toplevel.scene_tree->node.x;
+    box.y += toplevel.scene_tree->node.y;
+    begin_grab(server, &toplevel, nullptr, mode, server.cursor->x - border_x, server.cursor->y - border_y, box, edges);
 }
 
 void toplevel_close(Toplevel& toplevel)
@@ -489,8 +482,8 @@ static void server_new_xdg_toplevel(wl_listener* listener, void* data)
     xdg_toplevel->base->data = toplevel->content_tree;
     use_nearest_filter(&toplevel->content_tree->node);
 
-    if (server->interop.foreign_toplevel_manager) {
-        toplevel->foreign_handle = wlr_foreign_toplevel_handle_v1_create(server->interop.foreign_toplevel_manager);
+    toplevel->foreign_handle = create_foreign_toplevel_handle(*server);
+    if (toplevel->foreign_handle) {
         toplevel->foreign_handle->data = toplevel.ptr();
         toplevel->foreign_request_activate.notify = toplevel_foreign_request_activate;
         wl_signal_add(&toplevel->foreign_handle->events.request_activate, &toplevel->foreign_request_activate);
@@ -498,15 +491,9 @@ static void server_new_xdg_toplevel(wl_listener* listener, void* data)
         wl_signal_add(&toplevel->foreign_handle->events.request_close, &toplevel->foreign_request_close);
     }
 
-    if (server->interop.ext_foreign_toplevel_list) {
-        wlr_ext_foreign_toplevel_handle_v1_state state {
-            .title = xdg_toplevel->title ? xdg_toplevel->title : "",
-            .app_id = xdg_toplevel->app_id ? xdg_toplevel->app_id : "",
-        };
-        toplevel->ext_foreign_handle = wlr_ext_foreign_toplevel_handle_v1_create(server->interop.ext_foreign_toplevel_list, &state);
-        if (toplevel->ext_foreign_handle)
-            toplevel->ext_foreign_handle->data = toplevel.ptr();
-    }
+    toplevel->ext_foreign_handle = create_ext_foreign_toplevel_handle(*server, xdg_toplevel->title, xdg_toplevel->app_id);
+    if (toplevel->ext_foreign_handle)
+        toplevel->ext_foreign_handle->data = toplevel.ptr();
 
     toplevel->map.notify = toplevel_map;
     wl_signal_add(&xdg_toplevel->base->surface->events.map, &toplevel->map);

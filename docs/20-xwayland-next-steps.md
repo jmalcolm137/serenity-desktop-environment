@@ -43,8 +43,9 @@ Where the code lives:
 - `WindowServer/src/XWaylandFrame.cpp`: the X11 server-side frames: `x11_update_frame` /
   `x11_hit_test_frame`, `x11_begin_interactive`, `handle_x11_frame_*`, and the
   `hook_*_x11` calls into the WM.
-- `WindowServer/src/Model.h`: `struct X11Toplevel`, and `XWaylandState` (held as
-  `Server::xwayland`).
+- `WindowServer/src/Model.h`: `struct X11Toplevel`; `XWaylandState.h`: the
+  XWayland state (held as `Server::xwayland`); the X11 window list itself is the
+  core `Server::x11_toplevels` (`Server.h`), next to `Server::toplevels`.
 - `WindowServer/src/WindowManager.{h,cpp}`: `emit_window_state(X11Toplevel&)`,
   `find_x11_by_wm_id`, and the Taskbar request routing.
 - `scripts/run-xwayland-test.sh`: X11 client maps, gets a frame, and is reported

@@ -13,9 +13,10 @@ void handle_tablet_motion(Server& server, wlr_tablet_tool* tool, double lx, doub
 void handle_tablet_axis(Server& server, wlr_tablet_tool* tool, double pressure, double distance, double tilt_x, double tilt_y, double rotation, double slider, double wheel);
 void handle_tablet_tip(Server& server, wlr_tablet_tool* tool, bool down);
 void handle_tablet_button(Server& server, wlr_tablet_tool* tool, uint32_t button, bool pressed);
-void tablet_pad_button(wl_listener* listener, void* data);
-void tablet_pad_ring(wl_listener* listener, void* data);
-void tablet_pad_strip(wl_listener* listener, void* data);
-void tablet_pad_destroy(wl_listener* listener, void*);
+// A tablet pad was plugged in: wrap it for zwp-tablet-v2 and route its events.
+void add_tablet_pad(Server& server, wlr_input_device* device);
+// A synthetic tablet device is going away: tear down its v2 wrappers (they listen
+// on the device's destroy signals) and forget them.
+void forget_tablet_device(Server& server, wlr_tablet& tablet, wlr_tablet_tool& tool);
 
 void initialize_tablet(Server&);
