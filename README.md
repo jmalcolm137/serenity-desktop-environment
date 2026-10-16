@@ -84,25 +84,38 @@ Milestone progress (see [`docs/01-objectives.md`](docs/01-objectives.md) §11):
 **Building from scratch.**
 
 ```sh
-libgui-wayland/scripts/fetch-serenity.sh   # pinned, blobless SerenityOS checkout
-libgui-wayland/scripts/build-libgui.sh     # the port's patches + the framework
-scripts/build.sh                           # the SDE's patches + its app stack (Terminal)
-scripts/build-full-sde.sh --with-apps      # the rest: services, applets, tools, tests, apps
+scripts/build-full-sde.sh --with-apps
 ```
 
-Both `build-libgui.sh` and `build.sh` apply *their* patch set to the shared
-SerenityOS checkout, and the shim (`windowserver`) needs both: header inclusion is
-invisible to the build system, so `build-libgui.sh` names the endpoint generators
-explicitly and builds them before the shim. On a machine where an earlier build
-left those headers behind, the difference never shows, which is why the CI image
-(a clean tree every time) is what found it.
+That is the whole build: one top-level `CMakeLists.txt` configures and builds the
+compositor, the shell and its services, the applets, the portal backends and every
+tool and test client into one tree (`build/`), with one dependency graph and one
+`compile_commands.json`. The framework it stands on (libgui-wayland's Lagom:
+LibGUI, LibGfx, LibWM, LibVT, the `windowserver` shim) and the applications are
+built from the same tree as its `lagom` step, which first fetches the pinned
+SerenityOS checkout. `scripts/fetch-wlroots.sh` runs on demand for the pinned
+wlroots.
 
-Build the compositor (links the `libgui-wayland` userland libraries and the
-pinned `wlroots`):
+The build can also be driven directly, which is what the scripts do:
 
 ```sh
-scripts/build-window-server.sh
+cmake -S . -B build -GNinja
+cmake --build build                      # everything
+cmake --build build --target WindowServer
+cmake --build build --target sde-tools   # or sde-tests, sde-applets, lagom
 ```
+
+Build one component's targets by name (`scripts/build-window-server.sh`,
+`scripts/build-tools.sh`, ... are one-line wrappers around that), and add
+`-DSDE_BUILD_APPS=ON` to `cmake` for the application suite.
+
+`scripts/build.sh` still exists: it is the `lagom` step. It applies the SDE's
+patch set to the shared SerenityOS checkout (the port's `build-libgui.sh` applies
+its own) and asks Lagom's ninja for the files the SDE links, so a change to LibGUI
+is seen here as a dependency instead of a rebuild-by-hand. Header inclusion is
+invisible to the build system, which is why an earlier build could leave generated
+headers behind that only a clean CI image caught; naming the Lagom outputs as this
+build's inputs is what fixes that for good.
 
 **Nested (development).** Run the compositor as a Wayland client of your host
 session; it hosts the shell and Serenity apps:

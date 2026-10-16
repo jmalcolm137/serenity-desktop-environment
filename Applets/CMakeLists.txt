@@ -66,6 +66,7 @@ function(add_sde_applet name)
     endforeach()
 
     add_executable(${name} ${_sources})
+    set_property(GLOBAL APPEND PROPERTY SDE_APPLET_TARGETS ${name})
     if (EXISTS "${_local_dir}")
         target_include_directories(${name} BEFORE PRIVATE "${_local_dir}")
     endif()
@@ -102,3 +103,7 @@ add_sde_applet(ResourceGraph SOURCES main.cpp)
 add_sde_applet(Keymap SOURCES KeymapStatusWindow.cpp KeymapStatusWidget.cpp main.cpp LIBS ${LAGOM_keyboard})
 add_sde_applet(Audio SOURCES main.cpp LIBS SDEAudioClient ${LAGOM_config})
 add_sde_applet(ClipboardHistory SOURCES ClipboardHistoryModel.cpp main.cpp LIBS ${LAGOM_config})
+
+# One target for the whole group (scripts/build-applets.sh).
+get_property(SDE_APPLET_TARGETS GLOBAL PROPERTY SDE_APPLET_TARGETS)
+add_custom_target(sde-applets DEPENDS ${SDE_APPLET_TARGETS})
