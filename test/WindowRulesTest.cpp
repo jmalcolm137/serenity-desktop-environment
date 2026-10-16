@@ -164,6 +164,77 @@ ErrorOr<int> serenity_main(Main::Arguments)
     expect(switcher_spans_stacks({ xdg_current, xdg_other }), "windows on two stacks span stacks");
     expect(switcher_spans_stacks({ xdg_current, { 0, 1, false, true, false, true } }), "so do two columns of the same row");
 
+    outln("=== the window-stack overlay ===");
+    Gfx::IntRect const screen2 { 0, 0, 1280, 720 };
+    // A 2x2 grid of 40x30 cells with 8px padding and a 16px margin, centred.
+    auto const frame = stack_overlay_frame(screen2, 2, 2);
+    int const content_w = 2 * (40 + 8) - 8; // 88
+    int const content_h = 2 * (30 + 8) - 8; // 68
+    expect_rect(frame, { (1280 - (content_w + 32)) / 2, (720 - (content_h + 32)) / 2, content_w + 32, content_h + 32 },
+        "the overlay frame is the grid plus its padding and margin, centred");
+
+    // Cell coordinates are in the overlay's own space (0,0 is its top-left), which
+    // is what the painter draws in; the margin is the first cell's inset.
+    auto const cell_00 = stack_overlay_cell(2, 2, 0, 0);
+    auto const cell_01 = stack_overlay_cell(2, 2, 0, 1);
+    auto const cell_10 = stack_overlay_cell(2, 2, 1, 0);
+    expect_rect(cell_00, { 16, 16, 40, 30 }, "the first cell sits at the margin inside the overlay");
+    expect(cell_01.x() == cell_00.x() + 40 + 8 && cell_01.y() == cell_00.y(), "the next column is one cell plus the padding to the right");
+    expect(cell_10.y() == cell_00.y() + 30 + 8 && cell_10.x() == cell_00.x(), "the next row is one cell plus the padding down");
+    // Every cell is inside the overlay for its grid size, and the padding is
+    // between cells, not around the outside of them (it is already in the frame).
+    for (int rows : { 1, 2, 4 }) {
+        for (int columns : { 1, 2, 4 }) {
+            auto const size = stack_overlay_frame({}, rows, columns).size();
+            Gfx::IntRect const overlay { {}, size };
+            bool inside = true;
+            for (int y = 0; y < rows; ++y)
+                for (int x = 0; x < columns; ++x)
+                    inside = inside && overlay.contains(stack_overlay_cell(rows, columns, y, x));
+            expect(inside, "every cell is inside the overlay for its grid size");
+        }
+    }
+    // A usable area that is not at the origin (a panel) still centres inside it.
+    auto const below = stack_overlay_frame({ 0, 32, 1280, 688 }, 2, 2);
+    expect(below.y() >= 32, "the overlay centres inside the usable area, not the output");
+
+    outln("=== the stack transition ===");
+    Gfx::IntSize const area_size { 1280, 720 };
+    expect(stack_transition_delta(0, 0, 0, 0, area_size) == Gfx::IntPoint { 0, 0 }, "switching to the same stack animates nothing");
+    expect(stack_transition_delta(0, 1, 0, 0, area_size) == Gfx::IntPoint { -1280, 0 }, "moving right slides the old stack left");
+    expect(stack_transition_delta(0, 0, 0, 1, area_size) == Gfx::IntPoint { 1280, 0 }, "moving left slides it right");
+    expect(stack_transition_delta(1, 0, 0, 0, area_size) == Gfx::IntPoint { 0, -720 }, "moving down slides it up");
+    expect(stack_transition_delta(0, 0, 1, 0, area_size) == Gfx::IntPoint { 0, 720 }, "moving up slides it down");
+    // Diagonally across the grid, both axes move.
+    expect(stack_transition_delta(1, 1, 0, 0, area_size) == Gfx::IntPoint { -1280, -720 }, "a diagonal switch moves both axes");
+    expect(stack_transition_delta(0, 0, 1, 1, area_size) == Gfx::IntPoint { 1280, 720 }, "and back the other way");
+
+    outln("=== the transition easing ===");
+    expect(stack_transition_eased(0.0f) == 0.0f, "no time is no progress");
+    expect(stack_transition_eased(1.0f) == 1.0f, "full time is full progress");
+    expect(stack_transition_eased(0.5f) == 0.75f, "half the time is three quarters of the way (ease-out)");
+    expect(stack_transition_eased(2.0f) == 1.0f, "past the end is clamped to the end");
+    expect(stack_transition_eased(-1.0f) == 0.0f, "before the start is clamped to the start");
+    // The easing is monotonic: it never moves backwards.
+    bool monotonic = true;
+    float previous = 0.0f;
+    for (int i = 0; i <= 100; ++i) {
+        float const eased = stack_transition_eased(static_cast<float>(i) / 100.0f);
+        monotonic = monotonic && eased >= previous;
+        previous = eased;
+    }
+    expect(monotonic, "the easing never goes backwards");
+    // The lerp reaches its endpoints exactly and rounds to the nearest.
+    expect(stack_transition_lerp(0, 100, 0.0f) == 0, "the lerp starts at the start");
+    expect(stack_transition_lerp(0, 100, 1.0f) == 100, "the lerp ends at the end");
+    expect(stack_transition_lerp(0, 100, 0.5f) == 50, "the lerp rounds to the nearest position");
+    // The rounding is the compositor's: it adds a half and truncates, so the
+    // negative direction lands one pixel past the midpoint (51, not 50). The step
+    // is a pixel either way, but the test states the real behaviour rather than
+    // the tidy one.
+    expect(stack_transition_lerp(100, 0, 0.5f) == 51, "and works in the negative direction");
+    expect(stack_transition_lerp(-10, 10, 0.5f) == 0, "and across zero");
+
     if (g_failures != 0) {
         outln("==> window rules test FAILED ({} check(s))", g_failures);
         return 1;

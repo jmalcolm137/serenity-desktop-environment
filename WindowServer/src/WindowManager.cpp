@@ -591,10 +591,7 @@ void load_workspaces(Server& server)
 // (Compositor::create_window_stack_switch_overlay, 500 ms).
 static OwnPtr<ChromeNode> s_stack_switch_overlay;
 static RefPtr<Core::Timer> s_stack_switch_overlay_timer;
-static constexpr int stack_overlay_cell_width = 40;
-static constexpr int stack_overlay_cell_height = 30;
-static constexpr int stack_overlay_padding = 8;
-static constexpr int stack_overlay_margin = 16;
+static constexpr WindowServer::StackOverlayMetrics s_stack_overlay_metrics { 40, 30, 8, 16 };
 static constexpr int stack_overlay_duration_ms = 500;
 
 static void hide_window_stack_switch_overlay()
@@ -610,17 +607,11 @@ static void show_window_stack_switch_overlay(Server& server, u32 row, u32 column
 
     int const columns = static_cast<int>(workspace_columns());
     int const rows = static_cast<int>(workspace_rows());
-    Gfx::IntSize content {
-        columns * (stack_overlay_cell_width + stack_overlay_padding) - stack_overlay_padding,
-        rows * (stack_overlay_cell_height + stack_overlay_padding) - stack_overlay_padding,
-    };
-    Gfx::IntRect frame { {}, content };
-    frame.inflate(2 * stack_overlay_margin, 2 * stack_overlay_margin);
 
     Gfx::IntRect area { 0, 0, 1280, 720 };
     if (g_hooks.primary_usable_area)
         area = g_hooks.primary_usable_area(server);
-    frame.set_location({ area.x() + (area.width() - frame.width()) / 2, area.y() + (area.height() - frame.height()) / 2 });
+    Gfx::IntRect const frame = WindowServer::stack_overlay_frame(area, rows, columns, s_stack_overlay_metrics);
 
     if (!s_stack_switch_overlay)
         s_stack_switch_overlay = make<ChromeNode>(*server.overlay_tree);
@@ -645,15 +636,9 @@ static void show_window_stack_switch_overlay(Server& server, u32 row, u32 column
         }
         painter.fill_rect(local, background);
         painter.draw_rect(local.shrunken(1, 1), border);
-        auto const content_rect = Gfx::IntRect { {}, content }.centered_within(local);
         for (int y = 0; y < rows; ++y) {
             for (int x = 0; x < columns; ++x) {
-                Gfx::IntRect cell {
-                    content_rect.x() + x * (stack_overlay_cell_width + stack_overlay_padding),
-                    content_rect.y() + y * (stack_overlay_cell_height + stack_overlay_padding),
-                    stack_overlay_cell_width,
-                    stack_overlay_cell_height,
-                };
+                auto const cell = WindowServer::stack_overlay_cell(rows, columns, y, x, s_stack_overlay_metrics);
                 bool const is_current = static_cast<u32>(y) == row && static_cast<u32>(x) == column;
                 painter.fill_rect(cell, is_current ? active : inactive);
             }
@@ -720,16 +705,13 @@ static void tick_window_stack_transition()
         finish_window_stack_transition();
         return;
     }
-    float t = clamp(static_cast<float>(monotonic_ms_now() - s_stack_transition_start_ms) / stack_transition_duration_ms, 0.0f, 1.0f);
-    float eased = 1.0f - (1.0f - t) * (1.0f - t); // ease-out
+    float const t = clamp(static_cast<float>(monotonic_ms_now() - s_stack_transition_start_ms) / stack_transition_duration_ms, 0.0f, 1.0f);
+    float const eased = WindowServer::stack_transition_eased(t);
     for (auto& entry : s_stack_transition) {
-        auto lerp = [eased](int from, int to) {
-            return from + static_cast<int>(static_cast<float>(to - from) * eased + (eased >= 0.5f ? 0.5f : -0.5f));
-        };
         if (entry.tree)
             wlr_scene_node_set_position(&entry.tree->node,
-                lerp(entry.base.x() + entry.from.x(), entry.base.x() + entry.to.x()),
-                lerp(entry.base.y() + entry.from.y(), entry.base.y() + entry.to.y()));
+                WindowServer::stack_transition_lerp(entry.base.x() + entry.from.x(), entry.base.x() + entry.to.x(), eased),
+                WindowServer::stack_transition_lerp(entry.base.y() + entry.from.y(), entry.base.y() + entry.to.y(), eased));
     }
     if (t >= 1.0f)
         finish_window_stack_transition();
@@ -751,16 +733,9 @@ static bool start_window_stack_transition(Server& server, u32 new_row, u32 new_c
         area = g_hooks.primary_usable_area(server);
 
     // SerenityOS's direction convention: moving right slides the old stack left.
-    int delta_x = 0;
-    if (new_column < old_column)
-        delta_x = area.width();
-    else if (new_column > old_column)
-        delta_x = -area.width();
-    int delta_y = 0;
-    if (new_row < old_row)
-        delta_y = area.height();
-    else if (new_row > old_row)
-        delta_y = -area.height();
+    auto const delta = WindowServer::stack_transition_delta(new_row, new_column, old_row, old_column, area.size());
+    int const delta_x = delta.x();
+    int const delta_y = delta.y();
     if (delta_x == 0 && delta_y == 0)
         return false;
 

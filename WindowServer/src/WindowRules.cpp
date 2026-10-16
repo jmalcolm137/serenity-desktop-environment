@@ -97,6 +97,65 @@ bool switcher_lists_window(SwitcherWindow const& window, bool current_workspace_
     return true;
 }
 
+Gfx::IntRect stack_overlay_frame(Gfx::IntRect const& usable_area, int rows, int columns, StackOverlayMetrics const& metrics)
+{
+    Gfx::IntSize const content {
+        columns * (metrics.cell_width + metrics.padding) - metrics.padding,
+        rows * (metrics.cell_height + metrics.padding) - metrics.padding,
+    };
+    Gfx::IntRect frame { {}, content };
+    frame.inflate(2 * metrics.margin, 2 * metrics.margin);
+    frame.set_location({
+        usable_area.x() + (usable_area.width() - frame.width()) / 2,
+        usable_area.y() + (usable_area.height() - frame.height()) / 2,
+    });
+    return frame;
+}
+
+Gfx::IntRect stack_overlay_cell(int rows, int columns, int row, int column, StackOverlayMetrics const& metrics)
+{
+    auto const frame = stack_overlay_frame({}, rows, columns, metrics);
+    // The frame is the content inflated by the margin times two, so the content is
+    // the frame shrunk by that; IntRect::shrunken() insets by half its argument
+    // per side, so it takes the doubled margin to inset by one on each side.
+    auto const content_rect = Gfx::IntRect { {}, frame.size() }.shrunken(2 * metrics.margin, 2 * metrics.margin);
+    return {
+        content_rect.x() + column * (metrics.cell_width + metrics.padding),
+        content_rect.y() + row * (metrics.cell_height + metrics.padding),
+        metrics.cell_width,
+        metrics.cell_height,
+    };
+}
+
+Gfx::IntPoint stack_transition_delta(u32 new_row, u32 new_column, u32 old_row, u32 old_column, Gfx::IntSize area)
+{
+    int delta_x = 0;
+    if (new_column < old_column)
+        delta_x = area.width();
+    else if (new_column > old_column)
+        delta_x = -area.width();
+    int delta_y = 0;
+    if (new_row < old_row)
+        delta_y = area.height();
+    else if (new_row > old_row)
+        delta_y = -area.height();
+    return { delta_x, delta_y };
+}
+
+float stack_transition_eased(float t)
+{
+    if (t <= 0.0f)
+        return 0.0f;
+    if (t >= 1.0f)
+        return 1.0f;
+    return 1.0f - (1.0f - t) * (1.0f - t); // ease-out
+}
+
+int stack_transition_lerp(int from, int to, float eased)
+{
+    return from + static_cast<int>(static_cast<float>(to - from) * eased + (eased >= 0.5f ? 0.5f : -0.5f));
+}
+
 bool switcher_spans_stacks(Vector<SwitcherWindow> const& windows)
 {
     if (windows.size() < 2)
