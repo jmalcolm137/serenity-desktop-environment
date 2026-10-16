@@ -238,48 +238,6 @@ static Gfx::IntRect usable_area(Server& server)
     return {};
 }
 
-// The geometry a tile type covers within the usable area.
-static Gfx::IntRect tile_rect(Gfx::IntRect const& area, WindowTileType type)
-{
-    Gfx::IntRect rect = area;
-    int const half_w = area.width() / 2;
-    int const half_h = area.height() / 2;
-    switch (type) {
-    case WindowTileType::Left:
-        rect.set_width(half_w);
-        break;
-    case WindowTileType::Right:
-        rect.set_x(area.x() + half_w);
-        rect.set_width(area.width() - half_w);
-        break;
-    case WindowTileType::Top:
-        rect.set_height(half_h);
-        break;
-    case WindowTileType::Bottom:
-        rect.set_y(area.y() + half_h);
-        rect.set_height(area.height() - half_h);
-        break;
-    case WindowTileType::TopLeft:
-        rect.set_size({ half_w, half_h });
-        break;
-    case WindowTileType::TopRight:
-        rect.set_x(area.x() + half_w);
-        rect.set_size({ area.width() - half_w, half_h });
-        break;
-    case WindowTileType::BottomLeft:
-        rect.set_y(area.y() + half_h);
-        rect.set_size({ half_w, area.height() - half_h });
-        break;
-    case WindowTileType::BottomRight:
-        rect.set_location({ area.x() + half_w, area.y() + half_h });
-        rect.set_size({ area.width() - half_w, area.height() - half_h });
-        break;
-    default:
-        break; // Maximized / horizontally / vertically maximized = the whole area
-    }
-    return rect;
-}
-
 // The xdg_toplevel tiled edges for a tile type.
 static uint32_t tile_edges(WindowTileType type)
 {
@@ -339,7 +297,7 @@ static void set_tiled(Server& server, Toplevel& toplevel, WindowTileType type)
     if (area.is_empty())
         return;
 
-    auto rect = tile_rect(area, type);
+    auto rect = WindowServer::tile_rect(area, type);
     uint32_t const xdg_edges = tile_edges(type);
 
     toplevel.tile_type = type;
@@ -526,7 +484,7 @@ void update_move_snap(Server& server, Toplevel& toplevel)
         if (server.overlay_tree) {
             if (!s_tile_preview)
                 s_tile_preview = make<ChromeNode>(*server.overlay_tree);
-            auto rect = tile_rect(area, target);
+            auto rect = WindowServer::tile_rect(area, target);
             s_tile_preview->set_rect(rect);
             s_tile_preview->render([rect](Gfx::Painter& painter) {
                 Gfx::IntRect local { { }, rect.size() };
@@ -541,7 +499,7 @@ void update_move_snap(Server& server, Toplevel& toplevel)
     }
 
     // The HUD previews the prospective tile while one is shown, else the window.
-    auto geometry = target != WindowTileType::None ? tile_rect(area, target) : toplevel_frame_rect(toplevel);
+    auto geometry = target != WindowTileType::None ? WindowServer::tile_rect(area, target) : toplevel_frame_rect(toplevel);
     show_geometry_hud(server, geometry, false);
 }
 
@@ -569,8 +527,10 @@ u32 current_workspace_column() { return s_current_column; }
 
 void update_toplevel_visibility(Toplevel& toplevel)
 {
-    bool const on_current = toplevel.workspace_row == s_current_row && toplevel.workspace_column == s_current_column;
-    wlr_scene_node_set_enabled(&toplevel.scene_tree->node, on_current && !toplevel.minimized);
+    // A minimized window is unmapped as far as the stack is concerned; the tile
+    // and workspace rules are the same for xdg and X11 windows (WindowRules.h).
+    wlr_scene_node_set_enabled(&toplevel.scene_tree->node,
+        WindowServer::window_visible_on_workspace(toplevel.workspace_row, toplevel.workspace_column, s_current_row, s_current_column, !toplevel.minimized));
 }
 
 void on_toplevel_mapped(Toplevel& toplevel)
@@ -584,11 +544,10 @@ void update_x11_toplevel_visibility(X11Toplevel& toplevel)
 {
     if (!toplevel.scene_tree)
         return;
-    bool const on_current = toplevel.workspace_row == s_current_row && toplevel.workspace_column == s_current_column;
     // An X11 window that is withdrawn/minimized is already unmapped (disabled);
     // keep it hidden regardless of the stack. Override-redirect windows (menus,
     // tooltips) are unmanaged/transient: they are never workspace-hid.
-    bool const visible = (toplevel.override_redirect || on_current) && toplevel.mapped;
+    bool const visible = WindowServer::window_visible_on_workspace(toplevel.workspace_row, toplevel.workspace_column, s_current_row, s_current_column, toplevel.mapped, toplevel.override_redirect);
     wlr_scene_node_set_enabled(&toplevel.scene_tree->node, visible);
     dbgln("WindowServer: X11 window {} workspace {},{} visible={}", toplevel.wm_id, toplevel.workspace_row, toplevel.workspace_column, visible);
 }
