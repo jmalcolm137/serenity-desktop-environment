@@ -145,3 +145,9 @@ add_sde_unit_test(libwm-config-rules-test SOURCE ConfigRulesTest.cpp
     EXTRA_SOURCES "${CMAKE_SOURCE_DIR}/WindowServer/src/ConfigRules.cpp"
     LIBS xkbcommon)
 target_include_directories(libwm-config-rules-test PRIVATE "${CMAKE_SOURCE_DIR}/WindowServer/src")
+
+# The Taskbar's applet area layout (AppletLayout.h): the configured order and the
+# rectangle each applet gets. Pure, so the layout is checked without a Taskbar.
+add_sde_unit_test(libwm-applet-layout-test SOURCE AppletLayoutTest.cpp
+    EXTRA_SOURCES "${CMAKE_SOURCE_DIR}/WindowServer/src/AppletLayout.cpp")
+target_include_directories(libwm-applet-layout-test PRIVATE "${CMAKE_SOURCE_DIR}/WindowServer/src")

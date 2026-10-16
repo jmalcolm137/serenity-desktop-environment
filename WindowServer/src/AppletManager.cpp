@@ -6,6 +6,8 @@
 
 #include "AppletManager.h"
 
+#include "AppletLayout.h"
+
 #include <AK/InsertionSort.h>
 #include <AK/Vector.h>
 #include <LibGfx/Rect.h>
@@ -29,7 +31,7 @@ void set_host_hooks(HostHooks hooks)
 }
 
 // SerenityOS AppletManager constants.
-static int const applet_spacing = 4;
+static int const applet_spacing = AppletLayout::default_spacing;
 static int const applet_area_height = 19;
 
 static Gfx::IntPoint s_position { 0, 0 };
@@ -69,32 +71,21 @@ static Vector<Applet> build_layout(Server& server)
         applets.append(layer.ptr());
     }
 
-    auto const& order = Config::applet_order();
-    insertion_sort(applets, [&](LayerSurface* a, LayerSurface* b) {
-        auto index_a = order.find_first_index(a->applet_name).value_or(0);
-        auto index_b = order.find_first_index(b->applet_name).value_or(0);
-        return index_a > index_b;
-    });
-
-    int total_width = 0;
-    for (auto* applet : applets)
-        total_width += max(0, static_cast<int>(applet->layer_surface->surface->current.width)) + applet_spacing;
-    if (!applets.is_empty())
-        total_width -= applet_spacing;
-
-    Vector<Applet> layout;
-    int right_edge_x = total_width;
+    // The order and the rectangles are AppletLayout.h's rules.
+    Vector<AppletLayout::Applet> inputs;
+    inputs.ensure_capacity(applets.size());
     for (auto* applet : applets) {
         auto size = applet->layer_surface->surface->current;
-        int width = static_cast<int>(size.width);
-        int height = static_cast<int>(size.height);
-        Gfx::IntRect rect { right_edge_x - width, 0, width, height };
-        rect.center_vertically_within({ 0, 0, 0, applet_area_height });
-        layout.append({ applet, rect });
-        right_edge_x = rect.x() - applet_spacing;
+        inputs.append({ applet->applet_name, { static_cast<int>(size.width), static_cast<int>(size.height) } });
     }
+    auto placed = AppletLayout::layout(inputs, Config::applet_order(), applet_area_height, applet_spacing);
 
-    Gfx::IntSize area_size { total_width, applet_area_height };
+    Vector<Applet> layout;
+    layout.ensure_capacity(placed.placements.size());
+    for (auto const& placement : placed.placements)
+        layout.append({ applets[placement.applet_index], placement.rect });
+
+    Gfx::IntSize area_size = placed.area_size;
     if (g_hooks.applet_area_size_changed && area_size != s_last_emitted) {
         s_last_emitted = area_size;
         ByteString names;
@@ -121,7 +112,7 @@ static void apply(Server& server)
         auto usable = g_hooks.primary_usable_area ? g_hooks.primary_usable_area(server) : Gfx::IntRect { };
         if (usable.is_empty())
             return;
-        origin = { usable.right() - s_area_size.width(), usable.bottom() - s_area_size.height() };
+        origin = AppletLayout::fallback_origin(usable, s_area_size);
     }
 
     ByteString signature;
