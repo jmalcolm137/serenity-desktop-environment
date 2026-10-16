@@ -86,4 +86,27 @@ bool window_visible_on_workspace(u32 window_row, u32 window_column, u32 current_
     return window_row == current_row && window_column == current_column;
 }
 
+bool switcher_lists_window(SwitcherWindow const& window, bool current_workspace_only, u32 current_row, u32 current_column)
+{
+    if (window.override_redirect)
+        return false;
+    if (window.is_x11 && (!window.mapped || !window.has_taskbar_entry))
+        return false;
+    if (current_workspace_only && (window.workspace_row != current_row || window.workspace_column != current_column))
+        return false;
+    return true;
+}
+
+bool switcher_spans_stacks(Vector<SwitcherWindow> const& windows)
+{
+    if (windows.size() < 2)
+        return false;
+    for (size_t i = 1; i < windows.size(); ++i) {
+        if (windows[i].workspace_row != windows[0].workspace_row
+            || windows[i].workspace_column != windows[0].workspace_column)
+            return true;
+    }
+    return false;
+}
+
 }
