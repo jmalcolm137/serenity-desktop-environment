@@ -33,7 +33,7 @@ stop_compositor() {
     wait "$COMP_PID" 2>/dev/null || true
     COMP_PID=""
 }
-trap 'stop_compositor; rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
+trap 'stop_compositor; for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
 
 # The real session startup: the shell (Taskbar + Desktop), the applets, and the
 # battery applet. (FileManager -d is the SerenityOS Desktop - icons over the

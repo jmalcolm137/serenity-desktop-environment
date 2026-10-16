@@ -16,7 +16,7 @@ echo "== building prerequisite =="
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-launch-exec.XXXXXX")"
 chmod 700 "$RUNTIME"
-trap 'rm -rf "$RUNTIME"' EXIT
+trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"' EXIT
 
 # A fake "DisplaySettings" in the session app dir that records that it ran.
 mkdir -p "$RUNTIME/bin" "$RUNTIME/session/portal"

@@ -25,7 +25,7 @@ MAX_DIFF="${SDE_HIDPI_MAX_DIFF:-0.02}"
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-hidpi.XXXXXX")"
 export SDE_STATE_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
-trap 'rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
+trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
 
 dump_at() { # $1 = scale, $2 = output png, $3 = expected WxH (optional)
     local scale="$1" out="$2" sock="sde-hidpi-$1-$$" expected="${3:-}"

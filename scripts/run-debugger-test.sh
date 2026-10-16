@@ -24,7 +24,7 @@ fi
 [[ -x "$BUILD/bin/Debugger" ]] || { echo "FAIL: $BUILD/bin/Debugger is missing"; exit 1; }
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-debugger.XXXXXX")"
-trap 'rm -rf "$RUNTIME"' EXIT
+trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"' EXIT
 
 cat > "$RUNTIME/target.c" <<'C'
 #include <stdio.h>

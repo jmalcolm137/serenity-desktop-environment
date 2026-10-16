@@ -10,7 +10,7 @@ INSTALL="$SDE_ROOT/scripts/install-session.sh"
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-sessionentry.XXXXXX")"
 chmod 700 "$RUNTIME"
-trap 'rm -rf "$RUNTIME"' EXIT
+trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"' EXIT
 
 fail=0
 check() { if grep -qF "$1" <<<"$2"; then echo "  ok: $1"; else echo "  MISSING: $1"; fail=1; fi; return 0; }

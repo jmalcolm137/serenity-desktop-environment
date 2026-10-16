@@ -14,7 +14,7 @@ PORTAL="$SDE_ROOT/build/tools/xdg-desktop-portal-serenity"
 
 if [ "${1:-}" != "--inner" ]; then
     RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-portal.XXXXXX")"
-    trap 'rm -rf "$RUNTIME"' EXIT
+    trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"' EXIT
     export SDE_PORTAL_TEST_RUNTIME="$RUNTIME"
     exec dbus-run-session -- "$0" --inner
 fi

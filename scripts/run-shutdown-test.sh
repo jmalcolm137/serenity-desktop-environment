@@ -161,6 +161,19 @@ check_clean_exit "SIGTERM" "$STATUS"
 for pid in "${CLIENTS[@]}"; do kill "$pid" 2>/dev/null || true; done
 CLIENTS=()
 
+echo "=== the state directory after the exit ==="
+# The compositor is not gone the instant it is signalled: it disconnects its
+# clients and runs every subsystem's teardown first, and that work touches the
+# state directory (the clients' own teardown handlers among them). A caller that
+# removes the directory the moment it signals the process is racing that work --
+# it fails with "Directory not empty" -- so it must wait for the exit. The test
+# scripts do; this checks that the wait is also sufficient.
+if rm -rf "$R/busy"; then
+    ok "the state directory is removable once the compositor has exited"
+else
+    bad "the state directory could not be removed after the exit"
+fi
+
 echo "=== (B) Alt+Escape ==="
 start_compositor quit ""
 sleep 0.3
