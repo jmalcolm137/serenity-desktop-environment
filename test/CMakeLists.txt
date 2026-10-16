@@ -32,6 +32,7 @@ find_library(WINDOWSERVER NAMES windowserver PATHS "${SERENITY_BUILD_DIR}/lib" N
 function(add_sde_test name)
     cmake_parse_arguments(ARG "" "SOURCE" "LIBS" ${ARGN})
     add_executable(${name} "${CMAKE_CURRENT_SOURCE_DIR}/${ARG_SOURCE}")
+    set_property(GLOBAL APPEND PROPERTY SDE_TEST_TARGETS ${name})
     target_include_directories(${name} PRIVATE
         "${SERENITY_SRC}"
         "${SERENITY_SRC}/Userland"
@@ -102,3 +103,7 @@ add_sde_test(libwm-eventloop-teardown-test SOURCE EventLoopTeardownTest.cpp)
 
 # "Clear to previous mark" after the scrollback ring has wrapped (a Terminal crash).
 add_sde_test(libvt-history-test SOURCE VtHistoryTest.cpp LIBS ${LAGOM_vt})
+
+# One target for the whole group, so scripts/build-tests.sh is a one-liner.
+get_property(SDE_TEST_TARGETS GLOBAL PROPERTY SDE_TEST_TARGETS)
+add_custom_target(sde-tests DEPENDS ${SDE_TEST_TARGETS})

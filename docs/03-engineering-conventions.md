@@ -23,6 +23,27 @@ do **not** vendor, fork, or duplicate them.
   (`GVariant`, `GDBus`, `GMainLoop`). The shared value/service layer for the portals is
   `tools/portal/dbus.h` (`Portal::Value`, `Portal::MethodCall`, `Portal::Service`).
 
+## D1a: One build tree, one entry point
+
+The repository has a single top-level `CMakeLists.txt`, and `scripts/build-full-sde.sh`
+(or `cmake -S . -B build && cmake --build build`) is the one command that builds
+everything. The components' own `CMakeLists.txt` still stand alone for the rare case
+of building one piece, but nothing needs them to: they are `add_subdirectory()`d here,
+so there is one dependency graph, one `compile_commands.json`, and any target is one
+`cmake --build build --target <name>` away.
+
+- **Do not add a `build-*.sh` script that runs its own `cmake -S <dir> -B <dir>`.** Add
+  the component to the top-level file (or, for a group, a custom target like
+  `sde-tools`) and make the script a wrapper around `scripts/build-target.sh`. Twenty
+  independent build directories held together by environment variables are how a
+  component ended up depending on a generated header that only happened to exist
+  (README, "Building from scratch").
+- **The framework is not a subdirectory.** `libgui-wayland`'s Lagom build has its own
+  entry point and its own state (its patch set, its configuration), so the SDE drives
+  it as the `lagom` target instead of re-configuring it (see `cmake/SDELagom.cmake`).
+  The files the SDE links are that target's byproducts, so a change to LibGUI is a
+  dependency of the SDE targets that use it, not something to rebuild by hand.
+
 ## D2: SerenityOS-style `main` (always use LibCore/LibMain)
 
 Every SDE executable **must** be a SerenityOS-style program: link **LibCore** and **LibMain**,

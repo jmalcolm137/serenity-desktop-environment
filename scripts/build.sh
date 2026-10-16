@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
-# Build the Serenity Desktop Environment against the libgui-wayland host build.
+# Build in libgui-wayland's Lagom tree: the framework and the programs that live
+# there (Terminal by default, the Taskbar, FileManager, the app suite).
 #
-# The heavy userland (LibGUI/LibGfx/LibCore/LibVT, LibWM, ...)
-# is built by libgui-wayland. This script applies the SDE's own patches to the
-# SerenityOS checkout and links the SDE system library into the already-
-# registered Terminal target. It does not modify the libgui-wayland repository.
+#   scripts/build.sh [lagom targets or output paths ...]
+#
+# The heavy userland (LibGUI/LibGfx/LibCore/LibVT, LibWM, ...) is built by
+# libgui-wayland. This script applies the SDE's own patches to the SerenityOS
+# checkout, makes sure Lagom is configured with the SDE (SDE_ROOT registers the
+# Taskbar and links the SDE system library into Terminal), and asks Lagom's ninja
+# for the targets. It does not modify the libgui-wayland repository.
+#
+# The top-level CMake build calls this as its `lagom` step with the exact files
+# the SDE links (lib/liblagom-gui.so, bin/Taskbar, ...), so it stays cheap when
+# nothing changed. With SDE_BOOTSTRAP_FRAMEWORK=1, a checkout with no Lagom build
+# yet is first built by libgui-wayland's own entry point.
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -23,6 +32,20 @@ if [[ ! -d "$SERENITY_SRC/.git" ]]; then
     echo "       set LIBGUI_WAYLAND_ROOT/SERENITY_SRC, and run" >&2
     echo "       libgui-wayland/scripts/build-libgui.sh first" >&2
     exit 1
+fi
+
+# A fresh checkout: build the framework with libgui-wayland's entry point (its
+# patches, its configuration) before layering the SDE on top.
+if [[ ! -f "$BUILD_DIR/build.ninja" ]]; then
+    if [[ "${SDE_BOOTSTRAP_FRAMEWORK:-0}" == 1 ]]; then
+        echo "==> No Lagom build in $BUILD_DIR yet: building the framework (libgui-wayland)"
+        SERENITY_SRC="$SERENITY_SRC" BUILD_DIR="$BUILD_DIR" JOBS="$JOBS" \
+            "$LIBGUI_WAYLAND_ROOT/scripts/build-libgui.sh" --no-tests
+    else
+        echo "error: no Lagom build in $BUILD_DIR" >&2
+        echo "       run $LIBGUI_WAYLAND_ROOT/scripts/build-libgui.sh first" >&2
+        exit 1
+    fi
 fi
 
 # Apply the SDE's patches to the SerenityOS checkout idempotently.
@@ -87,8 +110,13 @@ if [[ "$unverified_count" -gt 0 ]]; then
     fi
 fi
 
-echo "==> Configuring the host build with the SDE system root"
-cmake -S "$SERENITY_SRC/Meta/Lagom" -B "$BUILD_DIR" -GNinja -DSDE_ROOT="$SDE_ROOT"
+# Configure Lagom with the SDE once (a few seconds); afterwards Lagom's own ninja
+# re-runs CMake whenever its CMakeLists change.
+if ! grep -qxF "SDE_ROOT:UNINITIALIZED=$SDE_ROOT" "$BUILD_DIR/CMakeCache.txt" \
+    && ! grep -qxF "SDE_ROOT:PATH=$SDE_ROOT" "$BUILD_DIR/CMakeCache.txt"; then
+    echo "==> Configuring the host build with the SDE system root"
+    cmake -S "$SERENITY_SRC/Meta/Lagom" -B "$BUILD_DIR" -GNinja -DSDE_ROOT="$SDE_ROOT"
+fi
 
 echo "==> Building: ${TARGETS[*]}"
 ninja -C "$BUILD_DIR" -j"$JOBS" "${TARGETS[@]}"
