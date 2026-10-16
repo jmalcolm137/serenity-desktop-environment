@@ -20,6 +20,7 @@
 #include <LibGfx/Size.h>
 
 #include "Overlays.h" // ChromeNode
+#include "WindowRules.h" // WindowTileType, tile geometry
 
 // wlroots is a C library and does not wrap its headers in extern "C", so we do.
 extern "C" {
@@ -112,22 +113,6 @@ enum class CursorMode {
     Passthrough,
     Move,
     Resize,
-};
-
-// SerenityOS WindowTileType: how a window is snapped to the output.
-enum class WindowTileType {
-    None,
-    Left,
-    Right,
-    Top,
-    Bottom,
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-    VerticallyMaximized,
-    HorizontallyMaximized,
-    Maximized,
 };
 
 struct Server;

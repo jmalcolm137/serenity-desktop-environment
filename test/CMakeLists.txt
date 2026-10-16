@@ -28,10 +28,30 @@ endforeach()
 find_library(LAGOM_main NAMES lagom-main PATHS "${SERENITY_BUILD_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
 find_library(WINDOWSERVER NAMES windowserver PATHS "${SERENITY_BUILD_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
 
+# add_sde_unit_test(<name> SOURCE <file.cpp> [EXTRA_SOURCES ...] [LIBS ...])
+#   For logic with no GUI: links AK/LibCore/LibMain only.
+function(add_sde_unit_test name)
+    cmake_parse_arguments(ARG "" "SOURCE" "LIBS;EXTRA_SOURCES" ${ARGN})
+    add_executable(${name} "${CMAKE_CURRENT_SOURCE_DIR}/${ARG_SOURCE}" ${ARG_EXTRA_SOURCES})
+    target_include_directories(${name} PRIVATE "${SERENITY_SRC}" "${SERENITY_SRC}/Userland/Libraries" "${SERENITY_BUILD_DIR}")
+    target_compile_options(${name} PRIVATE -Wno-literal-suffix -fno-exceptions)
+    target_link_directories(${name} PRIVATE "${SERENITY_BUILD_DIR}/lib")
+    target_link_libraries(${name} PRIVATE
+        ${LAGOM_ak}
+        ${LAGOM_coreminimal}
+        ${LAGOM_corebasic}
+        ${LAGOM_core}
+        ${ARG_LIBS}
+        ${LAGOM_main})
+    set_target_properties(${name} PROPERTIES
+        BUILD_RPATH "${SERENITY_BUILD_DIR}/lib"
+        INSTALL_RPATH "${SERENITY_BUILD_DIR}/lib")
+endfunction()
+
 # add_sde_test(<name> SOURCE <file.cpp> LIBS <extra libs>)
 function(add_sde_test name)
-    cmake_parse_arguments(ARG "" "SOURCE" "LIBS" ${ARGN})
-    add_executable(${name} "${CMAKE_CURRENT_SOURCE_DIR}/${ARG_SOURCE}")
+    cmake_parse_arguments(ARG "" "SOURCE" "LIBS;EXTRA_SOURCES" ${ARGN})
+    add_executable(${name} "${CMAKE_CURRENT_SOURCE_DIR}/${ARG_SOURCE}" ${ARG_EXTRA_SOURCES})
     set_property(GLOBAL APPEND PROPERTY SDE_TEST_TARGETS ${name})
     target_include_directories(${name} PRIVATE
         "${SERENITY_SRC}"
@@ -107,3 +127,13 @@ add_sde_test(libvt-history-test SOURCE VtHistoryTest.cpp LIBS ${LAGOM_vt})
 # One target for the whole group, so scripts/build-tests.sh is a one-liner.
 get_property(SDE_TEST_TARGETS GLOBAL PROPERTY SDE_TEST_TARGETS)
 add_custom_target(sde-tests DEPENDS ${SDE_TEST_TARGETS})
+
+# The window manager's placement rules (WindowRules.h): pure functions, compiled
+# from the compositor's own source, so the test and the compositor cannot drift
+# apart. No compositor, no wlroots, no Wayland.
+# A pure-logic unit test: AK and the file under test, without LibGUI. Linking
+# LibGUI would pull in its static initialisers (the font database wants a
+# resource root) for a test that has nothing to do with a GUI.
+add_sde_unit_test(libwm-window-rules-test SOURCE WindowRulesTest.cpp
+    EXTRA_SOURCES "${CMAKE_SOURCE_DIR}/WindowServer/src/WindowRules.cpp")
+target_include_directories(libwm-window-rules-test PRIVATE "${CMAKE_SOURCE_DIR}/WindowServer/src")

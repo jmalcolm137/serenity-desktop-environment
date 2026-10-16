@@ -136,6 +136,7 @@ add_executable(WindowServer
     src/Wallpaper.cpp
     src/WindowManager.cpp
     src/WindowMenu.cpp
+    src/WindowRules.cpp
     src/WindowSwitcher.cpp
     src/XWayland.cpp
     src/XWaylandFrame.cpp
