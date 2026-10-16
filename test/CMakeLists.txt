@@ -137,3 +137,11 @@ add_custom_target(sde-tests DEPENDS ${SDE_TEST_TARGETS})
 add_sde_unit_test(libwm-window-rules-test SOURCE WindowRulesTest.cpp
     EXTRA_SOURCES "${CMAKE_SOURCE_DIR}/WindowServer/src/WindowRules.cpp")
 target_include_directories(libwm-window-rules-test PRIVATE "${CMAKE_SOURCE_DIR}/WindowServer/src")
+
+# The config validation rules (ConfigRules.h): keybinding combos, output scales,
+# booleans and the input ranges. The loader calls exactly these, so the schema in
+# docs/14-r4.4-config.md is checked without starting a session.
+add_sde_unit_test(libwm-config-rules-test SOURCE ConfigRulesTest.cpp
+    EXTRA_SOURCES "${CMAKE_SOURCE_DIR}/WindowServer/src/ConfigRules.cpp"
+    LIBS xkbcommon)
+target_include_directories(libwm-config-rules-test PRIVATE "${CMAKE_SOURCE_DIR}/WindowServer/src")
