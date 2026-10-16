@@ -487,6 +487,10 @@ struct X11Toplevel {
     wl_listener dissociate { };
     wl_listener surface_map { };
     wl_listener surface_unmap { };
+    // The scene surface's buffer node, which wlroots destroys by itself when the
+    // wl_surface goes (before the xsurface is dissociated), so `scene` is cleared
+    // whenever the node goes, whoever destroys it.
+    wl_listener scene_destroy { };
     wl_listener destroy { };
     wl_listener request_configure { };
     wl_listener request_close { };

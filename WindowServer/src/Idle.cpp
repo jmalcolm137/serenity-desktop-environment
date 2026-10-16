@@ -101,3 +101,9 @@ void initialize_idle(Server& server)
     server.idle.output_power_set_mode.notify = output_power_set_mode;
     wl_signal_add(&server.idle.output_power_manager->events.set_mode, &server.idle.output_power_set_mode);
 }
+
+void finish_idle(Server& server)
+{
+    remove_listener(server.idle.new_inhibitor);
+    remove_listener(server.idle.output_power_set_mode);
+}

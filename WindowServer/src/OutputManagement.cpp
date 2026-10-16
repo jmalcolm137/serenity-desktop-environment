@@ -270,3 +270,9 @@ void initialize_output_management(Server& server)
     server.output_management.test.notify = output_manager_test;
     wl_signal_add(&server.output_management.manager->events.test, &server.output_management.test);
 }
+
+void finish_output_management(Server& server)
+{
+    remove_listener(server.output_management.apply);
+    remove_listener(server.output_management.test);
+}

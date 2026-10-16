@@ -634,3 +634,10 @@ void initialize_xdg_shell(Server& server)
         wl_signal_add(&decoration_manager->events.new_toplevel_decoration, &server.new_toplevel_decoration);
     }
 }
+
+void finish_xdg_shell(Server& server)
+{
+    remove_listener(server.new_xdg_toplevel);
+    remove_listener(server.new_xdg_popup);
+    remove_listener(server.new_toplevel_decoration);
+}

@@ -116,6 +116,29 @@ for i in 1 2 3 4 5; do
 done
 [[ "$cycles_ok" -eq 1 ]] && echo "  ok: the compositor survived 5 map/exit cycles"
 
+# The X server itself going away with a window mapped: wlroots tears down its
+# window manager and dissociates every X11 window, and the compositor must carry
+# on without them. (The opposite order, Xwayland's Wayland connection closing
+# while its window manager is still up, is the shutdown path; see
+# run-shutdown-test.sh.)
+env -u WAYLAND_DISPLAY DISPLAY="$DISP" \
+    timeout 20 xmessage -name xserver-gone -geometry 120x60+40+40 "x" >/dev/null 2>&1 &
+C2=$!
+for _ in $(seq 1 40); do grep -q "X11 window mapped 'xserver-gone'" "$R/comp.log" && break; sleep 0.1; done
+XPID="$(pgrep -f "Xwayland $DISP " | head -1 || true)"
+if [[ -n "$XPID" ]] && grep -q "X11 window mapped 'xserver-gone'" "$R/comp.log"; then
+    kill -KILL "$XPID" 2>/dev/null || true
+    sleep 1
+    if alive; then
+        echo "  ok: the compositor survived the X server going away with a window mapped"
+    else
+        echo "  FAIL: the compositor died when the X server went away"; fail=1
+    fi
+else
+    echo "  FAIL: no X server process or mapped window to take away (pid '${XPID}')"; fail=1
+fi
+wait "$C2" 2>/dev/null || true
+
 # The wlroots assertion must not have fired, and the compositor must not have faulted.
 # (Note: benign "xcb error ... code Window" lines at xwm.c:1984 appear when a client
 # exits with requests in flight — only the listener assertion is fatal.)

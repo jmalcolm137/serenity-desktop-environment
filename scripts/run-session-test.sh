@@ -4,7 +4,8 @@
 #   (B) the supervisor restarts a failing compositor, then gives up;
 #   (C) power actions route through the portable path (mocked here);
 #   (D-G) idle-to-lock, /bin power helpers, SIGTERM, capability probe;
-#   (H) the watchdog restarts a wedged compositor (stale heartbeat);
+#   (H) the watchdog restarts a wedged compositor (stale heartbeat), (H2) also
+#       one that shuts down cleanly (status 0) on the watchdog's SIGTERM;
 #   (I) repeated failure drops to safe mode instead of ending the session;
 #   (J) manual safe mode starts minimal and skips autostart;
 #   (K) session.conf supplies policy and the environment overrides it (R6).
@@ -195,6 +196,34 @@ wait "$SUP_H" 2>/dev/null || true
 cat "$RUNTIME/session-h.log"
 check "heartbeat stale" "$RUNTIME/session-h.log"
 check "restart 1/5" "$RUNTIME/session-h.log"
+
+echo "== (H2) the watchdog restarts a compositor that shuts down cleanly on SIGTERM =="
+# The real compositor handles SIGTERM and exits 0, which on its own means "the
+# user quit" and stops the session. A stale heartbeat must still restart it.
+cat > "$RUNTIME/clean-comp" <<EOF
+#!/bin/bash
+echo "\$(date +%s)" > "$RUNTIME/hb2"
+trap 'exit 0' TERM
+sleep 30 &
+wait
+EOF
+chmod +x "$RUNTIME/clean-comp"
+env SDE_SESSION_COMPOSITOR="$RUNTIME/clean-comp" \
+    SDE_SESSION_HEARTBEAT_FILE="$RUNTIME/hb2" \
+    SDE_SESSION_WATCHDOG_SECONDS=2 \
+    SDE_SESSION_MAX_RESTARTS=5 \
+    SDE_SESSION_AUTOSTART=0 \
+    SDE_SESSION_RESTART_DELAY=0 \
+    "$SDE" > "$RUNTIME/session-h2.log" 2>&1 &
+SUP_H2=$!
+for _ in $(seq 1 40); do
+    grep -q "restart 1/5\|compositor exited; stopping" "$RUNTIME/session-h2.log" 2>/dev/null && break
+    sleep 0.5
+done
+kill -TERM "$SUP_H2" 2>/dev/null || true
+wait "$SUP_H2" 2>/dev/null || true
+cat "$RUNTIME/session-h2.log"
+check "restart 1/5" "$RUNTIME/session-h2.log"
 
 echo "== (I) repeated failure drops to safe mode (does not end the session) =="
 cat > "$RUNTIME/safe-comp" <<EOF

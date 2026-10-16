@@ -554,6 +554,13 @@ void InputMethod::initialize(Server& server)
     }
 }
 
+void InputMethod::finish(Server& server)
+{
+    remove_listener(server.ime.text_input_new);
+    remove_listener(server.ime.input_method_new);
+    remove_listener(server.ime.grab_destroy);
+}
+
 void InputMethod::set_focus(Server& server, wlr_surface* surface)
 {
     for (auto& text_input : server.ime.text_inputs) {

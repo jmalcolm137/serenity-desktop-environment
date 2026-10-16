@@ -150,6 +150,10 @@ SAFE_COMPOSITOR="${SDE_SESSION_COMPOSITOR_SAFE:-}"
 HEARTBEAT_FILE="${SDE_SESSION_HEARTBEAT_FILE:-${XDG_RUNTIME_DIR:-/tmp}/sde-heartbeat-$SESSION_DISPLAY}"
 # The compositor (and its clients) inherit this and touch the file each second.
 export SDE_HEARTBEAT_FILE="$HEARTBEAT_FILE"
+# Left by the watchdog when it stops the compositor. The compositor shuts down
+# cleanly on SIGTERM and exits 0, which on its own means "the user quit"; this
+# marks the exit as the watchdog's, so the main loop restarts it instead.
+WATCHDOG_MARK="${XDG_RUNTIME_DIR:-/tmp}/sde-watchdog-$SESSION_DISPLAY.$$"
 
 # Idle-to-lock policy (R4.1/R4.2): if SDE_SESSION_IDLE_SECONDS > 0, run the
 # portable sde-idle daemon to lock after that many idle seconds. sde-idle is a
@@ -289,6 +293,7 @@ watch_compositor_hang() {
         esac
         if [ "$((now - beat))" -gt "$WATCHDOG_SECONDS" ]; then
             echo "SDE session: compositor heartbeat stale (${beat}s, now ${now}s > ${WATCHDOG_SECONDS}s); restarting" >&2
+            : > "$WATCHDOG_MARK"
             kill -TERM "$pid" 2>/dev/null || true
             sleep 2
             kill -KILL "$pid" 2>/dev/null || true
@@ -461,8 +466,15 @@ while :; do
     fi
 
     if [ "$stopping" -eq 1 ]; then
+        rm -f "$WATCHDOG_MARK"
         echo "SDE session: stopping"
         break
+    fi
+    # The watchdog stopped it: a restart, even if the compositor managed a clean
+    # (status 0) shutdown on the way out.
+    if [ -e "$WATCHDOG_MARK" ]; then
+        rm -f "$WATCHDOG_MARK"
+        [ "$status" -eq 0 ] && status=1
     fi
     if [ "$status" -eq 0 ]; then
         echo "SDE session: compositor exited; stopping"

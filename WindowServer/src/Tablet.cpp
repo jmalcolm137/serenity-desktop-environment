@@ -251,3 +251,11 @@ void initialize_tablet(Server& server)
     server.tablet.tool_button.notify = tablet_tool_button;
     wl_signal_add(&server.cursor->events.tablet_tool_button, &server.tablet.tool_button);
 }
+
+void finish_tablet(Server& server)
+{
+    remove_listener(server.tablet.tool_axis);
+    remove_listener(server.tablet.tool_proximity);
+    remove_listener(server.tablet.tool_tip);
+    remove_listener(server.tablet.tool_button);
+}

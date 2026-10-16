@@ -29,3 +29,6 @@ void handle_touch_cancel(Server& server);
 void dismiss_fragile_windows(Server& server, StringView reason);
 
 void initialize_pointer(Server&);
+
+// Unhook the listeners initialize wired, before the objects they listen on go.
+void finish_pointer(Server&);

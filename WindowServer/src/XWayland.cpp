@@ -200,6 +200,14 @@ static void x11_surface_unmap(wl_listener* listener, void*)
         WindowManager::emit_window_state(*toplevel);
 }
 
+static void x11_scene_destroy(wl_listener* listener, void*)
+{
+    X11Toplevel* toplevel = nullptr;
+    toplevel = wl_container_of(listener, toplevel, scene_destroy);
+    remove_listener(toplevel->scene_destroy);
+    toplevel->scene = nullptr;
+}
+
 static void x11_surface_associate(wl_listener* listener, void*)
 {
     X11Toplevel* toplevel = nullptr;
@@ -215,6 +223,11 @@ static void x11_surface_associate(wl_listener* listener, void*)
         toplevel->surface_listeners_attached = false;
     }
     toplevel->scene = wlr_scene_surface_create(toplevel->scene_tree, xsurface->surface);
+    remove_listener(toplevel->scene_destroy);
+    if (toplevel->scene) {
+        toplevel->scene_destroy.notify = x11_scene_destroy;
+        wl_signal_add(&toplevel->scene->buffer->node.events.destroy, &toplevel->scene_destroy);
+    }
     toplevel->surface_map.notify = x11_surface_map;
     wl_signal_add(&xsurface->surface->events.map, &toplevel->surface_map);
     toplevel->surface_unmap.notify = x11_surface_unmap;
@@ -235,10 +248,12 @@ static void x11_surface_dissociate(wl_listener* listener, void*)
         toplevel->surface_listeners_attached = false;
         toplevel->listened_surface = nullptr;
     }
-    if (toplevel->scene) {
+    // When the wl_surface itself is being destroyed first (Xwayland's Wayland
+    // connection closing while its window manager is still up, as at shutdown),
+    // wlroots has already destroyed the scene surface and x11_scene_destroy()
+    // cleared `scene`; destroying it again here was a use-after-free.
+    if (toplevel->scene)
         wlr_scene_node_destroy(&toplevel->scene->buffer->node);
-        toplevel->scene = nullptr;
-    }
 }
 
 static void x11_surface_destroy(wl_listener* listener, void*)
@@ -688,5 +703,17 @@ void initialize_xwayland(Server& server)
         } else {
             warnln("WindowServer: could not create Xwayland");
         }
+    }
+}
+
+void finish_xwayland(Server& server)
+{
+    remove_listener(server.xwayland.new_surface);
+    remove_listener(server.xwayland.ready);
+    // The X server and its windows go first, while the scene they draw into and
+    // the seat they take focus from still exist.
+    if (server.xwayland.wlr) {
+        wlr_xwayland_destroy(server.xwayland.wlr);
+        server.xwayland.wlr = nullptr;
     }
 }

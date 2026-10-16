@@ -134,3 +134,11 @@ void initialize_drag_and_drop(Server& server)
     server.drag.start.notify = seat_start_drag;
     wl_signal_add(&server.seat->events.start_drag, &server.drag.start);
 }
+
+void finish_drag_and_drop(Server& server)
+{
+    remove_listener(server.drag.request_start);
+    remove_listener(server.drag.start);
+    remove_listener(server.drag.destroy);
+    remove_listener(server.drag.icon_destroy);
+}

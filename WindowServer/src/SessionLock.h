@@ -15,3 +15,5 @@ void reconfigure_lock_surface(Server& server, wlr_output* output);
 // Whether a session lock is up: input then goes only to the lock surfaces.
 bool session_locked(Server const& server);
 void initialize_session_lock(Server&);
+// Unhook the listeners initialize wired, before the objects they listen on go.
+void finish_session_lock(Server&);

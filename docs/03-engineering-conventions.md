@@ -143,10 +143,10 @@ the script fails part-way:
 
 - `kill` every background process it started (compositor, services, clients);
 - `rm -rf` its temp dir;
-- **unlink any Wayland/compositor socket it created.** Wayland does not remove a
-  compositor's socket on shutdown, and a compositor that is `kill`ed (SIGTERM)
-  never runs its own cleanup, so a socket left in `$XDG_RUNTIME_DIR` survives the
-  run forever. A script that starts `WindowServer -n "$SOCK"` must include, in its
+- **unlink any Wayland/compositor socket it created.** The compositor removes its
+  socket when it shuts down cleanly (SIGTERM, SIGINT or Alt+Escape run its
+  teardown), but one that is killed (SIGKILL, a timeout's kill, a crash) never
+  does, so a socket left in `$XDG_RUNTIME_DIR` survives the run forever. A script that starts `WindowServer -n "$SOCK"` must include, in its
   trap, something like
   `rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$${,.lock}` (the run's own
   `$$`-suffixed sockets and their lock files).

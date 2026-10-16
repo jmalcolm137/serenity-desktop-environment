@@ -385,3 +385,10 @@ void initialize_input_devices(Server& server)
     server.input.pointer_gestures = wlr_pointer_gestures_v1_create(server.display);
     server.input.keyboard_shortcuts_inhibit = wlr_keyboard_shortcuts_inhibit_v1_create(server.display);
 }
+
+void finish_input_devices(Server& server)
+{
+    remove_listener(server.input.new_input);
+    remove_listener(server.input.new_virtual_keyboard);
+    remove_listener(server.input.new_virtual_pointer);
+}

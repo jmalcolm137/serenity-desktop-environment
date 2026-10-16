@@ -16,3 +16,6 @@ Gfx::Palette const& current_palette(Server&);
 void arrange_layers(Server& server, wlr_output* output);
 
 void initialize_layer_shell(Server&);
+
+// Unhook the listeners initialize wired, before the objects they listen on go.
+void finish_layer_shell(Server&);

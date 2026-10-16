@@ -18,3 +18,5 @@ void focus_window_at(Server& server, double lx, double ly);
 // surfaces have reserved theirs.
 void update_xwayland_workareas(Server& server);
 void initialize_xwayland(Server&);
+// Unhook the listeners initialize wired, before the objects they listen on go.
+void finish_xwayland(Server&);
