@@ -245,6 +245,24 @@ static void system_bell_ring(wl_listener* listener, void*)
     dbgln("WindowServer: xdg-system-bell ring (bell output not implemented)");
 }
 
+wlr_foreign_toplevel_handle_v1* create_foreign_toplevel_handle(Server& server)
+{
+    if (!server.interop.foreign_toplevel_manager)
+        return nullptr;
+    return wlr_foreign_toplevel_handle_v1_create(server.interop.foreign_toplevel_manager);
+}
+
+wlr_ext_foreign_toplevel_handle_v1* create_ext_foreign_toplevel_handle(Server& server, char const* title, char const* app_id)
+{
+    if (!server.interop.ext_foreign_toplevel_list)
+        return nullptr;
+    wlr_ext_foreign_toplevel_handle_v1_state state {
+        .title = title ? title : "",
+        .app_id = app_id ? app_id : "",
+    };
+    return wlr_ext_foreign_toplevel_handle_v1_create(server.interop.ext_foreign_toplevel_list, &state);
+}
+
 void initialize_interop(Server& server)
 {
     server.interop.foreign_toplevel_manager = wlr_foreign_toplevel_manager_v1_create(server.display);

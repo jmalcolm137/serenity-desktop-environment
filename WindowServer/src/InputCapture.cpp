@@ -30,7 +30,7 @@
 #include <unistd.h>
 
 #include "Config.h"
-#include "Model.h"
+#include "Server.h"
 
 extern "C" {
 #include <wayland-server-core.h>

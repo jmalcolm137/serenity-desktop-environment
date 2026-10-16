@@ -6,6 +6,7 @@
 
 #include "Compositor.h"
 #include "DragAndDrop.h"
+#include "Pointer.h"
 
 #include "Wlroots.h"
 
@@ -69,8 +70,8 @@ static void seat_start_drag(wl_listener* listener, void* data)
     server->drag.target = nullptr;
     server->drag.destroy.notify = drag_destroyed;
     wl_signal_add(&drag->events.destroy, &server->drag.destroy);
-    if (drag->icon && drag->icon->surface && server->drag.icon_tree) {
-        auto* scene = wlr_scene_surface_create(server->drag.icon_tree, drag->icon->surface);
+    if (drag->icon && drag->icon->surface && server->drag_icon_tree) {
+        auto* scene = wlr_scene_surface_create(server->drag_icon_tree, drag->icon->surface);
         server->drag.icon_node = &scene->buffer->node;
         wlr_scene_node_set_position(server->drag.icon_node, static_cast<int>(server->cursor->x), static_cast<int>(server->cursor->y));
         server->drag.icon_destroy.notify = drag_icon_destroyed;
@@ -95,6 +96,34 @@ static void seat_request_start_drag(wl_listener* listener, void* data)
     } else if (event->drag->source) {
         wlr_data_source_destroy(event->drag->source);
     }
+}
+
+bool drag_motion(Server& server, uint32_t time)
+{
+    if (!server.drag.active)
+        return false;
+    double dx = 0;
+    double dy = 0;
+    wlr_surface* target = nullptr;
+    toplevel_at(server, server.cursor->x, server.cursor->y, &target, &dx, &dy);
+    if (target != server.drag.target) {
+        server.drag.target = target;
+        if (target)
+            wlr_seat_pointer_notify_enter(server.seat, target, dx, dy);
+        else
+            wlr_seat_pointer_clear_focus(server.seat);
+    } else if (target) {
+        wlr_seat_pointer_notify_motion(server.seat, time, dx, dy);
+    }
+    if (server.drag.icon_node)
+        wlr_scene_node_set_position(server.drag.icon_node, static_cast<int>(server.cursor->x), static_cast<int>(server.cursor->y));
+    return true;
+}
+
+void move_drag_icon(Server& server, double lx, double ly)
+{
+    if (server.drag.active && server.drag.icon_node)
+        wlr_scene_node_set_position(server.drag.icon_node, static_cast<int>(lx), static_cast<int>(ly));
 }
 
 void initialize_drag_and_drop(Server& server)

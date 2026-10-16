@@ -459,8 +459,8 @@ void handle_frame_release(Server& server, uint32_t)
         return;
     }
 
-    if (server.grab.mode == CursorMode::Move && server.frame_press.double_click_pending) {
-        if (auto* toplevel = server.grab.toplevel)
+    if (server.frame_press.double_click_pending) {
+        if (auto* toplevel = moving_toplevel(server))
             toplevel_toggle_maximized(*toplevel);
     }
     server.frame_press.double_click_pending = false;

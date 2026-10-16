@@ -14,4 +14,7 @@ void focus_x11_toplevel(Server& server, X11Toplevel* toplevel);
 wlr_surface* window_surface_at(Server& server, double lx, double ly, double* sx, double* sy);
 void focus_window_at(Server& server, double lx, double ly);
 
+// Tell the X server the usable area(s) (_NET_WORKAREA), after the layer
+// surfaces have reserved theirs.
+void update_xwayland_workareas(Server& server);
 void initialize_xwayland(Server&);

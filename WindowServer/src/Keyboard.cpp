@@ -296,7 +296,7 @@ void keyboard_key(wl_listener* listener, void* data)
         return;
 
     // While the session is locked, keys go to the lock surface, not the shell.
-    if (server.lock.locked) {
+    if (session_locked(server)) {
         if (auto* lock = lock_surface_at_cursor(server)) {
             wlr_seat_set_keyboard(server.seat, keyboard->keyboard);
             wlr_seat_keyboard_notify_enter(server.seat, lock->lock_surface->surface, keyboard->keyboard->keycodes, keyboard->keyboard->num_keycodes, &keyboard->keyboard->modifiers);
@@ -400,6 +400,19 @@ void update_seat_capabilities(Server& server)
     if (!server.input.touch_devices.is_empty() || server.input.virtual_touch_count > 0)
         capabilities |= WL_SEAT_CAPABILITY_TOUCH;
     wlr_seat_set_capabilities(server.seat, capabilities);
+}
+
+void add_virtual_touch_device(Server& server)
+{
+    ++server.input.virtual_touch_count;
+    update_seat_capabilities(server);
+}
+
+void remove_virtual_touch_device(Server& server)
+{
+    if (server.input.virtual_touch_count > 0)
+        --server.input.virtual_touch_count;
+    update_seat_capabilities(server);
 }
 
 void keyboard_destroy(wl_listener* listener, void*)

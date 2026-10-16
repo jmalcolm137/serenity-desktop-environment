@@ -19,7 +19,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "Model.h"
+#include "Server.h"
 
 extern "C" {
 #include <wayland-server-core.h>

@@ -329,22 +329,9 @@ static void server_new_input(wl_listener* listener, void* data)
         // lazily when the first event for a tool arrives.
         wlr_cursor_attach_input_device(server->cursor, device);
         break;
-    case WLR_INPUT_DEVICE_TABLET_PAD: {
-        auto pad = make<TabletPad>();
-        pad->server = server;
-        pad->pad = wlr_tablet_pad_from_input_device(device);
-        pad->v2_pad = server->tablet.manager ? wlr_tablet_pad_create(server->tablet.manager, server->seat, device) : nullptr;
-        pad->button.notify = tablet_pad_button;
-        wl_signal_add(&pad->pad->events.button, &pad->button);
-        pad->ring.notify = tablet_pad_ring;
-        wl_signal_add(&pad->pad->events.ring, &pad->ring);
-        pad->strip.notify = tablet_pad_strip;
-        wl_signal_add(&pad->pad->events.strip, &pad->strip);
-        pad->destroy.notify = tablet_pad_destroy;
-        wl_signal_add(&device->events.destroy, &pad->destroy);
-        server->tablet.pads.append(move(pad));
+    case WLR_INPUT_DEVICE_TABLET_PAD:
+        add_tablet_pad(*server, device);
         break;
-    }
     case WLR_INPUT_DEVICE_TOUCH:
         // Touch is routed through the cursor (touch_down/motion/up events), like
         // pointers; the compositor converts them to wlr_seat touch notifications.
@@ -395,7 +382,6 @@ void initialize_input_devices(Server& server)
     // R5 native-app glue: relative motion (sent from process_cursor_motion), touchpad
     // gestures (forwarded by the Pointer listeners) and keyboard-shortcuts-inhibit
     // (honoured in keyboard_key()).
-    server.input.relative_pointer_manager = wlr_relative_pointer_manager_v1_create(server.display);
     server.input.pointer_gestures = wlr_pointer_gestures_v1_create(server.display);
     server.input.keyboard_shortcuts_inhibit = wlr_keyboard_shortcuts_inhibit_v1_create(server.display);
 }

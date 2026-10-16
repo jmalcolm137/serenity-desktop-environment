@@ -39,7 +39,7 @@ void deactivate_other_windows(Server& server, Toplevel* keep_toplevel, X11Toplev
         WindowManager::emit_window_state(*other);
         dbgln("WindowServer: window '{}' deactivated", other->xdg_toplevel->title ? other->xdg_toplevel->title : "");
     }
-    for (auto& other : server.xwayland.toplevels) {
+    for (auto& other : server.x11_toplevels) {
         if (other.ptr() == keep_x11 || !other->frame_active)
             continue;
         other->frame_active = false;

@@ -65,7 +65,7 @@ sway's `sway/input/text_input.c` (the reference compositor implementation):
 | Where | What |
 |---|---|
 | `WindowServer/src/InputMethod.{h,cpp}` | the whole relay: managers, focus, activation, apply-back, keyboard grab, candidate popups. |
-| `WindowServer/src/Model.h` | `TextInput`, `InputMethodClient`, `InputPopup`; `ImeState`, held as `Server::ime` (`text_input_manager`, `input_method_manager`, `text_inputs`, `input_methods`, `input_popups`, `input_method`, `popup_tree`). |
+| `WindowServer/src/Model.h`, `ImeState.h` | `TextInput`, `InputMethodClient`, `InputPopup` (`Model.h`); `ImeState` (`ImeState.h`), held as `Server::ime` (`text_input_manager`, `input_method_manager`, `text_inputs`, `input_methods`, `input_popups`, `input_method`, `popup_tree`). |
 | `WindowServer/src/main.cpp`, `Focus.cpp`, `Keyboard.cpp` | `InputMethod::initialize(server)` in `initialize()`; `InputMethod::set_focus` at the focus sites (`Focus.cpp`, `XWayland.cpp`, `LayerShell.cpp`); `InputMethod::handle_key` / `handle_modifiers` in the keyboard path (`Keyboard.cpp`). |
 | `WindowServer/src/wlr_input_method_v2_cxx.h` | shim: `<wlr/types/wlr_input_method_v2.h>` has a struct member literally named `delete`, so it cannot be compiled as C++; rename it for the include (only place the header is pulled in). |
 

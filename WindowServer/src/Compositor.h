@@ -8,7 +8,9 @@
 
 // What every compositor subsystem shares: the model, the config, the log level
 // and a few process-wide values. Each subsystem's entry points are in its own
-// header, and its state is a group of Server (see Model.h).
+// header, and its state is a group of Server defined in its own state header
+// (InputState.h, PointerState.h, XWaylandState.h, ...; see Server.h). Only the
+// owning subsystem touches a group's fields: others call its functions.
 //
 //   main.cpp              startup: backend, renderer, scene, seat; initialize()
 //                         calls each subsystem's initialize_*()
@@ -43,7 +45,7 @@
 #include <LibGfx/Forward.h>
 
 #include "Config.h"
-#include "Model.h"
+#include "Server.h"
 
 #include <xkbcommon/xkbcommon.h>
 

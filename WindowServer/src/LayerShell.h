@@ -13,7 +13,6 @@
 Output* output_for(Server& server, wlr_output* output);
 Gfx::IntRect primary_usable_area(Server& server);
 Gfx::Palette const& current_palette(Server&);
-void update_xwayland_workareas(Server& server);
 void arrange_layers(Server& server, wlr_output* output);
 
 void initialize_layer_shell(Server&);
