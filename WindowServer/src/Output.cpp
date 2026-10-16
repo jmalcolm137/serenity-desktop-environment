@@ -447,3 +447,8 @@ void initialize_outputs(Server& server)
     server.new_output.notify = server_new_output;
     wl_signal_add(&server.backend->events.new_output, &server.new_output);
 }
+
+void finish_outputs(Server& server)
+{
+    remove_listener(server.new_output);
+}

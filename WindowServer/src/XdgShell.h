@@ -18,3 +18,6 @@ void toplevel_toggle_maximized(Toplevel& toplevel);
 void toplevel_toggle_minimized(Toplevel& toplevel);
 
 void initialize_xdg_shell(Server&);
+
+// Unhook the listeners initialize wired, before the objects they listen on go.
+void finish_xdg_shell(Server&);

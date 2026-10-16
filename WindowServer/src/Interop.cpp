@@ -299,3 +299,12 @@ void initialize_interop(Server& server)
     server.interop.xdg_activation_activate.notify = xdg_activation_activate;
     wl_signal_add(&server.interop.xdg_activation->events.request_activate, &server.interop.xdg_activation_activate);
 }
+
+void finish_interop(Server& server)
+{
+    remove_listener(server.interop.ext_workspace_commit);
+    remove_listener(server.interop.ext_toplevel_capture_request);
+    remove_listener(server.interop.xdg_activation_activate);
+    remove_listener(server.interop.toplevel_icon_set);
+    remove_listener(server.interop.system_bell_ring);
+}

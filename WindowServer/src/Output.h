@@ -14,3 +14,6 @@ int resolve_output_refresh(Config::OutputSettings const* saved);
 float resolve_output_scale(struct wlr_output* output, struct wlr_output_mode* mode, Config::OutputSettings const* saved);
 
 void initialize_outputs(Server&);
+
+// Unhook the listeners initialize wired, before the objects they listen on go.
+void finish_outputs(Server&);

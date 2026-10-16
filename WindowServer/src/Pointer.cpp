@@ -851,3 +851,22 @@ void initialize_pointer(Server& server)
     server.pointer.new_constraint.notify = new_pointer_constraint;
     wl_signal_add(&server.pointer.constraints->events.new_constraint, &server.pointer.new_constraint);
 }
+
+void finish_pointer(Server& server)
+{
+    remove_listener(server.pointer.motion);
+    remove_listener(server.pointer.motion_absolute);
+    remove_listener(server.pointer.button);
+    remove_listener(server.pointer.axis);
+    remove_listener(server.pointer.frame);
+    remove_listener(server.pointer.touch_down);
+    remove_listener(server.pointer.touch_motion);
+    remove_listener(server.pointer.touch_up);
+    remove_listener(server.pointer.touch_cancel);
+    remove_listener(server.pointer.seat_request_cursor);
+    remove_listener(server.pointer.seat_pointer_focus_change);
+    remove_listener(server.pointer.seat_request_set_selection);
+    remove_listener(server.pointer.seat_request_set_primary_selection);
+    remove_listener(server.pointer.new_constraint);
+    remove_listener(server.pointer.cursor_shape_request);
+}

@@ -231,6 +231,41 @@ static ErrorOr<void> initialize(Server& server)
     return { };
 }
 
+// Tear the compositor down in the reverse of initialize(). Clients go first, so
+// their surfaces and resources are released while everything they refer to still
+// exists. Then each subsystem unhooks its listeners: wlroots asserts that an
+// object's signals have no listeners left when it destroys the object, and a
+// handler must never run against a half-destroyed compositor. The backend goes
+// before the scene and the seat, because destroying it destroys the outputs and
+// input devices, whose own destroy handlers still use those.
+static void finish(Server& server)
+{
+    wl_display_destroy_clients(server.display);
+
+    InputMethod::finish(server);
+    finish_xwayland(server);
+    finish_drag_and_drop(server);
+    finish_tablet(server);
+    finish_pointer(server);
+    finish_input_devices(server);
+    finish_session_lock(server);
+    finish_idle(server);
+    finish_output_management(server);
+    finish_interop(server);
+    finish_layer_shell(server);
+    finish_xdg_shell(server);
+    finish_outputs(server);
+
+    wlr_backend_destroy(server.backend);
+    wlr_scene_node_destroy(&server.scene->tree.node);
+    wlr_xcursor_manager_destroy(server.cursor_manager);
+    wlr_cursor_destroy(server.cursor);
+    wlr_allocator_destroy(server.allocator);
+    wlr_renderer_destroy(server.renderer);
+    wl_display_destroy(server.display);
+    dbgln("WindowServer: shut down");
+}
+
 static ByteString add_socket(Server& server, ByteString const& requested)
 {
     if (!requested.is_empty()) {
@@ -668,8 +703,12 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
         perf_timer->start();
     }
 
+    // The session stops the compositor with SIGTERM (an interactive run with
+    // SIGINT): leave the loop and tear down in order rather than die mid-frame.
+    Core::EventLoop::register_signal(SIGTERM, [&loop](int) { loop.quit(0); });
+    Core::EventLoop::register_signal(SIGINT, [&loop](int) { loop.quit(0); });
+
     int result = loop.exec();
-    wl_display_destroy_clients(server->display);
-    wl_display_destroy(server->display);
+    finish(*server);
     return result;
 }

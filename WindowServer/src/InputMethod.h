@@ -24,6 +24,8 @@ namespace InputMethod {
 
 // Create the text-input-v3 and input-method-v2 globals and wire the managers.
 void initialize(Server& server);
+// Unhook the listeners initialize wired, before the objects they listen on go.
+void finish(Server& server);
 
 // The seat's keyboard focus changed (surface, or null when it was cleared).
 // Sends text_input_v3 enter/leave and re-targets the candidate popups.

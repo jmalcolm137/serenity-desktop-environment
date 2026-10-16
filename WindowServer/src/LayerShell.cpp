@@ -297,3 +297,8 @@ void initialize_layer_shell(Server& server)
     server.new_layer_surface.notify = server_new_layer_surface;
     wl_signal_add(&server.layer_shell->events.new_surface, &server.new_layer_surface);
 }
+
+void finish_layer_shell(Server& server)
+{
+    remove_listener(server.new_layer_surface);
+}

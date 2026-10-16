@@ -18,6 +18,7 @@
 #include "WindowMenu.h"
 #include "WindowSwitcher.h"
 
+#include <LibCore/EventLoop.h>
 #include <LibCore/Timer.h>
 
 #include <ctime>
@@ -90,7 +91,9 @@ static bool handle_keybinding(Server& server, xkb_keysym_t sym, uint32_t modifie
     if (modifiers & WLR_MODIFIER_ALT) {
         switch (sym) {
         case XKB_KEY_Escape:
-            wl_display_terminate(server.display);
+            // The compositor runs Core's event loop, not wl_display_run(), so
+            // wl_display_terminate() would not stop it.
+            Core::EventLoop::current().quit(0);
             return true;
         default:
             break;

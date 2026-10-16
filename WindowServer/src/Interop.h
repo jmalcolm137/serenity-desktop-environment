@@ -15,3 +15,5 @@ void on_workspace_changed(Server& server);
 wlr_foreign_toplevel_handle_v1* create_foreign_toplevel_handle(Server& server);
 wlr_ext_foreign_toplevel_handle_v1* create_ext_foreign_toplevel_handle(Server& server, char const* title, char const* app_id);
 void initialize_interop(Server&);
+// Unhook the listeners initialize wired, before the objects they listen on go.
+void finish_interop(Server&);

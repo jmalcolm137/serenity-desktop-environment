@@ -210,3 +210,11 @@ void initialize_session_lock(Server& server)
     server.lock.new_lock.notify = session_lock_new_lock;
     wl_signal_add(&server.lock.manager->events.new_lock, &server.lock.new_lock);
 }
+
+void finish_session_lock(Server& server)
+{
+    remove_listener(server.lock.new_lock);
+    remove_listener(server.lock.new_surface);
+    remove_listener(server.lock.unlock);
+    remove_listener(server.lock.destroy);
+}

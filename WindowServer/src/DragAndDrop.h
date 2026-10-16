@@ -17,3 +17,5 @@ bool drag_motion(Server& server, uint32_t time);
 // Keep the drag icon under a cursor that moved some other way (touch, tablet).
 void move_drag_icon(Server& server, double lx, double ly);
 void initialize_drag_and_drop(Server&);
+// Unhook the listeners initialize wired, before the objects they listen on go.
+void finish_drag_and_drop(Server&);

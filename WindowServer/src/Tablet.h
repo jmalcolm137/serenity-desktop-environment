@@ -20,3 +20,6 @@ void add_tablet_pad(Server& server, wlr_input_device* device);
 void forget_tablet_device(Server& server, wlr_tablet& tablet, wlr_tablet_tool& tool);
 
 void initialize_tablet(Server&);
+
+// Unhook the listeners initialize wired, before the objects they listen on go.
+void finish_tablet(Server&);

@@ -26,6 +26,16 @@
 #include "IdleState.h"
 #include "LockState.h"
 
+// Unhook a listener a subsystem may have wired. Subsystems only wire the
+// listeners for the globals they created, and wl_list_remove() leaves a removed
+// link null, so this is safe for a listener that was never added or is already
+// gone, and a finish_*() can unhook every listener its state holds.
+inline void remove_listener(wl_listener& listener)
+{
+    if (listener.link.next)
+        wl_list_remove(&listener.link);
+}
+
 struct Server {
     wl_display* display { nullptr };
     wlr_backend* backend { nullptr };
