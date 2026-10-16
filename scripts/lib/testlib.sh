@@ -106,6 +106,56 @@ sde_test_compositor() {
     }
 }
 
+# --- Cases ------------------------------------------------------------------
+#
+# Many tests run the same scenario several times with different configuration
+# (one WindowServer.ini per case). sde_test_case starts a fresh case — its own
+# runtime directory and socket, so cases cannot see each other — then write the
+# case's config into $CASE_RUNTIME, start the compositor with
+# sde_test_case_compositor, and read $CASE_RUNTIME/comp.log. sde_test_case_stop
+# ends the case's compositor; the next sde_test_case starts a new one.
+
+# sde_test_case <name>
+sde_test_case() {
+    sde_test_case_stop
+    SDE_TEST_CASE_NAME="${1:?sde_test_case needs a name}"
+    SDE_TEST_CASE_SERIAL=$((${SDE_TEST_CASE_SERIAL:-0} + 1))
+    CASE_RUNTIME="$RUNTIME/case-$SDE_TEST_CASE_SERIAL-$SDE_TEST_CASE_NAME"
+    mkdir -p "$CASE_RUNTIME"
+    CASE_SOCK="$SOCK-$SDE_TEST_CASE_NAME"
+    # The compositor reads these; a case must not inherit the previous one's.
+    export SDE_STATE_DIR="$CASE_RUNTIME"
+}
+
+# sde_test_case_compositor [extra environment assignments ...]
+#   Starts the case's compositor and waits for its socket. Extra arguments are
+#   environment assignments for this run (SDE_OUTPUT_SCALE=2, ...).
+sde_test_case_compositor() {
+    env -u WAYLAND_DISPLAY -u DISPLAY \
+        WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
+        SDE_OUTPUT_SCALE=1 \
+        SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SDE_TEST_SERENITY/Base/res}" \
+        LD_LIBRARY_PATH="$SDE_TEST_BUILD/lib" \
+        SDE_APP_BIN_DIR="$SDE_TEST_BUILD/bin" \
+        "$@" \
+        "$SDE_TEST_COMPOSITOR" -n "$CASE_SOCK" > "$CASE_RUNTIME/comp.log" 2>&1 &
+    SDE_TEST_COMPOSITOR_PID=$!
+    sde_test_wait_socket "$CASE_SOCK" "${SDE_TEST_SOCKET_TRIES:-80}" || {
+        echo "FAIL: case '$SDE_TEST_CASE_NAME': the compositor did not create $XDG_RUNTIME_DIR/$CASE_SOCK" >&2
+        tail -20 "$CASE_RUNTIME/comp.log" >&2 2>/dev/null || true
+        exit 1
+    }
+}
+
+# sde_test_case_stop: stop the running case's compositor (and its children).
+sde_test_case_stop() {
+    [[ -z "${SDE_TEST_COMPOSITOR_PID:-}" ]] && return 0
+    pkill -P "$SDE_TEST_COMPOSITOR_PID" 2>/dev/null || true
+    kill -TERM -- "-$SDE_TEST_COMPOSITOR_PID" 2>/dev/null || kill "$SDE_TEST_COMPOSITOR_PID" 2>/dev/null || true
+    wait "$SDE_TEST_COMPOSITOR_PID" 2>/dev/null || true
+    SDE_TEST_COMPOSITOR_PID=""
+}
+
 # sde_test_wait_socket <socket> [tenths-of-a-second]
 sde_test_wait_socket() {
     local socket="$1" tries="${2:-80}"
@@ -148,6 +198,7 @@ sde_test_kill() {
 }
 
 sde_test_cleanup() {
+    sde_test_case_stop
     local pid
     for pid in ${SDE_TEST_CLIENT_PIDS[@]+"${SDE_TEST_CLIENT_PIDS[@]}"}; do
         kill "$pid" 2>/dev/null || true
@@ -162,6 +213,7 @@ sde_test_cleanup() {
         SDE_TEST_COMPOSITOR_PID=""
     fi
     rm -f "$XDG_RUNTIME_DIR/$SOCK"* 2>/dev/null || true
+    [[ -n "${SOCK:-}" ]] && rm -f "$XDG_RUNTIME_DIR/$SOCK"* 2>/dev/null || true
     [[ -n "${RUNTIME:-}" ]] && rm -rf "$RUNTIME"
 }
 
