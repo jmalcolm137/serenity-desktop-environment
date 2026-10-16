@@ -39,7 +39,7 @@ cc -O2 -I "$TOOLS_BUILD" \
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-tmouse.XXXXXX")"
 chmod 700 "$RUNTIME"
 export SDE_STATE_DIR="$RUNTIME"
-trap 'rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
+trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
 
 # A mouse-reporting "app": enable press/release + any-motion + SGR, then capture
 # everything the terminal sends on stdin. (The Terminal only forwards a few env
@@ -60,7 +60,7 @@ env -u WAYLAND_DISPLAY -u DISPLAY \
     LD_LIBRARY_PATH="$BUILD/lib" \
     "$COMP" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
 COMP_PID=$!
-trap 'kill "$COMP_PID" 2>/dev/null || true; rm -rf "$RUNTIME"' EXIT
+trap 'kill "$COMP_PID" 2>/dev/null || true; for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"' EXIT
 for _ in $(seq 1 80); do
     [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SOCK" ]] && break
     sleep 0.1

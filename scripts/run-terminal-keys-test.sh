@@ -52,7 +52,7 @@ TERM_PID=""
 cleanup() {
     [[ -n "$TERM_PID" ]] && kill "$TERM_PID" 2>/dev/null || true
     [[ -n "$COMP_PID" ]] && kill "$COMP_PID" 2>/dev/null || true
-    rm -rf "$RUNTIME"
+    for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"
 }
 trap cleanup EXIT
 

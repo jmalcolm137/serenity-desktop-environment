@@ -23,7 +23,7 @@ TEST="$SDE_ROOT/build/test/libwm-setting-test"
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-setting.XXXXXX")"
 chmod 700 "$RUNTIME"
-trap 'rm -rf "$RUNTIME"' EXIT
+trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"' EXIT
 
 SOCK="sde-setting-$$"
 setsid env -u WAYLAND_DISPLAY -u DISPLAY \

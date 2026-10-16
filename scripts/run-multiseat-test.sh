@@ -24,7 +24,7 @@ RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-multiseat.XXXXXX")"
 export XDG_RUNTIME_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
 # The supervisor's /bin-shadow helpers land in a (seat-namespaced) runtime dir.
-trap 'rm -rf "$RUNTIME"; rm -f "$RUNTIME"/sde-session*.pid 2>/dev/null || true' EXIT
+trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"; rm -f "$RUNTIME"/sde-session*.pid 2>/dev/null || true' EXIT
 
 fail=0
 check() { if grep -qF "$1" <<<"$2"; then echo "  ok: $1"; else echo "  MISSING ($2): $1"; fail=1; fi; return 0; }

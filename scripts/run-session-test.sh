@@ -18,7 +18,7 @@ POWER="$SDE_ROOT/scripts/sde-power.sh"
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-session.XXXXXX")"
 chmod 700 "$RUNTIME"
-trap 'rm -rf "$RUNTIME"' EXIT
+trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"' EXIT
 
 # Keep the session's /bin-shadow helpers inside the test runtime dir.
 export SDE_SESSION_BIN_DIR="$RUNTIME/sbin"

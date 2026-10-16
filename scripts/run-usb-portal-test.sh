@@ -19,7 +19,7 @@ PORTAL="$SDE_ROOT/build/tools/xdg-desktop-portal-serenity"
 
 if [ "${1:-}" != "--inner" ]; then
     RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-usb.XXXXXX")"
-    trap 'rm -rf "$RUNTIME"' EXIT
+    trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"' EXIT
     export SDE_USB_TEST_RUNTIME="$RUNTIME"
     # Isolate the freedesktop permission store's database (it lands in
     # XDG_DATA_HOME) inside the test runtime, so the store the backend writes to is

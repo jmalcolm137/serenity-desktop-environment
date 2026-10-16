@@ -39,7 +39,7 @@ cc -O2 -I "$VT_BUILD" \
 
 if [ "${1:-}" != "--inner" ]; then
     RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-icportal.XXXXXX")"
-    trap 'rm -rf "$RUNTIME"' EXIT
+    trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"' EXIT
     export SDE_PORTAL_TEST_RUNTIME="$RUNTIME"
     exec dbus-run-session -- "$0" --inner
 fi
@@ -75,7 +75,7 @@ cleanup() {
     kill "$COMP_PID" 2>/dev/null || true
     # D8 (docs/03): unlink the compositor socket(s) this run created.
     rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true
-    rm -rf "$RUNTIME"
+    for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"
 }
 trap cleanup EXIT
 for _ in $(seq 1 80); do

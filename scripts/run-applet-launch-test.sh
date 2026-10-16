@@ -41,7 +41,7 @@ stop_compositor() {
     wait "$COMP_PID" 2>/dev/null || true
     COMP_PID=""
 }
-trap 'stop_compositor; rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
+trap 'stop_compositor; for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
 
 # The Taskbar and the ResourceGraph applet; the applet's click handler spawns
 # /bin/SystemMonitor, resolved via SDE_APP_BIN_DIR (the port's bin dir).

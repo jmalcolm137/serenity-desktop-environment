@@ -36,7 +36,7 @@ RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-crashreporter.XXXXXX")"
 chmod 700 "$RUNTIME"
 export SDE_STATE_DIR="$RUNTIME"
 SOCK="sde-crashreporter-$$"
-trap 'rm -rf "$RUNTIME"; rm -f "$XDG_RUNTIME_DIR"/$SOCK* 2>/dev/null || true' EXIT
+trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"; rm -f "$XDG_RUNTIME_DIR"/$SOCK* 2>/dev/null || true' EXIT
 
 cat > "$RUNTIME/crash.c" <<'C'
 #include <stdio.h>

@@ -25,7 +25,7 @@ echo "== building prerequisites =="
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-services.XXXXXX")"
 chmod 700 "$RUNTIME"
-trap 'rm -rf "$RUNTIME"' EXIT
+trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"' EXIT
 
 # A private per-session runtime directory (see the SDE_SESSION_DIR seam), so the
 # fixed "/tmp/session/0/portal/..." paths of a live session are left alone.
