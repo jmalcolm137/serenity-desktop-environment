@@ -111,6 +111,7 @@ add_executable(WindowServer
     src/AppletManager.cpp
     src/Compositor.cpp
     src/Config.cpp
+    src/ConfigRules.cpp
     src/CursorHighlight.cpp
     src/DragAndDrop.cpp
     src/Focus.cpp

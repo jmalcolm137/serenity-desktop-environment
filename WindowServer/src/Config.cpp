@@ -5,6 +5,7 @@
  */
 
 #include "Config.h"
+#include "ConfigRules.h"
 
 #include <AK/Array.h>
 #include <AK/Format.h>
@@ -86,44 +87,12 @@ static constexpr BindingSpec s_binding_specs[] = {
     { "Lock"sv, Action::Lock, "Super+L"sv },
 };
 
-// "Ctrl+Alt+Left" -> (XKB_KEY_Left, ModCtrl|ModAlt). Returns false if it does not
-// name a non-empty modifier set and exactly one keysym.
-static bool parse_combo(StringView combo, u32& keysym, u32& modifiers)
-{
-    keysym = 0;
-    modifiers = 0;
-    bool saw_key = false;
-    for (auto part : combo.split_view('+')) {
-        auto token = part.trim_whitespace();
-        if (token.is_empty())
-            continue;
-        if (token == "Ctrl"sv)
-            modifiers |= ModCtrl;
-        else if (token == "Alt"sv)
-            modifiers |= ModAlt;
-        else if (token == "Shift"sv)
-            modifiers |= ModShift;
-        else if (token == "Super"sv || token == "Logo"sv || token == "Meta"sv)
-            modifiers |= ModSuper;
-        else {
-            if (saw_key)
-                return false;
-            auto key_name = token.to_byte_string();
-            keysym = xkb_keysym_from_name(key_name.characters(), XKB_KEYSYM_CASE_INSENSITIVE);
-            if (keysym == XKB_KEY_NoSymbol)
-                return false;
-            saw_key = true;
-        }
-    }
-    return saw_key && modifiers != 0;
-}
-
 static void add_bindings(Vector<Binding>& out, Action action, StringView combos)
 {
     for (auto combo : combos.split_view(',')) {
         u32 keysym = 0;
         u32 modifiers = 0;
-        if (parse_combo(combo.trim_whitespace(), keysym, modifiers))
+        if (ConfigRules::parse_key_combo(combo.trim_whitespace(), keysym, modifiers))
             out.append({ action, keysym, modifiers });
     }
 }
@@ -228,13 +197,10 @@ static Optional<double> read_scale(RefPtr<Core::ConfigFile> const& user, RefPtr<
     auto raw = read_entry(user, defaults, group, key);
     if (raw.is_empty())
         return {};
-    char* end = nullptr;
-    double const value = strtod(raw.characters(), &end);
-    if (end == raw.characters() || value < 0.0 || (value != 0.0 && (value < 0.5 || value > 4.0))) {
-        g_diagnostics.append(ByteString::formatted("[{}] {}='{}' invalid (expected 0 for auto, or 0.5-4.0)", group, key, raw));
-        return {};
-    }
-    return value;
+    if (auto value = ConfigRules::parse_output_scale(raw); value.has_value())
+        return value;
+    g_diagnostics.append(ByteString::formatted("[{}] {}='{}' invalid (expected 0 for auto, or 0.5-4.0)", group, key, raw));
+    return {};
 }
 
 static Optional<bool> read_bool(RefPtr<Core::ConfigFile> const& user, RefPtr<Core::ConfigFile> const& defaults, StringView group, StringView key)
@@ -242,11 +208,8 @@ static Optional<bool> read_bool(RefPtr<Core::ConfigFile> const& user, RefPtr<Cor
     auto raw = read_entry(user, defaults, group, key);
     if (raw.is_empty())
         return {};
-    auto lower = raw.to_lowercase();
-    if (lower == "true" || lower == "1" || lower == "yes" || lower == "on")
-        return true;
-    if (lower == "false" || lower == "0" || lower == "no" || lower == "off")
-        return false;
+    if (auto value = ConfigRules::parse_bool(raw); value.has_value())
+        return value;
     g_diagnostics.append(ByteString::formatted("[{}] {}='{}' invalid (expected true/false)", group, key, raw));
     return {};
 }
@@ -585,11 +548,9 @@ void load_input()
         input.keyboard.repeat_rate = file.read_num_entry<int>("Keyboard"sv, "RepeatRate"sv, 25);
     }
     // Keep the values within the schema's ranges ([Input] in WindowServer.ini).
-    if (g_input_ranges.accel_min <= g_input_ranges.accel_max)
-        input.mouse.acceleration = clamp(input.mouse.acceleration, g_input_ranges.accel_min, g_input_ranges.accel_max);
-    input.mouse.scroll_step_size = max(input.mouse.scroll_step_size, g_input_ranges.scroll_step_min);
-    if (g_input_ranges.double_click_min <= g_input_ranges.double_click_max)
-        input.mouse.double_click_speed = clamp(input.mouse.double_click_speed, g_input_ranges.double_click_min, g_input_ranges.double_click_max);
+    input.mouse.acceleration = ConfigRules::clamp_acceleration(input.mouse.acceleration, g_input_ranges);
+    input.mouse.scroll_step_size = ConfigRules::clamp_scroll_step(input.mouse.scroll_step_size, g_input_ranges);
+    input.mouse.double_click_speed = ConfigRules::clamp_double_click_speed(input.mouse.double_click_speed, g_input_ranges);
     g_input = move(input);
     dbgln("WindowServer: config: input accel {}, scroll step {}, double-click {}ms, buttons-switched {}, natural-scroll {}, tap {}, left-handed {}, layouts '{}'",
         g_input.mouse.acceleration, g_input.mouse.scroll_step_size, g_input.mouse.double_click_speed,
@@ -683,7 +644,7 @@ void load_global_shortcuts()
             continue;
         u32 keysym = 0;
         u32 modifiers = 0;
-        if (!parse_combo(trigger, keysym, modifiers))
+        if (!ConfigRules::parse_key_combo(trigger, keysym, modifiers))
             continue;
         GlobalShortcut shortcut;
         shortcut.keysym = keysym;
