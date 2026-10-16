@@ -75,4 +75,37 @@ bool switcher_lists_window(SwitcherWindow const& window, bool current_workspace_
 // indicator). An empty or single-stack list does not.
 bool switcher_spans_stacks(Vector<SwitcherWindow> const& windows);
 
+// --- the window-stack overlay and transition (R3) ---------------------------
+
+// The metrics of the stack-switch overlay: a grid of one cell per stack, padded
+// and inset from the usable area.
+struct StackOverlayMetrics {
+    int cell_width { 40 };
+    int cell_height { 30 };
+    int padding { 8 };
+    int margin { 16 };
+};
+
+// The overlay's frame, centred on the usable area: the grid plus its padding, and
+// the margin around that.
+Gfx::IntRect stack_overlay_frame(Gfx::IntRect const& usable_area, int rows, int columns, StackOverlayMetrics const& metrics = {});
+
+// The rect of one cell of the grid, in the overlay's own coordinate space (what
+// the painter draws in: 0,0 is the frame's top-left corner, so add the frame's
+// location to place it on screen).
+Gfx::IntRect stack_overlay_cell(int rows, int columns, int row, int column, StackOverlayMetrics const& metrics = {});
+
+// How far the outgoing and incoming stacks are offset while switching from one
+// stack to another, so the incoming stack slides in from the side it came from
+// (SerenityOS's convention: moving right slides the old stack left). {0,0} when
+// the stack did not change, which is the caller's cue that there is nothing to
+// animate.
+Gfx::IntPoint stack_transition_delta(u32 new_row, u32 new_column, u32 old_row, u32 old_column, Gfx::IntSize area);
+
+// The transition's eased progress for a linear 0..1 time, and the integer
+// position that progress puts a coordinate (the rounding is part of the motion:
+// it is what makes the step discrete rather than accumulating float error).
+float stack_transition_eased(float t);
+int stack_transition_lerp(int from, int to, float eased);
+
 }
