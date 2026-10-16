@@ -89,8 +89,10 @@ static Vector<Applet> build_layout(Server& server)
     if (g_hooks.applet_area_size_changed && area_size != s_last_emitted) {
         s_last_emitted = area_size;
         ByteString names;
-        for (auto* applet : applets)
-            names = ByteString::formatted("{}{},", names, applet->applet_name);
+        // In placement order, which is the configured order: the log line is what
+        // the tests read to see that [Applet] Order was honoured.
+        for (auto const& applet : layout)
+            names = ByteString::formatted("{}{},", names, applet.surface->applet_name);
         dbgln("AppletManager: applet area size {}x{} ({} applets: {})", area_size.width(), area_size.height(), applets.size(), names);
         g_hooks.applet_area_size_changed(server, area_size);
     }
