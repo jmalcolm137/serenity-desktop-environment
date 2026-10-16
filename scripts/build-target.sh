@@ -16,15 +16,23 @@ set -euo pipefail
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-$SDE_ROOT/build}"
 JOBS="${JOBS:-$(nproc)}"
+# The layout: the CI image exports these, a developer's checkout falls back to the
+# sibling directories. Resolved once, up front, so nothing below has to guess.
+LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
+SERENITY_SRC="${SERENITY_SRC:-$LIBGUI_WAYLAND_ROOT/serenity}"
+LAGOM_BUILD_DIR="${SERENITY_BUILD_DIR:-${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}}"
 WLROOTS_SRC="${WLROOTS_SRC:-$SDE_ROOT/third_party/wlroots}"
 
 if [[ ! -f "$WLROOTS_SRC/install/lib/pkgconfig/wlroots-0.20.pc" ]]; then
     "$SDE_ROOT/scripts/fetch-wlroots.sh"
 fi
 
-# Wayland protocol headers come from the wlroots checkout; pkg-config from its
-# install tree. Both are read by the top-level CMakeLists.txt.
+# Pass the layout to CMake, which otherwise knows only what is next to this
+# repository and would look for libgui-wayland in the wrong place.
 cmake -S "$SDE_ROOT" -B "$BUILD_DIR" -GNinja \
+    -DSDE_LIBGUI_WAYLAND_ROOT="$LIBGUI_WAYLAND_ROOT" \
+    -DSDE_SERENITY_SRC="$SERENITY_SRC" \
+    -DSDE_LAGOM_BUILD_DIR="$LAGOM_BUILD_DIR" \
     -DSDE_WLROOTS_SRC="$WLROOTS_SRC" \
     ${SDE_BUILD_APPS:+-DSDE_BUILD_APPS="$SDE_BUILD_APPS"} >/dev/null
 

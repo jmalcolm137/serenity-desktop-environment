@@ -17,10 +17,39 @@
 #   SDE_LAGOM_BUILD_DIR      its Lagom build directory
 #   SDE_BUILD_APPS           also build the application suite in Lagom
 
-set(SDE_LIBGUI_WAYLAND_ROOT "${CMAKE_SOURCE_DIR}/../libgui-wayland" CACHE PATH "The libgui-wayland checkout")
+# The layout is what the build scripts have always used, and what the CI image
+# exports as environment variables (LIBGUI_WAYLAND_ROOT, SERENITY_SRC,
+# SERENITY_BUILD_DIR). A cache variable wins, then the environment (so a bare
+# `cmake -S . -B build` works in the image), then the sibling checkout.
+if (NOT DEFINED SDE_LIBGUI_WAYLAND_ROOT)
+    if (DEFINED ENV{LIBGUI_WAYLAND_ROOT})
+        set(SDE_LIBGUI_WAYLAND_ROOT "$ENV{LIBGUI_WAYLAND_ROOT}")
+    else()
+        set(SDE_LIBGUI_WAYLAND_ROOT "${CMAKE_SOURCE_DIR}/../libgui-wayland")
+    endif()
+endif()
+set(SDE_LIBGUI_WAYLAND_ROOT "${SDE_LIBGUI_WAYLAND_ROOT}" CACHE PATH "The libgui-wayland checkout" FORCE)
 get_filename_component(SDE_LIBGUI_WAYLAND_ROOT "${SDE_LIBGUI_WAYLAND_ROOT}" ABSOLUTE)
-set(SDE_SERENITY_SRC "${SDE_LIBGUI_WAYLAND_ROOT}/serenity" CACHE PATH "libgui-wayland's SerenityOS checkout")
-set(SDE_LAGOM_BUILD_DIR "${SDE_LIBGUI_WAYLAND_ROOT}/build/lagom" CACHE PATH "libgui-wayland's Lagom build directory")
+
+if (NOT DEFINED SDE_SERENITY_SRC)
+    if (DEFINED ENV{SERENITY_SRC})
+        set(SDE_SERENITY_SRC "$ENV{SERENITY_SRC}")
+    else()
+        set(SDE_SERENITY_SRC "${SDE_LIBGUI_WAYLAND_ROOT}/serenity")
+    endif()
+endif()
+set(SDE_SERENITY_SRC "${SDE_SERENITY_SRC}" CACHE PATH "libgui-wayland's SerenityOS checkout" FORCE)
+
+if (NOT DEFINED SDE_LAGOM_BUILD_DIR)
+    if (DEFINED ENV{SERENITY_BUILD_DIR})
+        set(SDE_LAGOM_BUILD_DIR "$ENV{SERENITY_BUILD_DIR}")
+    elseif (DEFINED ENV{BUILD})
+        set(SDE_LAGOM_BUILD_DIR "$ENV{BUILD}")
+    else()
+        set(SDE_LAGOM_BUILD_DIR "${SDE_LIBGUI_WAYLAND_ROOT}/build/lagom")
+    endif()
+endif()
+set(SDE_LAGOM_BUILD_DIR "${SDE_LAGOM_BUILD_DIR}" CACHE PATH "libgui-wayland's Lagom build directory" FORCE)
 option(SDE_BUILD_APPS "Also build the SerenityOS application suite (in Lagom)" OFF)
 
 if (NOT EXISTS "${SDE_SERENITY_SRC}/.git")
