@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <AK/Vector.h>
 #include <LibGfx/Rect.h>
 
 // The window manager's geometry and placement rules: which tile a window snaps
@@ -49,5 +50,29 @@ WindowTileType tile_target_for_cursor(Gfx::IntRect const& usable_area, double x,
 // current. Override-redirect windows (menus, tooltips) are transient and are
 // never workspace-hidden.
 bool window_visible_on_workspace(u32 window_row, u32 window_column, u32 current_row, u32 current_column, bool mapped, bool override_redirect = false);
+
+// --- the window list (the Alt-Tab switcher) ---------------------------------
+
+// What the switcher needs to know about one window. The fields exist precisely
+// because the answer differs between an xdg and an X11 window: an X11 window is
+// listed only when it is mapped and has a Taskbar entry, while an xdg window is
+// listed whenever it exists as a toplevel.
+struct SwitcherWindow {
+    u32 workspace_row { 0 };
+    u32 workspace_column { 0 };
+    bool is_x11 { false };
+    bool mapped { true };
+    bool override_redirect { false };
+    bool has_taskbar_entry { true }; // An X11 window without a wm_id has none.
+};
+
+// Whether the switcher lists a window: the current workspace only, or every
+// stack. Override-redirect windows (menus, tooltips) are never listed — they are
+// transient, not windows the user switches to.
+bool switcher_lists_window(SwitcherWindow const& window, bool current_workspace_only, u32 current_row, u32 current_column);
+
+// Whether a listed set spans more than one stack (the switcher's multi-stack
+// indicator). An empty or single-stack list does not.
+bool switcher_spans_stacks(Vector<SwitcherWindow> const& windows);
 
 }

@@ -134,6 +134,36 @@ ErrorOr<int> serenity_main(Main::Arguments)
     expect(!window_visible_on_workspace(1, 1, 0, 0, false, true), "an unmapped override-redirect window is still hidden");
     expect(window_visible_on_workspace(2, 3, 2, 3, true), "a window on the current 2,3 workspace is visible");
 
+    outln("=== the window list (Alt-Tab switcher) ===");
+    // An xdg window on the current stack is listed on either setting.
+    SwitcherWindow const xdg_current { 0, 0, false, true, false, true };
+    expect(switcher_lists_window(xdg_current, true, 0, 0), "an xdg window on the current stack is listed");
+    expect(switcher_lists_window(xdg_current, false, 1, 1), "and with every stack listed");
+    // An xdg window on another stack is filtered only when the list is filtered.
+    SwitcherWindow const xdg_other { 1, 0, false, true, false, true };
+    expect(!switcher_lists_window(xdg_other, true, 0, 0), "an xdg window on another stack is not listed when filtering");
+    expect(switcher_lists_window(xdg_other, false, 0, 0), "but is listed with every stack");
+    // An X11 window needs to be mapped and to have a Taskbar entry, and it is
+    // filtered by stack like an xdg window.
+    SwitcherWindow const x11_current { 0, 0, true, true, false, true };
+    expect(switcher_lists_window(x11_current, true, 0, 0), "a mapped X11 window with a Taskbar entry is listed");
+    expect(!switcher_lists_window({ 0, 0, true, false, false, true }, true, 0, 0), "an unmapped X11 window is not listed");
+    expect(!switcher_lists_window({ 0, 0, true, true, false, false }, true, 0, 0), "an X11 window with no Taskbar entry is not listed");
+    expect(!switcher_lists_window({ 1, 0, true, true, false, true }, true, 0, 0), "an X11 window on another stack is filtered like an xdg one");
+    // An xdg window is listed even without an xdg-side "mapped" flag here: the
+    // rule only consults mapping for X11 (the toplevel exists iff it is a window).
+    expect(switcher_lists_window({ 0, 0, false, false, false, false }, true, 0, 0), "an xdg window is listed regardless of the X11-only fields");
+    // Override-redirect windows are never listed, on any setting or stack.
+    expect(!switcher_lists_window({ 0, 0, true, true, true, true }, true, 0, 0), "an override-redirect X11 window is never listed");
+    expect(!switcher_lists_window({ 0, 0, true, true, true, true }, false, 0, 0), "not even with every stack listed");
+
+    outln("=== the multi-stack indicator ===");
+    expect(!switcher_spans_stacks({}), "an empty list does not span stacks");
+    expect(!switcher_spans_stacks({ xdg_current }), "a single window does not span stacks");
+    expect(!switcher_spans_stacks({ xdg_current, { 0, 0, true, true, false, true } }), "two windows on one stack do not span stacks");
+    expect(switcher_spans_stacks({ xdg_current, xdg_other }), "windows on two stacks span stacks");
+    expect(switcher_spans_stacks({ xdg_current, { 0, 1, false, true, false, true } }), "so do two columns of the same row");
+
     if (g_failures != 0) {
         outln("==> window rules test FAILED ({} check(s))", g_failures);
         return 1;

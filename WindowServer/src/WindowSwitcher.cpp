@@ -157,22 +157,21 @@ static void build_list(Server& server)
 
     u32 const row = WindowManager::current_workspace_row();
     u32 const column = WindowManager::current_workspace_column();
+    bool const current_only = s_mode == Mode::CurrentWorkspace;
+
+    // Which windows are listed, and why, is WindowRules.h's rule: an xdg toplevel
+    // is listed whenever it exists as one, an X11 window only when it is mapped
+    // and has a Taskbar entry, and an override-redirect window (a menu, a tooltip)
+    // never.
     for (auto& toplevel : server.toplevels) {
-        if (s_mode == Mode::CurrentWorkspace
-            && (toplevel->workspace_row != row || toplevel->workspace_column != column))
-            continue;
-        s_windows.append({ toplevel.ptr(), nullptr });
+        WindowServer::SwitcherWindow const window { toplevel->workspace_row, toplevel->workspace_column, false, true, false, true };
+        if (WindowServer::switcher_lists_window(window, current_only, row, column))
+            s_windows.append({ toplevel.ptr(), nullptr });
     }
-    // X11 windows are placed on the workspace grid like xdg toplevels now
-    // (docs/20 item 2), so they honour the current-workspace filter too.
-    // Override-redirect windows (menus, tooltips) are unmanaged and never listed.
     for (auto& toplevel : server.x11_toplevels) {
-        if (!toplevel->mapped || toplevel->override_redirect || toplevel->wm_id == 0)
-            continue;
-        if (s_mode == Mode::CurrentWorkspace
-            && (toplevel->workspace_row != row || toplevel->workspace_column != column))
-            continue;
-        s_windows.append({ nullptr, toplevel.ptr() });
+        WindowServer::SwitcherWindow const window { toplevel->workspace_row, toplevel->workspace_column, true, toplevel->mapped, toplevel->override_redirect, toplevel->wm_id != 0 };
+        if (WindowServer::switcher_lists_window(window, current_only, row, column))
+            s_windows.append({ nullptr, toplevel.ptr() });
     }
 
     // Most-recently-focused first, so the first Alt+Tab lands on the
@@ -180,20 +179,11 @@ static void build_list(Server& server)
     insertion_sort(s_windows, [](WindowRef const& a, WindowRef const& b) { return window_focus_order(a) > window_focus_order(b); });
 
     // Multi-stack indicator: do the listed windows span more than one stack?
-    s_multi_stack = false;
-    bool have_window = false;
-    u32 first_row = 0;
-    u32 first_column = 0;
-    for (auto const& window : s_windows) {
-        if (!have_window) {
-            first_row = window_workspace_row(window);
-            first_column = window_workspace_column(window);
-            have_window = true;
-        } else if (window_workspace_row(window) != first_row || window_workspace_column(window) != first_column) {
-            s_multi_stack = true;
-            break;
-        }
-    }
+    Vector<WindowServer::SwitcherWindow> listed;
+    listed.ensure_capacity(s_windows.size());
+    for (auto const& window : s_windows)
+        listed.append({ window_workspace_row(window), window_workspace_column(window) });
+    s_multi_stack = WindowServer::switcher_spans_stacks(listed);
 
     for (auto const& window : s_windows) {
         s_titles.append(window_title(window));
