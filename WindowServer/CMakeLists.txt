@@ -109,6 +109,7 @@ add_executable(WindowServer
     src/Animations.cpp
     src/Appearance.cpp
     src/AppletManager.cpp
+    src/AppletLayout.cpp
     src/Compositor.cpp
     src/Config.cpp
     src/ConfigRules.cpp
