@@ -1,6 +1,6 @@
 # Serenity Desktop Environment: Known Gaps & Remaining Work
 
-**Status:** Living document · **Date:** 2026-10-15
+**Status:** Living document · **Date:** 2026-10-16
 **Related:** [`01-objectives.md`](01-objectives.md) · [`02-compositor-decision.md`](02-compositor-decision.md) · [`03-engineering-conventions.md`](03-engineering-conventions.md) · [`05-r3-plan.md`](05-r3-plan.md) · [`07-systemserver-roles.md`](07-systemserver-roles.md) · [`08-compositor-gaps.md`](08-compositor-gaps.md)
 
 This is a running, greppable list of what is known to be missing or incomplete,
@@ -492,7 +492,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   the heartbeat assertion in `run-headless-test.sh`. **Full session restore**
   (relaunching the user's windows after a compositor restart) is done; see the
   R4.2 note above.
-- **CI (N6): started.** `scripts/run-all-tests.sh` runs the 88 `run-*-test.sh`
+- **CI (N6): green.** `scripts/run-all-tests.sh` runs the 88 `run-*-test.sh`
   tests by tier (every test is headless by design), `.github/workflows/ci.yml`
   gates a push on the fast tier and runs the rest nightly, and
   `ci/Containerfile` bakes the dependencies, wlroots and the ~1.2 GB Lagom
@@ -511,11 +511,25 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   session had been supplying, build output that was being discarded (so failures
   printed a line and a status and nothing else), and three patch-set gaps
   (`26-ci.md` §6.6–6.7). The applications now build in the smoke job, which is what
-  lets a third of the tier run at all. Remaining:
-  `run-profiler-test.sh` **does** SKIP where `perf_event_open` is blocked (the
-  condition is implemented; that it still failed in CI is what needs the look), the
-  budget jobs stay informational until a runner baseline exists, and the X11
-  `WM_CLASS` grouping failure (§R5) is still open.
+  lets a third of the tier run at all.
+
+  **Green since 2026-10-16:** the fast tier on every push (**82 passed, 0 failed,
+  4 skipped, 0 timed out**) and the full suite nightly/on dispatch (**97 passed, 0
+  failed, 4 skipped, 0 timed out**), with the informational budgets job passing. The
+  four skips are environment-gated rather than gaps: no camera,
+  `perf_event_open` blocked in the container, and the two screencast tests that
+  need a real Wayland/DRM host (so `run-profiler-test.sh`'s SKIP is exercised for
+  exactly the reason it was written). The X11 `WM_CLASS` grouping test passes.
+
+  The largest single cause of the red runs was not a test at all: the image was
+  **silently missing framework patches** `0017`, `0042` and `0045`, because the
+  patch loop counted a patch it could neither apply nor reverse-apply as "assumed
+  applied". A developer tree therefore had `/res/...` directory relocation and CI
+  did not, which is why four unrelated-looking tests (settings, devtools, games,
+  apps-smoke) failed with logs that said nothing. Both patch loops now **fail** on
+  an unverifiable patch instead of assuming. Remaining known flakiness, both
+  recorded in [`26-ci.md`](26-ci.md): `run-input-test.sh` occasionally misses the
+  Alt release after Alt+Tab, and `libwm-setting-test` has an intermittent segfault.
 - **Terminal keys vs the host's conventions.** Plain backspace emitted 0x08 where a
   host line discipline expects 0x7f (`erase = ^?`), so it did nothing in any
   raw-mode program (`yay`, `htop`, `vim`); Ctrl+letter is now converted to the
