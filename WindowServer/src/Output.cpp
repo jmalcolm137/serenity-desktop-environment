@@ -271,9 +271,11 @@ static void output_commit(wl_listener* listener, void* data)
     output = wl_container_of(listener, output, commit);
     auto& server = *output->server;
 
+    auto* event = static_cast<wlr_output_event_commit*>(data);
+
     // R5 accessibility (docs/29): the Magnifier's capture is answered from a frame
     // that is actually on screen, so it needs the buffer this commit presents.
-    if (auto* event = static_cast<wlr_output_event_commit*>(data); event->state && (event->state->committed & WLR_OUTPUT_STATE_BUFFER))
+    if (event->state && (event->state->committed & WLR_OUTPUT_STATE_BUFFER))
         serve_pending_captures(server, output->output, event->state->buffer);
     // Read the new box, but keep the old one: a disable empties it, and the windows
     // are still where they were, so the migration below needs to know where the
@@ -298,6 +300,14 @@ static void output_commit(wl_listener* listener, void* data)
     }
     output->was_enabled = enabled;
     reconfigure_lock_surface(*output->server, output->output);
+
+    // A mode/scale change alters the output's logical size. Layer surfaces are
+    // sized and positioned by the arrange pass, so without this the Taskbar (and
+    // every other panel) keeps its old size and position — and the applet area,
+    // laid out relative to it, stays behind at the old screen coordinates.
+    if (enabled && event->state
+        && (event->state->committed & (WLR_OUTPUT_STATE_MODE | WLR_OUTPUT_STATE_SCALE | WLR_OUTPUT_STATE_TRANSFORM)))
+        arrange_layers(server, output->output);
 }
 
 // --- HiDPI / fractional output scale ---------------------------------------

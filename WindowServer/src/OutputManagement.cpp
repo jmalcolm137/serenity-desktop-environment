@@ -132,6 +132,11 @@ void apply_saved_settings_to_output(Server& server, struct wlr_output* output, C
     wlr_output_state_finish(&state);
 
     wlr_output_layout_add(server.output_layout, output, settings.left, settings.top);
+    // The position (and possibly mode/scale) just changed. Re-arrange the layers
+    // of an output that is already live; during output creation the wrapper (and
+    // its layer surfaces) do not exist yet, and server_new_output arranges later.
+    if (output_for(server, output))
+        arrange_layers(server, output);
     dbgln("WindowServer: applied screen layout to '{}': {}x{} @{}x at {},{}",
         output->name ? output->name : "?", settings.width, settings.height, scale, settings.left, settings.top);
 }
@@ -164,7 +169,6 @@ void apply_output_scale(Server& server)
             changed = true;
             dbgln("WindowServer: output '{}' re-scaled to {}x", output->output->name ? output->output->name : "?", output->output->scale);
             update_desktop_background(server, *output);
-            arrange_layers(server, output->output);
         }
         wlr_output_state_finish(&state);
     }
@@ -233,8 +237,13 @@ static void output_manager_apply_or_test(Server& server, wlr_output_configuratio
         wlr_output_configuration_head_v1* head = nullptr;
         wl_list_for_each(head, &config->heads, link)
         {
-            if (head->state.enabled)
-                wlr_output_layout_add(server.output_layout, head->state.output, head->state.x, head->state.y);
+            if (!head->state.enabled)
+                continue;
+            wlr_output_layout_add(server.output_layout, head->state.output, head->state.x, head->state.y);
+            // Position changes are not part of the output commit event, so the
+            // layer arrange pass has to be run here as well as from output_commit.
+            if (auto* output = output_for(server, head->state.output))
+                arrange_layers(server, output->output);
         }
     }
 

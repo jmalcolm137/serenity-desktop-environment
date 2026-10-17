@@ -134,6 +134,20 @@ ErrorOr<int> serenity_main(Main::Arguments)
     expect(origin == Gfx::IntPoint { 1280 - 68, 720 - 24 }, "the fallback origin is the usable area's bottom-right corner");
     expect(origin.y() + 24 == 720, "the area's bottom edge is the usable area's bottom edge");
 
+    outln("=== anchored translation ===");
+    // The Taskbar reports an absolute position. When its anchor moves or shrinks
+    // (a resolution or output-scale change), the area moves with it, keeping the
+    // same distance from the anchor's right/bottom edges.
+    Gfx::IntRect const taskbar_before { 0, 693, 1280, 27 };
+    Gfx::IntRect const taskbar_after { 0, 573, 800, 27 };
+    Gfx::IntPoint const area_before { 1090, 700 };
+    Gfx::IntSize const area_size { 86, 19 };
+    auto const moved = translate_with_anchor(taskbar_before, taskbar_after, area_before);
+    expect(moved == Gfx::IntPoint { 610, 580 }, "the area moves by the anchor's bottom-right delta");
+    expect(taskbar_before.right() - (area_before.x() + area_size.width()) == taskbar_after.right() - (moved.x() + area_size.width()), "the distance from the right edge is unchanged");
+    expect(taskbar_before.bottom() - (area_before.y() + area_size.height()) == taskbar_after.bottom() - (moved.y() + area_size.height()), "the distance from the bottom edge is unchanged");
+    expect(translate_with_anchor(taskbar_before, taskbar_before, area_before) == area_before, "an unchanged anchor leaves the area where it was");
+
     if (g_failures != 0) {
         outln("==> applet layout test FAILED ({} check(s))", g_failures);
         return 1;
