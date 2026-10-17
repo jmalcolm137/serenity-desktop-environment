@@ -81,8 +81,7 @@ static void tick_outline_animations()
 }
 
 static void start_outline_animation(Server& server, Gfx::IntRect const& from, Gfx::IntRect const& to, Gfx::Color color)
-{
-    if (!server.overlay_tree || from.is_empty() || to.is_empty())
+{    if (!server.overlay_tree || from.is_empty() || to.is_empty())
         return;
 
     OutlineAnimation animation;
@@ -149,4 +148,13 @@ void start_launch_animation(Server& server, Toplevel& toplevel)
     dbgln("WindowServer: launch animation {}x{}+{},{} -> {}x{}+{},{}",
         toplevel.launch_origin.width(), toplevel.launch_origin.height(), toplevel.launch_origin.x(), toplevel.launch_origin.y(),
         frame.width(), frame.height(), frame.x(), frame.y());
+}
+
+void finish_animations()
+{
+    s_outline_animations.clear();
+    if (s_animation_timer) {
+        s_animation_timer->stop();
+        s_animation_timer = nullptr;
+    }
 }
