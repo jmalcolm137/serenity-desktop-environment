@@ -34,6 +34,9 @@ COMP_PID=""
 cleanup() {
     [[ -n "$APP_PID" ]] && kill "$APP_PID" 2>/dev/null || true
     [[ -n "$COMP_PID" ]] && kill -TERM -- "-$COMP_PID" 2>/dev/null || true
+    # Give them a moment to exit, or the tree is still being written while it is
+    # removed ("Directory not empty").
+    sleep 0.3
     rm -rf "$RUNTIME"
 }
 trap cleanup EXIT

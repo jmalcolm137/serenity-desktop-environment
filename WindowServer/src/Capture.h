@@ -8,7 +8,6 @@
 
 #include "Server.h"
 #include <AK/RefPtr.h>
-#include <AK/Vector.h>
 #include <LibGfx/Forward.h>
 #include <LibGfx/Rect.h>
 
