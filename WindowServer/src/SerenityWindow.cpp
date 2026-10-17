@@ -8,6 +8,7 @@
 #include "Frame.h"
 #include "Resources.h"
 #include "SerenityWindow.h"
+#include "Capture.h"
 #include "Wallpaper.h"
 #include "WindowManager.h"
 #include "XdgShell.h"
@@ -204,6 +205,7 @@ static void serenity_window_manager_get_toplevel(wl_client* client, wl_resource*
 
 static void serenity_window_manager_resource_destroy(wl_resource* resource)
 {
+    forget_capture_requests(resource);
     if (auto* server = static_cast<Server*>(wl_resource_get_user_data(resource)))
         server->serenity_window_managers.remove_first_matching([&](auto* candidate) { return candidate == resource; });
 }
@@ -408,28 +410,13 @@ static void serenity_window_manager_set_host_setting(wl_client*, wl_resource* re
         broadcast_host_settings(*server);
 }
 
-// The wallpaper as a memfd the client can map (fd = -1 when there is none).
-static int wallpaper_fd(RefPtr<Gfx::Bitmap> const& bitmap)
+// R5 accessibility (docs/29): one capture of a screen region for the Magnifier.
+// Pushed back as `captured`; see the protocol description for why this is a push.
+static void serenity_window_manager_request_capture(wl_client*, wl_resource* resource, uint32_t serial, int32_t x, int32_t y, int32_t width, int32_t height)
 {
-    if (!bitmap)
-        return -1;
-    auto name = ByteString::formatted("sde-wallpaper-{}", getpid());
-    int fd = memfd_create(name.characters(), 0);
-    if (fd < 0)
-        return -1;
-    auto size = static_cast<size_t>(bitmap->pitch()) * bitmap->height();
-    if (ftruncate(fd, static_cast<off_t>(size)) != 0) {
-        ::close(fd);
-        return -1;
-    }
-    auto* mapped = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (mapped == MAP_FAILED) {
-        ::close(fd);
-        return -1;
-    }
-    memcpy(mapped, bitmap->scanline(0), size);
-    munmap(mapped, size);
-    return fd;
+    if (!wl_resource_get_user_data(resource))
+        return;
+    queue_capture_request(resource, serial, { x, y, width, height });
 }
 
 static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t version, uint32_t id)
@@ -444,6 +431,7 @@ static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t
         .set_host_setting = serenity_window_manager_set_host_setting,
         .set_wallpaper = serenity_window_manager_set_wallpaper,
         .get_toplevel = serenity_window_manager_get_toplevel,
+        .request_capture = serenity_window_manager_request_capture,
     };
     wl_resource_set_implementation(resource, &implementation, &server, serenity_window_manager_resource_destroy);
     server.serenity_window_managers.append(resource);
@@ -454,7 +442,7 @@ static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t
     serenity_window_manager_send_host_settings(resource, host_settings_blob().characters());
     // Only when there is one: a client with no wallpaper keeps none.
     if (g_wallpaper) {
-        int wallpaper = wallpaper_fd(g_wallpaper);
+        int wallpaper = bitmap_fd(g_wallpaper);
         if (wallpaper >= 0) {
             serenity_window_manager_send_wallpaper(resource, g_wallpaper->width(), g_wallpaper->height(),
                 g_wallpaper->pitch(), static_cast<uint32_t>(g_wallpaper->format()), wallpaper);
