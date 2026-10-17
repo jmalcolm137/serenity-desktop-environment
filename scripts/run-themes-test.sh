@@ -30,6 +30,9 @@ check() {
 
 start_compositor() {
     local sock="$1"
+    local startup="${2:-}"
+    local -a startup_args=()
+    [[ -n "$startup" ]] && startup_args=(-s "$startup")
     env -u WAYLAND_DISPLAY -u DISPLAY \
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
         XDG_RUNTIME_DIR="$RUNTIME" \
@@ -37,7 +40,7 @@ start_compositor() {
         SDE_WM_PORTAL_PATH="$RUNTIME/wm-$sock" \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
         LD_LIBRARY_PATH="$BUILD/lib" \
-        "$COMP" -n "$sock" > "$RUNTIME/comp-$sock.log" 2>&1 &
+        "$COMP" -n "$sock" "${startup_args[@]}" > "$RUNTIME/comp-$sock.log" 2>&1 &
     echo $!
     for _ in $(seq 1 80); do
         [[ -e "$RUNTIME/$sock" ]] && break
@@ -60,7 +63,13 @@ kill "$COMP_PID" 2>/dev/null || true
 wait "$COMP_PID" 2>/dev/null || true
 
 echo "=== (B) a live theme change is applied and persisted ==="
-COMP_PID="$(start_compositor sde-theme-b)"
+# The Taskbar's Themes menu is a client of the same broker/host-settings channel.
+# With it running, check that a client hears the *new* theme name: the broker only
+# carries the path, so the name comes from the host-settings re-broadcast. Without
+# that, a theme menu keeps highlighting the previously selected theme.
+STARTUP=""
+[[ -x "$BUILD/bin/Taskbar" ]] && STARTUP="$BUILD/bin/Taskbar"
+COMP_PID="$(start_compositor sde-theme-b "$STARTUP")"
 LOG="$RUNTIME/comp-sde-theme-b.log"
 printf '%s\n' "$REDMOND" > "$RUNTIME/sde-theme"
 for _ in $(seq 1 40); do
@@ -70,6 +79,13 @@ done
 check "applied system theme '$REDMOND'" "$(cat "$LOG")"
 check "Name=Redmond 2000" "$(cat "$RUNTIME/WindowServer.ini")"
 check "Path=$REDMOND" "$(cat "$RUNTIME/WindowServer.ini")"
+if [[ -n "$STARTUP" ]]; then
+    for _ in $(seq 1 40); do
+        grep -qF "LibWM: system theme is 'Redmond 2000'" "$LOG" 2>/dev/null && break
+        sleep 0.1
+    done
+    check "LibWM: system theme is 'Redmond 2000'" "$(cat "$LOG")"
+fi
 pkill -P "$COMP_PID" 2>/dev/null || true
 kill "$COMP_PID" 2>/dev/null || true
 wait "$COMP_PID" 2>/dev/null || true
