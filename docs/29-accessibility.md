@@ -56,53 +56,53 @@ control (off is inert) as well.
 
 ## 3. Screen magnifier
 
-**Not started; the blocker is identified.** The application exists and is built, but
-it captures the screen through `GUI::ConnectionToWindowServer::the()
-.get_screen_bitmap_around_cursor()` / `…_around_location()`, and on the port both
-resolve to the *default stub* in `WindowServerDefaultStub.h`, which returns a null
-bitmap; the compositor serves neither. Measured: `Magnifier` starts, then sits for
-six seconds without ever mapping a window and without an error, which is what a
-display-link callback blocking on an IPC that is never answered looks like. So the
-work is to serve those two methods rather than to write a magnifier.
+**Not started; the blocker is measured, and one earlier claim was wrong.** The
+application exists, is built, and *works*: run headless it maps and presents a
+248x248 toplevel (`toplevel mapped title='Magnifier' app_id='Magnifier'`) and keeps
+painting. What it shows is empty, because it captures the screen through
+`GUI::ConnectionToWindowServer::the().get_screen_bitmap_around_cursor()` /
+`…_around_location()`, and on the port both resolve to the default stub in
+`WindowServerDefaultStub.h`, which returns a null bitmap — the compositor serves
+neither. So the work is to serve those two methods, not to write a magnifier.
 
-Two options for the source, in order of preference:
+(An earlier note here said it "never maps". That was wrong — it was measured with the
+window check looking at the wrong log.)
 
-1. Serve `get_screen_bitmap(rect, screen_index)` / `…_around_cursor` /
-   `…_around_location` from the compositor's own capture machinery
-   (`ext-image-copy-capture-v1`, the same path the screenshot portal and the
-   Taskbar's window thumbnails already use), and forward them from the shim over the
-   existing serenity-window connection. That magnifies the real output with no
-   portal round-trip, and lets the magnifier follow the focused output. This is the
-   smaller change: the capture already exists, only the two methods do not.
-2. Fall back to the ScreenCast portal (`docs/15`) if the application's capture
-   abstraction cannot be pointed at an in-process source.
+**The wire format already exists.** `serenity_window_manager` already moves raw
+bitmaps both ways for the wallpaper: an event/request of
+`(width, height, pitch, format, fd)` where `format` is a `wl_shm` value and the fd
+carries the pixels. A capture reply is the same shape, so no new encoding.
 
-The magnifier also has to be usable without the pointer leaving it, i.e. the input
-region it covers must not steal clicks; the compositor can keep a "magnifier"
-layer surface input-transparent.
-**Where the two methods land.** `get_screen_bitmap*` is a WindowServer IPC method, so
-serving it is three pieces, and this is the order that keeps each one testable:
+**Push, not request/reply.** The shim has no synchronous Wayland request: every sync
+answer it gives (`get_screen_layout`, `get_wallpaper`, `get_global_cursor_position`)
+comes from state the compositor *pushes*. Keep that shape: the shim asks for a region
+(`request_capture(serial, x, y, w, h)`), the compositor replies with a
+`captured(serial, …)` event, and the shim caches the latest bitmap. `get_screen_bitmap_*`
+returns that cache — so the magnifier sees the previous frame, which at one refresh
+interval is invisible. Blocking the UI thread on a round-trip would work too, but it
+is the one thing this architecture deliberately avoids.
 
-1. *Compositor:* a `capture_output_region(server, Gfx::IntRect) -> RefPtr<Gfx::Bitmap>`.
-   Nothing in the tree renders the *scene* to a bitmap today: `Overlays.cpp`'s
-   `snapshot_toplevel()` reads one client's buffer directly (and gives up on a
-   DMA-BUF), which is enough for a window thumbnail and not enough for a screen
-   region. The route is wlroots' own render path:
-   `wlr_scene_output_build_state()` into a custom buffer, then a readback
-   (`wlr_texture_read_pixels`), both present in the vendored 0.20. Assert it
-   headless (render a scene, read a region, compare pixels) before wiring anything to
-   it.
-2. *Framework:* the `Messages::WindowServer::GetScreenBitmap*` IPC definitions and
-   the shim's `WindowServerConnection` overrides (it currently inherits
-   `WindowServerDefaultStub`, which returns a null bitmap). The
-   `…_around_cursor` / `…_around_location` variants are a rect around a point, so the
-   shim can derive them from the one region message; the cursor position is the
-   compositor's to answer.
-3. *Test:* a `run-magnifier-test.sh` in the same shape as the other app tests: start
-   Magnifier, assert it maps a window and that the captured bitmap matches a known
-   scene region.
+**The rendering, which is the real work.** Nothing in the tree renders the *scene* to
+a CPU-readable buffer. `Overlays.cpp`'s `snapshot_toplevel()` only reads one client's
+buffer (and gives up on a DMA-BUF). The vendors wlroots 0.20 has the pieces:
+`wlr_allocator_autocreate(backend, renderer)` → `wlr_allocator_create_buffer()`, and
+`wlr_scene_output_build_state(scene_output, state, options)` where
+`options.swapchain` may be a custom `wlr_swapchain_create(...)`. Open question to
+settle with a scratch experiment *before* wiring anything: after `build_state`
+renders into a custom swapchain, how to get the rendered buffer back for reading
+(`build_state` acquires and submits, and does not hand the buffer to the caller), and
+whether that path disturbs the output's damage ring — the compositor renders every
+frame through `wlr_scene_output_commit`, so a second `build_state` must not steal the
+next frame's damage. Both are cheap to test in isolation and expensive to discover in
+the frame path.
 
-That is a real feature, not a wiring job, and it should be its own change.
+**Order of work once that is settled:** compositor region capture (+ a headless test
+that renders a known scene and checks the region's pixels) → the protocol request and
+event → the shim's cache and the two stub overrides → `run-magnifier-test.sh`
+(assert the window maps *and* that captures are served, so a blank magnifier fails).
+
+**Still true from the original plan:** the magnifier also has to be usable without
+the pointer leaving it, i.e. the region it covers must not steal clicks.
 
 ## 4. AT-SPI
 
