@@ -88,6 +88,11 @@ u32 current_workspace_column();
 
 // A newly mapped window joins the current stack.
 void on_toplevel_mapped(Toplevel&);
+// SerenityOS automatic placement: the first auto-positioned window at (100,100),
+// later ones cascading. Transient dialogs are centred on the usable area. No-op
+// for maximized/fullscreen/tiled windows and for those a session or [Placement]
+// rule already positioned.
+void place_new_toplevel(Toplevel&);
 
 // Switch to a stack (set_workspace, keybindings); optionally carry the focused
 // window along.

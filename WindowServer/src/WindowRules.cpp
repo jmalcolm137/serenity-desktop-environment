@@ -49,6 +49,20 @@ Gfx::IntRect tile_rect(Gfx::IntRect const& area, WindowTileType type)
     return rect;
 }
 
+Gfx::IntPoint recommended_window_position(Gfx::IntPoint desired, Gfx::IntPoint previous, bool has_previous, Gfx::IntSize usable_size, int titlebar_height)
+{
+    if (!has_previous)
+        return desired;
+    // WindowManager::get_recommended_window_position in SerenityOS.
+    Gfx::IntPoint const shift { 8, titlebar_height + 10 };
+    auto point = previous.translated(shift.x(), shift.y());
+    if (usable_size.width() > 0)
+        point.set_x(point.x() % usable_size.width());
+    if (point.y() >= usable_size.height())
+        point.set_y(titlebar_height);
+    return point;
+}
+
 WindowTileType tile_target_for_cursor(Gfx::IntRect const& area, double x, double y, int edge_threshold)
 {
     bool const at_left = x <= area.x() + edge_threshold;

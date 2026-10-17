@@ -25,6 +25,7 @@
 #include <xkbcommon/xkbcommon.h>
 
 #include "AppletManager.h"
+#include "Compositor.h"
 #include "Config.h"
 #include <WindowServer/SystemEffects.h>
 #include "Overlays.h"
@@ -538,6 +539,47 @@ void on_toplevel_mapped(Toplevel& toplevel)
     toplevel.workspace_row = s_current_row;
     toplevel.workspace_column = s_current_column;
     update_toplevel_visibility(toplevel);
+}
+
+static Gfx::IntPoint s_last_auto_position { 100, 100 };
+static bool s_has_auto_position { false };
+
+void place_new_toplevel(Toplevel& toplevel)
+{
+    if (toplevel.maximized || toplevel.fullscreen || toplevel.tile_type != WindowTileType::None)
+        return;
+
+    auto area = usable_area(*toplevel.server);
+    if (area.is_empty())
+        return;
+
+    auto* geometry = &toplevel.xdg_toplevel->base->geometry;
+    int const width = max(1, geometry->width);
+    int const height = max(1, geometry->height);
+
+    Gfx::IntPoint top_left;
+    if (toplevel.transient_parent) {
+        // SerenityOS's Dialog centres itself on the screen. The client cannot say
+        // so at this boundary (it has no compositor-assigned position yet), so
+        // apply the same rule here.
+        Gfx::IntRect rect { {}, { width, height } };
+        rect.center_within(area);
+        top_left = rect.location();
+    } else {
+        int titlebar_height = 24;
+        if (g_palette)
+            titlebar_height = g_palette->window_theme().titlebar_height(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, *g_palette);
+        top_left = WindowServer::recommended_window_position({ 100, 100 }, s_last_auto_position, s_has_auto_position, area.size(), titlebar_height);
+        s_last_auto_position = top_left;
+        s_has_auto_position = true;
+    }
+
+    // The scene node is the frame's top-left; the xdg geometry offset is the
+    // content origin inside it. Convert what the rule placed (a frame position)
+    // to the node position the scene expects.
+    wlr_scene_node_set_position(&toplevel.scene_tree->node, top_left.x() - geometry->x, top_left.y() - geometry->y);
+    toplevel.restore_position = { static_cast<int>(toplevel.scene_tree->node.x), static_cast<int>(toplevel.scene_tree->node.y) };
+    dbgln("WindowServer: placed new window '{}' at {},{}", toplevel.xdg_toplevel->title ? toplevel.xdg_toplevel->title : "", top_left.x(), top_left.y());
 }
 
 void update_x11_toplevel_visibility(X11Toplevel& toplevel)

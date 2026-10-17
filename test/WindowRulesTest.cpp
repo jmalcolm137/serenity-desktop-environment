@@ -198,6 +198,13 @@ ErrorOr<int> serenity_main(Main::Arguments)
     auto const below = stack_overlay_frame({ 0, 32, 1280, 688 }, 2, 2);
     expect(below.y() >= 32, "the overlay centres inside the usable area, not the output");
 
+    outln("=== automatic window placement ===");
+    Gfx::IntSize const cascade_area { 1280, 720 };
+    expect(recommended_window_position({ 100, 100 }, {}, false, cascade_area, 20) == Gfx::IntPoint { 100, 100 }, "the first auto-positioned window opens at 100,100");
+    expect(recommended_window_position({ 100, 100 }, { 100, 100 }, true, cascade_area, 20) == Gfx::IntPoint { 108, 130 }, "the next cascades by 8 and titlebar+10");
+    expect(recommended_window_position({ 100, 100 }, { 1279, 100 }, true, cascade_area, 20) == Gfx::IntPoint { 7, 130 }, "the cascade wraps at the right edge");
+    expect(recommended_window_position({ 100, 100 }, { 100, 700 }, true, cascade_area, 20) == Gfx::IntPoint { 108, 20 }, "falling off the bottom restarts at the titlebar");
+
     outln("=== the stack transition ===");
     Gfx::IntSize const area_size { 1280, 720 };
     expect(stack_transition_delta(0, 0, 0, 0, area_size) == Gfx::IntPoint { 0, 0 }, "switching to the same stack animates nothing");

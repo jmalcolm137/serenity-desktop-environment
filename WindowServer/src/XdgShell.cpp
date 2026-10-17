@@ -98,6 +98,7 @@ static void toplevel_map(wl_listener* listener, void*)
     // The new window joins the current workspace stack.
     WindowManager::on_toplevel_mapped(*toplevel);
     // Apply a restored session position (R4.2), then report the final position.
+    bool placed = toplevel->has_session_restore_position;
     SessionManager::on_toplevel_mapped(*toplevel);
     // [Placement] window rules: set the new window's geometry (overrides the
     // session restore), so a script can reproduce a specific desktop layout.
@@ -107,8 +108,13 @@ static void toplevel_map(wl_listener* listener, void*)
             wlr_scene_node_set_position(&toplevel->scene_tree->node, placement->x() - geometry->x, placement->y() - geometry->y);
             wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, placement->width(), placement->height());
             toplevel->restore_position = placement->location();
+            placed = true;
         }
     }
+    // SerenityOS places auto-positioned windows itself: the first at (100,100),
+    // then cascading. Without this every new toplevel stayed at the scene origin.
+    if (!placed)
+        WindowManager::place_new_toplevel(*toplevel);
     toplevel_report_position(*toplevel);
     if (toplevel->foreign_handle && toplevel->server->primary_output)
         wlr_foreign_toplevel_handle_v1_output_enter(toplevel->foreign_handle, toplevel->server->primary_output);

@@ -46,6 +46,12 @@ Gfx::IntRect tile_rect(Gfx::IntRect const& usable_area, WindowTileType type);
 // corners, or None in the middle. `edge_threshold` is the band's width.
 WindowTileType tile_target_for_cursor(Gfx::IntRect const& usable_area, double x, double y, int edge_threshold);
 
+// SerenityOS's automatic placement: the first auto-positioned window opens at
+// `desired` (100,100 in WindowServer), and each following one cascades down-right
+// by `(8, titlebar_height + 10)`. X wraps at the usable area's right edge, and Y
+// restarts at the titlebar height when the cascade falls off the bottom.
+Gfx::IntPoint recommended_window_position(Gfx::IntPoint desired, Gfx::IntPoint previous, bool has_previous, Gfx::IntSize usable_size, int titlebar_height);
+
 // Whether a window on the given workspace is shown while the given workspace is
 // current. Override-redirect windows (menus, tooltips) are transient and are
 // never workspace-hidden.
