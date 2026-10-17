@@ -56,53 +56,63 @@ control (off is inert) as well.
 
 ## 3. Screen magnifier
 
-**Not started; the blocker is measured, and one earlier claim was wrong.** The
-application exists, is built, and *works*: run headless it maps and presents a
-248x248 toplevel (`toplevel mapped title='Magnifier' app_id='Magnifier'`) and keeps
-painting. What it shows is empty, because it captures the screen through
-`GUI::ConnectionToWindowServer::the().get_screen_bitmap_around_cursor()` /
-`…_around_location()`, and on the port both resolve to the default stub in
-`WindowServerDefaultStub.h`, which returns a null bitmap — the compositor serves
-neither. So the work is to serve those two methods, not to write a magnifier.
+**Working.** The application was already there and already mapping a 248x248
+toplevel; two stubs in the port kept it empty.
 
-(An earlier note here said it "never maps". That was wrong — it was measured with the
-window check looking at the wrong log.)
+**It was blank for two reasons, not one.** The obvious one: it captures the screen
+through `GUI::ConnectionToWindowServer::the().get_screen_bitmap_around_cursor()` /
+`…_around_location()`, and both resolved to the null bitmap in
+`WindowServerDefaultStub.h`. The one that hid behind it: the magnifier captures from a
+`GUI::DisplayLink` callback (its capture loop *is* the display link), and
+`enable_display_link` / `disable_display_link` were also empty stubs — so `sync()` was
+never called at all, and serving the bitmap alone would still have shown nothing.
+Both are implemented now; the second is why the test waits for *several* captures
+rather than one.
 
-**The wire format already exists.** `serenity_window_manager` already moves raw
-bitmaps both ways for the wallpaper: an event/request of
-`(width, height, pitch, format, fd)` where `format` is a `wl_shm` value and the fd
-carries the pixels. A capture reply is the same shape, so no new encoding.
+**The wire format already existed.** `serenity_window_manager` already moved raw
+bitmaps both ways for the wallpaper: `(width, height, pitch, format, fd)` where
+`format` is a `wl_shm` value. A capture is the same shape, so no new encoding.
+`request_capture(serial, x, y, w, h)` asks; `captured(serial, w, h, pitch, format, fd)`
+answers.
 
 **Push, not request/reply.** The shim has no synchronous Wayland request: every sync
-answer it gives (`get_screen_layout`, `get_wallpaper`, `get_global_cursor_position`)
-comes from state the compositor *pushes*. Keep that shape: the shim asks for a region
-(`request_capture(serial, x, y, w, h)`), the compositor replies with a
-`captured(serial, …)` event, and the shim caches the latest bitmap. `get_screen_bitmap_*`
-returns that cache — so the magnifier sees the previous frame, which at one refresh
-interval is invisible. Blocking the UI thread on a round-trip would work too, but it
-is the one thing this architecture deliberately avoids.
+answer it gives comes from state the compositor *pushes*. A capture keeps that shape —
+the shim asks for a region and returns the most recent bitmap it was sent, so the
+magnifier sees the previous frame. At one refresh interval that is invisible, and
+blocking the UI thread on a round trip is the one thing this architecture deliberately
+avoids.
 
-**The rendering, which is the real work.** Nothing in the tree renders the *scene* to
-a CPU-readable buffer. `Overlays.cpp`'s `snapshot_toplevel()` only reads one client's
-buffer (and gives up on a DMA-BUF). The vendors wlroots 0.20 has the pieces:
-`wlr_allocator_autocreate(backend, renderer)` → `wlr_allocator_create_buffer()`, and
-`wlr_scene_output_build_state(scene_output, state, options)` where
-`options.swapchain` may be a custom `wlr_swapchain_create(...)`. Open question to
-settle with a scratch experiment *before* wiring anything: after `build_state`
-renders into a custom swapchain, how to get the rendered buffer back for reading
-(`build_state` acquires and submits, and does not hand the buffer to the caller), and
-whether that path disturbs the output's damage ring — the compositor renders every
-frame through `wlr_scene_output_commit`, so a second `build_state` must not steal the
-next frame's damage. Both are cheap to test in isolation and expensive to discover in
-the frame path.
+**The capture comes from the frame that is on screen.** The first design was to render
+the scene offscreen into a swapchain of our own. That does not work here: wlroots does
+not export `wlr_swapchain_create`/`acquire` (they are internal to its own capture
+implementations), and the visible frame's buffer is a DMA-BUF on a GL/DRM session, so
+it cannot simply be mapped. Instead the compositor answers on the next frame it
+commits: `output_commit` already fires with the state carrying the presented
+`wlr_buffer`, so the request is queued and served there — `wlr_texture_from_buffer` +
+`wlr_texture_read_pixels` into a `Gfx::Bitmap`, which works for DMA-BUF and SHM alike.
+This reads exactly what the user sees, leaves the visible frame untouched, needs no
+swapchain, and costs one refresh interval — which the push model already accepts. The
+compositor renders every frame, so a request is never waiting on a repaint that will
+not happen; a pending request is dropped if its manager resource goes away.
 
-**Order of work once that is settled:** compositor region capture (+ a headless test
-that renders a known scene and checks the region's pixels) → the protocol request and
-event → the shim's cache and the two stub overrides → `run-magnifier-test.sh`
-(assert the window maps *and* that captures are served, so a blank magnifier fails).
+**The display link is paced by the window surface.** SerenityOS drives
+`DisplayLink` from the window server's frame loop. Here the shim arms one
+`wl_surface_frame` callback on the most recently presented window while a link is
+enabled, and re-arms it after each callback; the callback becomes
+`async_display_link_notification()` to the app. A surface the compositor renders
+receives `frame_done` every refresh, and the app's repaint in response is the damage
+that keeps it coming. The first connection owns the hook, as with host settings, and
+its destructor clears it.
+
+**Order of work, as built:** compositor region capture from the committed frame →
+the protocol request and event (mirrored in the framework's copy of the XML) → the
+shim's cache, the two stub overrides and the display link → `run-magnifier-test.sh`,
+which asserts the window maps, that *more than one* capture is served, that the
+capture is not empty, and that the app stays up.
 
 **Still true from the original plan:** the magnifier also has to be usable without
-the pointer leaving it, i.e. the region it covers must not steal clicks.
+the pointer leaving it, i.e. the region it covers must not steal clicks. The pointer
+stays where it is; the magnifier's own "lock location" mode is the app's job.
 
 ## 4. AT-SPI
 
