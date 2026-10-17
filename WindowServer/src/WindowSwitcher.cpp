@@ -486,4 +486,12 @@ void hide()
     s_hovered = -1;
 }
 
+void finish()
+{
+    s_overlay = nullptr;
+    s_windows.clear();
+    s_thumbnails.clear();
+    s_titles.clear();
+}
+
 }

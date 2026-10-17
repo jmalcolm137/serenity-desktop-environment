@@ -14,3 +14,5 @@ extern Gfx::Color g_cursor_highlight_color;
 void render_cursor_highlight(Server& server);
 void move_cursor_highlight(Server& server);
 void toggle_cursor_highlight(Server& server);
+// Drop the highlight ChromeNode before the scene graph is destroyed.
+void finish_cursor_highlight();

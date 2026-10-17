@@ -17,6 +17,8 @@
 #include "Interop.h"
 #include "Keyboard.h"
 #include "LayerShell.h"
+#include "Animations.h"
+#include "CursorHighlight.h"
 #include "Output.h"
 #include "OutputManagement.h"
 #include "Performance.h"
@@ -255,6 +257,16 @@ static void finish(Server& server)
     finish_layer_shell(server);
     finish_xdg_shell(server);
     finish_outputs(server);
+
+    // Destroy the compositor's cached overlay nodes while the scene graph still
+    // exists. Several are file/namespace statics; otherwise their destructors run
+    // from static destruction after wlr_scene_node_destroy() and touch freed
+    // scene nodes (a core dump on every orderly shutdown).
+    server.window_menu.node = nullptr;
+    WindowSwitcher::finish();
+    WindowManager::finish();
+    finish_cursor_highlight();
+    finish_animations();
 
     wlr_backend_destroy(server.backend);
     wlr_scene_node_destroy(&server.scene->tree.node);

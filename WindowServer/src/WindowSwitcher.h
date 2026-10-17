@@ -62,4 +62,7 @@ void refresh(Server&);
 
 void hide();
 
+// Destroy the switcher overlay while the scene graph still exists.
+void finish();
+
 }

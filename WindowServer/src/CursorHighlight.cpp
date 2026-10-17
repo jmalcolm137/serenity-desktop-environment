@@ -91,3 +91,8 @@ void toggle_cursor_highlight(Server& server)
     render_cursor_highlight(server);
     dbgln("WindowServer: cursor highlight {}", cursor_highlight_enabled() ? "on" : "off");
 }
+
+void finish_cursor_highlight()
+{
+    s_cursor_highlight = nullptr;
+}

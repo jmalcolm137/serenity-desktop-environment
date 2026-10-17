@@ -1151,4 +1151,24 @@ bool perform_action(Server& server, Config::Action action)
     }
 }
 
+void finish()
+{
+    if (!s_stack_transition.is_empty())
+        finish_window_stack_transition();
+    if (s_stack_transition_timer) {
+        s_stack_transition_timer->stop();
+        s_stack_transition_timer = nullptr;
+    }
+    s_stack_transition.clear();
+    s_stack_transition_server = nullptr;
+
+    s_tile_preview = nullptr;
+    s_geometry_hud = nullptr;
+    s_stack_switch_overlay = nullptr;
+    if (s_stack_switch_overlay_timer) {
+        s_stack_switch_overlay_timer->stop();
+        s_stack_switch_overlay_timer = nullptr;
+    }
+}
+
 }

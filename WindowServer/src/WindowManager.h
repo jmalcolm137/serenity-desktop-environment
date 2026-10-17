@@ -127,4 +127,8 @@ void finish_move_snap(Server&, Toplevel&);
 void update_resize_hud(Server&, Toplevel&, Gfx::IntRect content_rect);
 void hide_geometry_hud();
 
+// Drop the compositor-drawn overlay ChromeNodes while the scene graph still
+// exists, before main() destroys the wlroots scene.
+void finish();
+
 }
