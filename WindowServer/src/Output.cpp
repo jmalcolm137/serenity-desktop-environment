@@ -274,7 +274,7 @@ static void output_commit(wl_listener* listener, void* data)
     // R5 accessibility (docs/29): the Magnifier's capture is answered from a frame
     // that is actually on screen, so it needs the buffer this commit presents.
     if (auto* event = static_cast<wlr_output_event_commit*>(data); event->state && (event->state->committed & WLR_OUTPUT_STATE_BUFFER))
-        serve_pending_captures(server, event->state->buffer);
+        serve_pending_captures(server, output->output, event->state->buffer);
     // Read the new box, but keep the old one: a disable empties it, and the windows
     // are still where they were, so the migration below needs to know where the
     // output *was*. (Getting this order wrong is how the first version of this
