@@ -13,6 +13,7 @@
 
 struct wl_resource;
 struct wlr_buffer;
+struct wlr_output;
 
 // R5 accessibility (docs/29-accessibility.md): the Magnifier's screen capture.
 //
@@ -35,5 +36,7 @@ void queue_capture_request(wl_resource* manager, uint32_t serial, Gfx::IntRect c
 // never used after the resource is freed.
 void forget_capture_requests(wl_resource* manager);
 
-// Answer every pending request from this frame's buffer.
-void serve_pending_captures(Server&, wlr_buffer* committed);
+// Answer every pending request that falls on this output, from the buffer this frame
+// presented. Requests are in layout coordinates; the output's buffer is not, so they
+// are translated to it. A request for another output stays queued for its commit.
+void serve_pending_captures(Server&, wlr_output*, wlr_buffer* committed);

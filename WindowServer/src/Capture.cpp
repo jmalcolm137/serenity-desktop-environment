@@ -11,6 +11,7 @@
 #include "serenity-window-server-protocol.h"
 #include <wlr/render/wlr_texture.h>
 #include <wlr/types/wlr_buffer.h>
+#include <wlr/types/wlr_output_layout.h>
 
 #include <chrono>
 
@@ -75,19 +76,31 @@ void forget_capture_requests(wl_resource* manager)
     s_pending.remove_all_matching([&](auto& pending) { return pending.manager == manager; });
 }
 
-void serve_pending_captures(Server& server, wlr_buffer* committed)
+void serve_pending_captures(Server& server, wlr_output* output, wlr_buffer* committed)
 {
-    if (s_pending.is_empty())
+    if (s_pending.is_empty() || !output || !committed)
         return;
 
-    auto* texture = committed ? wlr_texture_from_buffer(server.renderer, committed) : nullptr;
+    wlr_box output_box { };
+    wlr_output_layout_get_box(server.output_layout, output, &output_box);
+    if (output_box.width <= 0 || output_box.height <= 0)
+        return;
+    // Requests are in layout coordinates; this frame's buffer is this output's.
+    auto const output_area = Gfx::IntRect { output_box.x, output_box.y, output_box.width, output_box.height };
+
+    auto* texture = wlr_texture_from_buffer(server.renderer, committed);
     auto const read_format = texture ? wlr_texture_preferred_read_format(texture) : 0;
     auto const bitmap_format = bitmap_format_for(read_format);
 
+    Vector<PendingCapture> still_pending;
     for (auto const& pending : s_pending) {
+        if (!pending.region.intersects(output_area)) {
+            still_pending.append(pending);
+            continue;
+        }
+        auto const region = pending.region.intersected(output_area).translated(-output_area.x(), -output_area.y());
         RefPtr<Gfx::Bitmap> bitmap;
         if (texture && bitmap_format != Gfx::BitmapFormat::Invalid) {
-            auto const region = pending.region.intersected({ 0, 0, committed->width, committed->height });
             if (!region.is_empty()) {
                 if (auto created = Gfx::Bitmap::create(bitmap_format, region.size()); !created.is_error()) {
                     // src_box is const: the whole options object is aggregate-initialised.
@@ -125,5 +138,5 @@ void serve_pending_captures(Server& server, wlr_buffer* committed)
 
     if (texture)
         wlr_texture_destroy(texture);
-    s_pending.clear();
+    s_pending = move(still_pending);
 }
