@@ -148,7 +148,9 @@ APPLET_CMDS="$(sde_applet_startup_commands "$SDE_ROOT")"
 
 # R6/N4: a minimal startup for safe mode (used automatically when the compositor
 # keeps failing, and with SDE_SAFE_MODE=1): just the shell, no applets/battery.
-SAFE_STARTUP="$BUILD/bin/Taskbar"
+# The wrapper falls back to a Terminal if the Taskbar does not survive startup.
+SHELL_WRAPPER="$SDE_ROOT/scripts/sde-shell.sh"
+SAFE_STARTUP="$SHELL_WRAPPER $BUILD/bin/Taskbar $BUILD/bin/Terminal"
 
 if [[ "${SDE_SAFE_MODE:-0}" == "1" ]]; then
     # Manual safe mode: minimal shell, and tell the supervisor to skip autostart.
@@ -157,7 +159,7 @@ if [[ "${SDE_SAFE_MODE:-0}" == "1" ]]; then
 elif [[ -n "${1:-}" ]]; then
     STARTUP="$1"
 else
-    STARTUP="$BUILD/bin/Taskbar & $BUILD/bin/FileManager -d"
+    STARTUP="$SHELL_WRAPPER $BUILD/bin/Taskbar $BUILD/bin/Terminal & $BUILD/bin/FileManager -d"
     if [[ -n "$APPLET_CMDS" ]]; then
         STARTUP="$STARTUP & $APPLET_CMDS"
     fi

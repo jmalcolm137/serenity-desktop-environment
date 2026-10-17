@@ -114,7 +114,7 @@ if [ -n "${SDE_WM_PORTAL_PATH:-}" ]; then
     export SDE_WM_PORTAL_PATH
 fi
 
-SDE_SESSION_SHELL="${SDE_SESSION_SHELL:-$BUILD/bin/Taskbar & $BUILD/bin/FileManager -d}"
+SDE_SESSION_SHELL="${SDE_SESSION_SHELL:-$SDE_ROOT/scripts/sde-shell.sh $BUILD/bin/Taskbar $BUILD/bin/Terminal & $BUILD/bin/FileManager -d}"
 COMPOSITOR="${SDE_SESSION_COMPOSITOR:-$SDE_ROOT/build/WindowServer/WindowServer -n $SESSION_DISPLAY -s \"$SDE_SESSION_SHELL\"}"
 AUTOSTART_DIR="${SDE_SESSION_AUTOSTART_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/autostart}"
 MAX_RESTARTS="${SDE_SESSION_MAX_RESTARTS:-3}"
