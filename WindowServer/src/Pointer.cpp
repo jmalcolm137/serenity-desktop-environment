@@ -695,6 +695,12 @@ static void cursor_button(wl_listener* listener, void* data)
         // A titlebar drag has ended: tile to the previewed edge target, if any.
         if (server->grab.toplevel && server->grab.mode == CursorMode::Move)
             WindowManager::finish_move_snap(*server, *server->grab.toplevel);
+        // Tell the client where the frame drag left its window. handle_frame_release
+        // clears the grab, so report first; without this a client that was moved by
+        // its titlebar kept the origin from before the drag, and its screen-relative
+        // coordinates (ComboBox popups, menus, tooltips) pointed at the old place.
+        if (server->grab.toplevel)
+            toplevel_report_position(*server->grab.toplevel);
         handle_frame_release(*server, event->button);
         handle_x11_frame_release(*server, event->button);
         if (server->grab.x11)
