@@ -9,6 +9,7 @@
 #include "CursorHighlight.h"
 #include "Frame.h"
 #include "Resources.h"
+#include "SerenityWindow.h"
 #include "Wallpaper.h"
 
 #include <AK/LexicalPath.h>
@@ -109,6 +110,12 @@ void watch_theme_broker(Server& server)
             apply_theme_path(server, theme_path);
             // Persist the choice so it survives a compositor/session restart.
             Config::set_theme({ LexicalPath(theme_path).title(), theme_path });
+            // The theme's *name* comes from the host settings, not the broker
+            // (which only carries the path). Re-broadcast now that Config holds
+            // the applied theme: otherwise clients answer get_system_theme() from
+            // the previous broadcast and a theme menu highlights the one before
+            // the one that was just selected.
+            broadcast_host_settings(server);
         }
     };
     if (auto directory = LexicalPath(path).dirname().to_byte_string(); !directory.is_empty())

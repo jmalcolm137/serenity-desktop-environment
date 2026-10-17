@@ -298,7 +298,7 @@ static ByteString host_settings_blob()
     return builder.to_byte_string();
 }
 
-static void broadcast_host_settings(Server& server)
+void broadcast_host_settings(Server& server)
 {
     auto blob = host_settings_blob();
     for (auto* manager : server.serenity_window_managers) {
