@@ -49,4 +49,11 @@ Layout layout(Vector<Applet> const& applets, Vector<ByteString> const& configure
 // the first report.
 Gfx::IntPoint fallback_origin(Gfx::IntRect const& usable_area, Gfx::IntSize area_size);
 
+// Move an applet-area origin from one anchor geometry to another, keeping its
+// distance from the anchor's bottom-right corner. The anchor is the Taskbar (or,
+// before it reports, the usable area); when the resolution or output scale
+// changes the anchor moves/resizes, and the applet area has to move with it
+// instead of staying at the absolute position it was first given.
+Gfx::IntPoint translate_with_anchor(Gfx::IntRect const& old_anchor, Gfx::IntRect const& new_anchor, Gfx::IntPoint origin);
+
 }

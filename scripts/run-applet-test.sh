@@ -55,15 +55,50 @@ sleep 1
 
 # Three applets. CPUGraph is in [Applet] Order (index 1); Alpha/Beta are not
 # (index 0), so CPUGraph sorts first and, laid right-to-left, ends up rightmost.
-env WAYLAND_DISPLAY="$SOCK" setsid timeout 8 "$TOOLS_BUILD/applet-test" \
+env WAYLAND_DISPLAY="$SOCK" setsid timeout 15 "$TOOLS_BUILD/applet-test" \
     --namespace serenity-applet:Alpha --width 40 --height 21 > "$RUNTIME/alpha.log" 2>&1 &
 sleep 0.5
-env WAYLAND_DISPLAY="$SOCK" setsid timeout 8 "$TOOLS_BUILD/applet-test" \
+env WAYLAND_DISPLAY="$SOCK" setsid timeout 15 "$TOOLS_BUILD/applet-test" \
     --namespace serenity-applet:Beta --width 30 --height 21 > "$RUNTIME/beta.log" 2>&1 &
 sleep 0.5
-env WAYLAND_DISPLAY="$SOCK" setsid timeout 8 "$TOOLS_BUILD/applet-test" \
+env WAYLAND_DISPLAY="$SOCK" setsid timeout 15 "$TOOLS_BUILD/applet-test" \
     --namespace serenity-applet:CPUGraph --width 20 --height 21 > "$RUNTIME/cpu.log" 2>&1 &
 sleep 1.5
+
+# A live resolution change must move the applet area with the output. Without the
+# output commit re-arranging the layers, the compositor keeps the old usable area
+# (and the old 1280x720 coordinates), which is how the applet strip ended up
+# floating away from the Taskbar after a Display Settings change.
+echo "=== live resolution change ==="
+cat > "$RUNTIME/screenlayout.ini" <<'INI'
+[Screens]
+MainScreen=0
+
+[Screen0]
+Mode=Device
+Device=HEADLESS-1
+Left=0
+Top=0
+Width=800
+Height=600
+ScaleFactor=1
+INI
+for _ in $(seq 1 40); do
+    grep -q "usable area for 'HEADLESS-1': 800x600 at 0,0" "$RUNTIME/comp.log" 2>/dev/null && break
+    sleep 0.1
+done
+sleep 0.3
+
+# A live output-scale change shrinks the logical output again (800x600 @2x is
+# 400x300 logical); the area must follow.
+echo "=== live output scale change ==="
+sed 's/ScaleFactor=1/ScaleFactor=2/' "$RUNTIME/screenlayout.ini" > "$RUNTIME/layout.new"
+cat "$RUNTIME/layout.new" > "$RUNTIME/screenlayout.ini"
+for _ in $(seq 1 40); do
+    grep -q "usable area for 'HEADLESS-1': 400x300 at 0,0" "$RUNTIME/comp.log" 2>/dev/null && break
+    sleep 0.1
+done
+sleep 0.3
 
 kill "$COMP_PID" 2>/dev/null || true
 wait "$COMP_PID" 2>/dev/null || true
@@ -90,6 +125,18 @@ check "AppletManager: applet area size 98x19 (3 applets: CPUGraph,Alpha,Beta,)"
 check "'CPUGraph' 20x21+1260,700"
 check "'Alpha' 40x21+1216,700"
 check "'Beta' 30x21+1182,700"
+
+echo "=== the area follows a resolution change ==="
+check "usable area for 'HEADLESS-1': 800x600 at 0,0"
+check "'CPUGraph' 20x21+780,580"
+check "'Alpha' 40x21+736,580"
+check "'Beta' 30x21+702,580"
+
+echo "=== the area follows an output-scale change ==="
+check "usable area for 'HEADLESS-1': 400x300 at 0,0"
+check "'CPUGraph' 20x21+380,280"
+check "'Alpha' 40x21+336,280"
+check "'Beta' 30x21+302,280"
 
 if [[ "$fail" -ne 0 ]]; then
     echo "==> applet-area test FAILED"

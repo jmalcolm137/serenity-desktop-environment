@@ -51,4 +51,10 @@ Gfx::IntPoint fallback_origin(Gfx::IntRect const& usable_area, Gfx::IntSize area
     return { usable_area.right() - area_size.width(), usable_area.bottom() - area_size.height() };
 }
 
+Gfx::IntPoint translate_with_anchor(Gfx::IntRect const& old_anchor, Gfx::IntRect const& new_anchor, Gfx::IntPoint origin)
+{
+    auto const delta = new_anchor.bottom_right() - old_anchor.bottom_right();
+    return origin.translated(delta.x(), delta.y());
+}
+
 }

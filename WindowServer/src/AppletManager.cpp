@@ -9,6 +9,7 @@
 #include "AppletLayout.h"
 
 #include <AK/InsertionSort.h>
+#include <AK/Optional.h>
 #include <AK/Vector.h>
 #include <LibGfx/Rect.h>
 #include <string.h>
@@ -36,6 +37,11 @@ static int const applet_area_height = 19;
 
 static Gfx::IntPoint s_position { 0, 0 };
 static bool s_position_known { false };
+// The Taskbar/usable-area geometry in effect when s_position was reported. The
+// position is absolute, so when an output's resolution or scale changes the
+// applet area has to be moved by the same delta as its anchor; otherwise it
+// stays at the old screen coordinates and floats somewhere on the new screen.
+static Gfx::IntRect s_position_anchor;
 static Gfx::IntSize s_area_size;
 static Gfx::IntSize s_last_emitted;
 
@@ -103,6 +109,38 @@ static Vector<Applet> build_layout(Server& server)
 
 static ByteString s_last_layout;
 
+// The Taskbar is a layer surface ("serenity-taskbar"). Return its on-screen rect
+// so the applet area can be anchored to it rather than to absolute coordinates.
+static Optional<Gfx::IntRect> taskbar_rect(Server& server)
+{
+    for (auto& layer : server.layer_surfaces) {
+        auto* surface = layer->layer_surface;
+        if (!surface || !surface->surface || !surface->surface->mapped)
+            continue;
+        if (!surface->layer_namespace || strcmp(surface->layer_namespace, "serenity-taskbar"))
+            continue;
+        if (!layer->scene)
+            continue;
+        auto size = surface->surface->current;
+        if (size.width <= 0 || size.height <= 0)
+            continue;
+        auto const& node = layer->scene->tree->node;
+        return Gfx::IntRect { node.x, node.y, static_cast<int>(size.width), static_cast<int>(size.height) };
+    }
+    return {};
+}
+
+// What the Taskbar-supplied position is relative to: the Taskbar if it is mapped,
+// otherwise the usable area (the fallback's reference).
+static Gfx::IntRect current_anchor(Server& server)
+{
+    if (auto taskbar = taskbar_rect(server); taskbar.has_value())
+        return taskbar.value();
+    if (g_hooks.primary_usable_area)
+        return g_hooks.primary_usable_area(server);
+    return {};
+}
+
 static void apply(Server& server)
 {
     auto layout = build_layout(server);
@@ -115,6 +153,13 @@ static void apply(Server& server)
         if (usable.is_empty())
             return;
         origin = AppletLayout::fallback_origin(usable, s_area_size);
+    } else {
+        // The Taskbar's position is absolute. If its anchor (the Taskbar itself,
+        // or the screen it sits on) has moved or resized since it reported — a
+        // resolution or scale change — move the applet area by the same delta.
+        auto anchor = current_anchor(server);
+        if (!anchor.is_empty() && !s_position_anchor.is_empty())
+            origin = AppletLayout::translate_with_anchor(s_position_anchor, anchor, s_position);
     }
 
     ByteString signature;
@@ -146,6 +191,9 @@ void set_position(Server& server, Gfx::IntPoint position)
 {
     s_position = position;
     s_position_known = true;
+    // Remember the Taskbar geometry this position was computed against, so a
+    // later resize/scale can translate the area along with it.
+    s_position_anchor = current_anchor(server);
     apply(server);
 }
 

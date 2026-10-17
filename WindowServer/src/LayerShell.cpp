@@ -12,6 +12,7 @@
 #include "LayerShell.h"
 #include "Output.h"
 #include "XWayland.h"
+#include "XdgShell.h"
 
 #include <LibGfx/Palette.h>
 
@@ -91,6 +92,15 @@ void arrange_layers(Server& server, wlr_output* output)
     // The layer-shell arrange resets every node's position, so re-apply the
     // applet-area layout last (WS4).
     AppletManager::relayout(server);
+
+    // Layer-surface clients cache their on-screen origin: the Taskbar uses it to
+    // place its Serenity/system menu, and applets use it for tooltips. A mode or
+    // scale change moves an anchored panel without the client committing, so
+    // report the position the arrange pass just gave every surface on this output.
+    for (auto& layer : server.layer_surfaces) {
+        if (layer->output == output)
+            layer_report_position(*layer);
+    }
 
     // Keep X11 clients' workarea in step with the panels' exclusive zones.
     update_xwayland_workareas(server);
