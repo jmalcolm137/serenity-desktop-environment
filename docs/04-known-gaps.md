@@ -228,8 +228,11 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal`; see
   on the next login. Apps that opted into `xdg-session-management-v1` then restore
   their toplevels' geometry; an app the user closed is not restored, one that is
   no longer installed is skipped, and the apps the session's own startup command
-  launches are not duplicated. The supervisor still (re)launches XDG Autostart
-  entries the same way; supervising long-running apps beyond that is not done.
+  launches are not duplicated. The shell wrapper's fallback Terminal is not
+  treated as a startup app — it only runs if the Taskbar fails — so a Terminal
+  that was open is still restored after a compositor restart. The supervisor
+  still (re)launches XDG Autostart entries the same way; supervising long-running
+  apps beyond that is not done.
 
 - **Session lifecycle (G6 / W5): resolved (R4.1–R4.9).** Greet/login stays the
   display manager's; the session now starts, autostarts, locks, idles, saves/

@@ -348,6 +348,31 @@ check_file "$RUNTIME/restored-k"
 # The shell's own app is not relaunched a second time.
 check_absent_file "$RUNTIME/restored-shell-app"
 
+# The shell wrapper's fallback Terminal is not an unconditional startup app: a
+# Terminal that had a window must be restored.
+mkdir -p "$RUNTIME/bin-l"
+cat > "$RUNTIME/bin-l/Terminal" <<EOF
+#!/usr/bin/env bash
+touch "$RUNTIME/restored-terminal-l"
+EOF
+cat > "$RUNTIME/bin-l/FileManager" <<EOF
+#!/usr/bin/env bash
+touch "$RUNTIME/restored-shell-app-l"
+EOF
+chmod +x "$RUNTIME/bin-l/Terminal" "$RUNTIME/bin-l/FileManager"
+printf 'Terminal\nFileManager\n' > "$RUNTIME/session-apps-l"
+env SDE_SESSION_COMPOSITOR="sleep 0.5" \
+    SDE_SESSION_APP_BIN_DIR="$RUNTIME/bin-l" \
+    SDE_SESSION_RESTORE_FILE="$RUNTIME/session-apps-l" \
+    SDE_SESSION_AUTOSTART=0 \
+    SDE_SESSION_SHELL="$RUNTIME/bin-l/sde-shell.sh $RUNTIME/bin-l/FileManager $RUNTIME/bin-l/Terminal" \
+    SDE_SESSION_STARTUP_APPS="FileManager" \
+    SDE_SESSION_RESTART_DELAY=0 \
+    "$SDE" > "$RUNTIME/session-l.log" 2>&1 || true
+check "restoring Terminal" "$RUNTIME/session-l.log"
+check_file "$RUNTIME/restored-terminal-l"
+check_absent_file "$RUNTIME/restored-shell-app-l"
+
 if [ "$fail" -ne 0 ]; then
     echo "==> session test FAILED"
     exit 1

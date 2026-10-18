@@ -209,10 +209,15 @@ if [[ "${SDE_SAFE_MODE:-0}" == "1" ]]; then
     # Manual safe mode: minimal shell, and tell the supervisor to skip autostart.
     STARTUP="$SAFE_STARTUP"
     export SDE_SESSION_SAFE_MODE=1
+    # The wrapper's Terminal is a fallback, not an unconditional startup app.
+    export SDE_SESSION_STARTUP_APPS="Taskbar"
 elif [[ -n "${1:-}" ]]; then
     STARTUP="$1"
 else
     STARTUP="$SHELL_WRAPPER $BUILD/bin/Taskbar $BUILD/bin/Terminal & $BUILD/bin/FileManager -d"
+    # The wrapper runs the Taskbar and falls back to Terminal; the Terminal is not
+    # unconditional, so a Terminal the user had open must still be restored.
+    export SDE_SESSION_STARTUP_APPS="Taskbar FileManager"
     if [[ -n "$APPLET_CMDS" ]]; then
         STARTUP="$STARTUP & $APPLET_CMDS"
     fi

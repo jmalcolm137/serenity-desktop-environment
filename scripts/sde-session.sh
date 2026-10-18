@@ -128,11 +128,19 @@ RUN_AUTOSTART="${SDE_SESSION_AUTOSTART:-1}"
 RUN_RESTORE="${SDE_SESSION_RESTORE:-1}"
 RESTORE_FILE="${SDE_SESSION_RESTORE_FILE:-$(session_state_dir)/session-apps}"
 SHELL_APPS=""
-for _word in ${SDE_SESSION_SHELL:-}; do
-    _base="$(basename "$_word" 2>/dev/null || true)"
-    case "$_base" in ""|"&"|"-"*) continue ;; esac
-    SHELL_APPS="$SHELL_APPS $_base"
-done
+if [ -n "${SDE_SESSION_STARTUP_APPS:-}" ]; then
+    # The launcher knows which apps its startup command runs unconditionally. This
+    # matters for the shell wrapper: `sde-shell.sh Taskbar Terminal` only runs
+    # Terminal if the Taskbar fails, so a Terminal that was open must still be
+    # restored.
+    SHELL_APPS=" $SDE_SESSION_STARTUP_APPS "
+else
+    for _word in ${SDE_SESSION_SHELL:-}; do
+        _base="$(basename "$_word" 2>/dev/null || true)"
+        case "$_base" in ""|"&"|"-"*) continue ;; esac
+        SHELL_APPS="$SHELL_APPS $_base"
+    done
+fi
 
 # R6/N4 hardening. The watchdog restarts a *wedged* compositor (one whose event
 # loop is blocked) by watching a liveness heartbeat file the compositor writes;
