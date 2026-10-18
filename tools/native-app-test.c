@@ -270,6 +270,7 @@ static struct wl_registry_listener const registry_listener = { registry_global, 
 int main(int argc, char** argv)
 {
     int const want_presentation = argc > 1 && strcmp(argv[1], "--presentation") == 0;
+    int want_fullscreen = 0;
     int const want_fractional = argc > 1 && strcmp(argv[1], "--fractional") == 0;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--maximize") == 0)
@@ -278,6 +279,8 @@ int main(int argc, char** argv)
             want_minimize = 1;
         else if (strcmp(argv[i], "--server-side-decorations") == 0)
             want_server_side_decorations = 1;
+        else if (strcmp(argv[i], "--fullscreen") == 0)
+            want_fullscreen = 1;
         else if (strcmp(argv[i], "--blocking") == 0)
             want_blocking = 1;
     }
@@ -331,6 +334,8 @@ int main(int argc, char** argv)
     xdg_toplevel_add_listener(toplevel, &toplevel_listener, NULL);
     xdg_toplevel_set_title(toplevel, g_title);
     xdg_toplevel_set_app_id(toplevel, "sde-native-test");
+    if (want_fullscreen)
+        xdg_toplevel_set_fullscreen(toplevel, NULL);
     // --launch-origin: report the launch rect *before* the window maps, since the
     // compositor starts the launch animation when the toplevel appears.
     if (window_manager && g_launch_origin[2] > 0 && g_launch_origin[3] > 0) {

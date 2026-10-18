@@ -197,6 +197,10 @@ struct Toplevel {
     wlr_scene_tree* scene_tree { nullptr };
     wlr_scene_tree* content_tree { nullptr };
     wlr_scene_buffer* frame_buffer { nullptr };
+    // The client's scene buffer, for direct-scanout telemetry (wlroots emits
+    // output_sample on the buffer, not on the output).
+    wlr_scene_buffer* content_buffer { nullptr };
+    wl_listener content_sample { };
     int frame_left { 0 };
     int frame_top { 0 };
     int frame_right { 0 };

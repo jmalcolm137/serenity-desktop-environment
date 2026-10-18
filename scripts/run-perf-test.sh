@@ -198,6 +198,11 @@ check "the drag's frame time p95 is inside the budget" "$D_P95" "<" "$FRAME_BUDG
 check "the drag's frame time p99 is inside a 240 Hz interval" "$D_P99" "<" "$AGGRESSIVE_MS"
 check "the drag's frame time max is inside the budget" "$D_MAX" "<" "$FRAME_BUDGET_MS"
 check "no dragged frame exceeded the budget" "$D_OVER" "==" 0
+SCANOUT_SAMPLES="$(stat_value scanout_samples)"
+DIRECT_SCANOUTS="$(stat_value direct_scanouts)"
+echo "  client scanout samples: $SCANOUT_SAMPLES, direct: $DIRECT_SCANOUTS"
+check "the scene reported client scanout samples" "$SCANOUT_SAMPLES" ">" 0
+check "a headless output does not direct-scanout" "$DIRECT_SCANOUTS" "==" 0
 
 echo "=== (D) a 240 Hz output: the compositor keeps the cadence ==="
 stop_compositor

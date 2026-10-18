@@ -11,6 +11,7 @@
 #include "Interop.h"
 #include "LayerShell.h"
 #include "Output.h"
+#include "Performance.h"
 #include "Pointer.h"
 #include "Resources.h"
 #include "SerenityWindow.h"
@@ -36,6 +37,52 @@ extern "C" {
 }
 
 // --- xdg toplevels / popups ----------------------------------------------
+
+static wlr_scene_buffer* first_scene_buffer(wlr_scene_node* node)
+{
+    if (node->type == WLR_SCENE_NODE_BUFFER)
+        return wlr_scene_buffer_from_node(node);
+    if (node->type != WLR_SCENE_NODE_TREE)
+        return nullptr;
+    auto* tree = wlr_scene_tree_from_node(node);
+    wlr_scene_node* child = nullptr;
+    wl_list_for_each(child, &tree->children, link)
+    {
+        if (auto* found = first_scene_buffer(child))
+            return found;
+    }
+    return nullptr;
+}
+
+// Direct-scanout observability: wlroots emits output_sample on the scene buffer
+// that was rendered or scanned out. Counting it here makes the automatic scene
+// scanout path visible in SDE_PERF_STATS instead of an article of faith.
+static void toplevel_content_sample(wl_listener* listener, void* data);
+
+static void attach_toplevel_content_sample(Toplevel& toplevel)
+{
+    if (toplevel.content_buffer || !toplevel.content_tree)
+        return;
+    if (!(toplevel.content_buffer = first_scene_buffer(&toplevel.content_tree->node)))
+        return;
+    toplevel.content_sample.notify = toplevel_content_sample;
+    wl_signal_add(&toplevel.content_buffer->events.output_sample, &toplevel.content_sample);
+}
+
+static void toplevel_content_sample(wl_listener* listener, void* data)
+{
+    (void)listener;
+    auto const* event = static_cast<wlr_scene_output_sample_event*>(data);
+    ++s_perf.scanout_samples;
+    if (!event->direct_scanout)
+        return;
+    ++s_perf.direct_scanouts;
+    if (!s_perf.direct_scanout_logged) {
+        s_perf.direct_scanout_logged = true;
+        dbgln("WindowServer: direct scanout active on output '{}'",
+            event->output && event->output->output->name ? event->output->output->name : "?");
+    }
+}
 
 void toplevel_report_position(Toplevel& toplevel)
 {
@@ -99,6 +146,7 @@ static void toplevel_map(wl_listener* listener, void*)
     wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
     toplevel->mapped = true;
     toplevel->frame_active = true;
+    attach_toplevel_content_sample(*toplevel);
     apply_toplevel_decoration(*toplevel);
     toplevel_update_frame(*toplevel);
     // The new window joins the current workspace stack.
@@ -180,6 +228,7 @@ static void toplevel_commit(wl_listener* listener, void*)
 {
     Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, commit);
+    attach_toplevel_content_sample(*toplevel);
     if (toplevel->xdg_toplevel->base->initial_commit) {
         // Restore the stored session size (R4.2), if any; otherwise let the
         // client pick.
@@ -220,6 +269,10 @@ static void toplevel_destroy(wl_listener* listener, void*)
     wl_list_remove(&toplevel->request_maximize.link);
     wl_list_remove(&toplevel->request_minimize.link);
     wl_list_remove(&toplevel->request_fullscreen.link);
+    if (toplevel->content_buffer) {
+        wl_list_remove(&toplevel->content_sample.link);
+        toplevel->content_buffer = nullptr;
+    }
     wl_list_remove(&toplevel->set_title.link);
     wl_list_remove(&toplevel->set_app_id.link);
     wl_list_remove(&toplevel->foreign_request_activate.link);
@@ -507,6 +560,10 @@ static void server_new_xdg_toplevel(wl_listener* listener, void* data)
     toplevel->content_tree = wlr_scene_xdg_surface_create(toplevel->scene_tree, xdg_toplevel->base);
     xdg_toplevel->base->data = toplevel->content_tree;
     use_nearest_filter(&toplevel->content_tree->node);
+    if ((toplevel->content_buffer = first_scene_buffer(&toplevel->content_tree->node))) {
+        toplevel->content_sample.notify = toplevel_content_sample;
+        wl_signal_add(&toplevel->content_buffer->events.output_sample, &toplevel->content_sample);
+    }
 
     toplevel->foreign_handle = create_foreign_toplevel_handle(*server);
     if (toplevel->foreign_handle) {

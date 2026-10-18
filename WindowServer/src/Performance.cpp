@@ -228,6 +228,8 @@ ByteString perf_summary(Server& server)
     StringBuilder out;
     out.appendff("frames={}\n", s_perf.frames);
     out.appendff("slow_frames={}\n", s_perf.slow_frames);
+    out.appendff("scanout_samples={}\n", s_perf.scanout_samples);
+    out.appendff("direct_scanouts={}\n", s_perf.direct_scanouts);
     out.appendff("fps={:.1}\n", static_cast<double>(s_perf.frames) / seconds);
     out.appendff("samples={}\n", s_perf.frame_ms.recent());
     out.appendff("output_refresh_mhz={}\n", s_perf.refresh_mhz);

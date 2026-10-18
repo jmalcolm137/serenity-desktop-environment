@@ -71,6 +71,11 @@ struct PerfStats {
     PerfMetric input_to_present_ms { .budget_ms = 50.0 };
     size_t frames { 0 };
     size_t slow_frames { 0 };
+    // Client content samples seen by the scene: every rendered/scanned frame of
+    // a toplevel content buffer, and how many of those were direct scanouts.
+    size_t scanout_samples { 0 };
+    size_t direct_scanouts { 0 };
+    bool direct_scanout_logged { false };
     double started_ms { 0 };
     int refresh_mhz { 0 };
     // Resident memory (kB): current, high-water, and the change since the last
