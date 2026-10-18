@@ -390,10 +390,11 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   served** (compositor-routed data-device DnD with a drag icon), and the port
   bridges LibGUI's `DragOperation` onto it both ways, so SerenityOS applications
   offer and accept drag-and-drop interoperably with standard Wayland clients.
-  **Still absent:** `xdg-toplevel-drag` (not present in the pinned wlroots); and
-  accessibility (AT-SPI). **Text input / IME is now served**: `text-input-v3` +
+  **Still absent:** `xdg-toplevel-drag` (not present in the pinned wlroots).
+  **Text input / IME is now served**: `text-input-v3` +
   `input-method-v2` (see [`22-input-method.md`](22-input-method.md),
-  `scripts/run-ime-test.sh`).
+  `scripts/run-ime-test.sh`). **Accessibility is now served** (see G1 below and
+  [`29-accessibility.md`](29-accessibility.md)).
 - **`xdg-desktop-portal` (G7).** Phase 1 landed: **`xdg-desktop-portal-serenity`**
   (see [`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md)),
   an SDE backend for the freedesktop portals (Settings, Account, Lockdown,
@@ -411,16 +412,19 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   ([`17-input-capture.md`](17-input-capture.md)), and the **USB** portal's backend
   is a real broker (policy + user prompt + remembered grants,
   `tools/portal/usb.cpp`, `scripts/run-usb-portal-test.sh`).
-- **Text input / IME (G5): done (R5); accessibility (G1) partly.** `text-input-v3`
+- **Text input / IME (G5) and accessibility (G1): done (R5).** `text-input-v3`
   / `input-method-v2` are served (see [`22-input-method.md`](22-input-method.md)),
   so an input method can compose CJK text into a focused field. **Sticky keys, high
-  contrast and the screen magnifier are now implemented** (`[Accessibility]
-  StickyKeys` / `HighContrast`; the Magnifier's capture comes from the committed
-  frame over serenity-window, and its `DisplayLink` is paced by the window surface's
-  frame callbacks — see [`29-accessibility.md`](29-accessibility.md)).
-  `scripts/run-sticky-keys-test.sh`, `scripts/run-high-contrast-test.sh` and
-  `scripts/run-magnifier-test.sh` cover them; AT-SPI remains, planned in
-  [`29-accessibility.md`](29-accessibility.md).
+  contrast, the screen magnifier and the AT-SPI tree are implemented.** Sticky
+  keys and high contrast are `[Accessibility]` options; the Magnifier's capture
+  comes from the committed frame over serenity-window and its `DisplayLink` is
+  paced by the window surface's frame callbacks; LibGUI publishes its widget tree
+  over a separate AT-SPI bus (`LibAccessibility`, with `Accessible`, `Component`,
+  `Action`, `Text` and `EditableText` and change events). See
+  [`29-accessibility.md`](29-accessibility.md) and
+  [`30-at-spi.md`](30-at-spi.md).
+  `scripts/run-sticky-keys-test.sh`, `scripts/run-high-contrast-test.sh`,
+  `scripts/run-magnifier-test.sh` and `scripts/run-atspi-test.sh` cover them.
 
 ## R6: Hardening & packaging (in progress)
 

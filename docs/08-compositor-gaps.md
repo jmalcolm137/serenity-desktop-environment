@@ -157,9 +157,14 @@ table.
 - **Input device configuration (G5).** R4 says "input settings" but does not
   enumerate libinput: accel profile/speed, tap-to-click, natural scroll, button
   mapping, disable-while-typing, left-handed.
-- **Accessibility (G1).** AT-SPI/screen reader, sticky keys, magnifier and
-  high-contrast are entirely absent. For a "classic workstation" aesthetic this
-  is a notable hole.
+- **Accessibility (G1): done (R5).** The compositor provides sticky keys and high
+  contrast; the Magnifier captures the committed frame; and LibGUI publishes its
+  widget tree over AT-SPI (`LibAccessibility`, with `Accessible`, `Component`,
+  `Action`, `Text`, `EditableText` and state/text events). See
+  [`29-accessibility.md`](29-accessibility.md) and
+  [`30-at-spi.md`](30-at-spi.md); `scripts/run-sticky-keys-test.sh`,
+  `run-high-contrast-test.sh`, `run-magnifier-test.sh` and
+  `run-atspi-test.sh` cover them.
 
 ## 5. Output & rendering depth (R6)
 
@@ -210,7 +215,11 @@ table.
 - **Pixel/golden tests across scale and output count (N8).** The R3 harness
   starts pixel assertions; extend to fractional scale, multiple outputs, and
   software vs GPU renderer.
-- **Accessibility & IME testing (G5).** Not addressed.
+- **Accessibility & IME testing (G5): done.** `run-atspi-test.sh` walks a live
+  window's AT-SPI tree over a private D-Bus (roles, extents, actions, text,
+  editable text and change events), and `run-ime-test.sh` exercises the
+  text-input/input-method relay headless. Sticky keys, high contrast and the
+  Magnifier have their own headless tests.
 
 ---
 
