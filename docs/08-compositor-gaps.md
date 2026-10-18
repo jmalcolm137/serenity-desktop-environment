@@ -189,12 +189,13 @@ GTK/Qt/Firefox conformance matrix in CI yet.
 
 ## 7. Testing & CI breadth (R6)
 
-- **Sanitizers and fuzzing (N8): sanitizers and three fuzz targets done.**
+- **Sanitizers and fuzzing (N8): sanitizers and five fuzz targets done.**
   ASan/UBSan builds and the full-tier sanitizer run found and fixed a shutdown
   use-after-free; config, WindowManagerServer and xdg-shell fuzzers are in place
-  (the WM one found the huge-Taskbar-rect abort). A fourth harness
-  (`run-layer-fuzz-test.sh`) drives the layer-shell arrange path. Data-device
-  fuzzing and Valgrind profiles remain open.
+  (the WM one found the huge-Taskbar-rect abort). Two more harnesses drive the
+  layer-shell arrange path (`run-layer-fuzz-test.sh`) and data-device
+  source/selection/drag ownership (`run-data-device-fuzz-test.sh`). Valgrind
+  profiles remain open.
 - **Pixel/golden tests across scale and output count (N8).** The R3 harness has
   scale/output captures; extend it to the full scale matrix, multiple outputs and
   the software/GPU renderer split.
