@@ -21,7 +21,7 @@ BUILD=(
     base-devel cmake ninja meson pkgconf git python
     # Compositor: wlroots + the SDE's own pkg-config requirements
     wayland wayland-protocols libxkbcommon pixman libdrm libinput seatd
-    libdisplay-info libxcb xcb-util-wm xcb-util-renderutil
+    libdisplay-info libxcb xcb-util-wm xcb-util-renderutil valgrind
     # Services and portals
     pipewire libpipewire dbus
     # The port's LibAudio keeps its PulseAudio backend, and a test that exercises

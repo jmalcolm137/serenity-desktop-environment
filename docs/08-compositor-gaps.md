@@ -194,8 +194,10 @@ GTK/Qt/Firefox conformance matrix in CI yet.
   use-after-free; config, WindowManagerServer and xdg-shell fuzzers are in place
   (the WM one found the huge-Taskbar-rect abort). Two more harnesses drive the
   layer-shell arrange path (`run-layer-fuzz-test.sh`) and data-device
-  source/selection/drag ownership (`run-data-device-fuzz-test.sh`). Valgrind
-  profiles remain open.
+  source/selection/drag ownership (`run-data-device-fuzz-test.sh`). A full-tier
+  Valgrind teardown profile (`run-valgrind-test.sh`) covers start, map and clean
+  shutdown with no definite leaks; it found and fixed the client-chrome and
+  repeating-timer shutdown leaks.
 - **Pixel/golden tests across scale and output count (N8).** The R3 harness has
   scale/output captures; extend it to the full scale matrix, multiple outputs and
   the software/GPU renderer split.

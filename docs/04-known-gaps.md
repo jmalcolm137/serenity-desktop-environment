@@ -545,7 +545,8 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   margins, sizes, layers and keyboard interactivity. A data-device harness
   (`run-data-device-fuzz-test.sh`) covers source ownership, random MIME offers
   and actions, selections, drags with/without icons, and cancellation under
-  random serials. Valgrind remains open.
+  random serials. `run-valgrind-test.sh` memchecks the full start/map/shutdown
+  path and rejects definite leaks and invalid accesses.
 - **CI (N6): green.** `scripts/run-all-tests.sh` runs the `run-*-test.sh`
   tests by tier (every test is headless by design), `.github/workflows/ci.yml`
   gates a push on the fast tier and runs the rest nightly, and
@@ -568,7 +569,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   lets a third of the tier run at all.
 
   **Green since 2026-10-18:** the fast tier on every push (**92 passed, 0 failed,
-  4 skipped, 0 timed out**) and the full suite nightly/on dispatch (**116 passed, 0
+  4 skipped, 0 timed out**) and the full suite nightly/on dispatch (**117 passed, 0
   failed, 4 skipped, 0 timed out**), with the informational budgets job passing. The
   four skips are environment-gated rather than gaps: no camera,
   `perf_event_open` blocked in the container, and the two screencast tests that
@@ -599,10 +600,13 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   `serenity-lagom-git` and `serenity-desktop-environment-git`).
   `run-split-framework-test.sh` stages a framework prefix and builds/runs a
   prebuilt-framework compositor; `run-packaging-test.sh` validates every
-  PKGBUILD's metadata. A real-machine package install/login remains. **Valgrind**
-  remains (ASan/UBSan, the full-tier sanitizer run, and config,
+  PKGBUILD's metadata. A real-machine package install/login remains. ASan/UBSan,
+  the full-tier sanitizer run, a Valgrind teardown profile and config,
   WindowManagerServer, xdg-shell, layer-shell and data-device fuzz harnesses are
-  in place). The compositor design doc is
+  in place. The Valgrind run found and fixed two shutdown leaks (a client chrome
+  allocation that outlived its toplevel, and the heartbeat/perf timer
+  registrations); a full start/map/shutdown is now clean with no definite leaks.
+  The compositor design doc is
   [`31-compositor-design.md`](31-compositor-design.md); the crash report, log
   levels and the optional JSONL event trace are in place, including optional
   sampled frame events (`SDE_TRACE_FRAMES`, at most one per second); unthrottled
