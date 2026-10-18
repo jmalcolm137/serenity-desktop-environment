@@ -30,7 +30,7 @@ SESSION_LOG="$RUNTIME/session.log"
 SESSION_PID=""
 cleanup() {
     if [[ -n "$SESSION_PID" ]]; then
-        kill -TERM "$SESSION_PID" 2>/dev/null || true
+        kill -TERM -- "-$SESSION_PID" 2>/dev/null || kill -TERM "$SESSION_PID" 2>/dev/null || true
         wait "$SESSION_PID" 2>/dev/null || true
     fi
     pkill -f "WindowServer -n sde-install-$$" 2>/dev/null || true
@@ -78,7 +78,7 @@ check "the session entry runs the installed launcher" \
     "grep -qF 'Exec=/usr/lib/sde/bin/sde-session' '$ROOT/usr/share/wayland-sessions/sde.desktop'"
 
 echo "=== a headless session from the installed launcher ==="
-env -u WAYLAND_DISPLAY -u DISPLAY \
+setsid env -u WAYLAND_DISPLAY -u DISPLAY \
     XDG_RUNTIME_DIR="$RUNTIME/run" \
     HOME="$RUNTIME/home" \
     SDE_STATE_DIR="$RUNTIME/state" \
@@ -113,7 +113,7 @@ check "the installed Taskbar mapped" \
 check "the installed LaunchServer started on the private session" \
     "grep -qF \"SDE LaunchServer: listening on '$RUNTIME/session/portal/launch'\" '$SESSION_LOG' 2>/dev/null"
 
-kill -TERM "$SESSION_PID" 2>/dev/null || true
+kill -TERM -- "-$SESSION_PID" 2>/dev/null || kill -TERM "$SESSION_PID" 2>/dev/null || true
 wait "$SESSION_PID" 2>/dev/null || true
 SESSION_PID=""
 sleep 0.3
