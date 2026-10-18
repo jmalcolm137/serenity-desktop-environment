@@ -38,6 +38,8 @@ extern "C" {
 
 // --- xdg toplevels / popups ----------------------------------------------
 
+static void toplevel_set_maximized(Toplevel&, bool);
+
 static wlr_scene_buffer* first_scene_buffer(wlr_scene_node* node)
 {
     if (node->type == WLR_SCENE_NODE_BUFFER)
@@ -169,6 +171,10 @@ static void toplevel_map(wl_listener* listener, void*)
     // then cascading. Without this every new toplevel stayed at the scene origin.
     if (!placed)
         WindowManager::place_new_toplevel(*toplevel);
+    if (toplevel->pending_maximize) {
+        toplevel->pending_maximize = false;
+        toplevel_set_maximized(*toplevel, true);
+    }
     toplevel_report_position(*toplevel);
     if (toplevel->foreign_handle && toplevel->server->primary_output)
         wlr_foreign_toplevel_handle_v1_output_enter(toplevel->foreign_handle, toplevel->server->primary_output);
@@ -380,8 +386,10 @@ void toplevel_maximize_on_primary(Toplevel& toplevel)
         toplevel.rolled_up = false;
         toplevel_update_frame(toplevel);
     }
-    if (!toplevel.maximized)
+    if (!toplevel.maximized) {
         toplevel.restore_size = { toplevel.xdg_toplevel->base->geometry.width, toplevel.xdg_toplevel->base->geometry.height };
+        toplevel.restore_position = { static_cast<int>(toplevel.scene_tree->node.x), static_cast<int>(toplevel.scene_tree->node.y) };
+    }
 
     wlr_box box { };
     wlr_output_layout_get_box(server.output_layout, server.primary_output, &box);
@@ -393,6 +401,12 @@ void toplevel_maximize_on_primary(Toplevel& toplevel)
         wlr_scene_node_set_position(&toplevel.scene_tree->node, box.x, box.y);
     toplevel_report_position(toplevel);
     wlr_xdg_toplevel_set_size(toplevel.xdg_toplevel, box.width - toplevel.frame_left - toplevel.frame_right, box.height - toplevel.frame_top - toplevel.frame_bottom);
+    dbgln("WindowServer: maximized '{}' at {},{} size {}x{} (restore {},{} {}x{})",
+        toplevel.xdg_toplevel->title ? toplevel.xdg_toplevel->title : "",
+        box.x, box.y, box.width - toplevel.frame_left - toplevel.frame_right,
+        box.height - toplevel.frame_top - toplevel.frame_bottom,
+        toplevel.restore_position.x(), toplevel.restore_position.y(),
+        toplevel.restore_size.width(), toplevel.restore_size.height());
     if (toplevel.foreign_handle)
         wlr_foreign_toplevel_handle_v1_set_maximized(toplevel.foreign_handle, true);
 }
@@ -408,8 +422,14 @@ static void toplevel_set_maximized(Toplevel& toplevel, bool maximized)
     toplevel.maximized = false;
     wlr_xdg_toplevel_set_maximized(toplevel.xdg_toplevel, false);
     wlr_xdg_toplevel_set_size(toplevel.xdg_toplevel, toplevel.restore_size.width(), toplevel.restore_size.height());
+    wlr_scene_node_set_position(&toplevel.scene_tree->node, toplevel.restore_position.x(), toplevel.restore_position.y());
+    toplevel_report_position(toplevel);
     if (toplevel.foreign_handle)
         wlr_foreign_toplevel_handle_v1_set_maximized(toplevel.foreign_handle, false);
+    dbgln("WindowServer: restored '{}' at {},{} size {}x{}",
+        toplevel.xdg_toplevel->title ? toplevel.xdg_toplevel->title : "",
+        toplevel.restore_position.x(), toplevel.restore_position.y(),
+        toplevel.restore_size.width(), toplevel.restore_size.height());
 }
 
 void toplevel_toggle_maximized(Toplevel& toplevel)
@@ -449,6 +469,14 @@ static void toplevel_request_maximize(wl_listener* listener, void*)
     // so the button did nothing. Apply the state the client asked for, through the
     // same path the compositor's own titlebar and the Taskbar use.
     bool const wanted = toplevel->xdg_toplevel->requested.maximized;
+    if (!toplevel->mapped) {
+        // The first configure can carry a maximize request before the toplevel
+        // maps (Firefox restoring a maximized window). Placement happens on map;
+        // apply the state afterwards so the cascade cannot reposition it.
+        toplevel->pending_maximize = wanted;
+        wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
+        return;
+    }
     if (wanted == toplevel->maximized) {
         wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
         return;

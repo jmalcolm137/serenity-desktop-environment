@@ -218,6 +218,10 @@ struct Toplevel {
     bool frame_active { true };
     bool mapped { false };
     bool maximized { false };
+    // A client (Firefox/GTK) may ask to be maximized before its first map. Apply
+    // it after placement, otherwise the cascade would move the "maximized" window
+    // to 100,100 and only its size would be correct.
+    bool pending_maximize { false };
     bool minimized { false };
     WindowTileType tile_type { WindowTileType::None };
     bool fullscreen { false };

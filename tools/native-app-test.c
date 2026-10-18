@@ -144,8 +144,12 @@ static void render(void)
 
 // --maximize / --minimize: ask the compositor the way a client's own titlebar does
 // (xdg_toplevel.set_maximized / .set_minimized) — Firefox's buttons.
+// --maximize-restore also asks to be restored once the maximized configure arrives,
+// so the test can assert the saved position/size round-trip.
 static int want_maximize;
+static int want_maximize_restore;
 static int want_minimize;
+static int restore_sent;
 
 static void xdg_surface_configure(void* data, struct xdg_surface* surf, uint32_t serial)
 {
@@ -180,6 +184,10 @@ static void toplevel_configure(void* data, struct xdg_toplevel* tl, int32_t w, i
         }
         printf("native-app-test: configured maximized=%d %dx%d\n", maximized ? 1 : 0, w, h);
         fflush(stdout);
+        if (want_maximize_restore && maximized && !restore_sent) {
+            restore_sent = 1;
+            xdg_toplevel_unset_maximized(tl);
+        }
     }
     if (w > 0)
         width = w;
@@ -275,6 +283,10 @@ int main(int argc, char** argv)
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--maximize") == 0)
             want_maximize = 1;
+        else if (strcmp(argv[i], "--maximize-restore") == 0) {
+            want_maximize = 1;
+            want_maximize_restore = 1;
+        }
         else if (strcmp(argv[i], "--minimize") == 0)
             want_minimize = 1;
         else if (strcmp(argv[i], "--server-side-decorations") == 0)

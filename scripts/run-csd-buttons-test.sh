@@ -74,6 +74,24 @@ check "the compositor saw the request" "1" "$(grep -c "asked to be maximized" "$
 # The handshake: the client is configured maximized, at the workarea size.
 check "the client was configured maximized" "1" "$(grep -c "configured maximized=1" "$RUNTIME/max.log")"
 check "at the workarea size" "1" "$(grep -c "configured maximized=1 1280x720" "$RUNTIME/max.log")"
+check "the maximized window is at the workarea origin" "1" "$(grep -c "maximized 'CSD Max' at 0,0 size 1280x720" "$RUNTIME/comp.log")"
+
+echo "=== maximize then restore returns to the saved position ==="
+env WAYLAND_DISPLAY="$SOCK" LD_LIBRARY_PATH="$BUILD/lib" \
+    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
+    timeout 8 "$NATIVE" --title "CSD Restore" --maximize-restore --linger 3000 > "$RUNTIME/restore.log" 2>&1 || true
+sleep 0.3
+max_line="$(grep "maximized 'CSD Restore'" "$RUNTIME/comp.log" | tail -1)"
+restore_xy="$(sed -nE 's/.*\(restore ([0-9-]+),([0-9-]+) .*/\1,\2/p' <<<"$max_line")"
+check "the restore request was seen" "1" "$(grep -c "asked to be restored" "$RUNTIME/comp.log")"
+if [[ -n "$restore_xy" && "$restore_xy" != "0,0" ]]; then
+    echo "  ok: the maximize saved a non-origin restore position ($restore_xy)"
+else
+    echo "  MISSING: the maximize did not save a restore position"
+    fail=1
+fi
+check "the window returned to the saved position" "1" "$(grep -c "restored 'CSD Restore' at $restore_xy" "$RUNTIME/comp.log")"
+check "the client was configured unmaximized" "1" "$(grep -c "configured maximized=0 320x200" "$RUNTIME/restore.log")"
 
 echo "=== and asks to be minimized ==="
 env WAYLAND_DISPLAY="$SOCK" LD_LIBRARY_PATH="$BUILD/lib" \
