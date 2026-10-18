@@ -6,7 +6,7 @@
 # package builds against this prefix with SDE_PREBUILT_FRAMEWORK=ON.
 
 pkgname=serenity-lagom-git
-pkgver=0
+pkgver=r478.dbecdd2
 pkgrel=1
 pkgdesc="SerenityOS userland framework, applications and resources for SDE"
 arch=('x86_64')

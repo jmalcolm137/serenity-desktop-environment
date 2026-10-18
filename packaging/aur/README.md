@@ -23,3 +23,23 @@ SerenityOS pin and a full framework build. What *is* tested is the split layout
 (`scripts/run-split-framework-test.sh`, which stages a framework and builds the
 compositor against it), the installed session (`run-install-layout-test.sh`) and
 the PKGBUILD metadata (`run-packaging-test.sh`).
+
+## Publishing
+
+Nothing has been pushed to the AUR. The `PKGBUILD` and generated `.SRCINFO` in
+each directory are ready to copy into the per-package AUR repositories, but a
+real `makepkg -si` build/login must pass first and pushing needs the maintainer's
+AUR account and SSH key:
+
+```sh
+# after a successful local build/login
+for pkg in wlroots0.20 serenity-lagom-git serenity-desktop-environment-git; do
+    (cd "$pkg" && makepkg --printsrcinfo > .SRCINFO)
+    git clone "ssh://aur@aur.archlinux.org/$pkg.git" "/tmp/aur-$pkg"
+    cp "$pkg/PKGBUILD" "$pkg/.SRCINFO" "/tmp/aur-$pkg/"
+    (cd "/tmp/aur-$pkg" && git add PKGBUILD .SRCINFO && git commit -m "Initial import" && git push)
+done
+```
+
+`.SRCINFO` is generated metadata: regenerate it whenever `pkgver()` or the
+dependency/source lists change.
