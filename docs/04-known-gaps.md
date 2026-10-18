@@ -200,11 +200,13 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal`; see
   cursor; `Super+L` locks). It is a **standard** `ext-session-lock-v1` server, so
   any conformant locker works; the session uses **swaylock** for now via
   `SDE_LOCK_CMD`. Verified by `scripts/run-idle-test.sh` and
-  `scripts/run-lock-test.sh` (including a two-output lock). **Future deliverable:**
-  a native SDE lock client (still a plain `ext-session-lock-v1` client, portable to
-  other compositors); see [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md)
-  §9. Remaining: dim/blank before lock, and re-configuring lock surfaces on output
-  resize/scale.
+  `scripts/run-lock-test.sh` (including a two-output lock and a mode change while
+  locked). **Future deliverable:** a native SDE lock client (still a plain
+  `ext-session-lock-v1` client, portable to other compositors); see
+  [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §9. Blanking
+  before the lock is `SDE_SESSION_IDLE_DPMS_SECONDS` through `sde-dpms`; a size
+  change while locked reconfigures the lock surface for that output (phase C of
+  the lock test).
 - **Session lifecycle & supervisor (R4.2)**: started: `scripts/sde-session.sh`
   runs XDG Autostart entries, sets the session environment, restarts the
   compositor on a fault (bounded), and arms **idle-to-lock** via the portable
@@ -255,8 +257,12 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal`; see
   across restarts: the compositor seeds the state from `SDE_WALLPAPER` /
   `SDE_WALLPAPER_MODE` on first run, after which the state is authoritative (so
   "None" (an empty image) also sticks). `FileManager` additionally exposes
-  "Set as wallpaper" on an image. Still inert: Fonts / Monitor / Workspaces /
-  Effects (no display, input or font backends yet).
+  "Set as wallpaper" on an image. **All six tabs are functional**: Background
+  (wallpaper state), Themes (the theme broker), Fonts (system fonts),
+  Monitor (resolution/position/scale through `zwlr_output_management_v1`),
+  Workspaces (the 2x2 grid) and Effects (window menu settings). The Settings
+  test exercises the backends with input, display, fonts, themes, workspaces,
+  effects and config/background checks.
 - **ComboBox dropdowns (W6, host).** Resolved; see "Recently resolved".
 - **Wallpaper thumbnails (W6/W7, host).** Resolved; see "Recently resolved"
   (`ImageDecoder` is served in-process).
@@ -442,12 +448,12 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   `scripts/run-output-hotplug-test.sh`, which drives the disable through
   `zwlr_output_management_v1` like Display Settings or `wlr-randr` would; a real
   unplug arrives through the same helper. **HiDPI (integer and fractional output
-  scaling) is done**; see "Recently resolved" below.
-  **Still basic:** a re-enabled output does not become primary again (Serenity's
-  `MainScreen` index would say otherwise), a maximised window keeps its old size
-  when it moves across outputs of different sizes, and per-output mode/scale has
-  no *UI*: DisplaySettings' Monitor tab is still inert
-  (`libgui-wayland` patch 0020).
+  scaling) is done**; see "Recently resolved" below. **The hotplug edge cases are
+  handled too:** a re-enabled configured main screen becomes primary again, and a
+  maximised window moving to an output of a different size is re-fitted — both
+  asserted by `run-output-hotplug-test.sh`. Per-output resolution, position and
+  scale are live in DisplaySettings' Monitor tab. What remains is multi-GPU /
+  render-device selection.
 - **Multi-GPU / render-device selection; color management; direct scanout.**
 - **Renderer selection & fallback (N2/N5): done.** `[Output] Renderer`
   (`auto`/`gles2`/`vulkan`/`pixman`, with the `SDE_RENDERER` override) selects the

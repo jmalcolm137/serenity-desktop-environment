@@ -142,9 +142,8 @@ if kill -0 "$COMP_PID" 2>/dev/null; then echo "  ok: the compositor survived"; e
 echo "=== re-enable it ==="
 # A disabled head advertises no modes, so the size comes from the layout line.
 PRIMARY_MODE="$(sed -n "s/.*applied screen layout to '$PRIMARY': \([0-9]*x[0-9]*\).*/\1/p" "$RUNTIME/comp.log" | head -1)"
-# Note: re-enabling does not make it primary again — the primary stays wherever
-# it was reassigned. Serenity's MainScreen index would say otherwise; that is a
-# follow-up, and this test asserts what is true today.
+# Re-enabling the configured main screen takes primacy back (Serenity's
+# MainScreen), so the compositor must report that transition as well.
 if env WAYLAND_DISPLAY="$SOCK" "$OM" --on "$PRIMARY" "${PRIMARY_MODE:-1280x720}" > "$RUNTIME/om2.log" 2>&1; then
     echo "  ok: the compositor accepted the configuration"
 else
