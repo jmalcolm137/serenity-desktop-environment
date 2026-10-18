@@ -23,7 +23,6 @@ MAX_DIFF="${SDE_HIDPI_MAX_DIFF:-0.02}"
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-hidpi.XXXXXX")"
-export SDE_STATE_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
 trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
 
@@ -32,6 +31,8 @@ dump_at() { # $1 = scale, $2 = output png, $3 = expected WxH (optional)
     rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$sock" "$out"
     env -u WAYLAND_DISPLAY -u DISPLAY \
         SDE_OUTPUT_SCALE="$scale" \
+        SDE_STATE_DIR="$RUNTIME/state-$scale" \
+        SDE_SESSION_DIR="$RUNTIME/session-$scale" \
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
         SDE_WM_PORTAL_PATH="$RUNTIME/wm-$scale" \
         SERENITY_RES_ROOT="$SERENITY/Base/res" \
@@ -39,7 +40,7 @@ dump_at() { # $1 = scale, $2 = output png, $3 = expected WxH (optional)
         LIBWM_DUMP="$out" \
         "$COMP" -n "$sock" -s "$APP" > "$RUNTIME/comp-$scale.log" 2>&1 &
     local comp=$!
-    for _ in $(seq 1 60); do [[ -s "$out" ]] && break; sleep 0.1; done
+    for _ in $(seq 1 150); do [[ -s "$out" ]] && break; sleep 0.1; done
     # The client learns the output scale from the compositor, and its first frame can
     # be rendered before that arrives -- so the first dump can be a 1x render. Wait for
     # the dump to reach the size the scale implies rather than taking the first frame.
@@ -56,11 +57,19 @@ dump_at() { # $1 = scale, $2 = output png, $3 = expected WxH (optional)
 
 dump_at 1 "$RUNTIME/1x.png"
 read -r W1 H1 <<<"$(magick identify -format '%w %h' "$RUNTIME/1x.png" 2>/dev/null || echo '0 0')"
-dump_at 2 "$RUNTIME/2x.png" "$((W1 * 2))x$((H1 * 2))"
+# TextEditor can lose the race with a slow CI filesystem; a fresh state dir
+# makes the second run independent, and one retry absorbs a transient startup
+# failure without hiding a real fidelity mismatch.
+for attempt in 1 2; do
+    dump_at 2 "$RUNTIME/2x.png" "$((W1 * 2))x$((H1 * 2))"
+    [[ -s "$RUNTIME/2x.png" ]] && break
+    echo "2x dump missing (attempt $attempt); retrying"
+    sleep 0.5
+done
 
 if [[ ! -s "$RUNTIME/1x.png" || ! -s "$RUNTIME/2x.png" ]]; then
     echo "==> HiDPI fidelity test FAILED: no dump (1x: $(stat -c%s "$RUNTIME/1x.png" 2>/dev/null || echo 0) bytes, 2x: $(stat -c%s "$RUNTIME/2x.png" 2>/dev/null || echo 0) bytes)"
-    tail -5 "$RUNTIME/comp-2.log" 2>/dev/null || true
+    tail -40 "$RUNTIME/comp-2.log" 2>/dev/null || true
     exit 1
 fi
 

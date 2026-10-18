@@ -33,6 +33,18 @@ EOF
 chmod +x "$RUNTIME/service"
 
 fail=0
+
+# kill -0 is true for a zombie. GitHub's container init may not reap the
+# reparented child before the test checks, so treat Z as stopped.
+process_stopped() {
+    local pid="$1" state
+    if ! kill -0 "$pid" 2>/dev/null; then
+        return 0
+    fi
+    state="$(ps -o stat= -p "$pid" 2>/dev/null || true)"
+    [[ "$state" == Z* ]]
+}
+
 check() {
     if eval "$2"; then
         echo "  ok: $1"
@@ -89,7 +101,7 @@ for _ in $(seq 1 40); do
     kill -0 "$service_pid" 2>/dev/null || break
     sleep 0.05
 done
-check "the service was stopped with its supervisor" "! kill -0 '$service_pid' 2>/dev/null"
+check "the service was stopped with its supervisor" "process_stopped '$service_pid'"
 check "no restart was scheduled" "! grep -q 'restarting' '$RUNTIME/run-supervisor.log'"
 check "the service ran once" "[[ \"\$(wc -l < '$RUNTIME/run.log')\" -eq 1 ]]"
 
