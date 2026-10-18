@@ -138,7 +138,15 @@ void ChromeNode::render(Function<void(Gfx::Painter&)> const& callback)
     // Render at the output scale so the chrome stays crisp on HiDPI panels: the
     // Painter draws in logical coordinates into a physical-resolution bitmap, and
     // the scene presents it at the logical size (1:1 with physical pixels).
-    auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, m_rect.size(), s_output_scale).release_value_but_fixme_should_propagate_errors();
+    auto bitmap_or_error = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, m_rect.size(), s_output_scale);
+    if (bitmap_or_error.is_error()) {
+        // A client-supplied rect can be far larger than the screen (or memory can
+        // be tight). Hide the chrome rather than abort the compositor; the
+        // animation path bounds its targets too, but this is the last line.
+        set_visible(false);
+        return;
+    }
+    auto bitmap = bitmap_or_error.release_value();
     Gfx::Painter painter(*bitmap);
     callback(painter);
 

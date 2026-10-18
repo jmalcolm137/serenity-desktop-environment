@@ -165,11 +165,21 @@ public:
         }
     }
     // The Taskbar reports each button's rect, so minimize/restore can animate the
-    // SerenityOS outline between the window and its button.
+    // SerenityOS outline between the window and that button. The value comes from
+    // a client, so bound it: an animation target of billions of pixels would make
+    // the ChromeNode allocate an impossible bitmap (the fuzzer found this).
     virtual void set_window_taskbar_rect(i32, i32 window_id, Gfx::IntRect const& rect) override
     {
-        if (auto* toplevel = find_toplevel_by_wm_id(m_server, window_id))
-            toplevel->taskbar_rect = rect;
+        auto* toplevel = find_toplevel_by_wm_id(m_server, window_id);
+        if (!toplevel)
+            return;
+        constexpr int max_button_dimension = 4096;
+        constexpr int max_coordinate = 1'000'000;
+        bool const usable = rect.is_empty()
+            || (rect.width() <= max_button_dimension && rect.height() <= max_button_dimension
+                && rect.x() >= -max_coordinate && rect.x() <= max_coordinate
+                && rect.y() >= -max_coordinate && rect.y() <= max_coordinate);
+        toplevel->taskbar_rect = usable ? rect : Gfx::IntRect {};
     }
 
     // Applets are layer surfaces; the compositor owns their layout (WS4). The
