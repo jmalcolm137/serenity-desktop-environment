@@ -587,10 +587,11 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   headless harness afterwards (`scripts/run-terminal-keys-test.sh`), and the Ctrl-C
   symptom turned out to be a *signal-disposition* bug rather than an encoding one.
 - **Packaging** of `WindowServer` and the session: the **private-prefix install
-  layout** is landed (`scripts/install-sde.sh`, `run-install-layout-test.sh`),
-  with AUR PKGBUILDs still to write. **Layer-shell/data-device fuzzing and
-  Valgrind** remain (ASan/UBSan, the full-tier sanitizer run, and config,
-  WindowManagerServer and xdg-shell fuzz harnesses are in place).
+  layout** is landed (`scripts/install-sde.sh`, `run-install-layout-test.sh`) and
+  a first single-package PKGBUILD is in `packaging/aur/` (not built in CI); the
+  split `wlroots0.20`/`serenity-lagom-git` package set remains. **Layer-shell/
+  data-device fuzzing and Valgrind** remain (ASan/UBSan, the full-tier sanitizer
+  run, and config, WindowManagerServer and xdg-shell fuzz harnesses are in place).
   The compositor design doc is
   [`31-compositor-design.md`](31-compositor-design.md); the crash report, log
   levels and the optional JSONL event trace are in place, while per-frame

@@ -5,11 +5,11 @@
 
 This document plans how to run SDE **natively** (DRM/KMS + libinput, no host
 compositor underneath) and how to **package it for Arch/EndeavourOS (AUR)** so a
-display manager lists it as a session. The **session entry + installer** (§6) and
-the **private-prefix install layout** (§6) are implemented; the AUR PKGBUILDs
-(§3–§5, §9) are still a plan. It records the package split, the install layout,
-the packaging traps we have verified against the current build, and the order to
-bring it up safely.
+display manager lists it as a session. The **session entry + installer** (§6), the
+**private-prefix install layout** (§6) and a first single-package **PKGBUILD**
+(§9, `packaging/aur/`) are implemented; the split AUR package set (§3–§5) is still
+a plan. It records the package split, the install layout, the packaging traps we
+have verified against the current build, and the order to bring it up safely.
 
 > **Scope note.** Packaging is nominally **R6** ("Hardening & packaging",
 > [`01-objectives.md`](01-objectives.md) §11) and is not started. This plan pulls
@@ -215,6 +215,16 @@ Keep `Ctrl+Alt+F2` as the escape hatch throughout; if SDE hangs, switch VT and
 ---
 
 ## 9. PKGBUILD sketches (outline)
+
+**First local package (implemented).**
+`packaging/aur/serenity-desktop-environment-git/PKGBUILD` builds this repo and
+`libgui-wayland` in one package, so the framework and the SDE share one set of
+headers, then installs the private prefix through `scripts/install-sde.sh` and
+vendors the wlroots library the compositor links. It is a local `-git` package,
+not built in CI (it fetches the pinned SerenityOS tree and a full framework
+build); the layout it installs is covered by `run-install-layout-test.sh`.
+Splitting it into the three packages below is the follow-up once it has been
+installed on a real machine.
 
 **`wlroots0.20`**: source `wlroots` `0.20.2`; `meson` build; install the shared
 lib and `wlroots-0.20.pc` under `/usr` (so other packages' `pkg-config` finds it).
