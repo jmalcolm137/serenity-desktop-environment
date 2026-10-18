@@ -14,6 +14,7 @@
 #include "Pointer.h"
 #include "Resources.h"
 #include "SessionManager.h"
+#include "Trace.h"
 #include "WindowManager.h"
 #include "WindowMenu.h"
 #include "WindowSwitcher.h"
@@ -90,6 +91,10 @@ static void toplevel_map(wl_listener* listener, void*)
     dbgln("WindowServer: toplevel mapped title='{}' app_id='{}'",
         toplevel->xdg_toplevel->title ? toplevel->xdg_toplevel->title : "",
         toplevel->xdg_toplevel->app_id ? toplevel->xdg_toplevel->app_id : "");
+    if (Trace::enabled())
+        Trace::event("window"sv, ByteString::formatted("map title='{}' app_id='{}'",
+            toplevel->xdg_toplevel->title ? toplevel->xdg_toplevel->title : "",
+            toplevel->xdg_toplevel->app_id ? toplevel->xdg_toplevel->app_id : ""));
     wlr_scene_node_set_enabled(&toplevel->scene_tree->node, true);
     toplevel->mapped = true;
     toplevel->frame_active = true;
@@ -130,6 +135,9 @@ static void toplevel_unmap(wl_listener* listener, void*)
 {
     Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, unmap);
+    if (Trace::enabled())
+        Trace::event("window"sv, ByteString::formatted("unmap title='{}'",
+            toplevel->xdg_toplevel->title ? toplevel->xdg_toplevel->title : ""));
     toplevel->mapped = false;
     // Hide the compositor-drawn frame along with the client's surface. The frame
     // buffer is a child of this tree and isn't tied to the wl_surface lifetime.
@@ -198,6 +206,9 @@ static void toplevel_destroy(wl_listener* listener, void*)
     Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, destroy);
     auto& server = *toplevel->server;
+    if (Trace::enabled())
+        Trace::event("window"sv, ByteString::formatted("destroy wm_id={} title='{}'", toplevel->wm_id,
+            toplevel->xdg_toplevel->title ? toplevel->xdg_toplevel->title : ""));
     SessionManager::on_toplevel_destroyed(*toplevel);
     wl_list_remove(&toplevel->map.link);
     wl_list_remove(&toplevel->unmap.link);

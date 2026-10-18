@@ -292,6 +292,12 @@ Logs are an interface: the headless tests assert on compositor log lines.
 `[Log] Level` / `SDE_LOG_LEVEL` selects verbosity; a message used by a test is
 part of the behaviour, so changing it changes the test.
 
+When a log line cannot reconstruct the sequence, set `SDE_TRACE_FILE`. The
+compositor then writes one JSON object per line (`t`, `cat`, `msg`) for window
+map/unmap/destroy, focus, workspace, output and WindowManagerServer events
+(`Trace.cpp`, `scripts/run-trace-test.sh`). It is synchronous and opt-in: leave
+it off on a hot path, and do not add an event per frame.
+
 ## 9. Rules for new code
 
 1. Do not block the loop. If work is large, defer or split it.

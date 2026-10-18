@@ -135,6 +135,7 @@ add_executable(WindowServer
     src/SessionLock.cpp
     src/SessionManager.cpp
     src/Tablet.cpp
+    src/Trace.cpp
     src/VirtualInput.cpp
     src/Wallpaper.cpp
     src/WindowManager.cpp

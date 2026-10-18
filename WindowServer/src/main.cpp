@@ -28,6 +28,7 @@
 #include "SessionLock.h"
 #include "SessionManager.h"
 #include "Tablet.h"
+#include "Trace.h"
 #include "VirtualInput.h"
 #include "Wallpaper.h"
 #include "WindowManager.h"
@@ -275,6 +276,8 @@ static void finish(Server& server)
     wlr_allocator_destroy(server.allocator);
     wlr_renderer_destroy(server.renderer);
     wl_display_destroy(server.display);
+    Trace::event("trace"sv, "shut down"sv);
+    Trace::finish();
     dbgln("WindowServer: shut down");
 }
 
@@ -538,6 +541,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
         return 0;
     }
 
+    Trace::initialize();
     TRY(initialize_gfx());
 
     auto server = make<Server>();

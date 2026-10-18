@@ -27,6 +27,7 @@
 #include "AppletManager.h"
 #include "Compositor.h"
 #include "Config.h"
+#include "Trace.h"
 #include <WindowServer/SystemEffects.h>
 #include "Overlays.h"
 #include "WindowManagerServerDefaultStub.h"
@@ -201,6 +202,7 @@ static Vector<NonnullRefPtr<WindowManagerServerConnection>> g_connections;
 
 void accept_connection(Server& server, NonnullOwnPtr<Core::LocalSocket> socket)
 {
+    Trace::event("ipc"sv, "WindowManagerServer client connected"sv);
     g_connections.append(WindowManagerServerConnection::create(server, move(socket)));
 }
 
@@ -879,6 +881,8 @@ void switch_workspace(Server& server, u32 row, u32 column, bool carry_focused)
     if (g_hooks.workspace_changed)
         g_hooks.workspace_changed(server);
     show_window_stack_switch_overlay(server, row, column);
+    if (Trace::enabled())
+        Trace::event("workspace"sv, ByteString::formatted("switched {},{}", row, column));
     dbgln("WindowServer: switched to workspace {},{}", row, column);
 }
 

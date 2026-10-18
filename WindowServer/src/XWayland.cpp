@@ -11,6 +11,7 @@
 #include "LayerShell.h"
 #include "Pointer.h"
 #include "Resources.h"
+#include "Trace.h"
 #include "WindowManager.h"
 #include "XWayland.h"
 #include "XWaylandFrame.h"
@@ -98,6 +99,9 @@ void focus_x11_toplevel(Server& server, X11Toplevel* toplevel)
 
     if (server.seat->keyboard_state.focused_surface == surface && toplevel->frame_active)
         return;
+
+    if (Trace::enabled())
+        Trace::event("focus"sv, ByteString::formatted("x11 wm_id={} title='{}'", toplevel->wm_id, toplevel->title));
 
     server.xwayland.focused = toplevel;
     // Feed the Alt-Tab switcher's most-recently-focused ordering (see

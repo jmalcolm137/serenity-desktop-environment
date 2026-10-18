@@ -10,6 +10,7 @@
 #include "InputMethod.h"
 #include "Keyboard.h"
 #include "Pointer.h"
+#include "Trace.h"
 #include "WindowManager.h"
 #include "XWaylandFrame.h"
 
@@ -82,6 +83,10 @@ void focus_toplevel(Server& server, Toplevel* toplevel)
     wlr_surface* surface = toplevel->xdg_toplevel->base->surface;
     if (previous_surface == surface && toplevel->frame_active)
         return;
+
+    if (Trace::enabled())
+        Trace::event("focus"sv, ByteString::formatted("toplevel wm_id={} title='{}'", toplevel->wm_id,
+            toplevel->xdg_toplevel->title ? toplevel->xdg_toplevel->title : ""));
 
     // A toplevel taking focus ends any on_demand layer surface's keyboard focus.
     server.keyboard_focus_layer = nullptr;

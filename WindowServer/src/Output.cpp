@@ -12,6 +12,7 @@
 #include "OutputManagement.h"
 #include "Performance.h"
 #include "SessionLock.h"
+#include "Trace.h"
 #include "Wallpaper.h"
 #include "XdgShell.h"
 
@@ -148,6 +149,8 @@ static void maybe_restore_primary_output(Server& server)
     server.primary_output = wanted;
     dbgln("WindowServer: primary output is now '{}' (the configured main screen)",
         wanted->name ? wanted->name : "?");
+    if (Trace::enabled())
+        Trace::event("output"sv, ByteString::formatted("primary name='{}'", wanted->name ? wanted->name : "?"));
 }
 
 static wlr_output* first_enabled_output(Server& server, wlr_output* excluding)
@@ -290,12 +293,16 @@ static void output_commit(wl_listener* listener, void* data)
     bool const enabled = output->output->enabled;
     if (output->was_enabled && !enabled) {
         dbgln("WindowServer: output '{}' disabled", output->output->name ? output->output->name : "?");
+        if (Trace::enabled())
+            Trace::event("output"sv, ByteString::formatted("disabled name='{}'", output->output->name ? output->output->name : "?"));
         wlr_box const gone = wlr_box_empty(&output->area) ? previous_area : output->area;
         handle_output_lost(server, gone, output->output);
     } else if (!output->was_enabled && enabled) {
         // Back after a replug: if it is the configured main screen, it is primary
         // again. Serenity's MainScreen index is the user's choice; without this a
         // replugged monitor kept whatever primacy it had lost.
+        if (Trace::enabled())
+            Trace::event("output"sv, ByteString::formatted("enabled name='{}'", output->output->name ? output->output->name : "?"));
         maybe_restore_primary_output(server);
     }
     output->was_enabled = enabled;

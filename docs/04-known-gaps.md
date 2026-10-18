@@ -567,10 +567,11 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   See [`27-terminal-keys.md`](27-terminal-keys.md): both were measured in a
   headless harness afterwards (`scripts/run-terminal-keys-test.sh`), and the Ctrl-C
   symptom turned out to be a *signal-disposition* bug rather than an encoding one.
-- **Packaging** of `WindowServer` and the session; **sanitizers/fuzzing**;
-  **observability beyond the crash report/log level/perf meter** (tracing,
-  structured logs). The compositor design doc is now
-  [`31-compositor-design.md`](31-compositor-design.md).
+- **Packaging** of `WindowServer` and the session; **sanitizers/fuzzing**.
+  The compositor design doc is
+  [`31-compositor-design.md`](31-compositor-design.md); the crash report, log
+  levels and the optional JSONL event trace are in place, while per-frame
+  tracing/sampling remains open.
 
 ## R1: Compositor bring-up (done)
 
@@ -788,9 +789,12 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   `$SDE_CRASH_LOG` (default `$XDG_CONFIG_HOME/sde/WindowServer-crash.log`) and then
   re-raises, so the crash is diagnosable and the supervisor still restarts the
   session. Verbosity is configurable via `[Log] Level` (`error`/`warn`/`info`/
-  `debug`; `SDE_LOG_LEVEL` overrides), which sets wlroots' log level. Covered by
-  `run-headless-test.sh` (SIGABRT writes the report; exit 134) and
-  `run-config-test.sh` (validation + `SDE_LOG_LEVEL`).
+  `debug`; `SDE_LOG_LEVEL` overrides), which sets wlroots' log level. An opt-in
+  JSONL **event trace** (`SDE_TRACE_FILE`) records window, focus, workspace,
+  output and WindowManagerServer events (`Trace.cpp`); `run-trace-test.sh` pins
+  its format. Covered by `run-headless-test.sh` (SIGABRT writes the report; exit
+  134), `run-config-test.sh` (validation + `SDE_LOG_LEVEL`) and
+  `run-trace-test.sh`.
 
 - **Profiler (Development ▸ Profiler).** SerenityOS's kernel profiling interface
   (`profiling_enable(pid, mask)` + `/proc/<pid>/perf_events`) has no Linux
