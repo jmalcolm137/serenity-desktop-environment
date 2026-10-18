@@ -1,11 +1,16 @@
 # Local AUR packaging
 
-The first package is deliberately **one** package: it builds the SDE and the
+The first SDE package is deliberately **one** package: it builds the SDE and the
 `libgui-wayland` framework from the same rev, so the compositor, services and
 apps share one set of headers (the ABI trap in `docs/26-ci.md` §6). SerenityOS is
 fetched by `libgui-wayland/scripts/fetch-serenity.sh` during `build()`, and
 wlroots is vendored by the SDE build; both are installed under the private
 `/usr/lib/sde` prefix by `scripts/install-sde.sh`.
+
+`wlroots0.20/` is the first split package: it builds the pinned 0.20.2 release and
+installs its library, pkg-config file, generated protocol headers and protocol
+XMLs. The single SDE package still vendors wlroots; the split SDE package will
+use this one once the framework exposure problem is solved.
 
 ```sh
 cd packaging/aur/serenity-desktop-environment-git

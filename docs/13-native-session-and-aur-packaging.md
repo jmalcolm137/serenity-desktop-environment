@@ -224,10 +224,15 @@ vendors the wlroots library the compositor links. It is a local `-git` package,
 not built in CI (it fetches the pinned SerenityOS tree and a full framework
 build); the layout it installs is covered by `run-install-layout-test.sh`.
 Splitting it into the three packages below is the follow-up once it has been
-installed on a real machine.
+installed on a real machine. `packaging/aur/wlroots0.20` is the first split
+package; `scripts/run-packaging-test.sh` keeps every PKGBUILD's metadata valid
+without building it.
 
-**`wlroots0.20`**: source `wlroots` `0.20.2`; `meson` build; install the shared
-lib and `wlroots-0.20.pc` under `/usr` (so other packages' `pkg-config` finds it).
+**`wlroots0.20` (implemented).** `packaging/aur/wlroots0.20` builds the pinned
+`0.20.2` tag with `meson`, installs the shared library and `wlroots-0.20.pc` under
+`/usr`, and keeps the generated protocol headers and XMLs under the package's
+stable directories for a future split SDE build. The current single SDE package
+still vendors wlroots, so a normal build does not depend on the split yet.
 
 **`serenity-lagom-git`**: sources: `libgui-wayland` (git) + its pinned
 `serenity` revision + `patches/`. Build via the project's

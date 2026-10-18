@@ -1,0 +1,39 @@
+# Maintainer: Serenity Desktop Environment contributors
+#
+# The pinned wlroots release the compositor is built against (docs/13 §3). The
+# SDE's own build can use the vendored copy for development; this package is the
+# split-installation path.
+
+pkgname=wlroots0.20
+pkgver=0.20.2
+pkgrel=1
+pkgdesc="Modular Wayland compositor library (0.20, pinned for SDE)"
+arch=('x86_64')
+url="https://gitlab.freedesktop.org/wlroots/wlroots"
+license=('MIT')
+depends=('libinput' 'libdrm' 'libxkbcommon' 'pixman' 'wayland' 'libseat')
+makedepends=('meson' 'ninja' 'wayland-protocols')
+source=("git+https://gitlab.freedesktop.org/wlroots/wlroots.git#tag=$pkgver")
+sha256sums=('SKIP')
+
+build() {
+    cd wlroots
+    arch-meson build \
+        -Dexamples=false \
+        -Dtests=false
+    ninja -C build
+}
+
+package() {
+    cd wlroots
+    meson install -C build --destdir "$pkgdir"
+
+    # The compositor builds a few clients against wlroots' generated protocol
+    # headers and XMLs (layer-shell, virtual keyboard/pointer, output
+    # management). meson does not install them; keep them with the library so a
+    # split install can point the tool build at a stable directory.
+    install -d "$pkgdir/usr/include/wlroots-0.20"
+    install -m 0644 build/protocol/*.h "$pkgdir/usr/include/wlroots-0.20/"
+    install -d "$pkgdir/usr/share/wlroots-0.20/protocol"
+    install -m 0644 protocol/*.xml "$pkgdir/usr/share/wlroots-0.20/protocol/"
+}
