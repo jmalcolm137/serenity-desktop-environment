@@ -217,8 +217,13 @@ table.
 
 ## 7. Testing & CI breadth (R6)
 
-- **Sanitizers & fuzzing (N8).** No ASan/UBSan/Valgrind in CI, and no fuzzing of
-  the compositor's protocol entry points.
+- **Sanitizers (N8): done; fuzzing remains.** `-DSDE_SANITIZE=address` (or
+  `address,undefined`) builds the SDE's targets with ASan/UBSan in a separate
+  tree (`scripts/build-sanitized.sh`), and the full tier runs
+  `scripts/run-sanitizer-test.sh`, which builds a sanitized compositor and holds
+  it to the R1 smoke test. The first run found a shutdown use-after-free in the
+  decoration/toplevel lifetime, fixed in `XdgShell.cpp`. Valgrind profiles and
+  protocol fuzzing are still open.
 - **Pixel/golden tests across scale and output count (N8).** The R3 harness
   starts pixel assertions; extend to fractional scale, multiple outputs, and
   software vs GPU renderer.

@@ -21,7 +21,7 @@ LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
 SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
 BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
 WLROOTS_SRC="${WLROOTS_SRC:-$SDE_ROOT/third_party/wlroots}"
-COMP="$SDE_ROOT/build/WindowServer/WindowServer"
+COMP="${COMP:-$SDE_ROOT/build/WindowServer/WindowServer}"
 TOOLS_BUILD="$SDE_ROOT/build/headless-test"
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null

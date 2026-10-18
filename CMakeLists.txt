@@ -32,6 +32,16 @@ if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
 
+# R6 sanitizers: build the SDE's own targets with ASan/UBSan in a separate tree
+# (scripts/build-sanitized.sh). The Lagom framework stays uninstrumented; it is a
+# separate build, and the sanitizer still intercepts its allocations and reports
+# errors in SDE code. Empty (the default) is the normal build.
+set(SDE_SANITIZE "" CACHE STRING "Sanitizer list for SDE targets, e.g. address or address,undefined")
+if (SDE_SANITIZE)
+    add_compile_options(-fsanitize=${SDE_SANITIZE} -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=${SDE_SANITIZE})
+endif()
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(SDELagom)
 

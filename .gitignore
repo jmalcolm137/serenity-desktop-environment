@@ -1,4 +1,5 @@
 /build/
+/build-*/
 /third_party/wlroots/
 
 # Editor swap/backup files
