@@ -507,6 +507,13 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   Taskbar's LaunchServer connection dying — left the session with applets and no
   panel until logout, because the supervisor's restart path only covers the
   compositor. Covered by `scripts/run-shell-restart-test.sh`.
+- **Session service supervision (R6/N4): done.** `scripts/sde-service-supervisor.sh`
+  restarts the long-running services — LaunchServer, ImageDecoder and the portal
+  backend — after a crash, with a bounded budget and backoff, and stops the child
+  when the session stops it. Single-client services are spawned on demand, so
+  there is no long-running process to watch. Covered by
+  `scripts/run-service-supervisor-test.sh`; see
+  [`07-systemserver-roles.md`](07-systemserver-roles.md) §4.
 - **CI (N6): green.** `scripts/run-all-tests.sh` runs the 88 `run-*-test.sh`
   tests by tier (every test is headless by design), `.github/workflows/ci.yml`
   gates a push on the fast tier and runs the rest nightly, and

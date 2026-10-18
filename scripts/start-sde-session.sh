@@ -224,12 +224,15 @@ fi
 SESSION_DISPLAY="$SDE_SESSION_DISPLAY"
 LAUNCH_SERVER="$SDE_ROOT/build/LaunchServer/LaunchServer"
 LAUNCH_SERVER_PID=""
+SERVICE_SUPERVISOR="$SDE_ROOT/scripts/sde-service-supervisor.sh"
 # Drop the previous session's Xwayland DISPLAY so the LaunchServer waits for the
 # fresh one the compositor writes on startup (else it would use a stale or host
 # DISPLAY for the X11 apps it spawns).
 rm -f "${SDE_STATE_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/sde}/xwayland-display"
 if [[ -x "$LAUNCH_SERVER" ]]; then
-    WAYLAND_DISPLAY="$SESSION_DISPLAY" "$LAUNCH_SERVER" &
+    # Long-running session services are supervised (R6/N4): a crash is restarted
+    # with a bounded backoff instead of staying dead for the rest of the session.
+    WAYLAND_DISPLAY="$SESSION_DISPLAY" "$SERVICE_SUPERVISOR" LaunchServer -- "$LAUNCH_SERVER" &
     LAUNCH_SERVER_PID=$!
 fi
 
@@ -239,7 +242,7 @@ fi
 IMAGE_DECODER="$SDE_ROOT/build/ImageDecoder/ImageDecoder"
 IMAGE_DECODER_PID=""
 if [[ -x "$IMAGE_DECODER" ]]; then
-    "$IMAGE_DECODER" &
+    "$SERVICE_SUPERVISOR" ImageDecoder -- "$IMAGE_DECODER" &
     IMAGE_DECODER_PID=$!
 fi
 
@@ -253,10 +256,10 @@ PORTAL_BACKEND="$SDE_ROOT/build/tools/xdg-desktop-portal-serenity"
 SETTINGS_PORTAL="$SDE_ROOT/build/tools/sde-settings-portal"
 PORTAL_PID=""
 if [[ -x "$PORTAL_BACKEND" ]]; then
-    "$PORTAL_BACKEND" &
+    "$SERVICE_SUPERVISOR" PortalBackend -- "$PORTAL_BACKEND" &
     PORTAL_PID=$!
 elif [[ -x "$SETTINGS_PORTAL" ]]; then
-    "$SETTINGS_PORTAL" &
+    "$SERVICE_SUPERVISOR" SettingsPortal -- "$SETTINGS_PORTAL" &
     PORTAL_PID=$!
 fi
 

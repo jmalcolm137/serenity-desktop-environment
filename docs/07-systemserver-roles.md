@@ -157,10 +157,14 @@ SDE is packaged for a systemd host, the substitutes above map onto
 
 ## 4. What we do NOT stand in for (gaps)
 
-- **No supervisor / restart.** Nothing watches a session service; a crash is not
-  restarted, and `serenity_component(... REQUIRED)` ordering is not enforced; we
-  start services in script order. (See [`04-known-gaps.md`](04-known-gaps.md) R6,
-  "crash recovery / watchdog".)
+- **Long-running services are supervised; on-demand services are not.**
+  `scripts/sde-service-supervisor.sh` restarts LaunchServer, ImageDecoder and the
+  portal backend on a crash, with a bounded budget and backoff, and stops the
+  child when the session stops it (`scripts/run-service-supervisor-test.sh`).
+  Single-client services (`WebContent`, `RequestServer`, the per-connection
+  `NotificationServer`/`AudioServer`) are spawned on demand and are not
+  long-running, so there is no process to watch; `serenity_component(... REQUIRED)`
+  ordering is still not enforced (services are started in script order).
 - **No dependency graph.** `serenity_component(... DEPENDS ...)` (e.g. `WebContent
   DEPENDS ImageDecoder RequestServer`) is advisory only: `LibWM` spawns a service
   on demand, so its dependencies must already be buildable/servable, not started

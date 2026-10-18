@@ -47,17 +47,19 @@ export SDE_SESSION_IDLE_SECONDS="${SDE_SESSION_IDLE_SECONDS:-0}"
 export SDE_WALLPAPER="${SDE_WALLPAPER:-blue-grid.png}"
 export SDE_WALLPAPER_MODE="${SDE_WALLPAPER_MODE:-fill}"
 
-# Session services; their children must target the session display.
+# Session services; their children must target the session display. The
+# supervisor restarts a crashed service with a bounded backoff (R6/N4).
 LAUNCH_SERVER="$SDE_ROOT/build/LaunchServer/LaunchServer"
 IMAGE_DECODER="$SDE_ROOT/build/ImageDecoder/ImageDecoder"
+SERVICE_SUPERVISOR="$SDE_ROOT/scripts/sde-service-supervisor.sh"
 LAUNCH_PID=""
 IMAGE_PID=""
 if [ -x "$LAUNCH_SERVER" ]; then
-    WAYLAND_DISPLAY="$SESSION_DISPLAY" "$LAUNCH_SERVER" &
+    WAYLAND_DISPLAY="$SESSION_DISPLAY" "$SERVICE_SUPERVISOR" LaunchServer -- "$LAUNCH_SERVER" &
     LAUNCH_PID=$!
 fi
 if [ -x "$IMAGE_DECODER" ]; then
-    "$IMAGE_DECODER" &
+    "$SERVICE_SUPERVISOR" ImageDecoder -- "$IMAGE_DECODER" &
     IMAGE_PID=$!
 fi
 # The SDE portal backend (R5): prefer the combined xdg-desktop-portal-serenity
@@ -65,10 +67,10 @@ fi
 # Settings-only backend.
 PORTAL_PID=""
 if [ -x "$SDE_ROOT/build/tools/xdg-desktop-portal-serenity" ]; then
-    "$SDE_ROOT/build/tools/xdg-desktop-portal-serenity" &
+    "$SERVICE_SUPERVISOR" PortalBackend -- "$SDE_ROOT/build/tools/xdg-desktop-portal-serenity" &
     PORTAL_PID=$!
 elif [ -x "$SDE_ROOT/build/tools/sde-settings-portal" ]; then
-    "$SDE_ROOT/build/tools/sde-settings-portal" &
+    "$SERVICE_SUPERVISOR" SettingsPortal -- "$SDE_ROOT/build/tools/sde-settings-portal" &
     PORTAL_PID=$!
 fi
 cleanup() {
