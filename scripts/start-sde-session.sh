@@ -102,6 +102,38 @@ export SDE_WALLPAPER="${SDE_WALLPAPER:-blue-grid.png}"
 export SDE_WALLPAPER_MODE="${SDE_WALLPAPER_MODE:-fill}"
 export LD_LIBRARY_PATH="$BUILD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
+# A framework rebuild (libgui-wayland) relinks liblagom-* and changes headers the
+# SDE's own programs compile against. A stale mix is not benign: when LibIPC's
+# ConnectionBase gained a member, an old LaunchServer read m_deferred_invoker at
+# the wrong offset, crashed on its first client disconnect, and the Taskbar --
+# whose LibDesktop connection exits the app when the server goes away -- vanished
+# from the panel. Rebuild the SDE's programs when the framework is newer, so a
+# login after a framework-only rebuild cannot start a mismatched session.
+framework_is_newer_than_sde() {
+    local binary
+    for binary in \
+        "$COMP" \
+        "$SDE_ROOT/build/LaunchServer/LaunchServer" \
+        "$SDE_ROOT/build/ImageDecoder/ImageDecoder" \
+        "$SDE_ROOT/build/AudioServer/AudioServer" \
+        "$SDE_ROOT/build/Applets/Audio" \
+        "$SDE_ROOT/build/BatteryApplet/BatteryApplet" \
+        "$SDE_ROOT/build/WifiApplet/WifiApplet"; do
+        [ -x "$binary" ] || continue
+        if [ -n "$(find "$BUILD/lib" -maxdepth 1 -name 'liblagom-*.so*' -newer "$binary" -print -quit 2>/dev/null)" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+if framework_is_newer_than_sde; then
+    echo "SDE: the framework is newer than the session's programs; rebuilding them"
+    if ! "$SDE_ROOT/scripts/build-target.sh"; then
+        echo "SDE: warning: the rebuild failed; continuing with the existing programs" >&2
+    fi
+fi
+
 # The applications run from this build's bin directory; the session LaunchServer
 # (below) is not built next to them, so point it there. See
 # docs/06-service-layering.md.

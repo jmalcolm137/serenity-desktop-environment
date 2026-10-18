@@ -675,6 +675,19 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   wires the accept handler **before** spawning the shell. Covered by
   `scripts/run-shell-start-test.sh` (runs the session's real startup list).
 
+- **A framework-only rebuild left stale SDE binaries (SDDM login: applets but no
+  Taskbar).** `scripts/rebuild-framework.sh` rebuilt libgui-wayland and its own
+  applications, but not the SDE's services and applets. That would be harmless if
+  the change were ABI-neutral; it was not. LibIPC's `ConnectionBase` had gained a
+  member, so a `LaunchServer` built before the change read `m_deferred_invoker` at
+  the old offset and crashed on the first client disconnect (the crash was in
+  `read_as_much_as_possible_from_socket_without_blocking()`). The Taskbar's
+  `LibDesktop` connection exits the application when its server goes away, so the
+  panel vanished while the applets stayed. `rebuild-framework.sh` now also runs
+  the SDE's incremental top-level build, and `start-sde-session.sh` rebuilds the
+  SDE's programs when any framework library is newer than they are, so a
+  framework-only rebuild cannot reach a login as a mixed session.
+
 - **HiDPI & fractional output scaling (R6).** `[Output] DefaultScale` accepts a
   fractional value (0 = auto, 0.5–4.0) and is now applied **live** on a config
   edit (`Config::watch` → `apply_output_scale`); precedence is `SDE_OUTPUT_SCALE` >

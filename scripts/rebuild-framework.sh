@@ -6,6 +6,14 @@
 # sources are patched into the shared SerenityOS checkout, and nothing takes effect
 # until the framework and the affected applications are rebuilt.
 #
+# The SDE's own programs (the session services, the applets and the portals) link
+# the same framework and compile against the same headers, so they are rebuilt
+# here too. Header-level ABI is real: when LibIPC's ConnectionBase gained a
+# member, a service built before the change read m_deferred_invoker at the old
+# offset, crashed on the first disconnect, and took the Taskbar down with it
+# (the Taskbar exits when its LaunchServer connection dies). Rebuilding only the
+# framework leaves that mix in place until the next login.
+#
 # **Safe while you are logged in.** Measured rather than assumed: relinking a
 # library *replaces* the file (new inode) instead of rewriting it, so a process that
 # already has it mapped keeps the old mapping and carries on — verified with a live
@@ -47,6 +55,13 @@ echo "==> the framework (LibGfx/LibGUI/LibVT/LibWM)"
 echo "==> the applications"
 "$SDE_ROOT/scripts/build.sh" Terminal
 "$SDE_ROOT/scripts/build.sh" FileManager
+
+# The SDE's own framework consumers. This is the incremental top-level build:
+# CMake knows which of them include a header that changed, so an up-to-date tree
+# is a no-op and a header change rebuilds exactly the stale binaries.
+echo "==> the SDE services, applets and portals"
+"$SDE_ROOT/scripts/build-target.sh"
+
 if [[ "${1:-}" == "--with-apps" ]]; then
     "$SDE_ROOT/scripts/build-full-sde.sh" --with-apps
 fi
