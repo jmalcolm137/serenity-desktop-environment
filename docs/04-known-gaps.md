@@ -529,8 +529,12 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   can outlive its `Toplevel`, and `decoration_destroy` read the freed back-pointer
   (`XdgShell.cpp`). A deterministic **config fuzz harness**
   (`run-config-fuzz-test.sh`) feeds malformed and extreme `WindowServer.ini`
-  files through `--check-config` and fails on a hang or a signal; protocol
-  fuzzing remains open.
+  files through `--check-config` and fails on a hang or a signal. A structured
+  **WindowManagerServer fuzz harness** (`run-wm-fuzz-test.sh`) sends every shell
+  request with boundary/random ids, rects, workspaces and resize directions; it
+  found that an absurd Taskbar button rect made the minimize animation allocate
+  an impossible chrome bitmap and abort, now bounded. The Wayland wire protocol
+  is covered by `protocol-error-test`, not a fuzzer.
 - **CI (N6): green.** `scripts/run-all-tests.sh` runs the `run-*-test.sh`
   tests by tier (every test is headless by design), `.github/workflows/ci.yml`
   gates a push on the fast tier and runs the rest nightly, and
@@ -578,8 +582,9 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   See [`27-terminal-keys.md`](27-terminal-keys.md): both were measured in a
   headless harness afterwards (`scripts/run-terminal-keys-test.sh`), and the Ctrl-C
   symptom turned out to be a *signal-disposition* bug rather than an encoding one.
-- **Packaging** of `WindowServer` and the session; **protocol fuzzing** (ASan/UBSan
-  support, the full-tier sanitizer run and the config fuzz harness are in place).
+- **Packaging** of `WindowServer` and the session; **Wayland protocol fuzzing**
+  (ASan/UBSan support, the full-tier sanitizer run, and config and
+  WindowManagerServer fuzz harnesses are in place).
   The compositor design doc is
   [`31-compositor-design.md`](31-compositor-design.md); the crash report, log
   levels and the optional JSONL event trace are in place, while per-frame
