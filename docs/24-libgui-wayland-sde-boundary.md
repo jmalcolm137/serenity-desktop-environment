@@ -118,7 +118,7 @@ desktop's, not the application framework's.
 - **Target definitions:** they live in this repo's
   `patches/0008-sde-lagom-targets.patch` (the app list/loop, the games, the demos,
   the DevTools, Magnifier, and the Taskbar build), applied after the port's patch
-  stack. `libgui-wayland`'s `0001`, `0035` (split: its `CodeComprehension` library
+  stack. `libgui-wayland`'s `0001`, the former `0035` (since removed as an empty stub; split: its `CodeComprehension` library
   hunk stays with the framework) and `0044` (CertificateSettings, an app) were
   trimmed or dropped accordingly.
 

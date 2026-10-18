@@ -1,5 +1,5 @@
 diff --git a/Userland/Services/Taskbar/QuickLaunchWidget.cpp b/Userland/Services/Taskbar/QuickLaunchWidget.cpp
-index 904ec537..86c2ad61 100644
+index 7f31d1628c..9f0680078a 100644
 --- a/Userland/Services/Taskbar/QuickLaunchWidget.cpp
 +++ b/Userland/Services/Taskbar/QuickLaunchWidget.cpp
 @@ -41,7 +41,7 @@ OwnPtr<QuickLaunchEntry> QuickLaunchEntry::create_from_path(StringView path)
@@ -9,9 +9,9 @@ index 904ec537..86c2ad61 100644
 -            af_path = ByteString::formatted("{}/{}", Desktop::AppFile::APP_FILES_DIRECTORY, path);
 +            af_path = ByteString::formatted("{}/{}", Desktop::AppFile::app_files_directory(), path);
  
-         return make<QuickLaunchEntryAppFile>(Desktop::AppFile::open(af_path));
-     }
-@@ -233,6 +233,8 @@ void QuickLaunchWidget::context_menu_event(GUI::ContextMenuEvent& event)
+         auto app_file = Desktop::AppFile::open(af_path);
+         // A pinned entry can outlive the app it points at (the app was
+@@ -240,6 +240,8 @@ void QuickLaunchWidget::context_menu_event(GUI::ContextMenuEvent& event)
              return;
  
          m_context_menu_app_name = entry->name();
@@ -20,18 +20,7 @@ index 904ec537..86c2ad61 100644
          m_context_menu->popup(event.screen_position(), m_context_menu_default_action);
      });
  }
-@@ -262,6 +264,10 @@ void QuickLaunchWidget::paint_event(GUI::PaintEvent& event)
-         Gfx::StylePainter::paint_button(painter, rect, palette(), Gfx::ButtonStyle::Coolbar, entry->is_pressed(), entry->is_hovered());
- 
-         auto const* icon = entry->icon().bitmap_for_size(16);
-+        // Serenity Desktop Environment host compat: an entry's icon may not
-+        // resolve on the host; skip drawing it rather than crashing.
-+        if (!icon)
-+            return;
-         auto content_rect = rect.shrunken(8, 2);
-         auto icon_location = content_rect.center().translated(-(icon->width() / 2), -(icon->height() / 2));
-         if (entry->is_pressed())
-@@ -301,17 +307,36 @@ QuickLaunchWidget::QuickLaunchWidget()
+@@ -312,17 +314,36 @@ QuickLaunchWidget::QuickLaunchWidget()
  
  ErrorOr<void> QuickLaunchWidget::create_context_menu()
  {
@@ -72,7 +61,7 @@ index 904ec537..86c2ad61 100644
  {
      struct ConfigEntry {
 diff --git a/Userland/Services/Taskbar/QuickLaunchWidget.h b/Userland/Services/Taskbar/QuickLaunchWidget.h
-index 70439224..c97ca716 100644
+index 70439224a9..c97ca716f0 100644
 --- a/Userland/Services/Taskbar/QuickLaunchWidget.h
 +++ b/Userland/Services/Taskbar/QuickLaunchWidget.h
 @@ -131,6 +131,7 @@ private:
@@ -84,7 +73,7 @@ index 70439224..c97ca716 100644
      ErrorOr<void> update_entry(ByteString const&, NonnullOwnPtr<QuickLaunchEntry>, bool save = true);
      void add_entries(Vector<NonnullOwnPtr<QuickLaunchEntry>> entries, bool save = true);
 diff --git a/Userland/Services/Taskbar/TaskbarWindow.cpp b/Userland/Services/Taskbar/TaskbarWindow.cpp
-index 82fc0b57..bc43a319 100644
+index 82fc0b57ea..bc43a319fe 100644
 --- a/Userland/Services/Taskbar/TaskbarWindow.cpp
 +++ b/Userland/Services/Taskbar/TaskbarWindow.cpp
 @@ -158,7 +158,7 @@ ErrorOr<void> TaskbarWindow::populate_taskbar()
@@ -97,7 +86,7 @@ index 82fc0b57..bc43a319 100644
  
      return {};
 diff --git a/Userland/Services/Taskbar/main.cpp b/Userland/Services/Taskbar/main.cpp
-index 9668cb00..89cbfead 100644
+index 9668cb00e2..89cbfead1b 100644
 --- a/Userland/Services/Taskbar/main.cpp
 +++ b/Userland/Services/Taskbar/main.cpp
 @@ -13,6 +13,7 @@

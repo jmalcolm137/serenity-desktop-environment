@@ -282,7 +282,7 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal`; see
   mechanism). `MouseSettings`, `Debugger`, `CrashReporter` feasibility not yet
   addressed. `Terminal` runs. The **games** (2048, BrickGame, Chess, ColorLines,
   FlappyBug, Flood, GameOfLife, Hearts, MasterWord, Minesweeper, Snake,
-  Solitaire, Spider, plus ChessEngine) are built by the port (patch 0035) and so
+  Solitaire, Spider, plus ChessEngine) are built by the SDE's Lagom targets (`patches/0008-sde-lagom-targets.patch`) and so
   appear under the Taskbar's **Games** menu (which it generates from the
   `Base/res/apps/*.af` files); verified by `scripts/run-games-test.sh`. The
   **demos** (CatDog, Eyes, LibGfx Demo, LibGfx Scale Demo, Mandelbrot, Model
@@ -510,7 +510,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   a startup *design* cost, not a leak (§4: ~0.6 MB of it is the system menu at
   8.7 kB per installed app, linear); investigating it did surface a real bug: a
   pinned quick-launch entry whose `.af` is missing crashed the whole shell, fixed
-  by `patches/0009-taskbar-quicklaunch-missing-app.patch` and covered by
+  in our SerenityOS fork (`fixes` 31fdfaad33; see `patches/README.md`) and covered by
   `scripts/run-taskbar-quicklaunch-test.sh`.
 - **Crash recovery / watchdog / safe mode (N4): done.** The R4.2 supervisor
   restarts a *crashed* compositor; R6 adds a **watchdog** for a *wedged* one (the
