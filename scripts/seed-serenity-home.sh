@@ -13,7 +13,9 @@ set -euo pipefail
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
 SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
-SKELETON="$SERENITY/Base/home/anon/.config"
+# An installed tree flattens Base/res and Base/home into its share directory and
+# points this at the skeleton; a checkout uses the SerenityOS tree.
+SKELETON="${SDE_SKELETON_DIR:-$SERENITY/Base/home/anon/.config}"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}"
 
 [[ -d "$SKELETON" ]] || exit 0

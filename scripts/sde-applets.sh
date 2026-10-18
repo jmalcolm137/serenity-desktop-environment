@@ -10,7 +10,7 @@
 # protocol over the audiomanager portal (see the AudioServer/ service).
 sde_applet_startup_commands() {
     local root="$1"
-    local applets="$root/build/Applets"
+    local applets="${SDE_APPLET_DIR:-$root/build/Applets}"
 
     local cmds=()
     [[ -x "$applets/WorkspacePicker" ]] && cmds+=("$applets/WorkspacePicker")

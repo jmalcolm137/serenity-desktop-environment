@@ -5,10 +5,11 @@
 
 This document plans how to run SDE **natively** (DRM/KMS + libinput, no host
 compositor underneath) and how to **package it for Arch/EndeavourOS (AUR)** so a
-display manager lists it as a session. The **session entry + installer** (§6) are
-implemented; the AUR packaging (§3–§5, §9) is still a plan. It records the package
-split, the install layout, the packaging traps we have verified against the
-current build, and the order to bring it up safely.
+display manager lists it as a session. The **session entry + installer** (§6) and
+the **private-prefix install layout** (§6) are implemented; the AUR PKGBUILDs
+(§3–§5, §9) are still a plan. It records the package split, the install layout,
+the packaging traps we have verified against the current build, and the order to
+bring it up safely.
 
 > **Scope note.** Packaging is nominally **R6** ("Hardening & packaging",
 > [`01-objectives.md`](01-objectives.md) §11) and is not started. This plan pulls
@@ -141,6 +142,19 @@ sudo scripts/install-session.sh --uninstall
 This is a **dev install**: the launcher `exec`s `scripts/start-sde-session.sh` from
 the checkout (rebuild before logging in). `--bin-dir`/`--sessions-dir`/`--repo`
 override the paths (used by `scripts/run-session-entry-test.sh`).
+
+**Installed layout (implemented).** `scripts/install-sde.sh` stages the private
+prefix from a built tree: `bin/` (the compositor, services, applets, tools and the
+Lagom applications), `lib/`, `share/res/`, `share/skeleton/`,
+`share/sde/scripts/`, a `bin/sde-session` launcher that derives its own prefix,
+and the wayland-sessions entry. `--prefix` (default `/usr/lib/sde`) chooses the
+prefix and `--destdir` stages into a package root. The launcher exports the path
+seams the session scripts use (`SDE_*_BIN`, `SDE_APPLET_DIR`,
+`SDE_SERVICE_BIN_DIR`, `SDE_SKELETON_DIR`, `SERENITY_RES_ROOT`,
+`LD_LIBRARY_PATH`), so the checkout-only defaults stay intact.
+`scripts/run-install-layout-test.sh` installs a staged prefix and starts a
+headless session from it (Taskbar, applets and the private LaunchServer), which
+keeps the layout honest while the PKGBUILDs remain unwritten.
 
 The entry:
 

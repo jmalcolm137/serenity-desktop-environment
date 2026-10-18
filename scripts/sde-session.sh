@@ -327,9 +327,19 @@ echo "SDE session: power helpers in $SESSION_BIN (/bin shadow)"
 # both: link the port's applications here and overlay the SDE services. See
 # docs/06-service-layering.md and docs/07-systemserver-roles.md (section 2.3).
 SESSION_SERVICES=(WebContent RequestServer SQLServer NotificationServer AudioServer)
+# A checkout keeps each service in build/<name>/<name>; an installed tree
+# flattens them into the prefix's bin directory (SDE_SERVICE_BIN_DIR).
+session_service_binary() {
+    local service="$1"
+    if [ -x "$SDE_ROOT/build/$service/$service" ]; then
+        printf '%s' "$SDE_ROOT/build/$service/$service"
+    elif [ -n "${SDE_SERVICE_BIN_DIR:-}" ] && [ -x "$SDE_SERVICE_BIN_DIR/$service" ]; then
+        printf '%s' "$SDE_SERVICE_BIN_DIR/$service"
+    fi
+}
 missing_services=0
 for service in "${SESSION_SERVICES[@]}"; do
-    [ -x "$SDE_ROOT/build/$service/$service" ] || missing_services=1
+    [ -n "$(session_service_binary "$service")" ] || missing_services=1
 done
 if [ "$missing_services" = "1" ]; then
     echo "SDE session: building the session services (${SESSION_SERVICES[*]})"
@@ -354,8 +364,9 @@ for app in "$BUILD/bin"/*; do
 done
 # SDE's own services take precedence over any same-named port binary.
 for service in "${SESSION_SERVICES[@]}"; do
-    if [ -x "$SDE_ROOT/build/$service/$service" ]; then
-        ln -sf "$SDE_ROOT/build/$service/$service" "$APP_BIN/$service"
+    service_path="$(session_service_binary "$service")"
+    if [ -n "$service_path" ]; then
+        ln -sf "$service_path" "$APP_BIN/$service"
     fi
 done
 export SDE_APP_BIN_DIR="$APP_BIN"

@@ -18,7 +18,7 @@ SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
 SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
 BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
-COMP="$SDE_ROOT/build/WindowServer/WindowServer"
+COMP="${SDE_COMPOSITOR_BIN:-$SDE_ROOT/build/WindowServer/WindowServer}"
 
 : "${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR must be set (log in to a proper session)}"
 
@@ -168,22 +168,30 @@ SERENITY="$SERENITY" "$SDE_ROOT/scripts/seed-serenity-home.sh"
 
 # Start the Taskbar and a File Manager, plus the taskbar applets, unless the
 # caller supplies their own startup command.
-BATTERY_APPLET="$SDE_ROOT/build/BatteryApplet/BatteryApplet"
+BATTERY_APPLET="${SDE_BATTERY_APPLET:-$SDE_ROOT/build/BatteryApplet/BatteryApplet}"
+if [[ ! -x "$BATTERY_APPLET" && -x "$SDE_APP_BIN_DIR/BatteryApplet" ]]; then
+    BATTERY_APPLET="$SDE_APP_BIN_DIR/BatteryApplet"
+fi
 if [[ ! -x "$BATTERY_APPLET" ]]; then
     "$SDE_ROOT/scripts/build-battery-applet.sh" >/dev/null 2>&1 \
         || echo "note: BatteryApplet not built; skipping the battery applet" >&2
 fi
 
 # The Wi-Fi applet (a LibGUI app that fronts NetworkManager; docs/19).
-WIFI_APPLET="$SDE_ROOT/build/WifiApplet/WifiApplet"
+WIFI_APPLET="${SDE_WIFI_APPLET:-$SDE_ROOT/build/WifiApplet/WifiApplet}"
+if [[ ! -x "$WIFI_APPLET" && -x "$SDE_APP_BIN_DIR/WifiApplet" ]]; then
+    WIFI_APPLET="$SDE_APP_BIN_DIR/WifiApplet"
+fi
 if [[ ! -x "$WIFI_APPLET" ]]; then
     "$SDE_ROOT/scripts/build-wifi-applet.sh" >/dev/null 2>&1 \
         || echo "note: WifiApplet not built; skipping the Wi-Fi applet" >&2
 fi
 
 # The SerenityOS taskbar applets (WorkspacePicker, ResourceGraph, Network, ...)
-# are SDE's; build them on demand so a fresh checkout gets them too.
-if [[ ! -x "$SDE_ROOT/build/Applets/WorkspacePicker" ]]; then
+# are SDE's; build them on demand so a fresh checkout gets them too. An installed
+# tree sets SDE_APPLET_DIR (the flattened bin directory).
+APPLET_DIR="${SDE_APPLET_DIR:-$SDE_ROOT/build/Applets}"
+if [[ ! -x "$APPLET_DIR/WorkspacePicker" ]]; then
     "$SDE_ROOT/scripts/build-applets.sh" >/dev/null 2>&1 \
         || echo "note: applets not built; skipping them" >&2
 fi
@@ -229,7 +237,7 @@ fi
 # (e.g. the host when nested). The compositor sets it for its own children; the
 # services are separate processes, so set it here.
 SESSION_DISPLAY="$SDE_SESSION_DISPLAY"
-LAUNCH_SERVER="$SDE_ROOT/build/LaunchServer/LaunchServer"
+LAUNCH_SERVER="${SDE_LAUNCH_SERVER_BIN:-$SDE_ROOT/build/LaunchServer/LaunchServer}"
 LAUNCH_SERVER_PID=""
 SERVICE_SUPERVISOR="$SDE_ROOT/scripts/sde-service-supervisor.sh"
 # Drop the previous session's Xwayland DISPLAY so the LaunchServer waits for the
@@ -246,7 +254,7 @@ fi
 # The session ImageDecoder owns the image portal when it is built and running;
 # without it, applications fall back to the in-process ImageDecoder inside
 # libgui-wayland. Either way image decoding works.
-IMAGE_DECODER="$SDE_ROOT/build/ImageDecoder/ImageDecoder"
+IMAGE_DECODER="${SDE_IMAGE_DECODER_BIN:-$SDE_ROOT/build/ImageDecoder/ImageDecoder}"
 IMAGE_DECODER_PID=""
 if [[ -x "$IMAGE_DECODER" ]]; then
     "$SERVICE_SUPERVISOR" ImageDecoder -- "$IMAGE_DECODER" &
@@ -259,20 +267,24 @@ fi
 # xdg-desktop-portal (and thus GTK/Qt/Flatpak apps) follow the SDE session.
 # Falls back to the R4.4 Settings-only backend; harmless when xdg-desktop-portal
 # is absent.
-PORTAL_BACKEND="$SDE_ROOT/build/tools/xdg-desktop-portal-serenity"
-SETTINGS_PORTAL="$SDE_ROOT/build/tools/sde-settings-portal"
+PORTAL_BACKEND="${SDE_PORTAL_BACKEND_BIN:-$SDE_ROOT/build/tools/xdg-desktop-portal-serenity}"
+SETTINGS_PORTAL="${SDE_SETTINGS_PORTAL_BIN:-$SDE_ROOT/build/tools/sde-settings-portal}"
 PORTAL_PID=""
-if [[ -x "$PORTAL_BACKEND" ]]; then
-    "$SERVICE_SUPERVISOR" PortalBackend -- "$PORTAL_BACKEND" &
-    PORTAL_PID=$!
-elif [[ -x "$SETTINGS_PORTAL" ]]; then
-    "$SERVICE_SUPERVISOR" SettingsPortal -- "$SETTINGS_PORTAL" &
-    PORTAL_PID=$!
+# A second session on the same bus cannot own the portal's D-Bus name. Tests and
+# nested sessions can opt out; the normal session leaves this at 1.
+if [[ "${SDE_SESSION_PORTAL:-1}" == "1" ]]; then
+    if [[ -x "$PORTAL_BACKEND" ]]; then
+        "$SERVICE_SUPERVISOR" PortalBackend -- "$PORTAL_BACKEND" &
+        PORTAL_PID=$!
+    elif [[ -x "$SETTINGS_PORTAL" ]]; then
+        "$SERVICE_SUPERVISOR" SettingsPortal -- "$SETTINGS_PORTAL" &
+        PORTAL_PID=$!
+    fi
 fi
 
 echo "SDE: starting WindowServer (${SDE_BACKENDS:-drm,libinput}) on $XDG_RUNTIME_DIR"
 # Build the portable session tools (sde-idle) if needed.
-if [ ! -x "$SDE_ROOT/build/tools/sde-idle" ]; then
+if [ ! -x "${SDE_SESSION_IDLE_BIN:-$SDE_ROOT/build/tools/sde-idle}" ]; then
     "$SDE_ROOT/scripts/build-tools.sh" >/dev/null
 fi
 # The session supervisor (R4.2) starts/restarts the compositor, runs XDG
