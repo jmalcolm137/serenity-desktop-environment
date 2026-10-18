@@ -22,12 +22,30 @@ if ! command -v valgrind >/dev/null 2>&1; then
     exit 0
 fi
 
+# Modern Arch glibc is stripped and Valgrind needs the debuginfod-provided
+# symbols for its mandatory ld.so redirections. The package's profile script sets
+# this for login shells; tests do not source /etc/profile.
+export DEBUGINFOD_URLS="${DEBUGINFOD_URLS:-https://debuginfod.archlinux.org}"
+
+RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-valgrind.XXXXXX")"
+chmod 700 "$RUNTIME"
+if ! valgrind --tool=memcheck --error-exitcode=99 /bin/true > "$RUNTIME/preflight.log" 2>&1; then
+    if grep -qE 'function redirection|debuginfo|Fatal error at startup' "$RUNTIME/preflight.log"; then
+        echo "==> valgrind test SKIPPED (Valgrind cannot initialize against this libc)"
+        grep -E 'Fatal error|function redirection|debuginfo' "$RUNTIME/preflight.log" | head -4 | sed 's/^/    /'
+        rm -rf "$RUNTIME"
+        exit 0
+    fi
+    echo "==> valgrind test FAILED (preflight)"
+    tail -30 "$RUNTIME/preflight.log"
+    rm -rf "$RUNTIME"
+    exit 1
+fi
+
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 "$SDE_ROOT/scripts/build-tools.sh" >/dev/null
 [[ -x "$NATIVE" ]] || { echo "SKIP: native-app-test not built"; exit 0; }
 
-RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-valgrind.XXXXXX")"
-chmod 700 "$RUNTIME"
 mkdir -p "$RUNTIME/state" "$RUNTIME/session" "$RUNTIME/wm"
 SOCK="sde-valgrind-$$"
 COMP_PID=""
