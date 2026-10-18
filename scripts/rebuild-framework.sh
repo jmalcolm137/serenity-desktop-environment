@@ -55,6 +55,14 @@ echo "==> the framework (LibGfx/LibGUI/LibVT/LibWM)"
 echo "==> the applications"
 "$SDE_ROOT/scripts/build.sh" Terminal
 "$SDE_ROOT/scripts/build.sh" FileManager
+# The application suite links the same framework. Rebuild it when this tree has it
+# (a tree built without apps skips this); a framework header change leaves every
+# app built before it reading the old layout - DisplaySettings crashed on its
+# first get_system_theme() after the accessibility rebuild.
+if [[ -x "$BUILD/bin/DisplaySettings" ]]; then
+    echo "==> the application suite (it is built in this tree)"
+    "$SDE_ROOT/scripts/build-apps.sh"
+fi
 
 # The SDE's own framework consumers. This is the incremental top-level build:
 # CMake knows which of them include a header that changed, so an up-to-date tree

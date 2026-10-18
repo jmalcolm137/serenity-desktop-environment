@@ -611,6 +611,16 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 
 ## Recently resolved (kept so we don't re-chase them)
 
+- **DisplaySettings would not launch after the accessibility rebuild.** The
+  application suite was built before LibIPC's `ConnectionBase` layout changed, so
+  `DisplaySettings` crashed on its first synchronous request
+  (`get_system_theme()`); the Taskbar/Terminal were rebuilt, the app suite was
+  not. `rebuild-framework.sh` now rebuilds the app suite when the tree has it, and
+  the session's startup staleness check includes `DisplaySettings`. The Monitor tab
+  also reported the first fallback resolution (640x480) when EDID was unavailable
+  and the panel's mode was not in the generic list; it now appends the current
+  output mode before selecting it, so a 2560x1600 panel shows 2560x1600.
+
 - **R3 finished: launch/stack animations, the stack-switch overlay, and the
   icon-reload hotkey.** `serenity_toplevel.set_launch_origin` carries the rect the
   launcher handed the app (SerenityOS's `__libgui_launch_origin_rect`, read by

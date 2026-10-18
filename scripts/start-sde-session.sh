@@ -116,6 +116,7 @@ framework_is_newer_than_sde() {
         "$BUILD/bin/Taskbar" \
         "$BUILD/bin/Terminal" \
         "$BUILD/bin/FileManager" \
+        "$BUILD/bin/DisplaySettings" \
         "$SDE_ROOT/build/LaunchServer/LaunchServer" \
         "$SDE_ROOT/build/ImageDecoder/ImageDecoder" \
         "$SDE_ROOT/build/AudioServer/AudioServer" \
