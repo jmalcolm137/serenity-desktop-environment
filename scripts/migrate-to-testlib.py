@@ -43,7 +43,7 @@ START = re.compile(
     r'env -u WAYLAND_DISPLAY -u DISPLAY \\\n'
     r'    WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \\\n'
     r'(?P<env>(?:[^\n]*\\\n)*?)'
-    r'    "\$COMP" -n "\$SOCK" > "\$RUNTIME/comp\.log" 2>&1 &\n'
+    r'    "\$COMP" -n "\$SOCK"(?: -s (?P<startup>"[^"]*"))? > "\$RUNTIME/comp\.log" 2>&1 &\n'
     r'COMP_PID=\$!\n'
     r'for _ in \$\(seq 1 \d+\); do\n'
     r'    \[\[ -e "\$\{XDG_RUNTIME_DIR:-/run/user/\$\(id -u\)\}/\$SOCK" \]\] && break\n'
@@ -86,8 +86,20 @@ def migrate(path):
     # A second trap would *replace* the library's cleanup (bash keeps one handler
     # per signal), so those scripts need a hand migration: they clean up more than
     # the compositor.
-    if len(re.findall(r'^\s*(?:export )?trap ', src, re.M)) > 1:
+    traps = len(re.findall(r'^\s*(?:export )?trap ', src, re.M))
+    if traps > 1:
         return None, 'sets more than one trap (needs a hand migration)'
+
+    # A cleanup() that only stops the compositor and removes the runtime is what
+    # the library does; one that also kills clients or removes other directories
+    # is not, and the script is left for a hand migration.
+    own_cleanup = re.search(r'\ncleanup\(\) \{\n(?P<body>(?:[^}\n]*\n)*?)\}', src)
+    if own_cleanup:
+        body = own_cleanup.group('body')
+        extra = [line for line in body.splitlines()
+                 if line.strip() and not re.search(r'COMP_PID|CP\b|RUNTIME|kill |wait |sleep |^\s*\}|pkill ', line)]
+        if extra:
+            return None, 'cleanup() does more than stop the compositor'
 
     # Keep anything between the blocks (build calls, helpers) as it is.
     middle = src[roots.end():runtime.start()]
@@ -98,9 +110,21 @@ def migrate(path):
              f'sde_test_init {test_name(path)}\n'
              'sde_test_export_roots\n')
     env = extra_env(start.group('env'))
-    call = 'sde_test_compositor' + ''.join(' ' + e for e in env) + '\n'
-    return (src[:roots.start()] + setup + middle + between + call + src[start.end():],
-            'ok' + (' (passes ' + ' '.join(env) + ')' if env else ''))
+    startup = start.group('startup')
+    call = 'sde_test_compositor'
+    if startup:
+        call += ' --startup ' + startup
+    call += ''.join(' ' + e for e in env) + '\n'
+    out = src[:roots.start()] + setup + middle + between + call + src[start.end():]
+    if own_cleanup:
+        # Re-locate after the rewrite, then drop the function and the trap that
+        # called it (the runtime trap was already removed with RUNTIME).
+        moved = re.search(r'\ncleanup\(\) \{\n(?:[^}\n]*\n)*?\}\n', out)
+        if moved:
+            out = out[:moved.start()] + '\n' + out[moved.end():]
+        out = re.sub(r'^\s*trap cleanup EXIT\n', '', out, flags=re.M)
+    return (out, 'ok' + (' (passes ' + ' '.join(env) + ')' if env else '') +
+            (' (startup)' if startup else '') + (' (own cleanup)' if own_cleanup else ''))
 
 
 def main():

@@ -85,19 +85,27 @@ sde_test_vi() {
 
 # --- The compositor ---------------------------------------------------------
 
-# sde_test_compositor [extra environment assignments ...]
+# sde_test_compositor [--startup "cmd & cmd"] [extra environment assignments ...]
 #   Starts the compositor headless on $SOCK and waits for its socket. Its log is
-#   $RUNTIME/comp.log. Extra arguments are environment assignments for this run
-#   (e.g. SDE_OUTPUT_SCALE=2).
+#   $RUNTIME/comp.log. --startup is the compositor's -s command (the Taskbar and
+#   the desktop, usually); any other argument is an environment assignment for
+#   this run (e.g. SDE_OUTPUT_SCALE=2).
 sde_test_compositor() {
+    local -a startup=() assignments=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --startup) startup=(-s "$2"); shift 2 ;;
+            *) assignments+=("$1"); shift ;;
+        esac
+    done
     env -u WAYLAND_DISPLAY -u DISPLAY \
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
         SDE_OUTPUT_SCALE=1 \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SDE_TEST_SERENITY/Base/res}" \
         LD_LIBRARY_PATH="$SDE_TEST_BUILD/lib" \
         SDE_APP_BIN_DIR="$SDE_TEST_BUILD/bin" \
-        "$@" \
-        "$SDE_TEST_COMPOSITOR" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
+        "${assignments[@]}" \
+        "$SDE_TEST_COMPOSITOR" -n "$SOCK" "${startup[@]}" > "$RUNTIME/comp.log" 2>&1 &
     SDE_TEST_COMPOSITOR_PID=$!
     # COMP_PID as well: a test that stops the compositor itself (to check what
     # happens when it dies) still refers to it by the name the scripts have always
@@ -131,18 +139,25 @@ sde_test_case() {
     export SDE_STATE_DIR="$CASE_RUNTIME"
 }
 
-# sde_test_case_compositor [extra environment assignments ...]
-#   Starts the case's compositor and waits for its socket. Extra arguments are
-#   environment assignments for this run (SDE_OUTPUT_SCALE=2, ...).
+# sde_test_case_compositor [--startup "cmd"] [extra environment assignments ...]
+#   Starts the case's compositor and waits for its socket. Arguments as for
+#   sde_test_compositor.
 sde_test_case_compositor() {
+    local -a startup=() assignments=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --startup) startup=(-s "$2"); shift 2 ;;
+            *) assignments+=("$1"); shift ;;
+        esac
+    done
     env -u WAYLAND_DISPLAY -u DISPLAY \
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
         SDE_OUTPUT_SCALE=1 \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SDE_TEST_SERENITY/Base/res}" \
         LD_LIBRARY_PATH="$SDE_TEST_BUILD/lib" \
         SDE_APP_BIN_DIR="$SDE_TEST_BUILD/bin" \
-        "$@" \
-        "$SDE_TEST_COMPOSITOR" -n "$CASE_SOCK" > "$CASE_RUNTIME/comp.log" 2>&1 &
+        "${assignments[@]}" \
+        "$SDE_TEST_COMPOSITOR" -n "$CASE_SOCK" "${startup[@]}" > "$CASE_RUNTIME/comp.log" 2>&1 &
     SDE_TEST_COMPOSITOR_PID=$!
     COMP_PID=$SDE_TEST_COMPOSITOR_PID
     sde_test_wait_socket "$CASE_SOCK" "${SDE_TEST_SOCKET_TRIES:-80}" || {
