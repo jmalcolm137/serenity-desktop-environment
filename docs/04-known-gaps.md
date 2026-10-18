@@ -1,6 +1,6 @@
 # Serenity Desktop Environment: Known Gaps & Remaining Work
 
-**Status:** Living document · **Date:** 2026-10-16
+**Status:** Living document · **Date:** 2026-10-18
 **Related:** [`01-objectives.md`](01-objectives.md) · [`02-compositor-decision.md`](02-compositor-decision.md) · [`03-engineering-conventions.md`](03-engineering-conventions.md) · [`05-r3-plan.md`](05-r3-plan.md) · [`07-systemserver-roles.md`](07-systemserver-roles.md) · [`08-compositor-gaps.md`](08-compositor-gaps.md)
 
 This is a running, greppable list of what is known to be missing or incomplete,
@@ -540,8 +540,10 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   xdg-shell fuzz harness** (`run-wayland-fuzz-test.sh`) sends valid-but-extreme
   surface/toplevel requests (titles, sizes, states, geometry, damage, scale,
   transform, move/resize/menu) and asserts the compositor survives and still
-  serves; seeds 1–4 (1000 operations) and an ASan run are clean. Layer-shell and
-  data-device fuzzing remain open.
+  serves; seeds 1–4 (1000 operations) and an ASan run are clean. A layer-shell
+  fuzz harness (`run-layer-fuzz-test.sh`) covers anchors, exclusive zones,
+  margins, sizes, layers and keyboard interactivity. Data-device fuzzing and
+  Valgrind remain open.
 - **CI (N6): green.** `scripts/run-all-tests.sh` runs the `run-*-test.sh`
   tests by tier (every test is headless by design), `.github/workflows/ci.yml`
   gates a push on the fast tier and runs the rest nightly, and
@@ -563,8 +565,8 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   (`26-ci.md` §6.6–6.7). The applications now build in the smoke job, which is what
   lets a third of the tier run at all.
 
-  **Green since 2026-10-16:** the fast tier on every push (**82 passed, 0 failed,
-  4 skipped, 0 timed out**) and the full suite nightly/on dispatch (**97 passed, 0
+  **Green since 2026-10-18:** the fast tier on every push (**92 passed, 0 failed,
+  4 skipped, 0 timed out**) and the full suite nightly/on dispatch (**115 passed, 0
   failed, 4 skipped, 0 timed out**), with the informational budgets job passing. The
   four skips are environment-gated rather than gaps: no camera,
   `perf_event_open` blocked in the container, and the two screencast tests that
