@@ -99,6 +99,10 @@ sde_test_compositor() {
         "$@" \
         "$SDE_TEST_COMPOSITOR" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
     SDE_TEST_COMPOSITOR_PID=$!
+    # COMP_PID as well: a test that stops the compositor itself (to check what
+    # happens when it dies) still refers to it by the name the scripts have always
+    # used, and `set -u` would otherwise turn that into an unbound-variable error.
+    COMP_PID=$SDE_TEST_COMPOSITOR_PID
     sde_test_wait_socket "$SOCK" || {
         echo "FAIL: the compositor did not create $XDG_RUNTIME_DIR/$SOCK" >&2
         tail -20 "$RUNTIME/comp.log" >&2 2>/dev/null || true
@@ -140,6 +144,7 @@ sde_test_case_compositor() {
         "$@" \
         "$SDE_TEST_COMPOSITOR" -n "$CASE_SOCK" > "$CASE_RUNTIME/comp.log" 2>&1 &
     SDE_TEST_COMPOSITOR_PID=$!
+    COMP_PID=$SDE_TEST_COMPOSITOR_PID
     sde_test_wait_socket "$CASE_SOCK" "${SDE_TEST_SOCKET_TRIES:-80}" || {
         echo "FAIL: case '$SDE_TEST_CASE_NAME': the compositor did not create $XDG_RUNTIME_DIR/$CASE_SOCK" >&2
         tail -20 "$CASE_RUNTIME/comp.log" >&2 2>/dev/null || true
@@ -154,6 +159,7 @@ sde_test_case_stop() {
     kill -TERM -- "-$SDE_TEST_COMPOSITOR_PID" 2>/dev/null || kill "$SDE_TEST_COMPOSITOR_PID" 2>/dev/null || true
     wait "$SDE_TEST_COMPOSITOR_PID" 2>/dev/null || true
     SDE_TEST_COMPOSITOR_PID=""
+    COMP_PID=""
 }
 
 # sde_test_wait_socket <socket> [tenths-of-a-second]
@@ -211,6 +217,7 @@ sde_test_cleanup() {
         kill "$SDE_TEST_COMPOSITOR_PID" 2>/dev/null || true
         wait "$SDE_TEST_COMPOSITOR_PID" 2>/dev/null || true
         SDE_TEST_COMPOSITOR_PID=""
+        COMP_PID=""
     fi
     rm -f "$XDG_RUNTIME_DIR/$SOCK"* 2>/dev/null || true
     [[ -n "${SOCK:-}" ]] && rm -f "$XDG_RUNTIME_DIR/$SOCK"* 2>/dev/null || true
