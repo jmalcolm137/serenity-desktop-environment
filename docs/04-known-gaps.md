@@ -689,7 +689,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   `LibDesktop` connection exits the application when its server goes away, so the
   panel vanished while the applets stayed. `rebuild-framework.sh` now also runs
   the SDE's incremental top-level build, and `start-sde-session.sh` rebuilds the
-  SDE's programs when any framework library is newer than they are, so a
+  SDE's programs when a framework library they link is newer than they are, so a
   framework-only rebuild cannot reach a login as a mixed session.
 
 - **HiDPI & fractional output scaling (R6).** `[Output] DefaultScale` accepts a

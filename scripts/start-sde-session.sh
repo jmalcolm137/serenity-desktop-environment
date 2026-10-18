@@ -110,9 +110,12 @@ export LD_LIBRARY_PATH="$BUILD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # from the panel. Rebuild the SDE's programs when the framework is newer, so a
 # login after a framework-only rebuild cannot start a mismatched session.
 framework_is_newer_than_sde() {
-    local binary
+    local binary library
     for binary in \
         "$COMP" \
+        "$BUILD/bin/Taskbar" \
+        "$BUILD/bin/Terminal" \
+        "$BUILD/bin/FileManager" \
         "$SDE_ROOT/build/LaunchServer/LaunchServer" \
         "$SDE_ROOT/build/ImageDecoder/ImageDecoder" \
         "$SDE_ROOT/build/AudioServer/AudioServer" \
@@ -120,9 +123,12 @@ framework_is_newer_than_sde() {
         "$SDE_ROOT/build/BatteryApplet/BatteryApplet" \
         "$SDE_ROOT/build/WifiApplet/WifiApplet"; do
         [ -x "$binary" ] || continue
-        if [ -n "$(find "$BUILD/lib" -maxdepth 1 -name 'liblagom-*.so*' -newer "$binary" -print -quit 2>/dev/null)" ]; then
-            return 0
-        fi
+        # Only the framework libraries this program actually links matter: a
+        # relinked LibVT does not make the compositor stale. ldd resolves the
+        # soname symlinks to the real files ninja relinks.
+        while IFS= read -r library; do
+            [ -e "$library" ] && [ "$library" -nt "$binary" ] && return 0
+        done < <(ldd "$binary" 2>/dev/null | awk '$2 == "=>" && $3 ~ /\/lib(lagom-|windowserver)/ { print $3 }')
     done
     return 1
 }
