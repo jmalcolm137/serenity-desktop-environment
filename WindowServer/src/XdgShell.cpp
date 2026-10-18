@@ -246,6 +246,14 @@ static void toplevel_destroy(wl_listener* listener, void*)
     // as unmapped first: a client that goes away can be destroyed without an unmap.
     toplevel->mapped = false;
     SessionManager::update_running_apps(server);
+    // A client's decoration may outlive its toplevel: wlroots destroys the
+    // wlr_xdg_toplevel first and emits the decoration destroy afterwards. Detach
+    // the back-pointer now, or decoration_destroy() reads freed Toplevel memory
+    // (found by the ASan run).
+    for (auto& decoration : server.decorations) {
+        if (decoration->toplevel == toplevel)
+            decoration->toplevel = nullptr;
+    }
     remove_owned(server.toplevels, toplevel);
 }
 
