@@ -68,7 +68,15 @@ check_dialog() {
         return
     fi
     local colors
-    colors="$(convert "$ppm" -crop 360x200+0+0 +repage -format "%k" info: 2>/dev/null || echo 0)"
+    colors="$(convert "$ppm" -crop 360x200+100+100 +repage -format "%k" info: 2>/dev/null || echo 0)"
+    if [[ "${colors:-0}" -lt 4 ]]; then
+        # A dialog that positions itself explicitly may still be at the origin.
+        local colors_origin
+        colors_origin="$(convert "$ppm" -crop 360x200+0+0 +repage -format "%k" info: 2>/dev/null || echo 0)"
+        if [[ "${colors_origin:-0}" -gt "${colors:-0}" ]]; then
+            colors="$colors_origin"
+        fi
+    fi
     if [[ "${colors:-0}" -ge 4 ]]; then
         echo "  ok: $name rendered ($colors colours)"
     else

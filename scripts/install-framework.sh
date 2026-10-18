@@ -48,10 +48,11 @@ if [[ -d "$SERENITY/Base/home/anon/.config" ]]; then
 fi
 
 # Generated headers (AK/Debug.h, the IPC endpoint headers, ...) and the source
-# they belong to. Keep the same relative layout the build includes use.
-command -v rsync >/dev/null 2>&1 || { echo "error: rsync is required" >&2; exit 1; }
-rsync -a --include='*/' --include='*.h' --exclude='*' "$BUILD/" "$DEST/framework/"
-rsync -a --exclude='.git' --exclude='Build' --exclude='build' "$SERENITY/" "$DEST/framework/serenity/"
+# they belong to. Keep the same relative layout the build includes use. Use tar
+# rather than rsync: the CI image carries tar but not rsync.
+( cd "$BUILD" && find . -name '*.h' -print0 | tar --null -T - -cf - ) | ( cd "$DEST/framework" && tar -xf - )
+install -d "$DEST/framework/serenity"
+( cd "$SERENITY" && tar --exclude=.git --exclude=Build --exclude=build -cf - . ) | ( cd "$DEST/framework/serenity" && tar -xf - )
 cp -a "$LIBGUI_WAYLAND_ROOT/src/." "$DEST/framework/src/"
 # The SDE's NotificationServer runs Lagom's GML compiler from the build tree.
 install -d "$DEST/framework/bin"

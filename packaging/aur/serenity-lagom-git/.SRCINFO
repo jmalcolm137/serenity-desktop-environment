@@ -16,7 +16,6 @@ pkgbase = serenity-lagom-git
 	makedepends = libpulse
 	makedepends = zip
 	makedepends = unzip
-	makedepends = rsync
 	depends = wayland
 	depends = libdrm
 	depends = libinput

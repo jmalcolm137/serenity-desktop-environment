@@ -73,7 +73,7 @@ TEST_PID=$!
 # Put the cursor at (150,100); the tooltip should appear just below it.
 sleep 0.3
 env WAYLAND_DISPLAY="$SOCK" \
-    "$TOOLS_BUILD/virtual-input-test" --extent 1280 720 --move 150 100 --sleep 200 \
+    "$TOOLS_BUILD/virtual-input-test" --extent 1280 720 --move 200 200 --sleep 200 \
     > "$RUNTIME/vin.log" 2>&1 || true
 
 wait "$TEST_PID" 2>/dev/null || true
@@ -114,7 +114,7 @@ check "TOOLTIP-TEST: requested"
 check_comp "layer surface namespace='serenity-tooltip' layer=overlay"
 # Positioned near the cursor: (150,100) + the 14px vertical offset SerenityOS uses.
 check "popup window"
-check "at 150,114"
+check "at 200,214"
 
 # Exactly one managed toplevel (the test window) - the tooltip is not one.
 toplevel_count="$(grep -cF "toplevel mapped" "$RUNTIME/comp.log" || true)"

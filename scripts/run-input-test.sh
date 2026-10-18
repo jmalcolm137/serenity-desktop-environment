@@ -108,7 +108,7 @@ sleep 1
 #   7. Ctrl+Alt+Right switches to the next workspace stack (WS1)
 env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
     --extent 1280 720 \
-    --move 60 10 --button 0x111 press --button 0x111 release --sleep 700 \
+    --move 160 110 --button 0x111 press --button 0x111 release --sleep 700 \
     --key 1 press --key 1 release --sleep 700 \
     --key 125 press --key 105 press --key 105 release --key 125 release --sleep 700 \
     --move 60 10 --button 0x110 press --move 1275 300 --move 1275 301 --button 0x110 release --sleep 700 \

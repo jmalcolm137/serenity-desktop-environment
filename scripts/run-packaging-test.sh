@@ -19,6 +19,35 @@ RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-packaging.XXXXXX")"
 chmod 700 "$RUNTIME"
 trap 'rm -rf "$RUNTIME"' EXIT
 
+# makepkg refuses root (understandably). The CI job runs in a root container, so
+# generate the metadata as an unprivileged user from a writable copy.
+MAKEPKG_UID=0
+MAKEPKG_HOME="$RUNTIME/makepkg-home"
+if [[ "$(id -u)" -eq 0 ]]; then
+    if ! command -v setpriv >/dev/null 2>&1; then
+        echo "SKIP: running as root and setpriv is unavailable"
+        exit 0
+    fi
+    MAKEPKG_UID=65534
+    mkdir -p "$MAKEPKG_HOME"
+    chown 65534:65534 "$MAKEPKG_HOME"
+    chmod 755 "$RUNTIME"
+fi
+
+generate_srcinfo() {
+    local dir="$1" out="$2"
+    if [[ "$MAKEPKG_UID" -eq 0 ]]; then
+        (cd "$dir" && makepkg --printsrcinfo > "$out" 2> "$out.err")
+    else
+        local work="$RUNTIME/pkg-$(basename "$dir")"
+        rm -rf "$work"
+        cp -a "$dir" "$work"
+        chmod -R a+rwX "$work"
+        setpriv --reuid="$MAKEPKG_UID" --regid="$MAKEPKG_UID" --clear-groups \
+            env HOME="$MAKEPKG_HOME" sh -c "cd '$work' && makepkg --printsrcinfo" > "$out" 2> "$out.err"
+    fi
+}
+
 fail=0
 check() {
     if eval "$2"; then
@@ -36,7 +65,7 @@ for dir in "$SDE_ROOT"/packaging/aur/*/; do
     name="$(basename "$dir")"
     echo "=== $name ==="
     check "$name: PKGBUILD parses" "bash -n '$dir/PKGBUILD'"
-    (cd "$dir" && makepkg --printsrcinfo > "$RUNTIME/$name.srcinfo" 2> "$RUNTIME/$name.err") || {
+    generate_srcinfo "$dir" "$RUNTIME/$name.srcinfo" || {
         echo "  FAIL: makepkg --printsrcinfo"
         sed 's/^/    /' "$RUNTIME/$name.err" | head -10
         fail=1

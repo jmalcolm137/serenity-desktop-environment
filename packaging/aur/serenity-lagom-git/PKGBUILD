@@ -21,7 +21,7 @@ depends=(
 )
 makedepends=(
     base-devel cmake ninja meson pkgconf git python wayland-protocols
-    libpulse zip unzip rsync
+    libpulse zip unzip
 )
 source=(
     "libgui-wayland::git+https://github.com/jmalcolm137/libgui-wayland.git"

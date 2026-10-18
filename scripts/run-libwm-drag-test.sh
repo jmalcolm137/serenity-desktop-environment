@@ -63,13 +63,14 @@ done
 sleep 0.3
 
 echo "=== drive: press on the drag widget, drag, release ==="
-env WAYLAND_DISPLAY="$SOCK" "$VI" --extent 1280 720 --move 150 120 >/dev/null 2>&1 || true
-sleep 0.3
-env WAYLAND_DISPLAY="$SOCK" "$VI" --extent 1280 720 --button 0x110 press >/dev/null 2>&1 || true
-sleep 0.5
-env WAYLAND_DISPLAY="$SOCK" "$VI" --extent 1280 720 --move 260 190 >/dev/null 2>&1 || true
-sleep 0.3
-env WAYLAND_DISPLAY="$SOCK" "$VI" --extent 1280 720 --button 0x110 release >/dev/null 2>&1 || true
+# One virtual-input session for the whole gesture: separate invocations create
+# and destroy the virtual pointer, so a button can arrive before the client has
+# acquired the new pointer (the same warm-up race as the input test).
+env WAYLAND_DISPLAY="$SOCK" "$VI" --extent 1280 720 \
+    --move 200 200 --sleep 200 \
+    --button 0x110 press --sleep 500 \
+    --move 260 190 --sleep 300 \
+    --button 0x110 release --linger 800 >/dev/null 2>&1 || true
 sleep 0.8
 
 kill "$CLIENT_PID" 2>/dev/null || true
