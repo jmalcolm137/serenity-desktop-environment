@@ -457,7 +457,20 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   asserted by `run-output-hotplug-test.sh`. Per-output resolution, position and
   scale are live in DisplaySettings' Monitor tab. What remains is multi-GPU /
   render-device selection.
-- **Multi-GPU / render-device selection; color management; direct scanout.**
+- **Hardware-dependent rendering: direct scanout is covered; the rest is
+  hardware-gated.** wlroots' scene performs direct scanout automatically (disable
+  it with `WLR_SCENE_DISABLE_DIRECT_SCANOUT=1`); SDE now counts client content
+  samples and direct scanouts in `SDE_PERF_STATS` (`scanout_samples=`,
+  `direct_scanouts=`) and logs the first direct scanout. `run-perf-test.sh`
+  asserts the telemetry on a headless output (samples > 0, direct = 0).
+  `scripts/report-rendering-capabilities.sh` reports the GPU, connectors, EDID,
+  max-bpc/colour-space properties, HDR metadata and `vrr_capable`.
+  On the development machine (one Intel Iris Plus iGPU, one 2560×1600 60 Hz
+  eDP panel) the report shows `vrr_capable=0`, an empty HDR metadata blob, no
+  external outputs and no second GPU. **Multi-GPU/render-device selection is not
+  implemented; VRR, HDR/colour management and input-to-photon need hardware this
+  machine does not have.** The fullscreen/direct-scanout check is manual there
+  (a hardened session needs a restart to pick up the new counter).
 - **Renderer selection & fallback (N2/N5): done.** `[Output] Renderer`
   (`auto`/`gles2`/`vulkan`/`pixman`, with the `SDE_RENDERER` override) selects the
   wlroots renderer, and a failed GPU path falls back to the software (pixman)

@@ -57,8 +57,9 @@ Each metric keeps a ring of the last 600 samples (~10 s at 60 Hz; fixed memory,
 so a long session cannot grow) plus cumulative totals. The summary carries
 `output_refresh_hz`, the derived `frame_ms_budget`, p50/p95/p99/max and the
 over-budget count for frame time, the frame interval at p50/p95/p99, the
-input → present percentiles with a sample count, and **resident memory**
-(`rss_kb`, the high-water mark, and the change since the last report); see §4.
+input → present percentiles with a sample count, `scanout_samples` and
+`direct_scanouts` for client content, and **resident memory** (`rss_kb`, the
+high-water mark, and the change since the last report); see §4.
 
 ### How the frames are paced
 
@@ -358,6 +359,15 @@ watch -n1 cat /tmp/sde-perf
   Display Settings is the natural follow-up.
 - **Input-to-photon on real hardware.** The headless number excludes the vblank;
   a DRM measure would need a high-speed capture or a hardware timestamp path.
+- **A direct-scanout positive check.** Start a hardened session with
+  `SDE_PERF_STATS=/tmp/sde-perf` and map a fullscreen client
+  (`build/tools/native-app-test --fullscreen --linger 5000`). `direct_scanouts`
+  must grow and the log must say `direct scanout active`; a client with
+  compositor chrome/overlays may legitimately stay on the render path. The
+  headless budget test asserts the opposite (samples > 0, direct = 0).
+- **Hardware capability report.** `scripts/report-rendering-capabilities.sh`
+  prints the GPU, connectors, EDID, `max bpc`, colour-space, HDR metadata and
+  `vrr_capable` properties. Run it on the target before assigning hardware work.
 - **The drag tail above**: one ~5 ms frame on the GLES path, which is what
   stands between the current state and an unconditional 240 Hz claim on that
   renderer.

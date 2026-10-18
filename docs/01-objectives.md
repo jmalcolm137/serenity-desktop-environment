@@ -289,8 +289,9 @@ risks are:
   layers and renting the rest, and by keeping the shell protocol-portable.
 - **Multi-output / hotplug**: coarse (HiDPI itself is done: the fractional
   output scale and the client backing store both landed). Per-output mode/scale
-  and hotplug are basic, and multi-GPU / colour management / direct scanout are
-  not done; see `04-known-gaps.md`.
+  and hotplug are basic. Direct scanout is automatic through the wlroots scene
+  and is now instrumented; multi-GPU, colour/HDR and VRR validation remain
+  hardware-gated (see `04-known-gaps.md`).
 
 ## 13. Glossary
 

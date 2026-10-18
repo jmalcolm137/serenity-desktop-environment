@@ -148,12 +148,19 @@ GTK/Qt/Firefox conformance matrix in CI yet.
 ## 5. Output & rendering depth (R6)
 
 - **Multi-GPU / render-device selection (N5).** No `wlr_multi_backend` or
-  DRI_PRIME-style render-device choice; the compositor uses one renderer.
-- **Direct scanout / overlay planes / VRR (N3).** `wlr_scene_output_commit` runs
-  with no direct-scanout options; adaptive sync and per-monitor VRR are not
-  exposed. The `tearing-control` protocol is served.
+  DRI_PRIME-style render-device choice; the compositor uses one renderer. The
+  development machine has one iGPU, so this cannot be validated here.
+- **Direct scanout / overlay planes / VRR (N3): direct scanout is automatic.**
+  `wlr_scene_output_commit` selects direct scanout when the scene allows it
+  (wlroots' default; `WLR_SCENE_DISABLE_DIRECT_SCANOUT=1` opts out). SDE exposes
+  `scanout_samples`/`direct_scanouts` in `SDE_PERF_STATS` and logs the first
+  direct scanout; the perf test asserts the headless path never direct-scans out.
+  A fullscreen client on real DRM is the manual positive check. Overlay-plane
+  selection and per-monitor VRR are still not exposed; this panel reports
+  `vrr_capable=0`. The `tearing-control` protocol is served.
 - **Color management / HDR (N5).** No `wlr-color-management`, gamma or color
-  profiles.
+  profiles. The eDP panel has no HDR metadata, so HDR/colour validation needs
+  different hardware.
 - **Capture & leasing (G3).** General screencopy/`ext-image-copy-capture` is
   served (screenshots, ScreenCast, the Magnifier's region capture); `wp-drm-lease`
   (VR) is not planned.
@@ -162,7 +169,9 @@ GTK/Qt/Firefox conformance matrix in CI yet.
   enforces the budget headless (including "no frames while idle") and
   `run-session-memory-test.sh` the PSS budgets. See
   [`25-performance.md`](25-performance.md). A GL 240 Hz zero-slow-frame run and
-  input-to-photon on a real DRM output remain hardware checks.
+  input-to-photon on a real DRM output remain hardware checks (the latter needs
+  a photodiode/high-speed capture). `scripts/report-rendering-capabilities.sh`
+  records what a target machine can actually exercise.
 - **Multi-output / hotplug (N5): done for the output model.** Per-output
   resolution/position/scale apply live in DisplaySettings; disabling/re-enabling
   an output moves windows, re-fits maximized windows and restores the configured
@@ -203,8 +212,10 @@ GTK/Qt/Firefox conformance matrix in CI yet.
   the software/GPU renderer split.
 - **Accessibility & IME testing (G5): done headless** (`run-atspi-test.sh`,
   `run-ime-test.sh`, sticky/high-contrast/magnifier tests).
-- **Real hardware** (DRM/KMS, multi-GPU, color, direct scanout) still needs a
-  machine, not a runner.
+- **Real hardware.** DRM/KMS and the direct-scanout telemetry are exercised; the
+  positive fullscreen scanout check is manual. Multi-GPU, VRR, HDR/colour and
+  input-to-photon need hardware this development machine does not have; run
+  `scripts/report-rendering-capabilities.sh` on a target before assigning them.
 
 ---
 
