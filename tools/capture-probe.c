@@ -42,6 +42,13 @@
 #include "ext-image-copy-capture-v1-client-protocol.h"
 #include "linux-dmabuf-v1-client-protocol.h"
 
+// gbm.h does not pull in drm_fourcc.h, and this is the one constant the probe needs.
+// INVALID is what a compositor advertises to mean "implicit modifier"; GBM rejects it
+// as a modifier argument, so the probe must allocate without one in that case.
+#ifndef DRM_FORMAT_MOD_INVALID
+#    define DRM_FORMAT_MOD_INVALID (((1ULL << 56) - 1))
+#endif
+
 #define MAX_FORMATS 8
 #define MAX_MODIFIERS 64
 
@@ -220,23 +227,45 @@ static void start_output_dmabuf_capture(void)
 
     struct dmabuf_format* f = &g.output_formats[0];
 
-    // Prefer a linear modifier, so the probe can map and verify the pixels.
-    uint64_t chosen = f->modifiers[0];
+    // Prefer a linear modifier, so the probe can map and verify the pixels; then a
+    // concrete modifier over DRM_FORMAT_MOD_INVALID. The compositor advertises
+    // INVALID to mean "implicit modifier", and GBM rejects it as a modifier argument,
+    // which is how the first hardware run failed:
+    //
+    //   gbm_bo_create_with_modifiers(0x34325258, mod=0xffffffffffffff) failed: Invalid argument
+    //
+    // On the NVIDIA driver INVALID is simply the first entry, so picking [0] chose it.
+    uint64_t chosen = DRM_FORMAT_MOD_INVALID;
     for (size_t i = 0; i < f->modifier_count; ++i) {
         if (f->modifiers[i] == 0) {
             chosen = 0;
             break;
         }
     }
+    if (chosen == DRM_FORMAT_MOD_INVALID) {
+        for (size_t i = 0; i < f->modifier_count; ++i) {
+            if (f->modifiers[i] != DRM_FORMAT_MOD_INVALID) {
+                chosen = f->modifiers[i];
+                break;
+            }
+        }
+    }
 
-    uint64_t modifiers[1] = { chosen };
-    struct gbm_bo* bo = gbm_bo_create_with_modifiers(g.gbm, (uint32_t)g.output_width,
-        (uint32_t)g.output_height, f->fourcc, modifiers, 1);
+    // Only INVALID advertised (or none at all): allocate without a modifier and let
+    // the driver choose. gbm_bo_get_modifier() then reports what it actually picked.
+    bool const implicit_modifier = chosen == DRM_FORMAT_MOD_INVALID;
+    struct gbm_bo* bo = implicit_modifier
+        ? gbm_bo_create(g.gbm, (uint32_t)g.output_width, (uint32_t)g.output_height, f->fourcc,
+              GBM_BO_USE_RENDERING)
+        : gbm_bo_create_with_modifiers(g.gbm, (uint32_t)g.output_width,
+              (uint32_t)g.output_height, f->fourcc, &chosen, 1);
     if (!bo) {
-        fprintf(stderr, "capture-probe: gbm_bo_create_with_modifiers(0x%08x, mod=0x%llx) failed: %s\n",
-            f->fourcc, (unsigned long long)chosen, strerror(errno));
+        fprintf(stderr, "capture-probe: gbm_bo_create(0x%08x, mod=0x%llx%s) failed: %s\n",
+            f->fourcc, (unsigned long long)chosen, implicit_modifier ? ", implicit" : "", strerror(errno));
         return;
     }
+    if (implicit_modifier)
+        chosen = gbm_bo_get_modifier(bo);
 
     int fd = gbm_bo_get_fd(bo);
     if (fd < 0) {

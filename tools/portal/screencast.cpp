@@ -660,12 +660,11 @@ static int build_enum_formats(struct screencast_state* state, struct spa_pod_bui
     struct spa_fraction rate = SPA_FRACTION(30, 1);
 
     if (state->capture_has_dmabuf && state->dmabuf && state->gbm && state->dmabuf_enabled && state->capture_dmabuf_modifier_count > 0) {
-        uint64_t modifier = choose_dmabuf_modifier(state);
         uint32_t spa_format = fourcc_to_spa_video_format(state->capture_dmabuf_fourcc);
         if (spa_format == SPA_VIDEO_FORMAT_UNKNOWN)
             spa_format = SPA_VIDEO_FORMAT_BGRA;
-        if (modifier != DRM_FORMAT_MOD_INVALID) {
-            state->preferred_modifier = modifier;
+
+        auto add_dmabuf_format = [&](uint64_t modifier) {
             struct spa_pod_frame frame;
             spa_pod_builder_push_object(b, &frame, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat);
             spa_pod_builder_add(b, SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video), 0);
@@ -677,6 +676,24 @@ static int build_enum_formats(struct screencast_state* state, struct spa_pod_bui
             spa_pod_builder_prop(b, SPA_FORMAT_VIDEO_modifier, SPA_POD_PROP_FLAG_MANDATORY);
             spa_pod_builder_long(b, modifier);
             params[n++] = static_cast<const struct spa_pod*>(spa_pod_builder_pop(b, &frame));
+        };
+
+        // The compositor's own modifier list need not contain LINEAR (the NVIDIA
+        // driver's does not), but the portal allocates the buffer, so it can ask GBM
+        // for a linear one -- and clients commonly demand linear, because it is the
+        // only modifier they can map and read back. Without this a consumer that
+        // requires LINEAR negotiates the memfd fallback even though zero-copy works.
+        bool const linear_supported = test_dmabuf_modifier(state, DRM_FORMAT_MOD_LINEAR);
+        if (linear_supported) {
+            state->preferred_modifier = DRM_FORMAT_MOD_LINEAR;
+            add_dmabuf_format(DRM_FORMAT_MOD_LINEAR);
+        }
+
+        uint64_t modifier = choose_dmabuf_modifier(state);
+        if (modifier != DRM_FORMAT_MOD_INVALID && modifier != DRM_FORMAT_MOD_LINEAR) {
+            if (!linear_supported)
+                state->preferred_modifier = modifier;
+            add_dmabuf_format(modifier);
         }
     }
 
