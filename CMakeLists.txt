@@ -110,6 +110,26 @@ if (SDE_BUILD_APPS AND NOT SDE_PREBUILT_FRAMEWORK)
         VERBATIM)
 endif()
 
+# Every target compiles against Lagom: its libraries, and the headers Lagom
+# generates (the IPC endpoints the SDE's patches change, among them). Linking a
+# Lagom library already orders the *link* after the `lagom` step, but not the
+# compile, so without this a target could compile against a stale generated header
+# while Lagom was still regenerating it: the class of bug the README describes. So
+# every target depends on the step outright.
+function(sde_depend_on_lagom directory)
+    get_property(targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(target IN LISTS targets)
+        if (NOT target STREQUAL "lagom")
+            add_dependencies(${target} lagom)
+        endif()
+    endforeach()
+    get_property(subdirectories DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
+    foreach(subdirectory IN LISTS subdirectories)
+        sde_depend_on_lagom("${subdirectory}")
+    endforeach()
+endfunction()
+sde_depend_on_lagom("${CMAKE_SOURCE_DIR}")
+
 # A convenience target: everything the session needs to start, next to `all`.
 add_custom_target(sde ALL
     COMMENT "The Serenity Desktop Environment is built in ${CMAKE_BINARY_DIR}")
