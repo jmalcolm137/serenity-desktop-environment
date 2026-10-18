@@ -128,7 +128,11 @@ function(sde_depend_on_lagom directory)
         sde_depend_on_lagom("${subdirectory}")
     endforeach()
 endfunction()
-sde_depend_on_lagom("${CMAKE_SOURCE_DIR}")
+# A prebuilt framework has no `lagom` target; the dependency is only meaningful
+# when this build owns the framework step.
+if (TARGET lagom)
+    sde_depend_on_lagom("${CMAKE_SOURCE_DIR}")
+endif()
 
 # A convenience target: everything the session needs to start, next to `all`.
 add_custom_target(sde ALL
