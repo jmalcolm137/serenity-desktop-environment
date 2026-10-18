@@ -1,14 +1,16 @@
 # AT-SPI: exposing the accessibility tree
 
-**Status:** design · **Date:** 2026-10-15
+**Status:** implemented · **Date:** 2026-10-17
 
 The last and largest item in [`29-accessibility.md`](29-accessibility.md). Assistive
 technology (a screen reader, `accerciser`, a speech-to-text tool) talks to
-applications through AT-SPI over D-Bus. Today nothing here publishes anything, so
-there is no accessibility tree to read: an AT can see the compositor's windows (they
-are just surfaces) and nothing inside them.
+applications through AT-SPI over D-Bus.
 
-This is the design; the code should follow it once the shape is agreed.
+The implementation follows the shape below: `LibAccessibility` owns the
+platform-neutral node model and the Linux `sd-bus` transport; LibGUI builds the
+widget snapshot and notifies the library about focus and text changes. The tree
+starts only on `AT_SPI_BUS_ADDRESS`; with no accessibility bus there is no server and
+no extra work.
 
 ## What a consumer does
 
@@ -100,7 +102,9 @@ maintains for the app's own widgets.
    ranges, `SetTextContents`, caret offsets. This is what a screen reader needs to
    read a Terminal or an editor, and it is the fiddliest part.
 
-Steps 1–2 are the useful subset and should be one change. 3–4 can follow.
+All four steps are implemented. The headless test
+(`scripts/run-atspi-test.sh`) covers the read-only tree, Component extents, Action,
+Text, EditableText, `StateChanged` and `TextChanged`.
 
 ## Failure is normal
 

@@ -1,6 +1,6 @@
 # Accessibility
 
-**Status:** plan · sticky keys and high contrast implemented · **Date:** 2026-10-15
+**Status:** implemented · sticky keys, high contrast, magnifier and AT-SPI · **Date:** 2026-10-17
 
 `docs/04-known-gaps.md` lists four things still absent under R5: **AT-SPI**, **sticky
 keys**, **magnifier** and **high contrast**. This is the plan for them: what each
@@ -116,34 +116,30 @@ stays where it is; the magnifier's own "lock location" mode is the app's job.
 
 ## 4. AT-SPI
 
-**Not started; the large one.** An assistive technology (a screen reader, a
-speech-to-text tool, `accerciser`) talks to applications over D-Bus: it enumerates
-an accessibility tree of objects (application → window → widget, each with role,
-name, state, actions) and asks for events. Doing this here means:
+**Done.** The widget tree is published over a separate `LibAccessibility` library;
+LibGUI only builds the snapshot and receives change notifications. The Linux
+`s-d-bus` backend publishes `Accessible`, `Component`, `Action`, `Text` and
+`EditableText`, and emits `StateChanged` and `TextChanged` under
+`org.a11y.atspi.Event.Object`. The transport is the `dbus-1` bus, and the surface
+starts only when `AT_SPI_BUS_ADDRESS` is present, so a session without
+`at-spi-bus-launcher` is unaffected.
 
-* **LibGUI publishes the tree.** Widgets already have enough structure (the widget
-  tree, roles/tooltips/actions), but nothing exports it. An `AccessibilityServer`
-  in LibGUI would mirror the widget tree into the AT-SPI object model and emit
-  events (focus, value change, text change) as widgets change.
-* **A bridge to the bus.** AT-SPI's transport is `dbus-daemon` plus
-  `at-spi-bus-launcher`; the ATK/AT-SPI2 adapter expects `org.a11y.Bus` and the
-  `org.a11y.atspi.*` interfaces. The SDE already speaks `dbus-1` through
-  AK/LibCore, so the work is in the object model, not the transport.
-* **Only then is it testable**, but it *is* testable headlessly: an
-  `org.a11y.atspi.Accessible` query against a running Terminal or TextEditor, driven
-  by a small D-Bus client in `tools/`, needs no display input.
+The implementation lives in:
+* `LibAccessibility` (framework) — the node model and Linux AT-SPI transport.
+* `GUI::AccessibilityServer` (LibGUI) — widget-tree snapshot, roles, actions,
+  text callbacks and event hooks.
+* `scripts/run-atspi-test.sh` — headless walk of a window containing a label, a
+  button and an editable text field; asserts roles, extents, `Text`, `Action`,
+  `EditableText`, `StateChanged` and `TextChanged`.
 
-Designed in [`30-at-spi.md`](30-at-spi.md): LibGUI publishes the tree (the tree *is*
-the widget tree), the transport is the `dbus-1` we already speak, and it lands in
-four steps: read-only tree, then events, then actions, then the text interfaces. It
-is an order of magnitude more work than 1–3 combined.
+See [`30-at-spi.md`](30-at-spi.md) for the interface/object mapping.
 
 ## Order
 
 1. Sticky keys: done.
 2. High contrast: done.
-3. Magnifier: needs the capture path wired, but the application exists.
-4. AT-SPI: design doc first, then LibGUI's tree and the bridge.
+3. Magnifier: done.
+4. AT-SPI: done (read-only tree, events, actions and text interfaces).
 
 ## Testing notes
 
