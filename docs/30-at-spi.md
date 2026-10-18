@@ -142,6 +142,10 @@ Headless, on the same terms as the rest of R5:
 * **Toolkit-generic or Serenity-only roles.** Roles like `PAGE_TAB_LIST` map
   cleanly; the Serenity-specific widgets (a `GUI::Icon` button, the applet area) do
   not. Map to the closest AT-SPI role rather than inventing one.
-* **Where the accessibility bus address comes from when there is no launcher.** A
-  session without `at-spi-bus-launcher` simply has no accessibility; we should not
-  start one ourselves.
+* **Where the accessibility bus address comes from.** The session asks the
+  standard D-Bus-activated `org.a11y.Bus` for it and exports `AT_SPI_BUS_ADDRESS`
+  before starting the services and the compositor (`scripts/sde-accessibility.sh`),
+  so every client and every app spawned by the LaunchServer joins the same bus. An
+  address already in the environment wins; `SDE_ACCESSIBILITY=0` opts out. A
+  session without at-spi2-core has no service to activate; we do not spawn a
+  launcher directly.

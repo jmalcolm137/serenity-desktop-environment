@@ -145,6 +145,13 @@ fi
 # docs/06-service-layering.md.
 export SDE_APP_BIN_DIR="${SDE_APP_BIN_DIR:-$BUILD/bin}"
 
+# R5 accessibility: make the session's AT-SPI bus visible to every client. This
+# must happen before the services below start, because the LaunchServer captures
+# its environment and hands it to the applications it spawns.
+# shellcheck source=scripts/sde-accessibility.sh
+. "$SDE_ROOT/scripts/sde-accessibility.sh"
+sde_export_at_spi_bus
+
 # Super+L locks the session by spawning $SDE_LOCK_CMD (default: swaylock), a
 # standard ext-session-lock-v1 client. See docs/11-r4-implementation-plan.md §9.
 export SDE_LOCK_CMD="${SDE_LOCK_CMD:-swaylock}"

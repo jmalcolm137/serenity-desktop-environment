@@ -120,17 +120,24 @@ stays where it is; the magnifier's own "lock location" mode is the app's job.
 LibGUI only builds the snapshot and receives change notifications. The Linux
 `s-d-bus` backend publishes `Accessible`, `Component`, `Action`, `Text` and
 `EditableText`, and emits `StateChanged` and `TextChanged` under
-`org.a11y.atspi.Event.Object`. The transport is the `dbus-1` bus, and the surface
-starts only when `AT_SPI_BUS_ADDRESS` is present, so a session without
-`at-spi-bus-launcher` is unaffected.
+`org.a11y.atspi.Event.Object`. The transport is the `dbus-1` bus. The session
+discovers the standard D-Bus-activated `org.a11y.Bus` (at-spi2-core) and exports
+its address to every client before starting the services and the compositor
+(`scripts/sde-accessibility.sh`), so a real login gets accessibility without extra
+setup. An `AT_SPI_BUS_ADDRESS` already in the environment wins, and
+`SDE_ACCESSIBILITY=0` opts out; with no bus, no surface starts and applications
+behave exactly as before.
 
 The implementation lives in:
 * `LibAccessibility` (framework) — the node model and Linux AT-SPI transport.
 * `GUI::AccessibilityServer` (LibGUI) — widget-tree snapshot, roles, actions,
   text callbacks and event hooks.
+* `scripts/sde-accessibility.sh` — the session's bus discovery/export.
 * `scripts/run-atspi-test.sh` — headless walk of a window containing a label, a
   button and an editable text field; asserts roles, extents, `Text`, `Action`,
   `EditableText`, `StateChanged` and `TextChanged`.
+* `scripts/run-accessibility-env-test.sh` — discovery, parsing, export and the
+  no-bus/opt-out paths.
 
 See [`30-at-spi.md`](30-at-spi.md) for the interface/object mapping.
 

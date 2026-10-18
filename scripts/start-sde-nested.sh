@@ -36,6 +36,11 @@ XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
 export SERENITY_RES_ROOT="$SERENITY/Base/res"
 export LD_LIBRARY_PATH="$BUILD/lib"
 export SDE_APP_BIN_DIR="$BUILD/bin"
+# R5 accessibility: make the accessibility bus visible to the session's clients
+# (inherited from the host when it already set one).
+# shellcheck source=scripts/sde-accessibility.sh
+. "$SDE_ROOT/scripts/sde-accessibility.sh"
+sde_export_at_spi_bus
 export SDE_WM_PORTAL_PATH="/tmp/portal/wm"
 export SDE_LOCK_CMD="${SDE_LOCK_CMD:-swaylock}"
 export SDE_SESSION_IDLE_SECONDS="${SDE_SESSION_IDLE_SECONDS:-0}"
