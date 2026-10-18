@@ -1,0 +1,58 @@
+# Maintainer: Serenity Desktop Environment contributors
+#
+# The framework and application half of the split: libgui-wayland's Lagom
+# libraries, the SerenityOS applications (with the SDE's patches), resources and
+# the headers/generated headers/source the compositor's build needs. The SDE
+# package builds against this prefix with SDE_PREBUILT_FRAMEWORK=ON.
+
+pkgname=serenity-lagom-git
+pkgver=0
+pkgrel=1
+pkgdesc="SerenityOS userland framework, applications and resources for SDE"
+arch=('x86_64')
+url="https://github.com/jmalcolm137/libgui-wayland"
+license=('BSD-2-Clause')
+provides=('serenity-lagom')
+conflicts=('serenity-lagom')
+depends=(
+    wayland libdrm libinput libxkbcommon pixman libxcb xcb-util-wm
+    libdisplay-info pipewire libpipewire dbus glib2 fontconfig freetype2
+    libunwind libelf libei
+)
+makedepends=(
+    base-devel cmake ninja meson pkgconf git python wayland-protocols
+    libpulse zip unzip rsync
+)
+source=(
+    "libgui-wayland::git+https://github.com/jmalcolm137/libgui-wayland.git"
+    "serenity-desktop-environment::git+https://github.com/jmalcolm137/serenity-desktop-environment.git"
+)
+sha256sums=('SKIP' 'SKIP')
+
+pkgver() {
+    cd "$srcdir/serenity-desktop-environment"
+    printf 'r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+build() {
+    export LIBGUI_WAYLAND_ROOT="$srcdir/libgui-wayland"
+    export SERENITY_SRC="$LIBGUI_WAYLAND_ROOT/serenity"
+    export SERENITY_BUILD_DIR="$LIBGUI_WAYLAND_ROOT/build/lagom"
+    export BUILD="$SERENITY_BUILD_DIR"
+
+    (cd "$LIBGUI_WAYLAND_ROOT" && scripts/fetch-serenity.sh)
+    # First the two-phase default build: it generates the endpoint headers the
+    # shim includes. Then the full list the SDE's find_library calls need.
+    (cd "$LIBGUI_WAYLAND_ROOT" && scripts/build-libgui.sh --no-tests)
+    (cd "$LIBGUI_WAYLAND_ROOT" && scripts/build-libgui.sh --no-tests \
+        $(cd "$srcdir/serenity-desktop-environment" && scripts/lagom-libraries.sh))
+    (cd "$srcdir/serenity-desktop-environment" && scripts/build-apps.sh Taskbar Terminal)
+}
+
+package() {
+    export LIBGUI_WAYLAND_ROOT="$srcdir/libgui-wayland"
+    export SERENITY_SRC="$LIBGUI_WAYLAND_ROOT/serenity"
+    export BUILD="$LIBGUI_WAYLAND_ROOT/build/lagom"
+    cd "$srcdir/serenity-desktop-environment"
+    scripts/install-framework.sh --destdir "$pkgdir" --prefix /usr/lib/sde
+}

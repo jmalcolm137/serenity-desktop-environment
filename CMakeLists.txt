@@ -102,7 +102,7 @@ add_subdirectory(test)
 
 # Building the applications: the same list scripts/build-apps.sh builds, in the
 # Lagom tree where they live (they are SerenityOS apps, not SDE components).
-if (SDE_BUILD_APPS)
+if (SDE_BUILD_APPS AND NOT SDE_PREBUILT_FRAMEWORK)
     add_custom_target(apps
         COMMAND "${CMAKE_SOURCE_DIR}/scripts/build-apps.sh"
         COMMENT "Building the SerenityOS application suite (libgui-wayland)"
@@ -113,4 +113,6 @@ endif()
 # A convenience target: everything the session needs to start, next to `all`.
 add_custom_target(sde ALL
     COMMENT "The Serenity Desktop Environment is built in ${CMAKE_BINARY_DIR}")
-add_dependencies(sde lagom)
+if (TARGET lagom)
+    add_dependencies(sde lagom)
+endif()

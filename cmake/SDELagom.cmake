@@ -50,9 +50,21 @@ if (NOT DEFINED SDE_LAGOM_BUILD_DIR)
     endif()
 endif()
 set(SDE_LAGOM_BUILD_DIR "${SDE_LAGOM_BUILD_DIR}" CACHE PATH "libgui-wayland's Lagom build directory" FORCE)
-option(SDE_BUILD_APPS "Also build the SerenityOS application suite (in Lagom)" OFF)
 
-if (NOT EXISTS "${SDE_SERENITY_SRC}/.git")
+# A split install has the framework's libs/apps in the prefix and its generated
+# headers/source under a separate framework directory. SDE_LAGOM_BUILD_DIR stays
+# the runtime prefix (lib/ and bin/); SDE_SERENITY_BUILD_DIR is where the generated
+# endpoint headers live. In a checkout both are the same Lagom tree.
+if (NOT DEFINED SDE_SERENITY_BUILD_DIR)
+    set(SDE_SERENITY_BUILD_DIR "${SDE_LAGOM_BUILD_DIR}")
+endif()
+set(SDE_SERENITY_BUILD_DIR "${SDE_SERENITY_BUILD_DIR}" CACHE PATH "the Lagom build tree's generated headers" FORCE)
+option(SDE_BUILD_APPS "Also build the SerenityOS application suite (in Lagom)" OFF)
+# Set by the split package: the framework is already built and installed, so do
+# not create the `lagom` target (it would need the libgui-wayland checkout).
+option(SDE_PREBUILT_FRAMEWORK "Use an installed Lagom tree instead of driving libgui-wayland" OFF)
+
+if (NOT SDE_PREBUILT_FRAMEWORK AND NOT EXISTS "${SDE_SERENITY_SRC}/.git")
     message(FATAL_ERROR "No SerenityOS checkout at ${SDE_SERENITY_SRC}.\n"
         "Fetch it with ${SDE_LIBGUI_WAYLAND_ROOT}/scripts/fetch-serenity.sh, or point "
         "SDE_LIBGUI_WAYLAND_ROOT / SDE_SERENITY_SRC at it.")
@@ -61,7 +73,7 @@ endif()
 # The names the components use (they predate this file and still build on their
 # own when given these).
 set(SERENITY_SRC "${SDE_SERENITY_SRC}")
-set(SERENITY_BUILD_DIR "${SDE_LAGOM_BUILD_DIR}")
+set(SERENITY_BUILD_DIR "${SDE_SERENITY_BUILD_DIR}")
 set(LIBGUI_WAYLAND_SRC "${SDE_LIBGUI_WAYLAND_ROOT}")
 
 # Every Lagom library a component links. The components look each one up with
@@ -111,14 +123,16 @@ foreach(_file IN LISTS SDE_LAGOM_FILES SDE_LAGOM_PROGRAM_FILES)
     file(RELATIVE_PATH _relative "${SDE_LAGOM_BUILD_DIR}" "${_file}")
     list(APPEND _lagom_paths "${_relative}")
 endforeach()
-add_custom_target(lagom
-    COMMAND "${CMAKE_COMMAND}" -E env
-        "LIBGUI_WAYLAND_ROOT=${SDE_LIBGUI_WAYLAND_ROOT}"
-        "SERENITY_SRC=${SDE_SERENITY_SRC}"
-        "BUILD_DIR=${SDE_LAGOM_BUILD_DIR}"
-        "SDE_BOOTSTRAP_FRAMEWORK=1"
-        "${CMAKE_SOURCE_DIR}/scripts/build.sh" ${_lagom_paths}
-    BYPRODUCTS ${SDE_LAGOM_FILES} ${SDE_LAGOM_PROGRAM_FILES}
-    COMMENT "Building the framework and the SDE's Lagom programs (libgui-wayland)"
-    USES_TERMINAL
-    VERBATIM)
+if (NOT SDE_PREBUILT_FRAMEWORK)
+    add_custom_target(lagom
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "LIBGUI_WAYLAND_ROOT=${SDE_LIBGUI_WAYLAND_ROOT}"
+            "SERENITY_SRC=${SDE_SERENITY_SRC}"
+            "BUILD_DIR=${SDE_LAGOM_BUILD_DIR}"
+            "SDE_BOOTSTRAP_FRAMEWORK=1"
+            "${CMAKE_SOURCE_DIR}/scripts/build.sh" ${_lagom_paths}
+        BYPRODUCTS ${SDE_LAGOM_FILES} ${SDE_LAGOM_PROGRAM_FILES}
+        COMMENT "Building the framework and the SDE's Lagom programs (libgui-wayland)"
+        USES_TERMINAL
+        VERBATIM)
+endif()

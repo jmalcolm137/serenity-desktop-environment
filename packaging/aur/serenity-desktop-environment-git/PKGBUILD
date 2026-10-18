@@ -1,40 +1,33 @@
 # Maintainer: Serenity Desktop Environment contributors
-# A local, single-package build of the desktop and the framework it runs on.
 #
-# The package builds both repositories and installs the private prefix that
-# scripts/install-sde.sh stages (docs/13-native-session-and-aur-packaging.md).
-# SerenityOS itself is fetched by libgui-wayland's pinned fetch script during
-# build(); a -git package is expected to be built on a connected machine.
-#
-# This is deliberately one package for the first local install: it keeps the
-# framework and the compositor on exactly the same headers, which is the ABI trap
-# docs/26-ci.md §6 describes. A split (wlroots0.20 / serenity-lagom-git /
-# serenity-desktop-environment-git) is the next step once this one is built and
-# installed on a real machine.
+# The compositor, services and session half of the split. It builds against the
+# framework package (serenity-lagom-git) with SDE_PREBUILT_FRAMEWORK=ON, and
+# installs only its own binaries/scripts; the framework package owns bin/lib/share.
 
 pkgname=serenity-desktop-environment-git
 pkgver=0
 pkgrel=1
-pkgdesc="The SerenityOS desktop experience on Wayland (compositor, shell, services and framework)"
+pkgdesc="The SerenityOS desktop experience on Wayland (compositor, shell and services)"
 arch=('x86_64')
 url="https://github.com/jmalcolm137/serenity-desktop-environment"
 license=('BSD-2-Clause')
 provides=('serenity-desktop-environment')
 conflicts=('serenity-desktop-environment')
 depends=(
+    'serenity-lagom-git'
     wayland libdrm libinput libxkbcommon pixman libseat libxcb xcb-util-wm
     libdisplay-info pipewire libpipewire dbus glib2 fontconfig freetype2
     libunwind libelf libei xorg-xwayland
 )
 makedepends=(
+    'serenity-lagom-git'
     base-devel cmake ninja meson pkgconf git python wayland-protocols
     libpulse zip unzip
 )
 source=(
     "serenity-desktop-environment::git+https://github.com/jmalcolm137/serenity-desktop-environment.git"
-    "libgui-wayland::git+https://github.com/jmalcolm137/libgui-wayland.git"
 )
-sha256sums=('SKIP' 'SKIP')
+sha256sums=('SKIP')
 
 pkgver() {
     cd "$srcdir/serenity-desktop-environment"
@@ -42,30 +35,25 @@ pkgver() {
 }
 
 build() {
-    export LIBGUI_WAYLAND_ROOT="$srcdir/libgui-wayland"
-    export SERENITY_SRC="$srcdir/libgui-wayland/serenity"
-    export SERENITY="$SERENITY_SRC"
-    export SERENITY_BUILD_DIR="$srcdir/libgui-wayland/build/lagom"
-    export BUILD="$SERENITY_BUILD_DIR"
+    cd "$srcdir/serenity-desktop-environment"
+    export SDE_PREBUILT_FRAMEWORK=ON
+    export SDE_LAGOM_BUILD_DIR=/usr/lib/sde
+    export SDE_SERENITY_BUILD_DIR=/usr/lib/sde/framework
+    export SDE_SERENITY_SRC=/usr/lib/sde/framework/serenity
+    export SDE_LIBGUI_WAYLAND_ROOT=/usr/lib/sde/framework
+    export SERENITY_SRC="$SDE_SERENITY_SRC"
+    export BUILD="$SDE_LAGOM_BUILD_DIR"
     export WLROOTS_SRC="$srcdir/serenity-desktop-environment/third_party/wlroots"
-    export SDE_BOOTSTRAP_FRAMEWORK=1
-
-    (cd "$LIBGUI_WAYLAND_ROOT" && scripts/fetch-serenity.sh)
-    (cd "$srcdir/serenity-desktop-environment" && scripts/build-full-sde.sh --with-apps)
+    scripts/build-full-sde.sh
 }
 
 package() {
-    export LIBGUI_WAYLAND_ROOT="$srcdir/libgui-wayland"
-    export SERENITY_SRC="$srcdir/libgui-wayland/serenity"
-    export SERENITY="$SERENITY_SRC"
-    export BUILD="$srcdir/libgui-wayland/build/lagom"
-    export WLROOTS_SRC="$srcdir/serenity-desktop-environment/third_party/wlroots"
-
     cd "$srcdir/serenity-desktop-environment"
-    scripts/install-sde.sh --destdir "$pkgdir" --prefix /usr/lib/sde
+    export BUILD=/usr/lib/sde
+    export SERENITY=/usr/lib/sde/framework/serenity
+    scripts/install-sde.sh --destdir "$pkgdir" --prefix /usr/lib/sde --without-framework
 
-    # The SDE builds wlroots itself; the installed launcher puts this directory
-    # on LD_LIBRARY_PATH, so the vendored library is enough at runtime.
+    # The compositor links the wlroots the SDE fetched and built.
     install -d "$pkgdir/usr/lib/sde/lib"
-    cp -a "$WLROOTS_SRC/install/lib/"*.so* "$pkgdir/usr/lib/sde/lib/"
+    cp -a "$srcdir/serenity-desktop-environment/third_party/wlroots/install/lib/"*.so* "$pkgdir/usr/lib/sde/lib/"
 }

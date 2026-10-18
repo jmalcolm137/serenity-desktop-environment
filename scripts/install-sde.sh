@@ -19,12 +19,14 @@ BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
 PREFIX="/usr/lib/sde"
 DESTDIR=""
 SESSIONS_DIR="/usr/share/wayland-sessions"
+WITHOUT_FRAMEWORK=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --prefix) PREFIX="$2"; shift ;;
         --destdir) DESTDIR="$2"; shift ;;
         --sessions-dir) SESSIONS_DIR="$2"; shift ;;
+        --without-framework) WITHOUT_FRAMEWORK=1 ;;
         --build) BUILD="$2"; shift ;;
         -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -76,23 +78,27 @@ done
 # matching the Lagom RUNPATH ($ORIGIN:$ORIGIN/../lib); the launcher also exports
 # LD_LIBRARY_PATH for the SDE binaries, whose build RUNPATH points at the build
 # tree.
-if [[ -d "$BUILD/bin" ]]; then
-    cp -a "$BUILD/bin/." "$BIN/"
-fi
-if [[ -d "$BUILD/lib" ]]; then
-    cp -a "$BUILD/lib/"*.so* "$LIB/"
-fi
+if [[ "$WITHOUT_FRAMEWORK" -eq 0 ]]; then
+    if [[ -d "$BUILD/bin" ]]; then
+        cp -a "$BUILD/bin/." "$BIN/"
+    fi
+    if [[ -d "$BUILD/lib" ]]; then
+        cp -a "$BUILD/lib/"*.so* "$LIB/"
+    fi
 
-# Resources and the skeleton user config. Installed trees flatten Base/res and
-# Base/home into the prefix; the launcher points SERENITY_RES_ROOT and
-# SDE_SKELETON_DIR at them.
-if [[ -d "$SERENITY/Base/res" ]]; then
-    cp -a "$SERENITY/Base/res/." "$SHARE/res/"
+    # Resources and the skeleton user config. Installed trees flatten Base/res and
+    # Base/home into the prefix; the launcher points SERENITY_RES_ROOT and
+    # SDE_SKELETON_DIR at them.
+    if [[ -d "$SERENITY/Base/res" ]]; then
+        cp -a "$SERENITY/Base/res/." "$SHARE/res/"
+    else
+        echo "warning: no $SERENITY/Base/res; the installed tree has no theme or fonts" >&2
+    fi
+    if [[ -d "$SERENITY/Base/home/anon/.config" ]]; then
+        cp -a "$SERENITY/Base/home/anon/.config/." "$SHARE/skeleton/"
+    fi
 else
-    echo "warning: no $SERENITY/Base/res; the installed tree has no theme or fonts" >&2
-fi
-if [[ -d "$SERENITY/Base/home/anon/.config" ]]; then
-    cp -a "$SERENITY/Base/home/anon/.config/." "$SHARE/skeleton/"
+    echo "note: --without-framework: the framework package owns bin/lib/share"
 fi
 
 # The runtime scripts (not the test drivers or build wrappers).
