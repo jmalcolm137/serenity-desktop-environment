@@ -500,6 +500,13 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   the heartbeat assertion in `run-headless-test.sh`. **Full session restore**
   (relaunching the user's windows after a compositor restart) is done; see the
   R4.2 note above.
+- **Shell supervision (R6/N4): done.** `scripts/sde-shell.sh` is the shell's
+  parent: a Taskbar that cannot survive startup falls back to a Terminal, and one
+  that exits later is restarted with a bounded backoff (then falls back to a
+  Terminal if it keeps failing). Before this, a later exit — for example the
+  Taskbar's LaunchServer connection dying — left the session with applets and no
+  panel until logout, because the supervisor's restart path only covers the
+  compositor. Covered by `scripts/run-shell-restart-test.sh`.
 - **CI (N6): green.** `scripts/run-all-tests.sh` runs the 88 `run-*-test.sh`
   tests by tier (every test is headless by design), `.github/workflows/ci.yml`
   gates a push on the fast tier and runs the rest nightly, and
