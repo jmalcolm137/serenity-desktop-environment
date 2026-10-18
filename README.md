@@ -18,6 +18,7 @@ The stack is split across a small family of repositories:
 
 ## Documents
 
+- [`docs/SDE-User-Manual.pdf`](docs/SDE-User-Manual.pdf): the user manual (October 2026 edition): installing and using SDE, with the differences from SerenityOS called out throughout and collected in Chapter 13.
 - [`docs/01-objectives.md`](docs/01-objectives.md): vision, goals, non-goals, principles, architecture, success criteria.
 - [`docs/02-compositor-decision.md`](docs/02-compositor-decision.md): options analysis for the compositor and the design decision.
 - [`docs/03-engineering-conventions.md`](docs/03-engineering-conventions.md): binding coding/build conventions (AK/LibCore/LibGfx, SerenityOS-style `serenity_main`, host compat in the SDE).
