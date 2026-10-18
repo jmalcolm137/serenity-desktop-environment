@@ -84,6 +84,8 @@ if [[ -n "$NAME" ]]; then
     if [[ -n "$FRAME_PATH" ]]; then
         check "the frame has the frame role" "grep -qF '(23,)' <<<\"\$(call '$FRAME_PATH' GetRole)\""
         check "the frame keeps the window title" "grep -qF \"'Magnifier'\" <<<\"\$(call '$FRAME_PATH' GetName)\""
+        check "the frame exposes the Component interface" "grep -qF \"'org.a11y.atspi.Component'\" <<<\"\$(call '$FRAME_PATH' GetInterfaces)\""
+        check "the frame reports non-empty extents" "! grep -qF '(0, 0, 0, 0)' <<<\"\$(call '$FRAME_PATH' GetExtents 0)\""
     fi
 fi
 
