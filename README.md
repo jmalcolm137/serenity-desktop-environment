@@ -42,6 +42,9 @@ The stack is split across a small family of repositories:
 - [`docs/24-libgui-wayland-sde-boundary.md`](docs/24-libgui-wayland-sde-boundary.md): keeping the SDE out of libgui-wayland: what is SDE-specific in the application framework and the work to move it back across the line.
 - [`docs/25-performance.md`](docs/25-performance.md): the performance & latency budget (N3): what is measured, the reference numbers, how to run it, and what keeps the compositor inside 60 Hz.
 - [`docs/26-ci.md`](docs/26-ci.md): CI (N6): the test driver, what runs on a push versus nightly, the prebuilt image, and what a runner cannot cover.
+- [`docs/29-accessibility.md`](docs/29-accessibility.md): accessibility (R5): sticky keys, high contrast, the Magnifier and AT-SPI.
+- [`docs/30-at-spi.md`](docs/30-at-spi.md): the AT-SPI object model and how LibGUI publishes its widget tree.
+- [`docs/31-compositor-design.md`](docs/31-compositor-design.md): the compositor's event loop, threading, ownership and render model, and the invariants new code must keep.
 
 ## Status
 
@@ -77,7 +80,7 @@ Milestone progress (see [`docs/01-objectives.md`](docs/01-objectives.md) §11):
 | **R3** | Serenity look & behaviours | Done: window chrome, switcher, snapping, workspaces, applet area, notifications, tooltips; font-parity decision recorded (zoom deferred to R4/G5) |
 | **R4** | Session & settings | **Done** (R4.1–R4.9 landed): safety net (idle/inhibit/DPMS + `ext-session-lock-v1`), session supervisor/autostart/power/restore, portable session, config + live reload, display/input/appearance/workspaces settings, Terminal/SystemMonitor/Debugger/CrashReporter; see `docs/11-r4-implementation-plan.md`. Deferred: CrashReporter *crash delivery*, real-hardware `seatd`/`builtin` verification. |
 | **R5** | Compatibility & ecosystem | Started: the native-app protocol matrix (incl. pointer-constraints, pointer-gestures, touch, tablet/tablet-pad, data-control, primary selection, xdg-activation/foreign, presentation-time, fractional-scale, content-type, tearing-control, **`xdg-toplevel-icon-v1`, `xdg-system-bell-v1`, `wp_text_input_v3` + `zwp_input_method_v2` (IME)**) and two-way drag-and-drop are in place. **XWayland is a first-class window manager** (Alt-Tab, workspaces, `_NET_WM_ICON`/`WM_CLASS`, override-redirect, `PRIMARY`/`CLIPBOARD` bridge, `_NET_WM_STATE`+transients, `_NET_WORKAREA`); see `docs/20-xwayland-next-steps.md`. The **portal Phase 2** set (ScreenCast/RemoteDesktop/InputCapture/GlobalShortcuts/DynamicLauncher/FileChooser/Print) and a **real USB broker** are in place. **Accessibility is complete** — sticky keys, high contrast, the Magnifier and the AT-SPI widget tree (roles, states, Component/Action/Text/EditableText and change events; see `docs/29-accessibility.md` and `docs/30-at-spi.md`). Remaining: XDND/pointer-warp/background-effect (wlroots-gated; see `docs/21-r5-protocol-parity-plan.md`). |
-| **R6** | Hardening & packaging | **In progress:** watchdog/safe mode, crash reports, renderer fallback, performance and memory budgets, CI, and shell/service supervision are landed. Remaining: packaging (native session + AUR), sanitizers/fuzzing, and the compositor design/observability doc. |
+| **R6** | Hardening & packaging | **In progress:** watchdog/safe mode, crash reports, renderer fallback, performance and memory budgets, CI, shell/service supervision, and the compositor design doc (`docs/31`) are landed. Remaining: packaging (native session + AUR), sanitizers/fuzzing, and observability/tracing. |
 
 ## Running
 

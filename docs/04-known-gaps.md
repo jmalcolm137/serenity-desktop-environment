@@ -562,7 +562,9 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   headless harness afterwards (`scripts/run-terminal-keys-test.sh`), and the Ctrl-C
   symptom turned out to be a *signal-disposition* bug rather than an encoding one.
 - **Packaging** of `WindowServer` and the session; **sanitizers/fuzzing**;
-  **compositor design doc** and observability.
+  **observability beyond the crash report/log level/perf meter** (tracing,
+  structured logs). The compositor design doc is now
+  [`31-compositor-design.md`](31-compositor-design.md).
 
 ## R1: Compositor bring-up (done)
 

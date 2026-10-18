@@ -190,10 +190,14 @@ table.
 
 ## 6. Architecture, observability & docs (R6)
 
-- **Compositor design document.** The event-loop model is novel and undocumented:
-  Wayland events are pumped through a `Core::Notifier` into `Core::EventLoop`
-  (see `serenity_main`), not `wl_display_run`. Written invariants (reentrancy,
-  timer ownership, threading, render model) are needed before more features land.
+- **Compositor design document: done.** The event-loop model is written down in
+  [`31-compositor-design.md`](31-compositor-design.md): the single-threaded
+  `Core::EventLoop` with Wayland pumped through a `Core::Notifier`, the
+  ownership/listener/reverse-teardown rules, the scene/render/capture model,
+  focus and the lock, IPC and service boundaries, configuration, failure paths
+  and a checklist for new code. Observability beyond the crash report,
+  configurable log level and performance meter (tracing, structured logs) is
+  still open.
 - **wlroots version policy & protocol versioning.** wlroots API drift is an
   accepted risk with no upgrade cadence; `serenity-window` has no versioning or
   extension policy.
