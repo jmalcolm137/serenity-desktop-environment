@@ -655,6 +655,8 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     // event loop stops updating the file, so the supervisor can restart the
     // session instead of hanging forever. Off unless SDE_HEARTBEAT_FILE is set
     // (the session supervisor sets it), so nested/headless runs are unaffected.
+    RefPtr<Core::Timer> heartbeat_timer;
+    RefPtr<Core::Timer> perf_timer;
     if (auto const* heartbeat = getenv("SDE_HEARTBEAT_FILE"); heartbeat && *heartbeat) {
         ByteString heartbeat_path { heartbeat };
         // A repeating timer runs on the event loop, so a late callback means the
@@ -686,7 +688,6 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
                 dbgln("WindowServer: WARNING: writing the liveness heartbeat took {}ms", elapsed_ms);
         };
         beat();
-        static RefPtr<Core::Timer> heartbeat_timer;
         heartbeat_timer = Core::Timer::create_repeating(1000, [beat] { beat(); });
         heartbeat_timer->start();
     }
@@ -696,7 +697,6 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
         ByteString path { stats_path };
         bool const log = getenv("SDE_PERF_LOG") && *getenv("SDE_PERF_LOG");
         s_perf.started_ms = perf_now_ms();
-        static RefPtr<Core::Timer> perf_timer;
         auto* perf_server = server.ptr();
         perf_timer = Core::Timer::create_repeating(1000, [path, log, perf_server] {
             // Resident memory: current, high-water, and the change since the last
@@ -725,6 +725,17 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     Core::EventLoop::register_signal(SIGINT, [&loop](int) { loop.quit(0); });
 
     int result = loop.exec();
+    // Stop and release the repeating timers while the Core event loop is still
+    // alive. Leaving them registered until process exit leaks the event-loop
+    // timer registration (Valgrind: 96 bytes definitely lost).
+    if (heartbeat_timer) {
+        heartbeat_timer->stop();
+        heartbeat_timer = nullptr;
+    }
+    if (perf_timer) {
+        perf_timer->stop();
+        perf_timer = nullptr;
+    }
     finish(*server);
     return result;
 }

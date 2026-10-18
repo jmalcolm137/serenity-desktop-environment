@@ -13,6 +13,7 @@
 #include "Output.h"
 #include "Pointer.h"
 #include "Resources.h"
+#include "SerenityWindow.h"
 #include "SessionManager.h"
 #include "Trace.h"
 #include "WindowManager.h"
@@ -227,10 +228,10 @@ static void toplevel_destroy(wl_listener* listener, void*)
         wlr_foreign_toplevel_handle_v1_destroy(toplevel->foreign_handle);
     if (toplevel->ext_foreign_handle)
         wlr_ext_foreign_toplevel_handle_v1_destroy(toplevel->ext_foreign_handle);
-    // The chrome resource may outlive the toplevel (the client owns it), so make
-    // sure its destroy handler can't touch freed memory.
-    if (toplevel->chrome)
-        wl_resource_set_user_data(toplevel->chrome, nullptr);
+    // The chrome resource may outlive the toplevel (the client owns it). Detach
+    // its toplevel pointer but keep the allocation for the resource destroy
+    // callback, or Valgrind reports a definite leak on every clean shutdown.
+    serenity_window_toplevel_destroyed(*toplevel);
     if (server.window_menu.open && server.window_menu.toplevel == toplevel)
         close_window_menu(server);
     // `scene_tree` is our own wrapper around the xdg surface's content tree (so

@@ -55,6 +55,19 @@ static void serenity_toplevel_request_destroy(wl_client*, wl_resource* resource)
     wl_resource_destroy(resource);
 }
 
+void serenity_window_toplevel_destroyed(Toplevel& toplevel)
+{
+    if (!toplevel.chrome)
+        return;
+    auto* chrome = static_cast<SerenityChrome*>(wl_resource_get_user_data(toplevel.chrome));
+    if (chrome)
+        chrome->toplevel = nullptr;
+    // The resource is owned by the client and may outlive this Toplevel. Leave
+    // its user_data non-null so the destroy callback still frees the allocation;
+    // every request handler already treats a null chrome->toplevel as a no-op.
+    toplevel.chrome = nullptr;
+}
+
 // set_icon: the client supplies its window icon as memory-mappable pixels
 // (SerenityOS Window::icon()). wl_shm ARGB8888 is little-endian B,G,R,A, which
 // matches Gfx::BitmapFormat::BGRA8888.
