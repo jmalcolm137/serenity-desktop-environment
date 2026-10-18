@@ -217,19 +217,21 @@ table.
 
 ## 7. Testing & CI breadth (R6)
 
-- **Sanitizers and fuzzing (N8): sanitizers and two fuzz targets done; Wayland
-  protocol fuzzing remains.** `-DSDE_SANITIZE=address` (or `address,undefined`)
-  builds the SDE's targets with ASan/UBSan in a separate tree
-  (`scripts/build-sanitized.sh`), and the full tier runs
+- **Sanitizers and fuzzing (N8): sanitizers and three fuzz targets done;
+  layer-shell/data-device fuzzing remains.** `-DSDE_SANITIZE=address` (or
+  `address,undefined`) builds the SDE's targets with ASan/UBSan in a separate
+  tree (`scripts/build-sanitized.sh`), and the full tier runs
   `scripts/run-sanitizer-test.sh`, which builds a sanitized compositor and holds
   it to the R1 smoke test. The first run found a shutdown use-after-free in the
   decoration/toplevel lifetime, fixed in `XdgShell.cpp`.
   `scripts/run-config-fuzz-test.sh` feeds deterministic malformed/extreme
-  `WindowServer.ini` files through `--check-config`; `scripts/run-wm-fuzz-test.sh`
-  drives the WindowManagerServer protocol with boundary/random values. The latter
-  found an absurd Taskbar rect aborting the compositor during a chrome-bitmap
-  allocation, now bounded. The Wayland wire protocol is covered by
-  `protocol-error-test`, not a fuzzer; Valgrind profiles remain open.
+  `WindowServer.ini` files through `--check-config`;
+  `scripts/run-wm-fuzz-test.sh` drives the WindowManagerServer protocol; and
+  `scripts/run-wayland-fuzz-test.sh` drives the xdg-shell surface/toplevel path
+  with valid-but-extreme requests. The WM harness found an absurd Taskbar rect
+  aborting the compositor during a chrome-bitmap allocation, now bounded; the
+  xdg-shell harness is clean across seeds and under ASan. Layer-shell and
+  data-device fuzzing, and Valgrind profiles, remain open.
 - **Pixel/golden tests across scale and output count (N8).** The R3 harness
   starts pixel assertions; extend to fractional scale, multiple outputs, and
   software vs GPU renderer.

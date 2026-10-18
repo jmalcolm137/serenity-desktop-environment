@@ -53,6 +53,12 @@ sde_wayland_client_protocol(protocols NAME fractional-scale-v1 XML "${WP}/stagin
 sde_wayland_client_protocol(protocols NAME xdg-decoration XML "${WP}/unstable/xdg-decoration/xdg-decoration-unstable-v1.xml")
 sde_c_tool(native-app-test SOURCES native-app-test.c ${protocols})
 
+# wayland-fuzz-test (R6/N8): valid-but-extreme xdg-shell requests, for the
+# protocol fuzz harness (run-wayland-fuzz-test.sh).
+set(protocols)
+sde_wayland_client_protocol(protocols NAME xdg-shell XML "${WP}/stable/xdg-shell/xdg-shell.xml")
+sde_c_tool(wayland-fuzz-test SOURCES wayland-fuzz-test.c ${protocols})
+
 # ext-workspace-test (R4.8): a scripted ext-workspace-v1 client.
 set(protocols)
 sde_wayland_client_protocol(protocols NAME ext-workspace-v1 XML "${WP}/staging/ext-workspace/ext-workspace-v1.xml")
@@ -163,6 +169,6 @@ sde_portal_tool(xdg-desktop-portal-serenity
 # test clients are scripts/build-tools.sh's "SDE tools"; the Lagom-linked portal
 # backends come with it.
 add_custom_target(sde-tools DEPENDS
-    sde-idle sde-dpms sde-screenshot native-app-test ext-workspace-test
-    output-management-test capture-probe screencast-consumer virtual-input-test
-    sde-settings-portal xdg-desktop-portal-serenity)
+    sde-idle sde-dpms sde-screenshot native-app-test wayland-fuzz-test
+    ext-workspace-test output-management-test capture-probe screencast-consumer
+    virtual-input-test sde-settings-portal xdg-desktop-portal-serenity)
