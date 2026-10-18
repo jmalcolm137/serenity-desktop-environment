@@ -535,9 +535,11 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   applied". A developer tree therefore had `/res/...` directory relocation and CI
   did not, which is why four unrelated-looking tests (settings, devtools, games,
   apps-smoke) failed with logs that said nothing. Both patch loops now **fail** on
-  an unverifiable patch instead of assuming. Remaining known flakiness, both
-  recorded in [`26-ci.md`](26-ci.md): `run-input-test.sh` occasionally misses the
-  Alt release after Alt+Tab, and `libwm-setting-test` has an intermittent segfault.
+  an unverifiable patch instead of assuming. The two flakes from the first full
+  runs are found and fixed: `libwm-setting-test`'s intermittent segfault was a
+  thread-ownership race in the shim (framework `a640e0f`), and `run-input-test.sh`'s
+  missing Alt release was the test tearing down its virtual keyboard between steps.
+  Both are recorded in [`26-ci.md`](26-ci.md) §7.
 - **Terminal keys vs the host's conventions.** Plain backspace emitted 0x08 where a
   host line discipline expects 0x7f (`erase = ^?`), so it did nothing in any
   raw-mode program (`yay`, `htop`, `vim`); Ctrl+letter is now converted to the
