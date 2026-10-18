@@ -51,7 +51,11 @@ chmod 700 "$RUNTIME"
 export SDE_STATE_DIR="$RUNTIME"
 
 COMP_PID=""
+CLIENT_PID=""
+HOLDER_PID=""
 cleanup() {
+    [[ -n "$HOLDER_PID" ]] && kill "$HOLDER_PID" 2>/dev/null || true
+    [[ -n "$CLIENT_PID" ]] && kill "$CLIENT_PID" 2>/dev/null || true
     [[ -n "$COMP_PID" ]] && kill "$COMP_PID" 2>/dev/null || true
     [[ -n "$COMP_PID" ]] && wait "$COMP_PID" 2>/dev/null || true
     # D8 (docs/03): unlink the compositor socket(s) this run created.
@@ -83,13 +87,27 @@ done
 sleep 0.3
 
 # The client connects before any keyboard exists, so it starts with no
-# wl_keyboard (seat capability without KEYBOARD).
+# wl_keyboard (seat capability without KEYBOARD). It stays up across both
+# hotplug phases; the test stops it when it is done rather than waiting out a
+# fixed duration.
 env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/key-repeat-test" \
-    --key "$BACKSPACE" --duration 6000 > "$RUNTIME/client.log" 2>&1 &
+    --key "$BACKSPACE" --duration 30000 > "$RUNTIME/client.log" 2>&1 &
 CLIENT_PID=$!
 sleep 1
 
-# The virtual keyboard appears only now; warm up with a harmless Shift (the very
+# Wait for a line to appear N times in the client log. Capability changes and the
+# re-enter are events, not timed steps, so poll for them instead of sleeping.
+wait_for_count() {
+    local pattern="$1" expected="$2" count i
+    for i in $(seq 1 100); do
+        count="$(grep -cF "$pattern" "$RUNTIME/client.log" 2>/dev/null || true)"
+        [[ "${count:-0}" -ge "$expected" ]] && return 0
+        sleep 0.1
+    done
+    return 1
+}
+
+# Phase 1: the virtual keyboard appears; warm up with a harmless Shift (the very
 # first press may race the capability change and is allowed to be lost), pause
 # for the client to acquire the keyboard, then hold Backspace so repeat runs.
 # --linger keeps the keyboard present for a while before the process exits, and
@@ -98,8 +116,29 @@ env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
     --key 42 press --key 42 release --sleep 500 \
     --key "$BACKSPACE" press --sleep 1000 --key "$BACKSPACE" release \
     --linger 800 > "$RUNTIME/input.log" 2>&1 || true
+wait_for_count 'capabilities pointer=1 keyboard=0' 2 || true
+wait_for_count 'keyboard leave (' 1 || true
+presses_before_replug="$(grep -cF "key-repeat-test: key=$BACKSPACE press" "$RUNTIME/client.log" || true)"
 
+# Phase 2: plug a keyboard in again. The compositor should still have the client
+# focused, so the fresh wl_keyboard gets an enter and a key works without any
+# pointer or window activation in between.
+env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
+    --linger 8000 > "$RUNTIME/holder.log" 2>&1 &
+HOLDER_PID=$!
+wait_for_count 'capabilities pointer=1 keyboard=1' 2 || true
+wait_for_count 'keyboard enter (' 2 || true
+env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
+    --key "$BACKSPACE" press --sleep 100 --key "$BACKSPACE" release \
+    > "$RUNTIME/input2.log" 2>&1 || true
+presses_after_replug="$(grep -cF "key-repeat-test: key=$BACKSPACE press" "$RUNTIME/client.log" || true)"
+kill "$HOLDER_PID" 2>/dev/null || true
+wait "$HOLDER_PID" 2>/dev/null || true
+HOLDER_PID=""
+
+kill "$CLIENT_PID" 2>/dev/null || true
 wait "$CLIENT_PID" 2>/dev/null || true
+CLIENT_PID=""
 kill "$COMP_PID" 2>/dev/null || true
 wait "$COMP_PID" 2>/dev/null || true
 COMP_PID=""
@@ -116,9 +155,9 @@ check_contains() {
         fail=1
     fi
 }
-summary="$(grep 'key-repeat-test: summary' "$RUNTIME/client.log" || true)"
-presses="$(sed -n 's/.*presses=\([0-9]*\).*/\1/p' <<<"$summary")"
 no_keyboard="$(grep -cF 'capabilities pointer=1 keyboard=0' "$RUNTIME/client.log" || true)"
+enters="$(grep -cF 'keyboard enter (' "$RUNTIME/client.log" || true)"
+leaves="$(grep -cF 'keyboard leave (' "$RUNTIME/client.log" || true)"
 
 echo "=== keyboard hotplug ==="
 check_contains "capabilities pointer=1 keyboard=1"   # keyboard added
@@ -128,10 +167,28 @@ else
     echo "  FAIL: keyboard capability was not withdrawn (saw '$no_keyboard' pointer-keyboard states)"
     fail=1
 fi
-if [[ "${presses:-0}" -ge 3 ]]; then
-    echo "  ok: input and repeat work after the hotplug ($presses press events)"
+if [[ "$leaves" -ge 1 ]]; then
+    echo "  ok: the client got a keyboard leave when the device went away"
 else
-    echo "  FAIL: no repeated input after the hotplug (only ${presses:-0} press events)"
+    echo "  FAIL: no keyboard leave"
+    fail=1
+fi
+if [[ "${presses_before_replug:-0}" -ge 3 ]]; then
+    echo "  ok: input and repeat work while the keyboard is present (${presses_before_replug} press events)"
+else
+    echo "  FAIL: no repeated input (only ${presses_before_replug:-0} press events)"
+    fail=1
+fi
+if [[ "$enters" -ge 2 ]]; then
+    echo "  ok: the client was re-entered after the keyboard was replugged ($enters enters)"
+else
+    echo "  FAIL: the client was not re-entered after the replug (saw $enters enters)"
+    fail=1
+fi
+if [[ "${presses_after_replug:-0}" -gt "${presses_before_replug:-0}" ]]; then
+    echo "  ok: a key works after the replug without re-activating the window"
+else
+    echo "  FAIL: no key after the replug (${presses_before_replug:-0} -> ${presses_after_replug:-0} press events)"
     fail=1
 fi
 

@@ -12,7 +12,10 @@
 //   key-repeat-test: key=14 press t=0ms
 //   key-repeat-test: key=14 press t=203ms
 //   ...
-//   key-repeat-test: summary presses=27 releases=1 first=0ms last=1497ms
+//   key-repeat-test: keyboard enter (1)
+//   ...
+//   key-repeat-test: keyboard leave (1)
+//   key-repeat-test: summary enters=1 leaves=1 presses=27 releases=1 first=0ms last=1497ms
 //
 // Usage: key-repeat-test [--key CODE] [--duration MS]
 //
@@ -48,6 +51,8 @@ static uint32_t target_key = 14; // evdev KEY_BACKSPACE
 static uint64_t start_ms;
 static unsigned press_count;
 static unsigned release_count;
+static unsigned enter_count;
+static unsigned leave_count;
 static uint64_t first_press_ms;
 static uint64_t last_press_ms;
 
@@ -150,6 +155,9 @@ static void keyboard_enter(void* d, struct wl_keyboard* k, uint32_t serial, stru
     (void)serial;
     (void)s;
     (void)keys;
+    enter_count++;
+    fprintf(stderr, "key-repeat-test: keyboard enter (%u)\n", enter_count);
+    fflush(stderr);
 }
 
 static void keyboard_leave(void* d, struct wl_keyboard* k, uint32_t serial, struct wl_surface* s)
@@ -158,6 +166,9 @@ static void keyboard_leave(void* d, struct wl_keyboard* k, uint32_t serial, stru
     (void)k;
     (void)serial;
     (void)s;
+    leave_count++;
+    fprintf(stderr, "key-repeat-test: keyboard leave (%u)\n", leave_count);
+    fflush(stderr);
 }
 
 static void keyboard_key(void* d, struct wl_keyboard* k, uint32_t serial, uint32_t time, uint32_t key, uint32_t state)
@@ -210,9 +221,17 @@ static void seat_capabilities(void* d, struct wl_seat* s, uint32_t capabilities)
         (capabilities & WL_SEAT_CAPABILITY_POINTER) != 0,
         (capabilities & WL_SEAT_CAPABILITY_KEYBOARD) != 0);
     fflush(stderr);
-    if ((capabilities & WL_SEAT_CAPABILITY_KEYBOARD) && !keyboard) {
-        keyboard = wl_seat_get_keyboard(s);
-        wl_keyboard_add_listener(keyboard, &keyboard_listener, NULL);
+    if (capabilities & WL_SEAT_CAPABILITY_KEYBOARD) {
+        if (!keyboard) {
+            keyboard = wl_seat_get_keyboard(s);
+            wl_keyboard_add_listener(keyboard, &keyboard_listener, NULL);
+        }
+    } else if (keyboard) {
+        // The compositor destroys its wl_keyboard when the capability goes away;
+        // release our side too, so a later keyboard is acquired afresh (and gets
+        // the enter that proves the compositor kept the focus).
+        wl_keyboard_destroy(keyboard);
+        keyboard = NULL;
     }
 }
 
@@ -303,8 +322,8 @@ int main(int argc, char** argv)
             wl_display_dispatch(display);
     }
 
-    fprintf(stderr, "key-repeat-test: summary presses=%u releases=%u first=%llums last=%llums\n",
-        press_count, release_count, (unsigned long long)first_press_ms, (unsigned long long)last_press_ms);
+    fprintf(stderr, "key-repeat-test: summary enters=%u leaves=%u presses=%u releases=%u first=%llums last=%llums\n",
+        enter_count, leave_count, press_count, release_count, (unsigned long long)first_press_ms, (unsigned long long)last_press_ms);
     fflush(stderr);
     return 0;
 }
