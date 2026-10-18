@@ -295,8 +295,10 @@ part of the behaviour, so changing it changes the test.
 When a log line cannot reconstruct the sequence, set `SDE_TRACE_FILE`. The
 compositor then writes one JSON object per line (`t`, `cat`, `msg`) for window
 map/unmap/destroy, focus, workspace, output and WindowManagerServer events
-(`Trace.cpp`, `scripts/run-trace-test.sh`). It is synchronous and opt-in: leave
-it off on a hot path, and do not add an event per frame.
+(`Trace.cpp`, `scripts/run-trace-test.sh`). Set `SDE_TRACE_FRAMES=1` as well for
+sampled frame events: at most one per second, carrying the output, frame time,
+budget and frame count. The trace is synchronous and opt-in: leave it off on a
+hot path, and do not add an unthrottled event per frame.
 
 ## 9. Rules for new code
 

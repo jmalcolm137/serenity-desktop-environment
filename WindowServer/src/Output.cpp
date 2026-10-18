@@ -97,6 +97,22 @@ static void output_frame(wl_listener* listener, void*)
         s_perf_pending_input_ms = -1;
     }
     ++s_perf.frames;
+    // Optional sampled frame tracing: one event per second, not one per frame, so
+    // the trace can answer "what was the compositor doing" without becoming a
+    // performance problem. SDE_TRACE_FRAMES=0 disables it even when a trace file
+    // is open.
+    static bool const trace_frames = [] {
+        auto const* value = getenv("SDE_TRACE_FRAMES");
+        return value && *value && *value != '0';
+    }();
+    static double last_frame_trace_ms = 0;
+    if (trace_frames && Trace::enabled()
+        && (last_frame_trace_ms == 0 || frame_end_ms - last_frame_trace_ms >= 1000)) {
+        last_frame_trace_ms = frame_end_ms;
+        Trace::event("frame"sv, ByteString::formatted("output='{}' frame_ms={:.2} budget_ms={:.2} frames={}",
+            output->output->name ? output->output->name : "?", frame_end_ms - frame_start_ms,
+            s_perf.frame_ms.budget_ms, s_perf.frames));
+    }
     if (frame_end_ms - frame_start_ms > s_perf.frame_ms.budget_ms)
         ++s_perf.slow_frames;
 }

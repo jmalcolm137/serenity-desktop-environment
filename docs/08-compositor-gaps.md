@@ -177,10 +177,11 @@ GTK/Qt/Firefox conformance matrix in CI yet.
 - **wlroots version policy & protocol versioning.** The pin is 0.20.2 and the
   upgrade policy is in [`21-r5-protocol-parity-plan.md`](21-r5-protocol-parity-plan.md);
   `serenity-window` still has no formal versioning/extension policy.
-- **Observability (N8): done except per-frame tracing/sampling.** `[Log] Level`/
+- **Observability (N8): done except unthrottled per-frame tracing.** `[Log] Level`/
   `SDE_LOG_LEVEL`, the fatal-signal crash report and an opt-in JSONL event trace
-  (`SDE_TRACE_FILE`, `run-trace-test.sh`) are in place. Structured per-frame
-  tracing/sampling remains open.
+  (`SDE_TRACE_FILE`, `run-trace-test.sh`) are in place. `SDE_TRACE_FRAMES=1` adds
+  sampled frame events (at most one per second) with frame time and budget; a
+  full per-frame stream remains open by design.
 - **WM policy details (G3): partial.** Focus-follows-mouse vs click is
   configurable (`[Focus] FollowsMouse`), transient/modal stacking and session
   restore of placement are implemented. Focus-stealing prevention,

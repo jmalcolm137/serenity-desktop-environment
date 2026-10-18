@@ -43,7 +43,7 @@ setsid env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 SDE_OUTPUT_SCALE=1 SDE_XWAYLAND=0 \
     SDE_STATE_DIR="$RUNTIME/state" SDE_SESSION_DIR="$RUNTIME/session" \
     SDE_HEARTBEAT_FILE="$RUNTIME/heartbeat" \
-    SDE_TRACE_FILE="$TRACE" \
+    SDE_TRACE_FILE="$TRACE" SDE_TRACE_FRAMES=1 \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     "$COMP" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
@@ -88,6 +88,8 @@ check "the window map is recorded" \
     "grep -qF '\"cat\":\"window\"' '$TRACE' && grep -qF \"map title='Trace Test'\" '$TRACE'"
 check "the focus change is recorded" \
     "grep -qF '\"cat\":\"focus\"' '$TRACE' && grep -qF \"title='Trace Test'\" '$TRACE'"
+check "a sampled frame is recorded" \
+    "grep -qF '\"cat\":\"frame\"' '$TRACE'"
 
 echo "=== the trace records a workspace switch ==="
 env WAYLAND_DISPLAY="$SOCK" "$WS" 4 > "$RUNTIME/ws.log" 2>&1 || true

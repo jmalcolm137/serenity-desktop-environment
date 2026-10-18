@@ -597,13 +597,14 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   `serenity-lagom-git` and `serenity-desktop-environment-git`).
   `run-split-framework-test.sh` stages a framework prefix and builds/runs a
   prebuilt-framework compositor; `run-packaging-test.sh` validates every
-  PKGBUILD's metadata. A real-machine package install/login remains. **Layer-shell/
-  data-device fuzzing and Valgrind** remain (ASan/UBSan, the full-tier sanitizer
-  run, and config, WindowManagerServer and xdg-shell fuzz harnesses are in place).
-  The compositor design doc is
+  PKGBUILD's metadata. A real-machine package install/login remains. **Data-device
+  fuzzing and Valgrind** remain (ASan/UBSan, the full-tier sanitizer run, and
+  config, WindowManagerServer, xdg-shell and layer-shell fuzz harnesses are in
+  place). The compositor design doc is
   [`31-compositor-design.md`](31-compositor-design.md); the crash report, log
-  levels and the optional JSONL event trace are in place, while per-frame
-  tracing/sampling remains open.
+  levels and the optional JSONL event trace are in place, including optional
+  sampled frame events (`SDE_TRACE_FRAMES`, at most one per second); unthrottled
+  per-frame tracing remains open.
 
 ## R1: Compositor bring-up (done)
 
@@ -833,8 +834,10 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   session. Verbosity is configurable via `[Log] Level` (`error`/`warn`/`info`/
   `debug`; `SDE_LOG_LEVEL` overrides), which sets wlroots' log level. An opt-in
   JSONL **event trace** (`SDE_TRACE_FILE`) records window, focus, workspace,
-  output and WindowManagerServer events (`Trace.cpp`); `run-trace-test.sh` pins
-  its format. Covered by `run-headless-test.sh` (SIGABRT writes the report; exit
+  output and WindowManagerServer events (`Trace.cpp`); setting
+  `SDE_TRACE_FRAMES=1` adds sampled frame events (at most one per second) with
+  frame time and budget. `run-trace-test.sh` pins both formats. Covered by
+  `run-headless-test.sh` (SIGABRT writes the report; exit
   134), `run-config-test.sh` (validation + `SDE_LOG_LEVEL`) and
   `run-trace-test.sh`.
 
