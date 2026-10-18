@@ -34,6 +34,7 @@ COMP_PID=""
 cleanup() {
     [[ -n "$APP_PID" ]] && kill "$APP_PID" 2>/dev/null || true
     [[ -n "$COMP_PID" ]] && kill -TERM -- "-$COMP_PID" 2>/dev/null || true
+    [[ -n "$COMP_PID" ]] && kill -TERM "$COMP_PID" 2>/dev/null || true
     # Give them a moment to exit, or the tree is still being written while it is
     # removed ("Directory not empty").
     sleep 0.3
@@ -41,7 +42,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-env -u WAYLAND_DISPLAY -u DISPLAY \
+setsid env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 SDE_OUTPUT_SCALE=1 SDE_XWAYLAND=0 \
     XDG_RUNTIME_DIR="$RUNTIME/run" SDE_STATE_DIR="$RUNTIME" SDE_SESSION_DIR="$RUNTIME/session" \
     SERENITY_RES_ROOT="$RES_ROOT" LD_LIBRARY_PATH="$BUILD/lib" \

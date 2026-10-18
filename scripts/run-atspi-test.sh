@@ -37,6 +37,7 @@ cleanup() {
     [[ -n "$MONITOR_PID" ]] && kill "$MONITOR_PID" 2>/dev/null || true
     [[ -n "$APP_PID" ]] && kill "$APP_PID" 2>/dev/null || true
     [[ -n "$COMP_PID" ]] && kill -TERM -- "-$COMP_PID" 2>/dev/null || true
+    [[ -n "$COMP_PID" ]] && kill -TERM "$COMP_PID" 2>/dev/null || true
     [[ -n "$DBUS_PID" ]] && kill "$DBUS_PID" 2>/dev/null || true
     sleep 0.3
     rm -rf "$RUNTIME"
@@ -47,7 +48,7 @@ DBUS_INFO="$(dbus-daemon --session --fork --print-address=1 --print-pid=1)"
 DBUS_ADDRESS="$(sed -n '1p' <<<"$DBUS_INFO")"
 DBUS_PID="$(sed -n '2p' <<<"$DBUS_INFO")"
 
-env -u WAYLAND_DISPLAY -u DISPLAY \
+setsid env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 SDE_OUTPUT_SCALE=1 SDE_XWAYLAND=0 \
     XDG_RUNTIME_DIR="$RUNTIME/run" SDE_STATE_DIR="$RUNTIME/state" SDE_SESSION_DIR="$RUNTIME/session" \
     SERENITY_RES_ROOT="$SERENITY/Base/res" LD_LIBRARY_PATH="$BUILD/lib" \
