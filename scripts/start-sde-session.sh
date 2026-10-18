@@ -229,6 +229,11 @@ else
     fi
 fi
 
+# The supervisor uses the actual startup command for its restore heuristic (and
+# for the default compositor command); without this a custom startup would be
+# parsed as the default one.
+export SDE_SESSION_SHELL="$STARTUP"
+
 if [[ -n "${SDE_BACKENDS:-}" ]]; then
     export WLR_BACKENDS="$SDE_BACKENDS"
 fi

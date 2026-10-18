@@ -124,6 +124,8 @@ fi
 # The compositor nests on the host display; its children get the session display
 # (the compositor sets WAYLAND_DISPLAY for them).
 export WAYLAND_DISPLAY="$HOST_DISPLAY"
+export SDE_SESSION_SHELL="$STARTUP"
+export SDE_SESSION_STARTUP_APPS="Taskbar FileManager"
 export SDE_SESSION_COMPOSITOR="$COMP -n $SESSION_DISPLAY -s \"$STARTUP\""
 export SDE_SESSION_DISPLAY="$SESSION_DISPLAY"
 
