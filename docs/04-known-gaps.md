@@ -527,7 +527,10 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   (full tier) builds a sanitized compositor and runs the R1 smoke test with
   `halt_on_error`. It found a real shutdown use-after-free: a client's decoration
   can outlive its `Toplevel`, and `decoration_destroy` read the freed back-pointer
-  (`XdgShell.cpp`). Fuzzing remains open.
+  (`XdgShell.cpp`). A deterministic **config fuzz harness**
+  (`run-config-fuzz-test.sh`) feeds malformed and extreme `WindowServer.ini`
+  files through `--check-config` and fails on a hang or a signal; protocol
+  fuzzing remains open.
 - **CI (N6): green.** `scripts/run-all-tests.sh` runs the `run-*-test.sh`
   tests by tier (every test is headless by design), `.github/workflows/ci.yml`
   gates a push on the fast tier and runs the rest nightly, and
@@ -575,8 +578,8 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   See [`27-terminal-keys.md`](27-terminal-keys.md): both were measured in a
   headless harness afterwards (`scripts/run-terminal-keys-test.sh`), and the Ctrl-C
   symptom turned out to be a *signal-disposition* bug rather than an encoding one.
-- **Packaging** of `WindowServer` and the session; **fuzzing** (ASan/UBSan
-  support and the full-tier sanitizer run are in place).
+- **Packaging** of `WindowServer` and the session; **protocol fuzzing** (ASan/UBSan
+  support, the full-tier sanitizer run and the config fuzz harness are in place).
   The compositor design doc is
   [`31-compositor-design.md`](31-compositor-design.md); the crash report, log
   levels and the optional JSONL event trace are in place, while per-frame
