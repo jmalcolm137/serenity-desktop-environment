@@ -54,11 +54,21 @@ setsid env -u WAYLAND_DISPLAY -u DISPLAY \
         --num-callers=30 --log-file="$RUNTIME/valgrind.log" \
         "$COMP" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
 COMP_PID=$!
-for _ in $(seq 1 600); do
+# Memcheck startup is much slower than a native one, especially on a cold GitHub
+# runner; the process can legitimately need a couple of minutes before it creates
+# the socket. Give it a generous window and print both logs if it still fails.
+for _ in $(seq 1 1800); do
     [[ -e "$XDG_RUNTIME_DIR/$SOCK" ]] && break
     sleep 0.1
 done
-[[ -e "$XDG_RUNTIME_DIR/$SOCK" ]] || { echo "FAIL: compositor did not start under valgrind"; tail -30 "$RUNTIME/comp.log"; exit 1; }
+if [[ ! -e "$XDG_RUNTIME_DIR/$SOCK" ]]; then
+    echo "FAIL: compositor did not start under valgrind"
+    echo "--- valgrind log ---"
+    tail -60 "$RUNTIME/valgrind.log" 2>/dev/null || true
+    echo "--- compositor log ---"
+    tail -60 "$RUNTIME/comp.log" 2>/dev/null || true
+    exit 1
+fi
 sleep 2
 
 echo "=== mapping a client under valgrind ==="
