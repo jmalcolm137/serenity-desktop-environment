@@ -37,6 +37,7 @@ pkgbase = serenity-desktop-environment-git
 	depends = libelf
 	depends = libei
 	depends = xorg-xwayland
+	optdepends = sddm: display manager that lists the SDE Wayland session
 	provides = serenity-desktop-environment
 	conflicts = serenity-desktop-environment
 	source = serenity-desktop-environment::git+https://github.com/jmalcolm137/serenity-desktop-environment.git

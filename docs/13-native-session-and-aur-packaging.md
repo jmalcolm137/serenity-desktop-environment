@@ -60,7 +60,7 @@ Verified shape of the current build:
 |---|---|---|---|
 | `wlroots0.20` | pinned `wlroots 0.20.2` → `libwlroots-0.20.so` + `wlroots-0.20.pc` | wayland, libinput, libdrm, libseat, pixman, xcb-* | moderate |
 | `serenity-lagom-git` | `liblagom-*.so`, the apps, `Base/res`, **and** the Serenity headers/Lagom build tree (see §5 trap 6) | build deps of Serenity Lagom | **large** (Serenity) |
-| `serenity-desktop-environment-git` | `WindowServer`, `LaunchServer`, `ImageDecoder`, `sde-idle`, session scripts, `sde.desktop` | `serenity-lagom-git`, `wlroots0.20` | small |
+| `serenity-desktop-environment-git` | `WindowServer`, `LaunchServer`, `ImageDecoder`, `sde-idle`, session scripts, `sde.desktop` | `serenity-lagom-git` (wlroots is currently bundled; the separate `wlroots0.20` package is the future shared path) | small |
 
 > Arch's stock `wlroots` cannot be used: the compositor's CMake requires
 > `pkg_check_modules(wlroots-0.20)`, so the pinned 0.20.x must be packaged (or
@@ -155,7 +155,9 @@ seams the session scripts use (`SDE_*_BIN`, `SDE_APPLET_DIR`,
 `LD_LIBRARY_PATH`), so the checkout-only defaults stay intact.
 `scripts/run-install-layout-test.sh` installs a staged prefix and starts a
 headless session from it (Taskbar, applets and the private LaunchServer), which
-keeps the layout honest while the PKGBUILDs remain unwritten.
+keeps the layout honest. The split PKGBUILDs are implemented under
+`packaging/aur/`; `run-packaging-test.sh` validates their metadata. Local
+`makepkg`/`pacman -U` and AUR publication remain the release step.
 
 The entry:
 
@@ -167,6 +169,12 @@ Exec=/usr/local/bin/sde-session
 Type=Application
 DesktopNames=SDE
 ```
+
+
+SDDM and GDM scan `/usr/share/wayland-sessions/`; after installing the package,
+select **Serenity Desktop Environment** in the login screen. SDDM is not a hard
+dependency of the SDE package (`sddm` is an `optdepends`), because any
+Wayland-capable display manager can start the same entry.
 
 `Exec` is the launcher, which runs the supervisor (`scripts/sde-session.sh`); the
 supervisor sets `XDG_SESSION_TYPE`, `XDG_CURRENT_DESKTOP` (from `DesktopNames`),
