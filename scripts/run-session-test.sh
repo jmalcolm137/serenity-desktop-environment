@@ -225,6 +225,46 @@ wait "$SUP_H2" 2>/dev/null || true
 cat "$RUNTIME/session-h2.log"
 check "restart 1/5" "$RUNTIME/session-h2.log"
 
+echo "== (H3) a wall-clock jump does not look like a wedge =="
+cat > "$RUNTIME/jump-comp" <<EOF
+#!/bin/sh
+# A heartbeat whose value is deliberately far from wall clock, but which keeps
+# changing. The old absolute-time comparison killed this healthy compositor at
+# once; the change-counting watchdog must leave it alone.
+i=1
+echo "\$i" > "$RUNTIME/hb3"
+while :; do
+    sleep 1
+    i=\$((i + 1))
+    echo "\$i" > "$RUNTIME/hb3"
+done
+EOF
+chmod +x "$RUNTIME/jump-comp"
+env SDE_SESSION_COMPOSITOR="$RUNTIME/jump-comp" \
+    SDE_SESSION_HEARTBEAT_FILE="$RUNTIME/hb3" \
+    SDE_SESSION_WATCHDOG_SECONDS=2 \
+    SDE_SESSION_MAX_RESTARTS=1 \
+    SDE_SESSION_AUTOSTART=0 \
+    SDE_SESSION_RESTART_DELAY=0 \
+    "$SDE" > "$RUNTIME/session-h3.log" 2>&1 &
+SUP_H3=$!
+sleep 5
+kill -TERM "$SUP_H3" 2>/dev/null || true
+wait "$SUP_H3" 2>/dev/null || true
+cat "$RUNTIME/session-h3.log"
+if grep -q "heartbeat stale" "$RUNTIME/session-h3.log"; then
+    echo "  FAIL: a changing heartbeat was treated as stale"
+    fail=1
+else
+    echo "  ok: a changing heartbeat is not stale"
+fi
+if grep -q "restart 1/1" "$RUNTIME/session-h3.log"; then
+    echo "  FAIL: the healthy compositor was restarted"
+    fail=1
+else
+    echo "  ok: the healthy compositor was not restarted"
+fi
+
 echo "== (I) repeated failure drops to safe mode (does not end the session) =="
 cat > "$RUNTIME/safe-comp" <<EOF
 #!/bin/sh

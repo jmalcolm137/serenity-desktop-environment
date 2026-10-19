@@ -824,8 +824,11 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 
 - **Session watchdog & safe mode (R6/N4).** The compositor writes a liveness
   heartbeat (`SDE_HEARTBEAT_FILE`, a `Core::Timer` touching the file each
-  second) and the session supervisor restarts it when the heartbeat goes stale,
-  so a *wedged* event loop no longer hangs the session. After the restart budget
+  second) and the session supervisor restarts it when the heartbeat stops
+  changing, so a *wedged* event loop no longer hangs the session. The watchdog
+  counts unchanged samples rather than subtracting the file's wall-clock time:
+  a suspend/resume or NTP correction during login (the 2026-10-18 session had a
+  recorded 36 s jump) used to look like a wedge and restart a healthy session. After the restart budget
   the supervisor drops to **safe mode** (a minimal shell via
   `SDE_SESSION_COMPOSITOR_SAFE`, no autostart) instead of ending the session, and
   only gives up if safe mode also keeps failing. User-facing session policy lives

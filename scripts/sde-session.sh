@@ -289,18 +289,35 @@ wait_for_socket() {
 # A liveness watchdog (R6/N4): if the compositor's heartbeat file goes stale its
 # event loop is blocked, so terminate it and let the main loop restart it. Runs in
 # the background so the foreground `wait` keeps the fast SIGTERM path.
+#
+# Compare whether the heartbeat *changes* rather than subtracting its wall-clock
+# value from `date +%s`. A fresh login can coincide with an NTP correction or a
+# suspend/resume: the journal on this machine recorded a 36 s time jump during
+# startup, the old absolute comparison immediately declared the (healthy)
+# compositor stale, and the watchdog restarted a session that had just started.
+# Counting unchanged samples measures the event loop, not the wall clock; after a
+# suspend both processes resume and the next beat clears the counter.
 watch_compositor_hang() {
-    local pid="$1" beat now
+    local pid="$1" beat last_beat="" unchanged=0
     while kill -0 "$pid" 2>/dev/null; do
         sleep 1
-        [ -e "$HEARTBEAT_FILE" ] || continue
+        [ -e "$HEARTBEAT_FILE" ] || {
+            last_beat=""
+            unchanged=0
+            continue
+        }
         beat="$(cat "$HEARTBEAT_FILE" 2>/dev/null || echo 0)"
-        now="$(date +%s)"
         case "$beat" in
             ''|*[!0-9]*) continue ;;
         esac
-        if [ "$((now - beat))" -gt "$WATCHDOG_SECONDS" ]; then
-            echo "SDE session: compositor heartbeat stale (${beat}s, now ${now}s > ${WATCHDOG_SECONDS}s); restarting" >&2
+        if [ "$beat" = "$last_beat" ]; then
+            unchanged=$((unchanged + 1))
+        else
+            last_beat="$beat"
+            unchanged=0
+        fi
+        if [ "$unchanged" -ge "$WATCHDOG_SECONDS" ]; then
+            echo "SDE session: compositor heartbeat stale (unchanged for ${unchanged}s, last ${beat}); restarting" >&2
             : > "$WATCHDOG_MARK"
             kill -TERM "$pid" 2>/dev/null || true
             sleep 2
