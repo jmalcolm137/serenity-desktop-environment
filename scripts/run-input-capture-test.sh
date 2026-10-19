@@ -11,9 +11,9 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
-SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
-BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
+. "$SDE_ROOT/scripts/lib/testlib.sh"
+sde_test_init input-capture
+sde_test_export_roots
 WLROOTS_SRC="${WLROOTS_SRC:-$SDE_ROOT/third_party/wlroots}"
 COMP="$SDE_ROOT/build/WindowServer/WindowServer"
 TOOLS_BUILD="$SDE_ROOT/build/input-capture-test"
@@ -43,11 +43,8 @@ cc -O2 -I "$TOOLS_BUILD" \
     $(pkg-config --cflags --libs wayland-client xkbcommon) \
     -o "$TOOLS_BUILD/virtual-input-test"
 
-RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-inputcapture.XXXXXX")"
 chmod 700 "$RUNTIME"
 export SDE_STATE_DIR="$RUNTIME"
-
-COMP_PID=""
 CLIENT_PID=""
 cleanup() {
     [[ -n "$CLIENT_PID" ]] && kill "$CLIENT_PID" 2>/dev/null || true
@@ -57,23 +54,8 @@ cleanup() {
     rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true
     for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"
 }
-trap cleanup EXIT
 
-SOCK="sde-inputcapture-$$"
-env -u WAYLAND_DISPLAY -u DISPLAY \
-    WLR_BACKENDS=headless \
-    WLR_HEADLESS_OUTPUTS=1 \
-    SDE_INPUT_CAPTURE=1 \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
-    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-    LD_LIBRARY_PATH="$BUILD/lib" \
-    "$COMP" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
-COMP_PID=$!
-for _ in $(seq 1 80); do
-    [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SOCK" ]] && break
-    sleep 0.1
-done
-sleep 0.3
+sde_test_compositor SDE_INPUT_CAPTURE=1 SDE_WM_PORTAL_PATH="$RUNTIME/wm"
 
 # The client sets up a session, connects the libei receiver, requests zones,
 # installs a barrier (plus a deliberately invalid one) and arms capture.
@@ -98,7 +80,6 @@ wait "$CLIENT_PID" 2>/dev/null || true
 CLIENT_PID=""
 kill "$COMP_PID" 2>/dev/null || true
 wait "$COMP_PID" 2>/dev/null || true
-COMP_PID=""
 
 echo "--- compositor log ---"
 cat "$RUNTIME/comp.log"

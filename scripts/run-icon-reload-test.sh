@@ -13,10 +13,9 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
-SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
-BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
-COMP="$SDE_ROOT/build/WindowServer/WindowServer"
+. "$SDE_ROOT/scripts/lib/testlib.sh"
+sde_test_init icon-reload
+sde_test_export_roots
 VI="$("$SDE_ROOT/scripts/build-virtual-input.sh")"
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
@@ -25,9 +24,7 @@ VI="$("$SDE_ROOT/scripts/build-virtual-input.sh")"
 WIDTH="${SDE_ICON_RELOAD_WIDTH:-800}"
 HEIGHT="${SDE_ICON_RELOAD_HEIGHT:-600}"
 
-RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-iconreload.XXXXXX")"
 chmod 700 "$RUNTIME"
-COMP_PID=""
 APP_PID=""
 cleanup() {
     [[ -n "$APP_PID" ]] && kill "$APP_PID" 2>/dev/null || true
@@ -35,21 +32,8 @@ cleanup() {
     for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"
     rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true
 }
-trap cleanup EXIT
 
-SOCK="sde-iconreload-$$"
-setsid env -u WAYLAND_DISPLAY -u DISPLAY \
-    WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 SDE_OUTPUT_SCALE=1 \
-    SDE_STATE_DIR="$RUNTIME" \
-    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-    LD_LIBRARY_PATH="$BUILD/lib" \
-    "$COMP" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
-COMP_PID=$!
-for _ in $(seq 1 80); do
-    [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SOCK" ]] && break
-    sleep 0.1
-done
-sleep 1
+sde_test_compositor SDE_STATE_DIR="$RUNTIME"
 
 # A window with a frame (server-side decorations) and an icon.
 env WAYLAND_DISPLAY="$SOCK" "$SDE_ROOT/build/tools/native-app-test" \

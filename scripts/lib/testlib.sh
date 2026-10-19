@@ -219,6 +219,12 @@ sde_test_kill() {
 }
 
 sde_test_cleanup() {
+    # A test that cleans up more than the compositor (killing clients, removing an
+    # app directory) defines sde_test_cleanup_extra() and keeps that code; it runs
+    # first, while the compositor is still up, as its own cleanup did.
+    if declare -F sde_test_cleanup_extra >/dev/null; then
+        sde_test_cleanup_extra || true
+    fi
     sde_test_case_stop
     local pid
     for pid in ${SDE_TEST_CLIENT_PIDS[@]+"${SDE_TEST_CLIENT_PIDS[@]}"}; do

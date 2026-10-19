@@ -14,10 +14,9 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
-SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
-BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
-COMP="$SDE_ROOT/build/WindowServer/WindowServer"
+. "$SDE_ROOT/scripts/lib/testlib.sh"
+sde_test_init audio
+sde_test_export_roots
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 "$SDE_ROOT/scripts/build-services.sh" >/dev/null 2>&1 || true
@@ -29,9 +28,7 @@ ninja -C "$BUILD" Piano SoundPlayer >/dev/null 2>&1 || true
 APPLET="$SDE_ROOT/build/Applets/Audio"
 [[ -x "$APPLET" ]] || { echo "SKIP: Audio applet not built"; exit 0; }
 
-RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-audio.XXXXXX")"
 chmod 700 "$RUNTIME"
-trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"' EXIT
 
 # A private per-session runtime directory (see the SDE_SESSION_DIR seam), so the
 # fixed "/tmp/session/0/portal/..." paths of a live session are left alone: LibWM
@@ -59,22 +56,7 @@ for candidate in "${PIPEWIRE_RUNTIME_DIR:-}" "/run/user/$(id -u)" "${XDG_RUNTIME
     fi
 done
 
-SOCK="sde-audio-$$"
-setsid env -u WAYLAND_DISPLAY -u DISPLAY \
-    WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 SDE_OUTPUT_SCALE=1 \
-    SDE_STATE_DIR="$RUNTIME" \
-    SDE_APP_BIN_DIR="$APP_BIN" \
-    SDE_SESSION_DIR="$SESSION_DIR" \
-    PIPEWIRE_RUNTIME_DIR="${PW_RUNTIME:-$RUNTIME}" \
-    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-    LD_LIBRARY_PATH="$BUILD/lib" \
-    "$COMP" -n "$SOCK" -s "$APP_BIN/Piano & $APP_BIN/SoundPlayer & $APPLET" > "$RUNTIME/comp.log" 2>&1 &
-COMP_PID=$!
-for _ in $(seq 1 80); do
-    [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SOCK" ]] && break
-    sleep 0.1
-done
-sleep 6
+sde_test_compositor --startup "$APP_BIN/Piano & $APP_BIN/SoundPlayer & $APPLET" SDE_STATE_DIR="$RUNTIME" SDE_APP_BIN_DIR="$APP_BIN" SDE_SESSION_DIR="$SESSION_DIR" PIPEWIRE_RUNTIME_DIR="${PW_RUNTIME:-$RUNTIME}"
 kill -TERM -- "-$COMP_PID" 2>/dev/null || kill "$COMP_PID" 2>/dev/null || true
 wait "$COMP_PID" 2>/dev/null || true
 

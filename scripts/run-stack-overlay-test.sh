@@ -12,10 +12,9 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
-SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
-BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
-COMP="$SDE_ROOT/build/WindowServer/WindowServer"
+. "$SDE_ROOT/scripts/lib/testlib.sh"
+sde_test_init stack-overlay
+sde_test_export_roots
 VI="$("$SDE_ROOT/scripts/build-virtual-input.sh")"
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
@@ -30,29 +29,14 @@ fi
 WIDTH="${SDE_STACK_WIDTH:-800}"
 HEIGHT="${SDE_STACK_HEIGHT:-600}"
 
-RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-stack.XXXXXX")"
 chmod 700 "$RUNTIME"
-COMP_PID=""
 cleanup() {
     [[ -n "$COMP_PID" ]] && kill -TERM -- "-$COMP_PID" 2>/dev/null || true
     for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"
     rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true
 }
-trap cleanup EXIT
 
-SOCK="sde-stack-$$"
-setsid env -u WAYLAND_DISPLAY -u DISPLAY \
-    WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 SDE_OUTPUT_SCALE=1 \
-    SDE_STATE_DIR="$RUNTIME" \
-    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-    LD_LIBRARY_PATH="$BUILD/lib" \
-    "$COMP" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
-COMP_PID=$!
-for _ in $(seq 1 80); do
-    [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SOCK" ]] && break
-    sleep 0.1
-done
-sleep 2
+sde_test_compositor SDE_STATE_DIR="$RUNTIME"
 
 capture() { env WAYLAND_DISPLAY="$SOCK" "$SHOT" "$1" >/dev/null 2>&1; }
 
