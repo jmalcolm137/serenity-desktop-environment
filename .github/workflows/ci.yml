@@ -27,8 +27,59 @@ env:
     CI_IMAGE: ghcr.io/${{ github.repository_owner }}/sde-ci:latest
 
 jobs:
+    # Is the image still built from the framework this branch needs?
+    #
+    # The image bakes libgui-wayland (its patches, the pinned SerenityOS checkout
+    # and the framework build). When the port moves, an image from an older
+    # framework fails the SDE's patch application deep inside the build, with an
+    # error that says nothing about the image -- and every branch then looks
+    # broken. The image records what it baked (org.sde.framework-revision, set in
+    # ci/Containerfile), so say so up front instead: this job compares that label
+    # with libgui-wayland main, fails with "rebuild the CI image", and starts the
+    # rebuild itself.
+    image-freshness:
+        name: image matches libgui-wayland
+        if: ${{ vars.SDE_CI_IMAGE_READY == 'true' }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        permissions:
+            contents: read
+            actions: write
+        outputs:
+            baked: ${{ steps.compare.outputs.baked }}
+            current: ${{ steps.compare.outputs.current }}
+        steps:
+            - name: What the image was built from
+              id: compare
+              env:
+                  IMAGE: ${{ env.CI_IMAGE }}
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  set -euo pipefail
+                  docker pull "$IMAGE" >/dev/null
+                  baked="$(docker inspect --format '{{ index .Config.Labels "org.sde.framework-revision" }}' "$IMAGE")"
+                  current="$(git ls-remote https://github.com/${{ github.repository_owner }}/libgui-wayland.git refs/heads/main | cut -f1)"
+                  echo "baked=$baked" >> "$GITHUB_OUTPUT"
+                  echo "current=$current" >> "$GITHUB_OUTPUT"
+                  echo "image baked libgui-wayland: ${baked:-<no label: the image predates the label>}"
+                  echo "libgui-wayland main is now: ${current}"
+                  if [[ -z "$baked" || "$baked" == "main" || "$baked" != "$current" ]]; then
+                      {
+                          echo "::error::The CI image is stale: it was built from libgui-wayland '${baked:-unknown}', but main is '${current}'."
+                          echo "::error::Rebuild the CI image (Actions -> ci-image -> Run workflow). The SDE's patches are"
+                          echo "::error::applied on top of the framework in the image, so a stale one fails patch application"
+                          echo "::error::deep in the build; this check exists so that reads as what it is."
+                      } | tee -a "$GITHUB_STEP_SUMMARY"
+                      # Start the rebuild rather than leaving it to be noticed: the
+                      # workflow is idempotent and pushes :latest when it finishes.
+                      gh workflow run ci-image.yml --repo "${{ github.repository }}" || true
+                      exit 1
+                  fi
+                  echo "The image's framework matches libgui-wayland main." >> "$GITHUB_STEP_SUMMARY"
+
     smoke:
         name: smoke (fast tier)
+        needs: image-freshness
         # Skipped, not failed, until the image exists (see the header).
         if: ${{ vars.SDE_CI_IMAGE_READY == 'true' && github.event_name != 'schedule' }}
         runs-on: ubuntu-latest

@@ -74,5 +74,12 @@ RUN cd /opt/libgui-wayland \
     && scripts/build.sh \
     && scripts/build-full-sde.sh
 
+# The framework revision the image actually baked. CI compares this with
+# libgui-wayland main before it builds anything: when the port's patches move, an
+# image built from an older framework fails the SDE's patch application deep in
+# the build with an error that says nothing about the image. See
+# .github/workflows/ci.yml (the `image-freshness` job) and docs/26-ci.md.
 LABEL org.opencontainers.image.source="https://github.com/jmalcolm137/serenity-desktop-environment" \
-      org.opencontainers.image.description="SDE CI: wlroots, the pinned SerenityOS port and the built desktop"
+      org.opencontainers.image.description="SDE CI: wlroots, the pinned SerenityOS port and the built desktop" \
+      org.sde.framework-revision="${LIBGUI_WAYLAND_REVISION}" \
+      org.sde.revision="${SDE_REVISION}"
