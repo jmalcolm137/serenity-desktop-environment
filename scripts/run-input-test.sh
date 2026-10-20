@@ -8,9 +8,9 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
-SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
-BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
+. "$SDE_ROOT/scripts/lib/testlib.sh"
+sde_test_init input
+sde_test_export_roots
 WLROOTS_SRC="${WLROOTS_SRC:-$SDE_ROOT/third_party/wlroots}"
 COMP="$SDE_ROOT/build/WindowServer/WindowServer"
 TOOLS_BUILD="$SDE_ROOT/build/input-test"
@@ -59,28 +59,12 @@ cc -O2 -I "$TOOLS_BUILD" \
     $(pkg-config --cflags --libs wayland-client xkbcommon) \
     -o "$TOOLS_BUILD/virtual-input-test"
 
-RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-input.XXXXXX")"
 export SDE_STATE_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
-trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
 
 SOCK="sde-input-$$"
 
-env -u WAYLAND_DISPLAY -u DISPLAY \
-    WLR_BACKENDS=headless \
-    WLR_HEADLESS_OUTPUTS=1 \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
-    WINDOWSERVER_DUMP_THUMBNAIL="$RUNTIME" \
-    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-    LD_LIBRARY_PATH="$BUILD/lib" \
-    "$COMP" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
-COMP_PID=$!
-
-for _ in $(seq 1 50); do
-    [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SOCK" ]] && break
-    sleep 0.1
-done
-
+sde_test_compositor SDE_WM_PORTAL_PATH="$RUNTIME/wm" WINDOWSERVER_DUMP_THUMBNAIL="$RUNTIME"
 # A normal client to have a titlebar to click on. It must outlive the whole
 # sequence below: every later step assumes a window exists, and one that exits
 # early fails in confusing ways -- with no window left the window switcher's list is

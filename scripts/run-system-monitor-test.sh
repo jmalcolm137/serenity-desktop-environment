@@ -12,10 +12,9 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
-SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
-BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
-COMP="$SDE_ROOT/build/WindowServer/WindowServer"
+. "$SDE_ROOT/scripts/lib/testlib.sh"
+sde_test_init system-monitor
+sde_test_export_roots
 SYSTEM_MONITOR="$BUILD/bin/SystemMonitor"
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
@@ -27,26 +26,12 @@ if [[ ! -x "$SYSTEM_MONITOR" ]]; then
     exit 1
 fi
 
-RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-sysmon.XXXXXX")"
 export SDE_STATE_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
-trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
 
 SOCK="sde-sysmon-$$"
 
-env -u WAYLAND_DISPLAY -u DISPLAY \
-    WLR_BACKENDS=headless \
-    WLR_HEADLESS_OUTPUTS=1 \
-    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-    LD_LIBRARY_PATH="$BUILD/lib" \
-    "$COMP" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
-COMP_PID=$!
-
-for _ in $(seq 1 50); do
-    [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SOCK" ]] && break
-    sleep 0.1
-done
-
+sde_test_compositor
 fail=0
 check() {
     if grep -qF "$1" "$2"; then

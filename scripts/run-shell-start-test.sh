@@ -13,27 +13,22 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
-SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
-BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
-COMP="$SDE_ROOT/build/WindowServer/WindowServer"
+. "$SDE_ROOT/scripts/lib/testlib.sh"
+sde_test_init shell-start
+sde_test_export_roots
 SOCK="sde-shell-$$"
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 [[ -x "$BUILD/bin/Taskbar" ]] || { echo "SKIP: Taskbar not built"; exit 0; }
 
-RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-shell.XXXXXX")"
 export SDE_STATE_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
-COMP_PID=""
 stop_compositor() {
     [[ -n "$COMP_PID" ]] || return 0
     kill -TERM -- "-$COMP_PID" 2>/dev/null || true
     kill -TERM "$COMP_PID" 2>/dev/null || true
     wait "$COMP_PID" 2>/dev/null || true
-    COMP_PID=""
 }
-trap 'stop_compositor; for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
 
 # The real session startup: the shell (Taskbar + Desktop), the applets, and the
 # battery applet. (FileManager -d is the SerenityOS Desktop - icons over the
@@ -46,20 +41,7 @@ STARTUP="$BUILD/bin/Taskbar & $BUILD/bin/FileManager -d"
 [[ -n "$APPLET_CMDS" ]] && STARTUP="$STARTUP & $APPLET_CMDS"
 [[ -x "$BATTERY_APPLET" ]] && STARTUP="$STARTUP & $BATTERY_APPLET"
 
-setsid env -u WAYLAND_DISPLAY -u DISPLAY \
-    WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
-    SDE_WM_PORTAL_PATH="$RUNTIME/portal/wm" \
-    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-    LD_LIBRARY_PATH="$BUILD/lib" \
-    SDE_APP_BIN_DIR="$BUILD/bin" \
-    SDE_SESSION_BIN_DIR="$RUNTIME/sbin" \
-    "$COMP" -n "$SOCK" -s "$STARTUP" > "$RUNTIME/comp.log" 2>&1 &
-COMP_PID=$!
-for _ in $(seq 1 80); do
-    [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SOCK" ]] && break
-    sleep 0.1
-done
-sleep 4
+sde_test_compositor --startup "$STARTUP" SDE_WM_PORTAL_PATH="$RUNTIME/portal/wm" SDE_APP_BIN_DIR="$BUILD/bin" SDE_SESSION_BIN_DIR="$RUNTIME/sbin"
 # The Desktop (FileManager -d) can take a moment to come up, so wait for its
 # layer surface rather than racing a fixed sleep.
 for _ in $(seq 1 300); do

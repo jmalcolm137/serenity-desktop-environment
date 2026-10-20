@@ -13,10 +13,9 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
-SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
-BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
-COMP="$SDE_ROOT/build/WindowServer/WindowServer"
+. "$SDE_ROOT/scripts/lib/testlib.sh"
+sde_test_init wifi-applet
+sde_test_export_roots
 WIFI_APPLET="$SDE_ROOT/build/WifiApplet/WifiApplet"
 BATTERY_APPLET="$SDE_ROOT/build/BatteryApplet/BatteryApplet"
 MOCK="$SDE_ROOT/build/tools/mock-networkmanager"
@@ -33,12 +32,10 @@ cc -O2 -Wall "$SDE_ROOT/tools/mock-networkmanager.c" \
     $(pkg-config --cflags --libs dbus-1) \
     -o "$MOCK"
 
-RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-wifi.XXXXXX")"
 chmod 700 "$RUNTIME"
 
 BUS_PID=""
 MOCK_PID=""
-COMP_PID=""
 cleanup() {
     # The compositor spawns the applets (its -s shell); killing its process group
     # takes them down too, so nothing is orphaned.
@@ -48,7 +45,6 @@ cleanup() {
     for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"
     rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true
 }
-trap cleanup EXIT
 
 # A private bus, used as the applet's system bus.
 BUS_INFO="$(dbus-daemon --session --fork --print-address=1 --print-pid=1)"
@@ -64,21 +60,7 @@ SOCK="sde-wifi-$$"
 STARTUP="$WIFI_APPLET"
 [[ -x "$BATTERY_APPLET" ]] && STARTUP="$STARTUP & $BATTERY_APPLET"
 
-setsid env -u WAYLAND_DISPLAY -u DISPLAY \
-    WLR_BACKENDS=headless \
-    WLR_HEADLESS_OUTPUTS=1 \
-    SDE_OUTPUT_SCALE=1 \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
-    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-    LD_LIBRARY_PATH="$BUILD/lib" \
-    "$COMP" -n "$SOCK" -s "$STARTUP" > "$RUNTIME/comp.log" 2>&1 &
-COMP_PID=$!
-
-for _ in $(seq 1 50); do
-    [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SOCK" ]] && break
-    sleep 0.1
-done
-sleep 3
+sde_test_compositor --startup "$STARTUP" SDE_WM_PORTAL_PATH="$RUNTIME/wm"
 
 # --- drive the popup: connect to a secured network by typing a passphrase -----
 # Open the applet, expand the secured (unconnected) OpenGuest network, type a
@@ -110,7 +92,6 @@ fi
 
 kill -TERM -- "-$COMP_PID" 2>/dev/null || true
 wait "$COMP_PID" 2>/dev/null || true
-COMP_PID=""
 
 fail=0
 check() {

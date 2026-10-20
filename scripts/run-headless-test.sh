@@ -17,9 +17,9 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
-SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
-BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
+. "$SDE_ROOT/scripts/lib/testlib.sh"
+sde_test_init headless
+sde_test_export_roots
 WLROOTS_SRC="${WLROOTS_SRC:-$SDE_ROOT/third_party/wlroots}"
 COMP="${COMP:-$SDE_ROOT/build/WindowServer/WindowServer}"
 TOOLS_BUILD="$SDE_ROOT/build/headless-test"
@@ -65,31 +65,15 @@ cc -O2 -I "$TOOLS_BUILD" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/protocol-error-test"
 
-RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-headless.XXXXXX")"
 export SDE_STATE_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
-trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
 
 SOCK="sde-headless-$$"
 
 # No WAYLAND_DISPLAY/DISPLAY so wlr_backend_autocreate uses the requested backend.
 # SDE_WM_PORTAL_PATH keeps the WindowManagerServer socket out of /tmp/portal/wm,
 # so the test cannot disturb a live session.
-env -u WAYLAND_DISPLAY -u DISPLAY \
-    WLR_BACKENDS=headless \
-    WLR_HEADLESS_OUTPUTS=1 \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
-    SDE_HEARTBEAT_FILE="$RUNTIME/heartbeat" \
-    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-    LD_LIBRARY_PATH="$BUILD/lib" \
-    "$COMP" -n "$SOCK" -s "$BUILD/bin/TextEditor" > "$RUNTIME/comp.log" 2>&1 &
-COMP_PID=$!
-
-for _ in $(seq 1 50); do
-    [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SOCK" ]] && break
-    sleep 0.1
-done
-
+sde_test_compositor --startup "$BUILD/bin/TextEditor" SDE_WM_PORTAL_PATH="$RUNTIME/wm" SDE_HEARTBEAT_FILE="$RUNTIME/heartbeat"
 env WAYLAND_DISPLAY="$SOCK" timeout 4 "$TOOLS_BUILD/layer-shell-test" > "$RUNTIME/layer.log" 2>&1 || true
 env WAYLAND_DISPLAY="$SOCK" timeout 4 "$TOOLS_BUILD/native-app-test" > "$RUNTIME/native.log" 2>&1 || true
 # Give the LibWindowServer app a moment to map its toplevel.

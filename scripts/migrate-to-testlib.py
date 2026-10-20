@@ -48,10 +48,12 @@ START = re.compile(
     r'(?P<env>(?:[^\n]*\\\n)*?)'
     r'    "\$COMP" -n "\$SOCK"(?: -s (?P<startup>"[^"]*"|\$\{?\w+\}?))? > "\$RUNTIME/comp\.log" 2>&1 &\n'
     r'COMP_PID=\$!\n'
+    r'(?:\n)*'
     r'for _ in \$\(seq 1 \d+\); do\n'
     r'    \[\[ -e "\$\{XDG_RUNTIME_DIR:-/run/user/\$\(id -u\)\}/\$SOCK" \]\] && break\n'
     r'    sleep 0\.\d+\n'
     r'done\n'
+    r'(?:\n)*'
     r'(?:sleep [0-9.]+ ?&? ?\n)?')
 
 CLEANUP_FN = re.compile(r'\ncleanup\(\) \{\n(?P<body>(?:[^}\n]*\n)*?)\}\n')
@@ -93,6 +95,22 @@ def migrate(path):
         return None, 'no exact match: ' + ', '.join(missing)
     if not (roots.end() <= runtime.start() < start.start()):
         return None, 'blocks not in the expected order'
+
+    # The trap must only stop the compositor and remove the runtime directory: one
+    # that also removes an app directory or kills a client has cleanup the library
+    # does not own, and dropping it would leave that behind. (A cleanup() function
+    # is handled above by becoming sde_test_cleanup_extra.)
+    trap_match = re.search(r"^\s*(?:export )?trap '([^']*)' EXIT", src, re.M)
+    if trap_match:
+        body = trap_match.group(1)
+        # A trap that cleans up a directory of its own (an app dir it assembled, a
+        # private session dir) has cleanup the library does not own; dropping it
+        # would leave that behind, so such a script is left for a hand migration.
+        others = [name for name in ('APP_BIN', 'SESSION_DIR', 'PW_RUNTIME', 'BIN_DIR',
+                                    'RUN_DIR', 'WORK_DIR', 'FIXTURE')
+                  if name in body]
+        if others:
+            return None, 'trap also cleans ' + ' '.join(others)
 
     if re.search(r'XDG_RUNTIME_DIR="', start.group('env')):
         return None, 'moves XDG_RUNTIME_DIR (needs a hand migration)'
