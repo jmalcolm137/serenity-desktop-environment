@@ -33,8 +33,9 @@ private:
 };
 
 // The compact (tray) representation, modeled on KDE's battery applet: a battery
-// icon whose fill tracks the charge level, a charging bolt while plugged in, an
-// optional percentage label, a tooltip, and a click-to-open detail popup.
+// icon whose fill tracks the charge level, a charging bolt while plugged in, a
+// plug when there is no battery (a desktop), an optional percentage label, a
+// tooltip, and a click-to-open detail popup.
 class BatteryWidget final : public GUI::Widget {
     C_OBJECT(BatteryWidget);
 

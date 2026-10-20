@@ -40,6 +40,21 @@ static void paint_charging_bolt(Gfx::Painter& painter, Gfx::IntRect const& body,
     painter.draw_triangle({ x + 5, y + 8 }, { x + 8, y + 4 }, { x + 5, y + 4 }, color);
 }
 
+// A machine with no battery (a desktop) runs from mains, so the tray shows a
+// plug rather than an empty battery. The two prongs, the plug body and the
+// cable are drawn at the icon cell's scale, like the battery glyph.
+static void paint_plug(Gfx::Painter& painter, Gfx::Color color)
+{
+    painter.fill_rect({ 4, 1, 2, 4 }, color);
+    painter.fill_rect({ 10, 1, 2, 4 }, color);
+    painter.fill_rect({ 3, 5, 10, 5 }, color);
+
+    // The cable leaves the body downwards and bends to the right.
+    painter.fill_rect({ 7, 10, 2, 2 }, color);
+    painter.draw_line({ 8, 12 }, { 8, 14 }, color);
+    painter.draw_line({ 8, 14 }, { 11, 14 }, color);
+}
+
 BatteryDetailsWidget::BatteryDetailsWidget()
 {
     set_frame_style(Gfx::FrameStyle::Window);
@@ -215,8 +230,8 @@ void BatteryWidget::paint_event(GUI::PaintEvent& event)
         if (m_summary.state == Battery::State::Charging)
             paint_charging_bolt(painter, body, outline_color);
     } else {
-        // A diagonal slash marks a missing battery, as KDE's "battery-missing" does.
-        painter.draw_line(body.top_left().translated(2, 2), body.bottom_right().translated(-2, -2), outline_color);
+        // No battery at all means a desktop on mains power, so show a plug.
+        paint_plug(painter, outline_color);
     }
 
     if (m_show_percentage && m_summary.has_battery) {

@@ -51,7 +51,8 @@ needs no external assets:
 - Breeze-inspired charge colours: red at or below 5 %, orange at or below 20 %,
   green above (matching KDE's `batteryColor` thresholds);
 - a lightning bolt overlaid while charging;
-- a diagonal slash for "no battery";
+- a plug when there is no battery, for an AC-powered desktop (instead of an
+  empty battery);
 - an optional percentage label (default on; `[Applet]`-style toggle via the
   right-click context menu, or `--icon-only`).
 
