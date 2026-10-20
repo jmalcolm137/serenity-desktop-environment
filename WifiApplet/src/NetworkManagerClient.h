@@ -12,6 +12,7 @@
 #include <AK/Vector.h>
 #include <LibCore/EventReceiver.h>
 #include <LibCore/Notifier.h>
+#include <LibCore/Timer.h>
 
 #include <dbus/dbus.h>
 
@@ -71,6 +72,14 @@ public:
     // Re-read everything from NetworkManager and (if it changed) notify.
     void refresh();
 
+    // Rebuild the bus connection after NetworkManager (or the bus) went away, so
+    // a NetworkManager restart does not leave the applet showing stale networks
+    // for the rest of the session.
+    void reconnect();
+    void register_agent();
+    void schedule_reconnect();
+    bool connect_to_bus();
+
 private:
     NetworkManagerClient();
 
@@ -86,6 +95,7 @@ private:
     ByteString m_pending_secret_ssid;
     Function<void(Optional<ByteString>)> m_pending_secret_callback;
     RefPtr<Core::Notifier> m_notifier;
+    RefPtr<Core::Timer> m_reconnect_timer;
     bool m_needs_refresh { false };
     bool m_refresh_scheduled { false };
 

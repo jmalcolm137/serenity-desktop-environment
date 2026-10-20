@@ -322,6 +322,22 @@ DBusHandlerResult NetworkManagerClient::filter(DBusConnection*, DBusMessage* mes
     if (dbus_message_get_type(message) == DBUS_MESSAGE_TYPE_SIGNAL) {
         auto const* interface = dbus_message_get_interface(message);
         if (interface) {
+            if (strcmp(interface, "org.freedesktop.DBus") == 0) {
+                // NameOwnerChanged: did NetworkManager itself arrive or go away?
+                DBusMessageIter iter;
+                if (dbus_message_iter_init(message, &iter)) {
+                    char const* changed_name = nullptr;
+                    if (dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_STRING) {
+                        dbus_message_iter_get_basic(&iter, &changed_name);
+                    }
+                    if (changed_name && strcmp(changed_name, "org.freedesktop.NetworkManager") == 0) {
+                        dbgln("WifiApplet: NetworkManager restarted; re-registering and refreshing");
+                        client->register_agent();
+                        client->schedule_refresh();
+                    }
+                }
+                return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+            }
             bool interesting = strcmp(interface, "org.freedesktop.DBus.Properties") == 0
                 || strcmp(interface, device_iface) == 0
                 || strcmp(interface, wireless_iface) == 0
@@ -335,6 +351,33 @@ DBusHandlerResult NetworkManagerClient::filter(DBusConnection*, DBusMessage* mes
 
 NetworkManagerClient::NetworkManagerClient()
 {
+    if (!connect_to_bus()) {
+        m_state.available = false;
+        return;
+    }
+    m_state.available = true;
+    refresh();
+}
+
+void NetworkManagerClient::register_agent()
+{
+    // Register as a NetworkManager secret agent, so activating a saved WPA
+    // network connects (NetworkManager asks us for the passphrase). NetworkManager
+    // drops its clients when it restarts, which is why this runs again then.
+    if (!m_connection)
+        return;
+    auto* register_message = new_call(agent_manager_path, agent_manager_iface, "Register");
+    char const* identifier = "SDE Wi-Fi applet";
+    DBusMessageIter iter;
+    dbus_message_iter_init_append(register_message, &iter);
+    dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &identifier);
+    dbus_connection_send(m_connection, register_message, nullptr);
+    dbus_message_unref(register_message);
+    dbus_connection_flush(m_connection);
+}
+
+bool NetworkManagerClient::connect_to_bus()
+{
     DBusError error;
     dbus_error_init(&error);
     m_connection = dbus_bus_get(DBUS_BUS_SYSTEM, &error);
@@ -343,8 +386,7 @@ NetworkManagerClient::NetworkManagerClient()
             dbgln("WifiApplet: no system bus: {} ({})", error.name, error.message);
             dbus_error_free(&error);
         }
-        m_state.available = false;
-        return;
+        return false;
     }
 
     dbus_connection_set_exit_on_disconnect(m_connection, false);
@@ -356,17 +398,13 @@ NetworkManagerClient::NetworkManagerClient()
     dbus_bus_add_match(m_connection, "type='signal',sender='org.freedesktop.NetworkManager'", &error);
     if (dbus_error_is_set(&error))
         dbus_error_free(&error);
+    // NetworkManager forgets its clients when it restarts, and the applet's data
+    // goes stale: watch its name owner so that can be noticed and recovered from.
+    dbus_bus_add_match(m_connection, "type='signal',interface='org.freedesktop.DBus',member='NameOwnerChanged'", &error);
+    if (dbus_error_is_set(&error))
+        dbus_error_free(&error);
 
-    // Register as a NetworkManager secret agent, so activating a saved WPA
-    // network connects (NetworkManager asks us for the passphrase).
-    auto* register_message = new_call(agent_manager_path, agent_manager_iface, "Register");
-    char const* identifier = "SDE Wi-Fi applet";
-    DBusMessageIter iter;
-    dbus_message_iter_init_append(register_message, &iter);
-    dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &identifier);
-    dbus_connection_send(m_connection, register_message, nullptr);
-    dbus_message_unref(register_message);
-    dbus_connection_flush(m_connection);
+    register_agent();
 
     int fd = -1;
     if (dbus_connection_get_unix_fd(m_connection, &fd) && fd >= 0) {
@@ -374,14 +412,45 @@ NetworkManagerClient::NetworkManagerClient()
         m_notifier->on_activation = [this] { on_socket_readable(); };
     }
 
-    m_state.available = true;
-    refresh();
+    return true;
 }
+
+void NetworkManagerClient::reconnect()
+{
+    if (connect_to_bus()) {
+        dbgln("WifiApplet: reconnected to the system bus");
+        m_state.available = true;
+        refresh();
+        return;
+    }
+    schedule_reconnect();
+}
+
+void NetworkManagerClient::schedule_reconnect()
+{
+    // NetworkManager may be restarting: keep trying, a couple of seconds apart,
+    // rather than sitting on a dead socket.
+    if (!m_reconnect_timer)
+        m_reconnect_timer = Core::Timer::create_single_shot(2000, [this] { reconnect(); });
+    m_reconnect_timer->start();
+}
+
 
 void NetworkManagerClient::on_socket_readable()
 {
     if (!m_connection)
         return;
+    if (!dbus_connection_get_is_connected(m_connection)) {
+        // NetworkManager (or the bus) went away. Drop the dead connection and
+        // rebuild it, so the applet recovers instead of showing stale networks.
+        dbgln("WifiApplet: the system bus connection dropped; reconnecting");
+        m_notifier.clear();
+        dbus_connection_unref(m_connection);
+        m_connection = nullptr;
+        m_state.available = false;
+        schedule_reconnect();
+        return;
+    }
     dbus_connection_read_write(m_connection, 0);
     while (dbus_connection_get_dispatch_status(m_connection) == DBUS_DISPATCH_DATA_REMAINS)
         dbus_connection_dispatch(m_connection);
