@@ -45,14 +45,25 @@ String ssid_to_string(ByteString const& ssid)
     return MUST(String::formatted("<{} bytes>", ssid.length()));
 }
 
+// How long one synchronous NetworkManager call may wait. NetworkManager answers in
+// milliseconds when it is healthy; this is the ceiling for a stuck one, and every
+// caller here runs on the applet's only thread, so the ceiling is a UI freeze.
+static constexpr int networkmanager_call_timeout_ms = 2000;
+
 DBusMessage* send_and_block(DBusConnection* connection, DBusMessage* message)
 {
     if (!connection || !message)
         return nullptr;
+    // A dead connection would spend the whole timeout before failing; the
+    // reconnect path notices it separately, so do not block on it here.
+    if (!dbus_connection_get_is_connected(connection)) {
+        dbus_message_unref(message);
+        return nullptr;
+    }
 
     DBusError error;
     dbus_error_init(&error);
-    auto* reply = dbus_connection_send_with_reply_and_block(connection, message, 5000, &error);
+    auto* reply = dbus_connection_send_with_reply_and_block(connection, message, networkmanager_call_timeout_ms, &error);
     dbus_message_unref(message);
 
     if (!reply) {
@@ -352,7 +363,10 @@ DBusHandlerResult NetworkManagerClient::filter(DBusConnection*, DBusMessage* mes
 NetworkManagerClient::NetworkManagerClient()
 {
     if (!connect_to_bus()) {
+        // The system bus may come up after the session does; keep trying rather
+        // than staying unavailable until the desktop is restarted.
         m_state.available = false;
+        schedule_reconnect();
         return;
     }
     m_state.available = true;
