@@ -15,7 +15,7 @@ provides=('serenity-desktop-environment')
 conflicts=('serenity-desktop-environment')
 depends=(
     'serenity-lagom-git'
-    wayland libdrm libinput libxkbcommon pixman libseat libxcb xcb-util-wm
+    wayland libdrm libinput libxkbcommon pixman seatd libxcb xcb-util-wm
     libdisplay-info pipewire libpipewire dbus glib2 fontconfig freetype2
     libunwind libelf libei xorg-xwayland
 )
