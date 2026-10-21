@@ -421,6 +421,13 @@ void WifiPopup::activate(WifiNetwork const& network)
 
 void WifiPopup::prompt_for_password(ByteString const& ssid, Function<void(Optional<ByteString>)> callback)
 {
+    // A prompt that is replaced still owes its caller an answer: NetworkManager
+    // waits for one.
+    if (m_password_callback.has_value()) {
+        auto previous = move(*m_password_callback);
+        m_password_callback = {};
+        previous({});
+    }
     m_expanded_ssid = ssid;
     m_password_callback = move(callback);
     schedule_rebuild();

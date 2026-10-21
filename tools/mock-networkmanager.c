@@ -6,142 +6,171 @@
 
 // mock-networkmanager — a minimal stand-in for NetworkManager's D-Bus API, so
 // the Wi-Fi applet can be tested deterministically (a private bus, fixed
-// networks) without a real NetworkManager or radio. It serves only what the
-// applet reads: org.freedesktop.DBus.Properties.GetAll on the manager, the Wi-Fi
-// device and its access points, Settings.ListConnections, and the AgentManager
-// Register call. It owns the org.freedesktop.NetworkManager name on whatever bus
-// DBUS_SYSTEM_BUS_ADDRESS points at.
+// networks) without a real NetworkManager or radio. It serves what the applet
+// reads (Properties.GetAll on the manager, the Wi-Fi device and its access
+// points, Settings.ListConnections and GetSettings) and keeps just enough state
+// for the applet's actions to have visible effects:
 //
-// Usage: mock-networkmanager
+//   * Properties.Set WirelessEnabled turns the radio off (no access points) or on;
+//   * Device.Disconnect drops the active access point;
+//   * Device.Wireless.RequestScan finds a third network, "ScanFound";
+//   * ActivateConnection on the saved MockNet profile asks the registered secret
+//     agent for the passphrase (GetSecrets), as NetworkManager does, and logs the
+//     answer;
+//
+// and emits PropertiesChanged after each change. It owns the
+// org.freedesktop.NetworkManager name on whatever bus DBUS_SYSTEM_BUS_ADDRESS
+// points at, and logs every non-property call to stderr for the tests.
+//
+// Fault injection, for the applet's robustness tests:
+//   --delay-ms N    answer every call N ms late (a slow NetworkManager)
+//   --hang-ap       never answer GetAll on the second access point (a stuck one)
+//   --chatter-ms N  emit a PropertiesChanged signal every N ms (a busy one)
+//
+// Usage: mock-networkmanager [--delay-ms N] [--hang-ap] [--chatter-ms N]
 
 #include <dbus/dbus.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <unistd.h>
 
 #define NM_NAME "org.freedesktop.NetworkManager"
 #define MGR_PATH "/org/freedesktop/NetworkManager"
 #define DEV_PATH "/org/freedesktop/NetworkManager/Devices/1"
 #define AP1_PATH "/org/freedesktop/NetworkManager/AccessPoints/1"
 #define AP2_PATH "/org/freedesktop/NetworkManager/AccessPoints/2"
+#define AP3_PATH "/org/freedesktop/NetworkManager/AccessPoints/3"
 #define SETTINGS_PATH "/org/freedesktop/NetworkManager/Settings"
+#define SAVED_PATH "/org/freedesktop/NetworkManager/Settings/1"
 #define AGENT_MGR_PATH "/org/freedesktop/NetworkManager/AgentManager"
+#define AGENT_PATH "/org/freedesktop/NetworkManager/SecretAgent"
 
 #define IFACE_NM "org.freedesktop.NetworkManager"
 #define IFACE_DEV "org.freedesktop.NetworkManager.Device"
 #define IFACE_WIFI "org.freedesktop.NetworkManager.Device.Wireless"
 #define IFACE_AP "org.freedesktop.NetworkManager.AccessPoint"
 #define IFACE_SETTINGS "org.freedesktop.NetworkManager.Settings"
+#define IFACE_CONNECTION "org.freedesktop.NetworkManager.Settings.Connection"
 #define IFACE_AGENT_MGR "org.freedesktop.NetworkManager.AgentManager"
+#define IFACE_AGENT "org.freedesktop.NetworkManager.SecretAgent"
 #define IFACE_PROPS "org.freedesktop.DBus.Properties"
 
 static DBusConnection* s_connection;
 
-static int append_bool(DBusMessageIter* array, char const* key, int value)
+static int s_delay_ms;
+static int s_hang_ap;
+static int s_chatter_ms;
+
+static int s_wireless_enabled = 1;
+static int s_scanned;              // RequestScan found AP3
+static char const* s_active_ap = AP1_PATH; // NULL: not connected
+static char s_agent[256];          // the secret agent's unique name
+
+static void log_line(char const* format, char const* a, char const* b)
 {
-    DBusMessageIter entry;
-    if (!dbus_message_iter_open_container(array, DBUS_TYPE_DICT_ENTRY, NULL, &entry))
-        return 0;
-    dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key);
-    DBusMessageIter variant;
-    dbus_message_iter_open_container(&entry, DBUS_TYPE_VARIANT, "b", &variant);
+    fprintf(stderr, format, a, b);
+    fputc('\n', stderr);
+    fflush(stderr);
+}
+
+static unsigned device_state(void)
+{
+    if (!s_wireless_enabled)
+        return 20; // UNAVAILABLE
+    return s_active_ap ? 100 : 30; // ACTIVATED : DISCONNECTED
+}
+
+static void open_entry(DBusMessageIter* array, char const* key, char const* signature, DBusMessageIter* entry, DBusMessageIter* variant)
+{
+    dbus_message_iter_open_container(array, DBUS_TYPE_DICT_ENTRY, NULL, entry);
+    dbus_message_iter_append_basic(entry, DBUS_TYPE_STRING, &key);
+    dbus_message_iter_open_container(entry, DBUS_TYPE_VARIANT, signature, variant);
+}
+
+static void close_entry(DBusMessageIter* array, DBusMessageIter* entry, DBusMessageIter* variant)
+{
+    dbus_message_iter_close_container(entry, variant);
+    dbus_message_iter_close_container(array, entry);
+}
+
+static void append_bool(DBusMessageIter* array, char const* key, int value)
+{
+    DBusMessageIter entry, variant;
+    open_entry(array, key, "b", &entry, &variant);
     dbus_bool_t v = value ? TRUE : FALSE;
     dbus_message_iter_append_basic(&variant, DBUS_TYPE_BOOLEAN, &v);
-    dbus_message_iter_close_container(&entry, &variant);
-    dbus_message_iter_close_container(array, &entry);
-    return 1;
+    close_entry(array, &entry, &variant);
 }
 
-static int append_u32(DBusMessageIter* array, char const* key, unsigned value)
+static void append_u32(DBusMessageIter* array, char const* key, unsigned value)
 {
-    DBusMessageIter entry;
-    if (!dbus_message_iter_open_container(array, DBUS_TYPE_DICT_ENTRY, NULL, &entry))
-        return 0;
-    dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key);
-    DBusMessageIter variant;
-    dbus_message_iter_open_container(&entry, DBUS_TYPE_VARIANT, "u", &variant);
+    DBusMessageIter entry, variant;
+    open_entry(array, key, "u", &entry, &variant);
     dbus_uint32_t v = value;
     dbus_message_iter_append_basic(&variant, DBUS_TYPE_UINT32, &v);
-    dbus_message_iter_close_container(&entry, &variant);
-    dbus_message_iter_close_container(array, &entry);
-    return 1;
+    close_entry(array, &entry, &variant);
 }
 
-static int append_byte(DBusMessageIter* array, char const* key, unsigned value)
+static void append_byte(DBusMessageIter* array, char const* key, unsigned value)
 {
-    DBusMessageIter entry;
-    if (!dbus_message_iter_open_container(array, DBUS_TYPE_DICT_ENTRY, NULL, &entry))
-        return 0;
-    dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key);
-    DBusMessageIter variant;
-    dbus_message_iter_open_container(&entry, DBUS_TYPE_VARIANT, "y", &variant);
+    DBusMessageIter entry, variant;
+    open_entry(array, key, "y", &entry, &variant);
     unsigned char v = (unsigned char)value;
     dbus_message_iter_append_basic(&variant, DBUS_TYPE_BYTE, &v);
-    dbus_message_iter_close_container(&entry, &variant);
-    dbus_message_iter_close_container(array, &entry);
-    return 1;
+    close_entry(array, &entry, &variant);
 }
 
-static int append_string(DBusMessageIter* array, char const* key, char const* value)
+static void append_string(DBusMessageIter* array, char const* key, char const* value)
 {
-    DBusMessageIter entry;
-    if (!dbus_message_iter_open_container(array, DBUS_TYPE_DICT_ENTRY, NULL, &entry))
-        return 0;
-    dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key);
-    DBusMessageIter variant;
-    dbus_message_iter_open_container(&entry, DBUS_TYPE_VARIANT, "s", &variant);
+    DBusMessageIter entry, variant;
+    open_entry(array, key, "s", &entry, &variant);
     dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &value);
-    dbus_message_iter_close_container(&entry, &variant);
-    dbus_message_iter_close_container(array, &entry);
-    return 1;
+    close_entry(array, &entry, &variant);
 }
 
-static int append_object_path(DBusMessageIter* array, char const* key, char const* value)
+static void append_object_path(DBusMessageIter* array, char const* key, char const* value)
 {
-    DBusMessageIter entry;
-    if (!dbus_message_iter_open_container(array, DBUS_TYPE_DICT_ENTRY, NULL, &entry))
-        return 0;
-    dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key);
-    DBusMessageIter variant;
-    dbus_message_iter_open_container(&entry, DBUS_TYPE_VARIANT, "o", &variant);
+    DBusMessageIter entry, variant;
+    open_entry(array, key, "o", &entry, &variant);
     dbus_message_iter_append_basic(&variant, DBUS_TYPE_OBJECT_PATH, &value);
-    dbus_message_iter_close_container(&entry, &variant);
-    dbus_message_iter_close_container(array, &entry);
-    return 1;
+    close_entry(array, &entry, &variant);
 }
 
-static int append_object_paths(DBusMessageIter* array, char const* key, char const* const* values, int count)
+static void append_object_paths(DBusMessageIter* array, char const* key, char const* const* values, int count)
 {
     DBusMessageIter entry, variant, list;
-    if (!dbus_message_iter_open_container(array, DBUS_TYPE_DICT_ENTRY, NULL, &entry))
-        return 0;
-    dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key);
-    dbus_message_iter_open_container(&entry, DBUS_TYPE_VARIANT, "ao", &variant);
+    open_entry(array, key, "ao", &entry, &variant);
     dbus_message_iter_open_container(&variant, DBUS_TYPE_ARRAY, "o", &list);
     for (int i = 0; i < count; ++i)
         dbus_message_iter_append_basic(&list, DBUS_TYPE_OBJECT_PATH, &values[i]);
     dbus_message_iter_close_container(&variant, &list);
-    dbus_message_iter_close_container(&entry, &variant);
-    dbus_message_iter_close_container(array, &entry);
-    return 1;
+    close_entry(array, &entry, &variant);
 }
 
-static int append_byte_array(DBusMessageIter* array, char const* key, char const* value)
+static void append_byte_array(DBusMessageIter* array, char const* key, char const* value)
 {
     DBusMessageIter entry, variant, bytes;
-    if (!dbus_message_iter_open_container(array, DBUS_TYPE_DICT_ENTRY, NULL, &entry))
-        return 0;
-    dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key);
-    dbus_message_iter_open_container(&entry, DBUS_TYPE_VARIANT, "ay", &variant);
+    open_entry(array, key, "ay", &entry, &variant);
     dbus_message_iter_open_container(&variant, DBUS_TYPE_ARRAY, "y", &bytes);
     for (char const* p = value; *p; ++p) {
         unsigned char byte = (unsigned char)*p;
         dbus_message_iter_append_basic(&bytes, DBUS_TYPE_BYTE, &byte);
     }
     dbus_message_iter_close_container(&variant, &bytes);
-    dbus_message_iter_close_container(&entry, &variant);
-    dbus_message_iter_close_container(array, &entry);
-    return 1;
+    close_entry(array, &entry, &variant);
+}
+
+static void append_access_point(DBusMessageIter* array, char const* ssid, unsigned strength, unsigned frequency)
+{
+    append_byte_array(array, "Ssid", ssid);
+    append_byte(array, "Strength", strength);
+    append_u32(array, "Frequency", frequency);
+    append_u32(array, "Flags", 1); // privacy
+    append_u32(array, "WpaFlags", 0);
+    append_u32(array, "RsnFlags", 0x200);
+    append_u32(array, "Mode", 2);
 }
 
 static DBusMessage* build_get_all_reply(DBusMessage* call, char const* path, char const* interface)
@@ -155,43 +184,193 @@ static DBusMessage* build_get_all_reply(DBusMessage* call, char const* path, cha
         char const* devices[] = { DEV_PATH };
         char const* active[] = { "/org/freedesktop/NetworkManager/ActiveConnection/1" };
         append_bool(&array, "NetworkingEnabled", 1);
-        append_bool(&array, "WirelessEnabled", 1);
+        append_bool(&array, "WirelessEnabled", s_wireless_enabled);
         append_bool(&array, "WirelessHardwareEnabled", 1);
-        append_u32(&array, "Connectivity", 4);
-        append_u32(&array, "State", 70);
+        append_u32(&array, "Connectivity", s_active_ap ? 4 : 1);
+        append_u32(&array, "State", s_active_ap ? 70 : 20);
         append_object_paths(&array, "Devices", devices, 1);
-        append_object_paths(&array, "ActiveConnections", active, 1);
+        append_object_paths(&array, "ActiveConnections", active, s_active_ap ? 1 : 0);
     } else if (!strcmp(path, DEV_PATH) && !strcmp(interface, IFACE_DEV)) {
         append_u32(&array, "DeviceType", 2); // NM_DEVICE_TYPE_WIFI
-        append_u32(&array, "State", 100);    // ACTIVATED
+        append_u32(&array, "State", device_state());
         append_string(&array, "Interface", "wlan0");
-        append_object_path(&array, "ActiveConnection", "/org/freedesktop/NetworkManager/ActiveConnection/1");
+        append_object_path(&array, "ActiveConnection", s_active_ap ? "/org/freedesktop/NetworkManager/ActiveConnection/1" : "/");
     } else if (!strcmp(path, DEV_PATH) && !strcmp(interface, IFACE_WIFI)) {
-        char const* access_points[] = { AP1_PATH, AP2_PATH };
-        append_object_paths(&array, "AccessPoints", access_points, 2);
-        append_object_path(&array, "ActiveAccessPoint", AP1_PATH);
+        char const* access_points[] = { AP1_PATH, AP2_PATH, AP3_PATH };
+        int count = !s_wireless_enabled ? 0 : (s_scanned ? 3 : 2);
+        append_object_paths(&array, "AccessPoints", access_points, count);
+        append_object_path(&array, "ActiveAccessPoint", s_active_ap ? s_active_ap : "/");
         append_string(&array, "HwAddress", "00:11:22:33:44:55");
         append_u32(&array, "Mode", 2);
     } else if (!strcmp(path, AP1_PATH) && !strcmp(interface, IFACE_AP)) {
-        append_byte_array(&array, "Ssid", "MockNet");
-        append_byte(&array, "Strength", 82);
-        append_u32(&array, "Frequency", 2412);
-        append_u32(&array, "Flags", 1); // privacy
-        append_u32(&array, "WpaFlags", 0);
-        append_u32(&array, "RsnFlags", 0x200);
-        append_u32(&array, "Mode", 2);
+        append_access_point(&array, "MockNet", 82, 2412);
     } else if (!strcmp(path, AP2_PATH) && !strcmp(interface, IFACE_AP)) {
-        append_byte_array(&array, "Ssid", "OpenGuest");
-        append_byte(&array, "Strength", 45);
-        append_u32(&array, "Frequency", 2437);
-        append_u32(&array, "Flags", 1); // privacy: secured, not connected
-        append_u32(&array, "WpaFlags", 0);
-        append_u32(&array, "RsnFlags", 0x200);
-        append_u32(&array, "Mode", 2);
+        append_access_point(&array, "OpenGuest", 45, 2437);
+    } else if (!strcmp(path, AP3_PATH) && !strcmp(interface, IFACE_AP)) {
+        append_access_point(&array, "ScanFound", 60, 5180);
     }
 
     dbus_message_iter_close_container(&iter, &array);
     return reply;
+}
+
+// The saved MockNet profile, as GetSettings returns it (secrets left out).
+static DBusMessage* build_settings_reply(DBusMessage* call)
+{
+    DBusMessage* reply = dbus_message_new_method_return(call);
+    DBusMessageIter iter, settings, section, properties;
+    dbus_message_iter_init_append(reply, &iter);
+    dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY, "{sa{sv}}", &settings);
+
+    char const* connection = "connection";
+    dbus_message_iter_open_container(&settings, DBUS_TYPE_DICT_ENTRY, NULL, &section);
+    dbus_message_iter_append_basic(&section, DBUS_TYPE_STRING, &connection);
+    dbus_message_iter_open_container(&section, DBUS_TYPE_ARRAY, "{sv}", &properties);
+    append_string(&properties, "id", "MockNet");
+    append_string(&properties, "type", "802-11-wireless");
+    dbus_message_iter_close_container(&section, &properties);
+    dbus_message_iter_close_container(&settings, &section);
+
+    char const* wireless = "802-11-wireless";
+    dbus_message_iter_open_container(&settings, DBUS_TYPE_DICT_ENTRY, NULL, &section);
+    dbus_message_iter_append_basic(&section, DBUS_TYPE_STRING, &wireless);
+    dbus_message_iter_open_container(&section, DBUS_TYPE_ARRAY, "{sv}", &properties);
+    append_byte_array(&properties, "ssid", "MockNet");
+    append_string(&properties, "mode", "infrastructure");
+    dbus_message_iter_close_container(&section, &properties);
+    dbus_message_iter_close_container(&settings, &section);
+
+    dbus_message_iter_close_container(&iter, &settings);
+    return reply;
+}
+
+// PropertiesChanged on `path`, which is all the applet needs to know to refresh.
+static void emit_changed(char const* path, char const* interface)
+{
+    DBusMessage* signal = dbus_message_new_signal(path, IFACE_PROPS, "PropertiesChanged");
+    DBusMessageIter iter, changed, invalidated;
+    dbus_message_iter_init_append(signal, &iter);
+    dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &interface);
+    dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY, "{sv}", &changed);
+    append_u32(&changed, "State", device_state());
+    dbus_message_iter_close_container(&iter, &changed);
+    dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY, "s", &invalidated);
+    dbus_message_iter_close_container(&iter, &invalidated);
+    dbus_connection_send(s_connection, signal, NULL);
+    dbus_message_unref(signal);
+}
+
+static void state_changed(void)
+{
+    emit_changed(MGR_PATH, IFACE_NM);
+    emit_changed(DEV_PATH, IFACE_DEV);
+}
+
+static void on_secrets_reply(DBusPendingCall* pending, void* user_data)
+{
+    (void)user_data;
+    DBusMessage* reply = dbus_pending_call_steal_reply(pending);
+    dbus_pending_call_unref(pending);
+    if (!reply)
+        return;
+    if (dbus_message_get_type(reply) == DBUS_MESSAGE_TYPE_ERROR) {
+        log_line("mock-networkmanager: secrets error %s%s", dbus_message_get_error_name(reply), "");
+        dbus_message_unref(reply);
+        return;
+    }
+
+    // a{sa{sv}}: find 802-11-wireless-security.psk.
+    char const* psk = NULL;
+    DBusMessageIter iter, settings;
+    if (dbus_message_iter_init(reply, &iter) && dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_ARRAY) {
+        dbus_message_iter_recurse(&iter, &settings);
+        while (dbus_message_iter_get_arg_type(&settings) == DBUS_TYPE_DICT_ENTRY) {
+            DBusMessageIter section, properties;
+            char const* name = NULL;
+            dbus_message_iter_recurse(&settings, &section);
+            dbus_message_iter_get_basic(&section, &name);
+            dbus_message_iter_next(&section);
+            dbus_message_iter_recurse(&section, &properties);
+            while (name && !strcmp(name, "802-11-wireless-security") && dbus_message_iter_get_arg_type(&properties) == DBUS_TYPE_DICT_ENTRY) {
+                DBusMessageIter property, variant;
+                char const* key = NULL;
+                dbus_message_iter_recurse(&properties, &property);
+                dbus_message_iter_get_basic(&property, &key);
+                dbus_message_iter_next(&property);
+                dbus_message_iter_recurse(&property, &variant);
+                if (key && !strcmp(key, "psk") && dbus_message_iter_get_arg_type(&variant) == DBUS_TYPE_STRING)
+                    dbus_message_iter_get_basic(&variant, &psk);
+                dbus_message_iter_next(&properties);
+            }
+            dbus_message_iter_next(&settings);
+        }
+    }
+    log_line("mock-networkmanager: secrets psk=%s%s", psk ? psk : "", "");
+    if (psk && *psk) {
+        s_active_ap = AP1_PATH;
+        state_changed();
+    }
+    dbus_message_unref(reply);
+}
+
+// Ask the registered agent for MockNet's passphrase, as NetworkManager does when a
+// saved profile without stored secrets is activated.
+static void request_secrets(void)
+{
+    if (!s_agent[0]) {
+        log_line("mock-networkmanager: no secret agent registered%s%s", "", "");
+        return;
+    }
+    DBusMessage* call = dbus_message_new_method_call(s_agent, AGENT_PATH, IFACE_AGENT, "GetSecrets");
+    DBusMessageIter iter, settings, section, properties, hints;
+    dbus_message_iter_init_append(call, &iter);
+    dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY, "{sa{sv}}", &settings);
+    char const* wireless = "802-11-wireless";
+    dbus_message_iter_open_container(&settings, DBUS_TYPE_DICT_ENTRY, NULL, &section);
+    dbus_message_iter_append_basic(&section, DBUS_TYPE_STRING, &wireless);
+    dbus_message_iter_open_container(&section, DBUS_TYPE_ARRAY, "{sv}", &properties);
+    append_byte_array(&properties, "ssid", "MockNet");
+    dbus_message_iter_close_container(&section, &properties);
+    dbus_message_iter_close_container(&settings, &section);
+    dbus_message_iter_close_container(&iter, &settings);
+    char const* connection_path = SAVED_PATH;
+    char const* setting_name = "802-11-wireless-security";
+    dbus_uint32_t flags = 0x1; // ALLOW_INTERACTION
+    dbus_message_iter_append_basic(&iter, DBUS_TYPE_OBJECT_PATH, &connection_path);
+    dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &setting_name);
+    dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY, "s", &hints);
+    dbus_message_iter_close_container(&iter, &hints);
+    dbus_message_iter_append_basic(&iter, DBUS_TYPE_UINT32, &flags);
+
+    DBusPendingCall* pending = NULL;
+    if (dbus_connection_send_with_reply(s_connection, call, &pending, 30000) && pending)
+        dbus_pending_call_set_notify(pending, on_secrets_reply, NULL, NULL);
+    dbus_message_unref(call);
+}
+
+static DBusMessage* handle_set(DBusMessage* message)
+{
+    DBusMessageIter iter, variant;
+    char const* interface = NULL;
+    char const* property = NULL;
+    if (!dbus_message_iter_init(message, &iter))
+        return dbus_message_new_error(message, DBUS_ERROR_INVALID_ARGS, "no arguments");
+    dbus_message_iter_get_basic(&iter, &interface);
+    dbus_message_iter_next(&iter);
+    dbus_message_iter_get_basic(&iter, &property);
+    dbus_message_iter_next(&iter);
+    if (!property || strcmp(property, "WirelessEnabled") != 0 || dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_VARIANT)
+        return dbus_message_new_error(message, DBUS_ERROR_INVALID_ARGS, "unsupported property");
+    dbus_message_iter_recurse(&iter, &variant);
+    dbus_bool_t value = 0;
+    if (dbus_message_iter_get_arg_type(&variant) == DBUS_TYPE_BOOLEAN)
+        dbus_message_iter_get_basic(&variant, &value);
+    log_line("mock-networkmanager: Set WirelessEnabled=%s%s", value ? "true" : "false", "");
+    s_wireless_enabled = value ? 1 : 0;
+    s_active_ap = NULL;
+    if (!s_wireless_enabled)
+        s_scanned = 0;
+    return dbus_message_new_method_return(message);
 }
 
 static DBusHandlerResult handle_method_call(DBusMessage* message)
@@ -202,30 +381,40 @@ static DBusHandlerResult handle_method_call(DBusMessage* message)
     if (!path || !interface || !member)
         return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 
-    // Log the interesting (non-property) calls so the test can assert that a
-    // passphrase reached AddAndActivateConnection.
-    if (strcmp(interface, IFACE_PROPS) != 0) {
-        fprintf(stderr, "mock-networkmanager: %s.%s\n", interface, member);
-        fflush(stderr);
-    }
+    // Log the interesting (non-property) calls so the tests can assert that an
+    // action reached NetworkManager.
+    if (strcmp(interface, IFACE_PROPS) != 0)
+        log_line("mock-networkmanager: %s.%s", interface, member);
 
     DBusMessage* reply = NULL;
+    int changed = 0;
 
     if (!strcmp(interface, IFACE_PROPS) && !strcmp(member, "GetAll")) {
         DBusMessageIter iter;
         char const* requested_interface = NULL;
         if (dbus_message_iter_init(message, &iter))
             dbus_message_iter_get_basic(&iter, &requested_interface);
+        // A stuck access point: the caller has to give up on its own.
+        if (s_hang_ap && !strcmp(path, AP2_PATH))
+            return DBUS_HANDLER_RESULT_HANDLED;
         if (requested_interface)
             reply = build_get_all_reply(message, path, requested_interface);
     } else if (!strcmp(interface, IFACE_PROPS) && !strcmp(member, "Set")) {
-        reply = dbus_message_new_method_return(message);
+        reply = handle_set(message);
+        changed = dbus_message_get_type(reply) != DBUS_MESSAGE_TYPE_ERROR;
     } else if (!strcmp(interface, IFACE_SETTINGS) && !strcmp(member, "ListConnections")) {
         reply = dbus_message_new_method_return(message);
         DBusMessageIter iter, array;
+        char const* saved = SAVED_PATH;
         dbus_message_iter_init_append(reply, &iter);
         dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY, "o", &array);
+        dbus_message_iter_append_basic(&array, DBUS_TYPE_OBJECT_PATH, &saved);
         dbus_message_iter_close_container(&iter, &array);
+    } else if (!strcmp(interface, IFACE_CONNECTION) && !strcmp(member, "GetSettings")) {
+        if (!strcmp(path, SAVED_PATH))
+            reply = build_settings_reply(message);
+        else
+            reply = dbus_message_new_error(message, DBUS_ERROR_UNKNOWN_OBJECT, "no such connection");
     } else if (!strcmp(interface, IFACE_NM) && !strcmp(member, "GetDevices")) {
         reply = dbus_message_new_method_return(message);
         DBusMessageIter iter, array;
@@ -235,25 +424,55 @@ static DBusHandlerResult handle_method_call(DBusMessage* message)
         dbus_message_iter_append_basic(&array, DBUS_TYPE_OBJECT_PATH, &device);
         dbus_message_iter_close_container(&iter, &array);
     } else if (!strcmp(interface, IFACE_AGENT_MGR) && !strcmp(member, "Register")) {
+        snprintf(s_agent, sizeof(s_agent), "%s", dbus_message_get_sender(message));
         reply = dbus_message_new_method_return(message);
-    } else if (!strcmp(member, "ActivateConnection") || !strcmp(member, "DeactivateConnection") || !strcmp(member, "Disconnect") || !strcmp(member, "RequestScan") || !strcmp(member, "Enable")) {
+    } else if (!strcmp(interface, IFACE_AGENT_MGR) && !strcmp(member, "Unregister")) {
+        s_agent[0] = '\0';
+        reply = dbus_message_new_method_return(message);
+    } else if (!strcmp(member, "Disconnect")) {
+        s_active_ap = NULL;
+        changed = 1;
+        reply = dbus_message_new_method_return(message);
+    } else if (!strcmp(member, "RequestScan")) {
+        if (s_wireless_enabled) {
+            s_scanned = 1;
+            changed = 1;
+            reply = dbus_message_new_method_return(message);
+        } else {
+            reply = dbus_message_new_error(message, "org.freedesktop.NetworkManager.Device.NotAllowed", "Wi-Fi is off");
+        }
+    } else if (!strcmp(member, "ActivateConnection")) {
+        DBusMessageIter iter;
+        char const* connection = NULL;
+        if (dbus_message_iter_init(message, &iter) && dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_OBJECT_PATH)
+            dbus_message_iter_get_basic(&iter, &connection);
+        reply = dbus_message_new_method_return(message);
+        char const* active = "/org/freedesktop/NetworkManager/ActiveConnection/1";
+        dbus_message_append_args(reply, DBUS_TYPE_OBJECT_PATH, &active, DBUS_TYPE_INVALID);
+        if (connection && !strcmp(connection, SAVED_PATH))
+            request_secrets();
+    } else if (!strcmp(member, "DeactivateConnection") || !strcmp(member, "Enable")) {
         reply = dbus_message_new_method_return(message);
     } else if (!strcmp(member, "AddAndActivateConnection")) {
         reply = dbus_message_new_method_return(message);
         DBusMessageIter iter;
         char const* active = "/org/freedesktop/NetworkManager/ActiveConnection/2";
-        char const* connection = "/org/freedesktop/NetworkManager/Settings/1";
+        char const* connection = "/org/freedesktop/NetworkManager/Settings/2";
         dbus_message_iter_init_append(reply, &iter);
         dbus_message_iter_append_basic(&iter, DBUS_TYPE_OBJECT_PATH, &active);
         dbus_message_iter_append_basic(&iter, DBUS_TYPE_OBJECT_PATH, &connection);
     } else {
-        return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+        reply = dbus_message_new_error(message, DBUS_ERROR_UNKNOWN_METHOD, member);
     }
 
+    if (s_delay_ms > 0)
+        usleep((useconds_t)s_delay_ms * 1000);
     if (reply) {
         dbus_connection_send(s_connection, reply, NULL);
         dbus_message_unref(reply);
     }
+    if (changed)
+        state_changed();
     return DBUS_HANDLER_RESULT_HANDLED;
 }
 
@@ -266,8 +485,28 @@ static DBusHandlerResult filter(DBusConnection* connection, DBusMessage* message
     return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 }
 
-int main(void)
+static long long now_ms(void)
 {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+int main(int argc, char** argv)
+{
+    for (int i = 1; i < argc; ++i) {
+        if (!strcmp(argv[i], "--delay-ms") && i + 1 < argc)
+            s_delay_ms = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--hang-ap"))
+            s_hang_ap = 1;
+        else if (!strcmp(argv[i], "--chatter-ms") && i + 1 < argc)
+            s_chatter_ms = atoi(argv[++i]);
+        else {
+            fprintf(stderr, "usage: mock-networkmanager [--delay-ms N] [--hang-ap] [--chatter-ms N]\n");
+            return 2;
+        }
+    }
+
     DBusError error;
     dbus_error_init(&error);
     s_connection = dbus_bus_get(DBUS_BUS_SYSTEM, &error);
@@ -275,6 +514,7 @@ int main(void)
         fprintf(stderr, "mock-networkmanager: cannot connect to the bus: %s\n", error.message);
         return 1;
     }
+    dbus_connection_set_exit_on_disconnect(s_connection, TRUE);
 
     dbus_bus_request_name(s_connection, NM_NAME, 0, &error);
     if (dbus_error_is_set(&error)) {
@@ -284,8 +524,19 @@ int main(void)
 
     dbus_connection_add_filter(s_connection, filter, NULL, NULL);
     fprintf(stderr, "mock-networkmanager: serving %s\n", NM_NAME);
+    fflush(stderr);
 
-    while (dbus_connection_read_write_dispatch(s_connection, -1))
-        ;
+    long long next_chatter = now_ms() + s_chatter_ms;
+    for (;;) {
+        int wait = s_chatter_ms > 0 ? (int)(next_chatter - now_ms()) : -1;
+        if (s_chatter_ms > 0 && wait < 0)
+            wait = 0;
+        if (!dbus_connection_read_write_dispatch(s_connection, wait))
+            break;
+        if (s_chatter_ms > 0 && now_ms() >= next_chatter) {
+            emit_changed(DEV_PATH, IFACE_DEV);
+            next_chatter = now_ms() + s_chatter_ms;
+        }
+    }
     return 0;
 }

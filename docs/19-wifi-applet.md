@@ -18,14 +18,15 @@ the Serenity userland libraries from the `libgui-wayland` build. It is a
 
 | Path | Role |
 |---|---|
-| `WifiApplet/src/NetworkManagerClient.h` / `.cpp` | The NetworkManager D-Bus client (system bus, via libdbus + `Core::Notifier`) and the `org.freedesktop.NetworkManager.SecretAgent`. |
+| `WifiApplet/src/NetworkManagerClient.h` / `.cpp` | The NetworkManager D-Bus client (system bus, libdbus on LibCore's event loop, every call asynchronous) and the `org.freedesktop.NetworkManager.SecretAgent`. |
 | `WifiApplet/src/WifiIcon.h` / `.cpp` | The Breeze Wi-Fi glyphs, drawn with LibGfx (no theme assets). |
 | `WifiApplet/src/WifiPopup.h` / `.cpp` | The popup: toolbar, network list, inline passphrase field, hidden-network form. |
 | `WifiApplet/src/WifiWidget.h` / `.cpp` | The tray widget, tooltip, context menu and popup host. |
 | `WifiApplet/src/main.cpp` | `serenity_main`, the applet window and the command line. |
 | `scripts/build-wifi-applet.sh` | Builds it into `build/WifiApplet/WifiApplet`. |
-| `tools/mock-networkmanager.c` | A mock NetworkManager for the headless test. |
-| `scripts/run-wifi-applet-test.sh` | The headless exit test. |
+| `tools/mock-networkmanager.c` | A stateful mock NetworkManager, with fault injection, for the tests. |
+| `scripts/run-wifi-applet-test.sh` | The headless exit test (the real applet in the compositor). |
+| `test/WifiClientTest.cpp`, `scripts/run-wifi-client-test.sh` | The client's robustness test (no UI). |
 
 ## 2. Why NetworkManager over D-Bus
 
@@ -46,14 +47,63 @@ principle (P8) says to use the standard channel rather than invent a private one
   (`AgentManager.Register`), so activating a *saved* WPA network prompts for the
   passphrase through us, exactly like KDE.
 
-The D-Bus connection is driven by a `Core::Notifier` on the bus socket and
-`dbus_connection_dispatch`, so it lives in the LibGUI event loop with no worker
-thread. `PropertiesChanged` / `AccessPointAdded` / device-state signals only mark
-the state dirty; the actual re-read happens on a **fresh turn of the event loop**
-(`Core::deferred_invoke`), so we never reenter the dispatcher with a blocking call.
+### Nothing waits on the bus
 
-When there is no system bus or no NetworkManager, the applet still runs: it logs
-the failure and shows the `network-unavailable` state.
+The applet has one thread, and it paints the tray icon and the popup. A
+synchronous D-Bus call would freeze both for as long as NetworkManager took to
+answer (up to the call timeout for a stuck one), so the client never makes one:
+
+- **Event-loop integration.** The connection's libdbus *watches* become
+  `Core::Notifier`s, its *timeouts* become `Core::Timer`s, and its dispatch status
+  schedules a dispatch on a fresh turn of the loop, at most 64 messages per turn so
+  a flood of signals cannot starve painting. Call timeouts therefore fire on their
+  own, without anything blocking to notice them.
+- **Every call is asynchronous**, through one `call(message, handler)` helper:
+  the handler runs exactly once, on the event loop, with the reply or with
+  `nullptr` (an error, the 2 s timeout, a lost connection). Outstanding calls are
+  tracked and cancelled when the connection is torn down, so a reply can never
+  reach a destroyed client. Connecting is asynchronous too: a private connection
+  is opened and `Hello` is sent like any other call.
+- **A refresh is a parallel fan-out**: the manager's properties and the saved
+  connections at once, then every device, then every Wi-Fi device's access
+  points, each call filling its own slot. The last call to answer assembles the
+  list (one row per SSID: the connected access point, else the strongest), sorts
+  it (connected, then strength, then name) and publishes it if it changed. A call
+  that fails or times out just leaves its slot empty, so one stuck access point
+  costs its own row, not the whole refresh.
+- **Refreshes coalesce.** Signals only ask for a refresh. One asked for while a
+  refresh is in flight queues exactly one more, so the latest state always wins
+  and a busy NetworkManager cannot keep restarting the refresh forever.
+- **Actions** (`SetWirelessEnabled`, `ActivateConnection`,
+  `AddAndActivateConnection`, `Disconnect`, `RequestScan`) are calls whose reply
+  only triggers a refresh: their effect is read back from NetworkManager.
+
+### Recovery
+
+- **NetworkManager stops or restarts.** The client watches its name owner
+  (`NameOwnerChanged`). When it goes, the applet shows it as unavailable with no
+  stale networks, and drops any passphrase prompt it had asked for. When it comes
+  back, the applet registers its secret agent again (NetworkManager forgets its
+  agents) and refreshes.
+- **The bus goes away.** libdbus's `Disconnected` signal tears the connection down
+  (on a later turn of the loop, never inside its own dispatch), and the client
+  retries every 2 s until a bus answers. The same retry covers a bus that is not up
+  yet when the session starts.
+- **A crashed applet** is restarted by `scripts/sde-supervise-applet.sh`.
+
+### The secret agent
+
+- Only NetworkManager's current name owner may ask for secrets; anyone else gets
+  `NotAuthorized`.
+- The applet stores no secrets, so it only asks the user when NetworkManager
+  allows interaction (`ALLOW_INTERACTION`); otherwise, as during a background
+  autoconnect, it answers `NoSecrets` instead of popping a prompt up.
+- A cancelled prompt answers `UserCanceled`. A newer request replaces an older
+  one, which gets `AgentCanceled`. `CancelGetSecrets` closes the prompt. A prompt
+  answered after its request was withdrawn is ignored.
+
+When there is no system bus or no NetworkManager, the applet still runs and shows
+the `network-unavailable` state.
 
 ## 3. The look (Breeze, drawn rather than shipped)
 
@@ -111,16 +161,37 @@ WifiApplet [--name <name>]
 `--name` sets the applet name (the window title), for `[Applet] Order`; it
 defaults to `WiFi`.
 
-## 7. Exit test
+## 7. Tests
 
 `scripts/run-wifi-applet-test.sh` is hermetic: it starts a **private D-Bus**
 (`dbus-daemon`), serves a **mock NetworkManager** (`tools/mock-networkmanager.c`)
-with two networks (`MockNet`, a secured 82 % network that is connected, and the
-open `OpenGuest`) and runs the compositor headless. It asserts:
+with two networks (`MockNet`, a secured 82 % network that is connected and has a
+saved profile, and the secured `OpenGuest`) and runs the compositor headless. It
+asserts:
 
 - the applet reads the mock state (`WifiApplet: 2 networks, connected to MockNet (82%)`);
 - it maps as the `serenity-applet:WiFi` layer surface;
+- a passphrase typed into the popup reaches `AddAndActivateConnection`;
 - the applet area places Wi-Fi to the left of Battery.
+
+`scripts/run-wifi-client-test.sh` tests `NetworkManagerClient` on its own,
+compiled from the applet's source, against the mock on private buses it starts
+and kills itself. It runs in about 30 s and covers:
+
+- the data: networks, strength, security, saved profiles, the sort order;
+- every action, and its effect read back: scan, disconnect, radio off and on,
+  activating a saved network through the secret agent (passphrase given, and
+  cancelled), adding a new one;
+- a slow NetworkManager (300 ms per call), a stuck call, and a busy one (a signal
+  every 20 ms): the refresh completes, the latest state wins, and the event loop
+  never stalls (a 5 ms ticker runs throughout; the longest gap must stay under
+  150 ms; the old synchronous client stalled for 2 to 3 s);
+- NetworkManager restarting, the bus restarting, the bus coming up late, and the
+  client being destroyed with calls in flight.
+
+The mock's fault injection (`--delay-ms`, `--hang-ap`, `--chatter-ms`) is what
+makes these cases deterministic. Pass case names (`slow`, `bus-restart`, ...) to
+run a subset.
 
 ## 8. Known limitations
 

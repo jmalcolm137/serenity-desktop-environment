@@ -27,6 +27,10 @@ WifiWidget::WifiWidget(NonnullRefPtr<NetworkManagerClient> client)
         if (m_popup_content)
             m_popup_content->prompt_for_password(ssid, move(callback));
     };
+    m_client->on_password_request_cancelled = [this] {
+        if (m_popup_content)
+            m_popup_content->cancel_password();
+    };
 
     update_tooltip();
     start_timer(5000);

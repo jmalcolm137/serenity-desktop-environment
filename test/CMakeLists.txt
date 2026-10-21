@@ -157,3 +157,15 @@ target_include_directories(libwm-config-rules-test PRIVATE "${CMAKE_SOURCE_DIR}/
 add_sde_unit_test(libwm-applet-layout-test SOURCE AppletLayoutTest.cpp
     EXTRA_SOURCES "${CMAKE_SOURCE_DIR}/WindowServer/src/AppletLayout.cpp")
 target_include_directories(libwm-applet-layout-test PRIVATE "${CMAKE_SOURCE_DIR}/WindowServer/src")
+
+# WifiApplet's NetworkManager client (NetworkManagerClient.h), against
+# tools/mock-networkmanager on a private bus: actions, a slow, stuck, busy or
+# restarting NetworkManager, a bus that drops or is late, and that the applet's
+# thread never waits on any of it. Compiled from the applet's own source.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(DBUS REQUIRED dbus-1)
+add_sde_unit_test(libwm-wifi-client-test SOURCE WifiClientTest.cpp
+    EXTRA_SOURCES "${CMAKE_SOURCE_DIR}/WifiApplet/src/NetworkManagerClient.cpp"
+    LIBS ${DBUS_LIBRARIES})
+target_include_directories(libwm-wifi-client-test PRIVATE "${CMAKE_SOURCE_DIR}/WifiApplet/src" ${DBUS_INCLUDE_DIRS})
+target_link_directories(libwm-wifi-client-test PRIVATE ${DBUS_LIBRARY_DIRS})

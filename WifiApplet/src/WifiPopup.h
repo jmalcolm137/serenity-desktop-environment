@@ -76,6 +76,8 @@ public:
     // Address a passphrase request (from an activation, or NetworkManager's
     // secret agent). The callback must be invoked exactly once.
     void prompt_for_password(ByteString const& ssid, Function<void(Optional<ByteString>)>);
+    // Closes the passphrase prompt as if the user had cancelled it.
+    void cancel_password();
 
     // Reveal the "connect to a hidden network" form.
     void show_hidden_form();
@@ -89,7 +91,6 @@ private:
     void schedule_rebuild();
     void activate(WifiNetwork const&);
     void submit_password();
-    void cancel_password();
     void update_wifi_button();
     void set_hidden_form_visible(bool);
 
