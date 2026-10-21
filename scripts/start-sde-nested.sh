@@ -85,6 +85,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
+SUPERVISE="$SDE_ROOT/scripts/sde-supervise-applet.sh"
 STARTUP="$BUILD/bin/Taskbar & $BUILD/bin/FileManager -d"
 
 # The battery status applet (a LibGUI app in this repo) runs in the Taskbar's
@@ -95,7 +96,7 @@ if [[ ! -x "$BATTERY_APPLET" ]]; then
         || echo "note: BatteryApplet not built; skipping the battery applet" >&2
 fi
 if [[ -x "$BATTERY_APPLET" ]]; then
-    STARTUP="$STARTUP & $BATTERY_APPLET"
+    STARTUP="$STARTUP & $SUPERVISE $BATTERY_APPLET"
 fi
 
 # The Wi-Fi applet (a LibGUI app that fronts NetworkManager; docs/19).
@@ -105,7 +106,7 @@ if [[ ! -x "$WIFI_APPLET" ]]; then
         || echo "note: WifiApplet not built; skipping the Wi-Fi applet" >&2
 fi
 if [[ -x "$WIFI_APPLET" ]]; then
-    STARTUP="$STARTUP & $WIFI_APPLET"
+    STARTUP="$STARTUP & $SUPERVISE $WIFI_APPLET"
 fi
 
 # The SerenityOS taskbar applets are SDE's; build them on demand so a fresh
@@ -116,7 +117,7 @@ if [[ ! -x "$SDE_ROOT/build/Applets/WorkspacePicker" ]]; then
 fi
 # shellcheck source=scripts/sde-applets.sh
 . "$SDE_ROOT/scripts/sde-applets.sh"
-APPLET_CMDS="$(sde_applet_startup_commands "$SDE_ROOT")"
+APPLET_CMDS="$(sde_applet_startup_commands "$SDE_ROOT" "$SUPERVISE")"
 if [[ -n "$APPLET_CMDS" ]]; then
     STARTUP="$STARTUP & $APPLET_CMDS"
 fi
