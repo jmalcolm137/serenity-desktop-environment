@@ -64,7 +64,7 @@ run_case() {
     wait "$comp_pid" 2>/dev/null || true
 }
 
-# A charging battery: 42%, 8:00 until full (4.0 Ah left at 0.5 A).
+# A charging battery: 42% (2.1 Ah of 5.0 Ah), 5:48 until full at 0.5 A.
 FIXTURE="$RUNTIME/power_supply"
 mkdir -p "$FIXTURE/BAT0"
 echo Battery > "$FIXTURE/BAT0/type"
@@ -72,7 +72,7 @@ echo 1 > "$FIXTURE/BAT0/present"
 echo 42 > "$FIXTURE/BAT0/capacity"
 echo Charging > "$FIXTURE/BAT0/status"
 echo TestBattery > "$FIXTURE/BAT0/model_name"
-echo 1000000 > "$FIXTURE/BAT0/charge_now"
+echo 2100000 > "$FIXTURE/BAT0/charge_now"
 echo 5000000 > "$FIXTURE/BAT0/charge_full"
 echo 500000 > "$FIXTURE/BAT0/current_now"
 
@@ -83,6 +83,23 @@ echo "=== BatteryApplet: charging fixture ==="
 check "BatteryApplet: 1 batteries, 42%, Charging" "$RUNTIME/charging.log"
 check "layer surface namespace='serenity-applet:Battery' layer=top" "$RUNTIME/charging.log"
 check "AppletManager: applet area size 50x19 (1 applets: Battery,)" "$RUNTIME/charging.log"
+
+# A worn battery that reports Full. Some drivers derive `capacity` from the
+# design capacity (79% here), but the state of charge is 100%.
+FULL="$RUNTIME/full"
+mkdir -p "$FULL/BAT0"
+echo Battery > "$FULL/BAT0/type"
+echo 1 > "$FULL/BAT0/present"
+echo 79 > "$FULL/BAT0/capacity"
+echo Full > "$FULL/BAT0/status"
+echo TestBattery > "$FULL/BAT0/model_name"
+echo 3427000 > "$FULL/BAT0/charge_now"
+echo 3412000 > "$FULL/BAT0/charge_full"
+run_case "$FULL" "$RUNTIME/full.log"
+echo "--- full fixture ---"
+grep -E "BatteryApplet|serenity-applet" "$RUNTIME/full.log" || true
+echo "=== BatteryApplet: full battery ==="
+check "BatteryApplet: 1 batteries, 100%, Fully charged" "$RUNTIME/full.log"
 
 # An empty directory: no battery.
 EMPTY="$RUNTIME/empty"

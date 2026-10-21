@@ -31,7 +31,9 @@ and therefore lives in the SDE, not in LibGUI/LibCore (see conventions D4).
 For every directory whose `type` is `Battery` or `UPS` and that is `present`, the
 reader takes:
 
-- `capacity`: the charge percentage;
+- the charge percentage: `charge_now`/`charge_full` (or
+  `energy_now`/`energy_full`), falling back to `capacity`; a battery that reports
+  `Full` is shown as 100% (its wear is a separate health value, not the charge);
 - `status`: `Charging`, `Discharging`, `Full` or `Not charging`;
 - `model_name`: shown in the popup;
 - the time remaining, estimated from `charge_now`/`charge_full`/`current_now`

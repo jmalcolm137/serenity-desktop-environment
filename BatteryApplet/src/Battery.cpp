@@ -93,6 +93,36 @@ static ErrorOr<Optional<int>> estimate_seconds_remaining(ByteString const& direc
     return Optional<int> {};
 }
 
+// The kernel's `capacity` attribute is sometimes relative to the design capacity
+// rather than the current full capacity, so a worn battery never reaches 100%.
+// Prefer the current/full ratio (which is what upower and KDE show) and fall
+// back to `capacity` only when the raw values are unavailable.
+static int percentage_from_values(i64 now, i64 full)
+{
+    if (full <= 0)
+        return -1;
+    return static_cast<int>(clamp((now * 100 + full / 2) / full, i64 { 0 }, i64 { 100 }));
+}
+
+static ErrorOr<int> estimate_percentage(ByteString const& directory)
+{
+    auto charge_now = TRY(read_number(directory, "charge_now"sv));
+    auto charge_full = TRY(read_number(directory, "charge_full"sv));
+    if (charge_now.has_value() && charge_full.has_value()) {
+        if (auto percentage = percentage_from_values(charge_now.value(), charge_full.value()); percentage >= 0)
+            return percentage;
+    }
+
+    auto energy_now = TRY(read_number(directory, "energy_now"sv));
+    auto energy_full = TRY(read_number(directory, "energy_full"sv));
+    if (energy_now.has_value() && energy_full.has_value()) {
+        if (auto percentage = percentage_from_values(energy_now.value(), energy_full.value()); percentage >= 0)
+            return percentage;
+    }
+
+    return static_cast<int>(clamp(TRY(read_number(directory, "capacity"sv)).value_or(0), i64 { 0 }, i64 { 100 }));
+}
+
 static ErrorOr<Optional<Status>> read_one(ByteString const& directory, ByteString const& name)
 {
     auto type = TRY(read_value(attribute_path(directory, "type"sv)));
@@ -109,7 +139,11 @@ static ErrorOr<Optional<Status>> read_one(ByteString const& directory, ByteStrin
     status.name = name;
     status.model = TRY(read_value(attribute_path(directory, "model_name"sv))).value_or(ByteString {});
     status.state = parse_state(TRY(read_value(attribute_path(directory, "status"sv))).value_or(ByteString {}));
-    status.percentage = clamp(static_cast<int>(TRY(read_number(directory, "capacity"sv)).value_or(0)), 0, 100);
+    status.percentage = TRY(estimate_percentage(directory));
+    // A battery that reports itself full is at 100% state of charge; its wear
+    // (charge_full versus charge_full_design) is a separate health value.
+    if (status.state == State::Full)
+        status.percentage = 100;
     status.present = true;
     status.seconds_remaining = TRY(estimate_seconds_remaining(directory, status.state));
     return status;
