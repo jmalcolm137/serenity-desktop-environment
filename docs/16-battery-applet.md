@@ -49,12 +49,13 @@ charging battery dominates the state) and listed individually in the popup.
 KDE's battery icon is drawn with LibGfx rather than theme icons, so the applet
 needs no external assets:
 
-- a 16×16 battery body and terminal, filled left-to-right by the charge level;
+- a 16×16 battery body and terminal, filled left-to-right by the charge level
+  while discharging;
 - Breeze-inspired charge colours: red at or below 5 %, orange at or below 20 %,
   green above (matching KDE's `batteryColor` thresholds);
-- a lightning bolt overlaid while charging;
-- a plug when there is no battery, for an AC-powered desktop (instead of an
-  empty battery);
+- a plug instead of the battery glyph while the charger is connected (charging
+  or full), or when there is no battery (an AC-powered desktop); the percentage
+  label still reports the charge level;
 - an optional percentage label (default on; `[Applet]`-style toggle via the
   right-click context menu, or `--icon-only`).
 

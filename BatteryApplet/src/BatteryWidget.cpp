@@ -31,18 +31,11 @@ static Gfx::Color charge_color(int percentage)
     return Gfx::Color::from_rgb(0x27ae60);     // Positive green.
 }
 
-// Two triangles form the lightning bolt KDE overlays while charging.
-static void paint_charging_bolt(Gfx::Painter& painter, Gfx::IntRect const& body, Gfx::Color color)
-{
-    auto x = body.x();
-    auto y = body.y();
-    painter.draw_triangle({ x + 7, y + 1 }, { x + 4, y + 5 }, { x + 7, y + 5 }, color);
-    painter.draw_triangle({ x + 5, y + 8 }, { x + 8, y + 4 }, { x + 5, y + 4 }, color);
-}
-
 // A machine with no battery (a desktop) runs from mains, so the tray shows a
-// plug rather than an empty battery. The two prongs, the plug body and the
-// cable are drawn at the icon cell's scale, like the battery glyph.
+// plug rather than an empty battery. The same glyph is used while a battery is
+// charging, where the charge level is shown by the percentage label. The two
+// prongs, the plug body and the cable are drawn at the icon cell's scale, like
+// the battery glyph.
 static void paint_plug(Gfx::Painter& painter, Gfx::Color color)
 {
     painter.fill_rect({ 4, 1, 2, 4 }, color);
@@ -222,22 +215,21 @@ void BatteryWidget::paint_event(GUI::PaintEvent& event)
 
     auto outline_color = palette().window_text();
 
-    Gfx::IntRect body { 1, 4, 11, 9 };
-    Gfx::IntRect terminal { body.right() + 1, 7, 2, 3 };
+    // While the charger is connected (charging or already full), show a plug
+    // instead of the battery glyph. The percentage label still reports the
+    // charge level. A desktop with no battery gets the same plug.
+    bool const on_charger = m_summary.state == Battery::State::Charging || m_summary.state == Battery::State::Full;
+    if (m_summary.has_battery && !on_charger) {
+        Gfx::IntRect body { 1, 4, 11, 9 };
+        Gfx::IntRect terminal { body.right() + 1, 7, 2, 3 };
+        painter.draw_rect(body, outline_color);
+        painter.fill_rect(terminal, outline_color);
 
-    painter.draw_rect(body, outline_color);
-    painter.fill_rect(terminal, outline_color);
-
-    if (m_summary.has_battery) {
         auto inner = body.shrunken(1, 1);
         int fill_width = (inner.width() * m_summary.percentage) / 100;
         if (fill_width > 0)
             painter.fill_rect({ inner.x(), inner.y(), fill_width, inner.height() }, charge_color(m_summary.percentage));
-
-        if (m_summary.state == Battery::State::Charging)
-            paint_charging_bolt(painter, body, outline_color);
     } else {
-        // No battery at all means a desktop on mains power, so show a plug.
         paint_plug(painter, outline_color);
     }
 
