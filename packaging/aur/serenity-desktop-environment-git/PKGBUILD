@@ -17,11 +17,11 @@ depends=(
     'serenity-lagom-git'
     wayland libdrm libinput libxkbcommon pixman seatd libxcb xcb-util-wm
     libdisplay-info pipewire libpipewire dbus glib2 fontconfig freetype2
-    libunwind libelf libei libliftoff xorg-xwayland
+    libunwind libelf libei libliftoff wlroots0.20 xorg-xwayland
 )
 optdepends=('sddm: display manager that lists the SDE Wayland session')
 makedepends=(
-    'serenity-lagom-git'
+    'serenity-lagom-git' wlroots0.20
     base-devel cmake ninja meson pkgconf git python wayland-protocols
     libpulse zip unzip
 )
@@ -53,8 +53,4 @@ package() {
     export BUILD=/usr/lib/sde
     export SERENITY=/usr/lib/sde/framework/serenity
     scripts/install-sde.sh --destdir "$pkgdir" --prefix /usr/lib/sde --without-framework
-
-    # The compositor links the wlroots the SDE fetched and built.
-    install -d "$pkgdir/usr/lib/sde/lib"
-    cp -a "$srcdir/serenity-desktop-environment/third_party/wlroots/install/lib/"*.so* "$pkgdir/usr/lib/sde/lib/"
 }

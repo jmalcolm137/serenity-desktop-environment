@@ -58,14 +58,14 @@ Verified shape of the current build:
 
 | Package | Contents | Runtime deps | Build cost |
 |---|---|---|---|
-| `wlroots0.20` | pinned `wlroots 0.20.2` → `libwlroots-0.20.so` + `wlroots-0.20.pc` | wayland, libinput, libdrm, libseat, pixman, xcb-* | moderate |
+| `wlroots0.20` (Arch) | Arch's pinned `wlroots 0.20.2` → `libwlroots-0.20.so` + `wlroots-0.20.pc` | wayland, libinput, libdrm, libseat, pixman, xcb-* | moderate |
 | `serenity-lagom-git` | `liblagom-*.so`, the apps, `Base/res`, **and** the Serenity headers/Lagom build tree (see §5 trap 6) | build deps of Serenity Lagom | **large** (Serenity) |
-| `serenity-desktop-environment-git` | `WindowServer`, `LaunchServer`, `ImageDecoder`, `sde-idle`, session scripts, `sde.desktop` | `serenity-lagom-git` (wlroots is currently bundled; the separate `wlroots0.20` package is the future shared path) | small |
+| `serenity-desktop-environment-git` | `WindowServer`, `LaunchServer`, `ImageDecoder`, `sde-idle`, session scripts, `sde.desktop` | `serenity-lagom-git`, Arch `wlroots0.20` (the build still fetches the pinned source for generated protocol headers/XMLs) | small |
 
-> Arch's stock `wlroots` cannot be used: the compositor's CMake requires
-> `pkg_check_modules(wlroots-0.20)`, so the pinned 0.20.x must be packaged (or
-> vendored/static inside the SDE package). Prefer a separate `wlroots0.20` so it
-> is reusable and clearly version-scoped.
+> Arch's `wlroots-git` (0.21) cannot be used: the compositor's CMake requires
+> `pkg_check_modules(wlroots-0.20)`. Arch's pinned `wlroots0.20` package is the
+> runtime dependency; the SDE still fetches the same 0.20.2 source for the
+> generated protocol headers/XMLs, which the Arch package does not ship.
 
 ---
 
@@ -94,7 +94,7 @@ apps sit in `…/sde/bin` and libs in `…/sde/lib`; and a single
 1. **Compositor RUNPATH points at the build tree.** `WindowServer` carries
    `RUNPATH=…/libgui-wayland/build/lagom/lib:…/third_party/wlroots/install/lib`.
    Fix in the PKGBUILD with `patchelf --set-rpath /usr/lib/sde/lib` (and strip).
-2. **wlroots version pin.** Separate `wlroots0.20` package (or static vendoring);
+2. **wlroots version pin.** Arch's `wlroots0.20` package for the runtime library;
    never rely on the distro `wlroots`.
 3. **Strip everything.** Lagom libs are ~305 MB unstripped and debug-heavy;
    stripping is a large size win.
@@ -226,7 +226,7 @@ Keep `Ctrl+Alt+F2` as the escape hatch throughout; if SDE hangs, switch VT and
 ## 9. PKGBUILD sketches (outline)
 
 **Split packages (implemented).** `packaging/aur/` has the three packages:
-`wlroots0.20`, `serenity-lagom-git` (the framework, apps and resources plus the
+Arch `wlroots0.20`, `serenity-lagom-git` (the framework, apps and resources plus the
 headers/source the compositor build needs) and
 `serenity-desktop-environment-git` (the compositor, services and session, built
 with `SDE_PREBUILT_FRAMEWORK=ON` against the installed framework). The framework
@@ -234,11 +234,10 @@ prefix layout and prebuilt build are covered by `run-split-framework-test.sh`;
 `run-packaging-test.sh` validates every PKGBUILD's metadata without building a
 package. A real-machine `pacman -U`/login is the remaining check.
 
-**`wlroots0.20` (implemented).** `packaging/aur/wlroots0.20` builds the pinned
-`0.20.2` tag with `meson`, installs the shared library and `wlroots-0.20.pc` under
-`/usr`, and keeps the generated protocol headers and XMLs under the package's
-stable directories. The split SDE package still fetches its own vendored wlroots
-for the compositor until the CMake system-wlroots path is used.
+**`wlroots0.20` (Arch).** Arch's `extra/wlroots0.20` provides the pinned
+`0.20.2` shared library and `wlroots-0.20.pc`; the SDE package declares it as a
+runtime dependency. The SDE package still fetches the pinned source for the
+generated protocol headers/XMLs, which the Arch package does not ship.
 
 **`serenity-lagom-git`**: sources: `libgui-wayland` (git) + its pinned
 `serenity` revision + `patches/`. Build via the project's
@@ -249,7 +248,10 @@ for the compositor until the CMake system-wlroots path is used.
 known prefix for the compositor build.
 
 **`serenity-desktop-environment-git`**: source: this repo. `makedepends` include
-`serenity-lagom-git` (for `SERENITY_SRC`/`SERENITY_BUILD_DIR`) and `wlroots0.20`.
+`serenity-lagom-git` (for `SERENITY_SRC`/`SERENITY_BUILD_DIR`) and Arch
+`wlroots0.20`. The package does not ship the vendored wlroots `.so`; the runtime
+library comes from the Arch package, while the pinned source is still used for
+the generated protocol headers/XMLs.
 `build()` runs `scripts/build-window-server.sh` plus the `LaunchServer`/
 `ImageDecoder`/tools builds. `package()` installs `WindowServer`, the services and
 `sde-idle` to `/usr/lib/sde/bin`, the session scripts to `/usr/lib/sde/share/sde`,
@@ -279,7 +281,7 @@ RUNPATH to `/usr/lib/sde/lib`.
 | # | Decision | Options | Leaning |
 |---|---|---|---|
 | P1 | Prefix | `/usr/lib/sde` vs system paths | Private prefix (**§4**) |
-| P2 | wlroots | separate `wlroots0.20` vs vendored/static | Separate package |
+| P2 | wlroots | Arch `wlroots0.20` vs vendored/static | Arch `wlroots0.20` for runtime; source only for generated protocol headers/XMLs |
 | P3 | Lagom exposure to the compositor build | install headers+build tree vs `makedepends` on the checkout | Install headers+build tree under the prefix (trap 6) |
 | P4 | Source of truth for the Serenity revision | `libgui-wayland` pin vs SDE pin | Follow `libgui-wayland`'s pin |
 | P5 | Distribute | local `pacman -U` now vs publish AUR later | Local packages first |

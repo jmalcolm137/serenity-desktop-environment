@@ -1,12 +1,12 @@
 # Local AUR packaging
 
-The split is three packages:
+The split is two packages plus Arch's pinned wlroots:
 
 | Package | Contents |
 |---|---|
-| `wlroots0.20` | the pinned wlroots 0.20.2 library, its pkg-config file and generated protocol headers/XMLs |
+| `wlroots0.20` (Arch) | the pinned wlroots 0.20.2 library and pkg-config file; the SDE depends on it at runtime |
 | `serenity-lagom-git` | the `libgui-wayland` framework, the SerenityOS applications (with the SDE patches), resources, and the headers/source/generated headers the compositor build needs |
-| `serenity-desktop-environment-git` | the compositor, services and session; built with `SDE_PREBUILT_FRAMEWORK=ON` against `serenity-lagom-git` and installed over the private `/usr/lib/sde` prefix |
+| `serenity-desktop-environment-git` | the compositor, services and session; built with `SDE_PREBUILT_FRAMEWORK=ON` against `serenity-lagom-git` and installed over the private `/usr/lib/sde` prefix; still carries the pinned wlroots source for generated protocol headers/XMLs |
 
 The framework and the SDE still come from the same revision: the framework
 package builds the SDE-patched applications, and the SDE package builds against
@@ -33,7 +33,7 @@ AUR account and SSH key:
 
 ```sh
 # after a successful local build/login
-for pkg in wlroots0.20 serenity-lagom-git serenity-desktop-environment-git; do
+for pkg in serenity-lagom-git serenity-desktop-environment-git; do
     (cd "$pkg" && makepkg --printsrcinfo > .SRCINFO)
     git clone "ssh://aur@aur.archlinux.org/$pkg.git" "/tmp/aur-$pkg"
     cp "$pkg/PKGBUILD" "$pkg/.SRCINFO" "/tmp/aur-$pkg/"
