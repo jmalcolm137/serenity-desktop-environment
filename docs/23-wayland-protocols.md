@@ -39,7 +39,7 @@ asserted by `scripts/run-protocol-matrix-test.sh` (the full dump is printed by t
 | `xdg_system_bell_v1` | v1 | the system bell (global advertised; no audible output yet) |
 | `zwlr_foreign_toplevel_manager_v1` | v3 | taskbar-style task list from an external client |
 | `xdg_toplevel_tag_manager_v1` | v1 | per-toplevel tag and description, for window rules |
-| `xdg_toplevel_drag_manager_v1` | v1 | move a toplevel with a drag-and-drop operation (implemented by SDE) |
+| `xdg_toplevel_drag_manager_v1` | v1 | move a toplevel with a drag-and-drop operation (implemented by SDE; `scripts/run-toplevel-drag-test.sh`) |
 
 ## Input
 

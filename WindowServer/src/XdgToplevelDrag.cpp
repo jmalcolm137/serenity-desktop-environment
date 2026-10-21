@@ -77,6 +77,7 @@ void place_toplevel(XdgToplevelDrag& drag)
     auto* geometry = &toplevel->xdg_toplevel->base->geometry;
     int const x = static_cast<int>(drag.server->cursor->x) - drag.x_offset - geometry->x;
     int const y = static_cast<int>(drag.server->cursor->y) - drag.y_offset - geometry->y;
+    dbgln("WindowServer: xdg-toplevel-drag moved toplevel to {},{}", x, y);
     wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
 }
 
@@ -165,6 +166,8 @@ void drag_attach(wl_client*, wl_resource* resource, wl_resource* toplevel_resour
     drag->x_offset = x_offset;
     drag->y_offset = y_offset;
     toplevel->dragged_by_toplevel_drag = true;
+    dbgln("WindowServer: xdg-toplevel-drag attached '{}' at offset {},{}",
+        toplevel->xdg_toplevel->title ? toplevel->xdg_toplevel->title : "", x_offset, y_offset);
     drag->toplevel_destroy.notify = toplevel_destroyed;
     wl_signal_add(&toplevel->xdg_toplevel->base->surface->events.destroy, &drag->toplevel_destroy);
     drag->toplevel_unmap.notify = toplevel_unmapped;
@@ -255,6 +258,7 @@ void xdg_toplevel_drag_start(Server&, wlr_drag* drag)
         return;
     g_active_drag = candidate;
     candidate->active = true;
+    dbgln("WindowServer: xdg-toplevel-drag started");
     if (candidate->toplevel)
         place_toplevel(*candidate);
 }
