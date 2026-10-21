@@ -266,6 +266,37 @@ static void state_changed(void)
     emit_changed(DEV_PATH, IFACE_DEV);
 }
 
+// The 802-11-wireless-security.psk in an a{sa{sv}} settings dictionary.
+static char const* find_psk(DBusMessageIter* iter)
+{
+    char const* psk = NULL;
+    DBusMessageIter settings;
+    if (dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_ARRAY)
+        return NULL;
+    dbus_message_iter_recurse(iter, &settings);
+    while (dbus_message_iter_get_arg_type(&settings) == DBUS_TYPE_DICT_ENTRY) {
+        DBusMessageIter section, properties;
+        char const* name = NULL;
+        dbus_message_iter_recurse(&settings, &section);
+        dbus_message_iter_get_basic(&section, &name);
+        dbus_message_iter_next(&section);
+        dbus_message_iter_recurse(&section, &properties);
+        while (name && !strcmp(name, "802-11-wireless-security") && dbus_message_iter_get_arg_type(&properties) == DBUS_TYPE_DICT_ENTRY) {
+            DBusMessageIter property, variant;
+            char const* key = NULL;
+            dbus_message_iter_recurse(&properties, &property);
+            dbus_message_iter_get_basic(&property, &key);
+            dbus_message_iter_next(&property);
+            dbus_message_iter_recurse(&property, &variant);
+            if (key && !strcmp(key, "psk") && dbus_message_iter_get_arg_type(&variant) == DBUS_TYPE_STRING)
+                dbus_message_iter_get_basic(&variant, &psk);
+            dbus_message_iter_next(&properties);
+        }
+        dbus_message_iter_next(&settings);
+    }
+    return psk;
+}
+
 static void on_secrets_reply(DBusPendingCall* pending, void* user_data)
 {
     (void)user_data;
@@ -279,32 +310,10 @@ static void on_secrets_reply(DBusPendingCall* pending, void* user_data)
         return;
     }
 
-    // a{sa{sv}}: find 802-11-wireless-security.psk.
     char const* psk = NULL;
-    DBusMessageIter iter, settings;
-    if (dbus_message_iter_init(reply, &iter) && dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_ARRAY) {
-        dbus_message_iter_recurse(&iter, &settings);
-        while (dbus_message_iter_get_arg_type(&settings) == DBUS_TYPE_DICT_ENTRY) {
-            DBusMessageIter section, properties;
-            char const* name = NULL;
-            dbus_message_iter_recurse(&settings, &section);
-            dbus_message_iter_get_basic(&section, &name);
-            dbus_message_iter_next(&section);
-            dbus_message_iter_recurse(&section, &properties);
-            while (name && !strcmp(name, "802-11-wireless-security") && dbus_message_iter_get_arg_type(&properties) == DBUS_TYPE_DICT_ENTRY) {
-                DBusMessageIter property, variant;
-                char const* key = NULL;
-                dbus_message_iter_recurse(&properties, &property);
-                dbus_message_iter_get_basic(&property, &key);
-                dbus_message_iter_next(&property);
-                dbus_message_iter_recurse(&property, &variant);
-                if (key && !strcmp(key, "psk") && dbus_message_iter_get_arg_type(&variant) == DBUS_TYPE_STRING)
-                    dbus_message_iter_get_basic(&variant, &psk);
-                dbus_message_iter_next(&properties);
-            }
-            dbus_message_iter_next(&settings);
-        }
-    }
+    DBusMessageIter iter;
+    if (dbus_message_iter_init(reply, &iter))
+        psk = find_psk(&iter);
     log_line("mock-networkmanager: secrets psk=%s%s", psk ? psk : "", "");
     if (psk && *psk) {
         s_active_ap = AP1_PATH;
@@ -454,6 +463,11 @@ static DBusHandlerResult handle_method_call(DBusMessage* message)
     } else if (!strcmp(member, "DeactivateConnection") || !strcmp(member, "Enable")) {
         reply = dbus_message_new_method_return(message);
     } else if (!strcmp(member, "AddAndActivateConnection")) {
+        DBusMessageIter arguments;
+        char const* psk = NULL;
+        if (dbus_message_iter_init(message, &arguments))
+            psk = find_psk(&arguments);
+        log_line("mock-networkmanager: add psk=%s%s", psk ? psk : "", "");
         reply = dbus_message_new_method_return(message);
         DBusMessageIter iter;
         char const* active = "/org/freedesktop/NetworkManager/ActiveConnection/2";

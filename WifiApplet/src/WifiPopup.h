@@ -10,6 +10,7 @@
 #include <AK/Function.h>
 #include <AK/Optional.h>
 #include <AK/Vector.h>
+#include <LibCore/Timer.h>
 #include <LibGUI/Frame.h>
 #include <LibGUI/Widget.h>
 
@@ -17,30 +18,50 @@
 
 namespace GUI {
 class Button;
+class CheckBox;
 class Label;
 class ScrollableContainerWidget;
 class TextBox;
 }
 
-// One network in the popup list, laid out like plasma-nm's ConnectionItem: the
-// signal icon, the SSID, a subtitle (state or last-used), a lock for a secured
-// network, and a Connect/Disconnect action. A secured, unsaved network expands
-// in place to a passphrase field, as KDE does.
+// What a row says about its network, in the status column.
+enum class WifiRowStatus {
+    None,
+    Connected,
+    Connecting,
+    Failed,
+    Saved,
+};
+
+// One network in the list, laid out in fixed columns so every row lines up:
+//
+//   [signal] SSID ............................ status [lock]
+//
+// Clicking a row selects it and opens it in place: a line of details and the
+// action (Connect / Disconnect), plus a passphrase field when the network needs
+// one we do not have. Only one row is open at a time.
 class WifiRow final : public GUI::Widget {
     C_OBJECT(WifiRow);
 
 public:
+    static constexpr int line_height = 26;
+    static constexpr int actions_height = 34;
+
     virtual ~WifiRow() override = default;
 
-    void set_network(WifiNetwork const& network);
-    void set_expanded(bool expanded);
-    bool is_expanded() const { return m_expanded; }
+    void set_network(WifiNetwork const&, WifiRowStatus);
+    void set_open(bool open, bool wants_password);
+    bool is_open() const { return m_open; }
     ByteString const& ssid() const { return m_network.ssid; }
     ByteString password() const;
+    void set_password(ByteString const&);
+    void focus_password();
+    int height_for_state() const { return line_height + (m_open ? actions_height : 0); }
 
-    Function<void(WifiNetwork const&)> on_activate;
-    Function<void()> on_submit_password;
-    Function<void()> on_cancel_password;
+    Function<void()> on_toggle;
+    Function<void()> on_action;
+    Function<void()> on_cancel;
+    Function<void(ByteString const&)> on_password_edited;
 
 private:
     WifiRow();
@@ -52,15 +73,28 @@ private:
     virtual void leave_event(Core::Event&) override;
     virtual void keydown_event(GUI::KeyEvent&) override;
 
+    void layout_actions();
+
     WifiNetwork m_network;
-    bool m_expanded { false };
+    WifiRowStatus m_status { WifiRowStatus::None };
+    bool m_open { false };
     bool m_hovered { false };
     RefPtr<GUI::TextBox> m_password_box;
+    RefPtr<GUI::Button> m_action_button;
+    bool m_wants_password { false };
 };
 
-// The KDE-style networks popup: a toolbar (Wi-Fi switch, search, configure), the
-// connection list, a hidden-network form, and a placeholder when there is
-// nothing to show.
+// The networks popup:
+//
+//   Wi-Fi                                   [x] Enabled
+//   Connected to MockNet
+//   -------------------------------------------------
+//   | the network list (sunken, scrolls past 8 rows) |
+//   -------------------------------------------------
+//   [Hidden Network...]              [Network Settings...]
+//
+// with a search field above the list when there are many networks, and the
+// hidden-network form in place of the footer while it is open.
 class WifiPopup final : public GUI::Frame {
     C_OBJECT(WifiPopup);
 
@@ -82,32 +116,62 @@ public:
     // Reveal the "connect to a hidden network" form.
     void show_hidden_form();
 
+    // The popup was shown or hidden.
+    void popup_shown();
+    void popup_hidden();
+    // Put the keyboard back where it was (showing the popup again resets it).
+    void restore_focus();
+
     Function<void()> on_preferred_size_changed;
+    // Escape with nothing open asks the host to close the popup.
+    Function<void()> on_close_requested;
 
 private:
     WifiPopup();
 
+    virtual void keydown_event(GUI::KeyEvent&) override;
+
+    void build_chrome();
     void rebuild();
     void schedule_rebuild();
-    void activate(WifiNetwork const&);
+    void update_header();
+    void update_attempt();
+    WifiRowStatus status_for(WifiNetwork const&) const;
+    bool wants_password(WifiNetwork const&) const;
+    void toggle_row(ByteString const& ssid);
+    void row_action(ByteString const& ssid);
+    void start_attempt(ByteString const& ssid);
     void submit_password();
-    void update_wifi_button();
     void set_hidden_form_visible(bool);
+    void connect_hidden();
+    void log_layout();
 
     RefPtr<NetworkManagerClient> m_client;
-    RefPtr<GUI::Button> m_wifi_button;
+    RefPtr<GUI::CheckBox> m_enabled_box;
+    RefPtr<GUI::Widget> m_header;
+    ByteString m_settings_path;
     RefPtr<GUI::TextBox> m_search;
-    RefPtr<GUI::Button> m_configure_button;
     RefPtr<GUI::ScrollableContainerWidget> m_scroll;
     RefPtr<GUI::Widget> m_list;
     RefPtr<GUI::Label> m_placeholder;
+    RefPtr<GUI::Widget> m_footer;
+    RefPtr<GUI::Button> m_hidden_button;
+    RefPtr<GUI::Button> m_settings_button;
     RefPtr<GUI::Widget> m_hidden_form;
     RefPtr<GUI::TextBox> m_hidden_ssid;
     RefPtr<GUI::TextBox> m_hidden_password;
 
     ByteString m_filter;
-    ByteString m_expanded_ssid;
+    ByteString m_open_ssid;
     Optional<Function<void(Optional<ByteString>)>> m_password_callback;
+    ByteString m_password_ssid;
+    ByteString m_password_draft;
     Vector<NonnullRefPtr<WifiRow>> m_rows;
     bool m_rebuild_scheduled { false };
+
+    // The connection the user asked for, until it succeeds or fails.
+    ByteString m_attempt_ssid;
+    bool m_attempt_seen_connecting { false };
+    ByteString m_failed_ssid;
+    RefPtr<Core::Timer> m_attempt_timer;
 };

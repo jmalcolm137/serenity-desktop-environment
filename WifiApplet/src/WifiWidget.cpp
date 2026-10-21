@@ -46,6 +46,11 @@ void WifiWidget::update_state()
 
 void WifiWidget::update_tooltip()
 {
+    // The popup says all of this and more; a tooltip on top of it only hides it.
+    if (m_popup && m_popup->is_visible()) {
+        set_tooltip({});
+        return;
+    }
     auto const& state = m_client->state();
     if (!state.available) {
         set_tooltip("NetworkManager is not available"_string);
@@ -126,6 +131,7 @@ void WifiWidget::set_popup_visible(bool visible)
             if (m_popup && m_popup->is_visible())
                 reposition_popup();
         };
+        m_popup_content->on_close_requested = [this] { set_popup_visible(false); };
         m_popup_content->set_client(m_client);
     }
 
@@ -133,13 +139,15 @@ void WifiWidget::set_popup_visible(bool visible)
         return;
 
     if (visible) {
-        m_popup_content->refresh();
+        m_popup_content->popup_shown();
         reposition_popup();
         m_popup->show();
         m_client->request_scan();
     } else {
+        m_popup_content->popup_hidden();
         m_popup->hide();
     }
+    update_tooltip();
 }
 
 void WifiWidget::reposition_popup()
@@ -165,6 +173,7 @@ void WifiWidget::reposition_popup()
         m_popup->hide();
         m_popup->set_rect(x, y, size.width(), size.height());
         m_popup->show();
+        m_popup_content->restore_focus();
         return;
     }
     m_popup->set_rect(x, y, size.width(), size.height());
@@ -191,16 +200,21 @@ void WifiWidget::context_menu_event(GUI::ContextMenuEvent& event)
                 m_popup_content->show_hidden_form();
         }));
 
-        m_context_menu->add_action(GUI::Action::create("Configure Network Connections…", [this](GUI::Action&) {
-            for (auto path : { "/usr/bin/nm-connection-editor"sv, "/usr/local/bin/nm-connection-editor"sv }) {
-                if (Core::System::access(path, X_OK).is_error())
-                    continue;
+        // NetworkManager's connection editor, if it is installed: without it the
+        // entry would do nothing, so it is not offered.
+        for (auto path : { "/usr/bin/nm-connection-editor"sv, "/usr/local/bin/nm-connection-editor"sv }) {
+            if (Core::System::access(path, X_OK).is_error())
+                continue;
+            m_context_menu->add_action(GUI::Action::create("Configure Network Connections…", [this, path = ByteString { path }](GUI::Action&) {
                 GUI::Process::spawn_or_show_error(window(), path, ReadonlySpan<char const*> {});
-                break;
-            }
-        }));
+            }));
+            break;
+        }
     }
 
-    m_enable_action->set_checked(m_client->state().wireless_enabled);
+    auto const& state = m_client->state();
+    bool radio_usable = state.available && state.networking_enabled && state.wireless_hardware_enabled;
+    m_enable_action->set_checked(radio_usable && state.wireless_enabled);
+    m_enable_action->set_enabled(radio_usable);
     m_context_menu->popup(event.screen_position());
 }

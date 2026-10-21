@@ -121,23 +121,61 @@ The tray tooltip reads `Networks` with the active connection (or `Disconnected` 
 
 ## 4. The popup
 
-Opening the applet (left click) shows a KDE-style popup above it:
+Opening the applet (left click) shows the popup above it. It is a native
+SerenityOS panel rather than a copy of Plasma's, laid out on one grid (8 px
+margins, 6 px spacing, 24 px controls):
 
-- a **toolbar**: the Wi-Fi on/off switch (icon-only), a **search** field, a
-  **Hidden…** button and a **Configure** button (spawns `nm-connection-editor`);
-- the **network list**: one row per SSID, strongest access point: the signal
-  fan, the SSID, a subtitle (`Connected` / `Saved` / the strength), and a lock for
-  secured networks. The connected network is drawn in the accent colour;
-- clicking a network **connects**; clicking the connected one **disconnects**;
-  a secured network with no saved profile **expands in place** to a passphrase
-  field (Enter, or a click on the row, connects; Escape cancels), as in KDE;
-- a **placeholder** when there is nothing to show (`Wi-Fi is deactivated`,
-  `Looking for Wi-Fi networks`, `No available connections`, `No matches`).
+```
+Wi-Fi                                  [x] Enabled
+Connected to MockNet
+--------------------------------------------------
+| ((o  MockNet                     Connected  #  |
+| ((o  ScanFound                              #  |
+| ((o  OpenGuest                              #  |
+--------------------------------------------------
+[Hidden Network...]            [Network Settings...]
+```
+
+- **Header**: the title, a one-line status (`Connected to …`, `Connecting to …`,
+  `Could not connect to …` in red, `Not connected`, `Off`, `Unavailable`), and
+  the radio's **Enabled** switch, disabled when NetworkManager, networking or the
+  hardware switch makes it meaningless.
+- **The list** sits in a sunken, white container like any SerenityOS list. Each
+  row is one line in fixed columns: the signal glyph, the SSID (bold when
+  connected, elided when long), a status column (`Connected`, `Connecting…`,
+  `Failed`, `Saved`) and a lock column. Both columns line up down the list
+  whether or not a row uses them. The list grows to 8 rows and then scrolls; a
+  search field appears above it when there are more than 8 networks.
+- **Opening a row**: clicking a row selects it and opens it in place, one row at
+  a time. An open row shows `Signal 82% · 2.4 GHz` and a **Connect** or
+  **Disconnect** button. A secured network without a saved profile, or one
+  NetworkManager's secret agent is asking about, shows a masked passphrase field
+  (with a reveal button) instead of the details; Enter connects, Escape cancels.
+  A refresh while typing keeps the field, its text and its focus.
+- **Feedback**: the row and the header say `Connecting…` until NetworkManager
+  connects. If it starts and then gives up, or never starts within 15 s, they
+  say the attempt failed.
+- **Placeholder**: an empty list explains why (`Turn on Wi-Fi to see networks.`,
+  `NetworkManager is not running.`, `Looking for networks…`, `No networks
+  match.`).
+- **Footer**: **Hidden Network…** opens a form in place of the footer: name and
+  password fields with their labels in one column, then Cancel and Connect.
+  **Network Settings…** opens `nm-connection-editor`, and is not shown (here or in
+  the context menu) when it is not installed.
+- **Keyboard**: Escape closes an open row, then the hidden-network form, then the
+  popup. Closing the popup answers a pending secret-agent prompt as cancelled.
+- The tray tooltip is suppressed while the popup is open, since the popup says
+  more.
 
 The popup is a `GUI::WindowType::Popup` (an overlay layer surface), so it is
 undecorated, out of the window list and takes keyboard focus for the search and
 passphrase fields. (Keyboard focus for `on_demand` layer surfaces is provided by
 the compositor; see `focus_layer_surface` in `WindowServer/src/LayerShell.cpp`.)
+A layer surface has a fixed size, so the popup is hidden and shown again when
+its size changes; it puts the keyboard focus back afterwards.
+
+For the tests, `WIFI_APPLET_LOG_LAYOUT=1` makes the popup log where each row is on
+screen, so a test can click a network by name.
 
 ## 5. Running on the Taskbar
 
@@ -171,7 +209,7 @@ asserts:
 
 - the applet reads the mock state (`WifiApplet: 2 networks, connected to MockNet (82%)`);
 - it maps as the `serenity-applet:WiFi` layer surface;
-- a passphrase typed into the popup reaches `AddAndActivateConnection`;
+- a passphrase typed into the popup reaches `AddAndActivateConnection` intact;
 - the applet area places Wi-Fi to the left of Battery.
 
 `scripts/run-wifi-client-test.sh` tests `NetworkManagerClient` on its own,
@@ -205,3 +243,4 @@ run a subset.
   the agent path would need the full set of secrets.
 - **The popup does not close on an outside click** (like the battery applet's): it
   closes on the applet click or Escape.
+- **No arrow-key navigation of the list** yet; rows are opened with the mouse.

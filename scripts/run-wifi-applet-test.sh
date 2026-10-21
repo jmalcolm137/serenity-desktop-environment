@@ -9,6 +9,7 @@
 # It asserts:
 #   * the applet reads the mock's networks and the active connection;
 #   * it maps as the "serenity-applet:WiFi" layer surface;
+#   * a passphrase typed into the popup reaches NetworkManager, intact;
 #   * the Taskbar's applet area places Wi-Fi immediately to the left of Battery.
 set -euo pipefail
 
@@ -68,6 +69,7 @@ setsid env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless \
     WLR_HEADLESS_OUTPUTS=1 \
     SDE_OUTPUT_SCALE=1 \
+    WIFI_APPLET_LOG_LAYOUT=1 \
     SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
@@ -81,10 +83,11 @@ done
 sleep 3
 
 # --- drive the popup: connect to a secured network by typing a passphrase -----
-# Open the applet, expand the secured (unconnected) OpenGuest network, type a
-# passphrase and press Enter. This exercises the compositor's on_demand layer
-# keyboard focus (without it, the field takes no input) and the applet's
-# AddAndActivateConnection path; the mock records the call.
+# Open the applet, click the secured, unsaved OpenGuest network (it opens in
+# place with a passphrase field, which takes the focus), type a passphrase and
+# press Enter. This exercises the compositor's on_demand layer keyboard focus
+# (without it, the field takes no input) and the applet's
+# AddAndActivateConnection path; the mock records the passphrase it received.
 VI="$("$SDE_ROOT/scripts/build-virtual-input.sh")"
 # Wait for the applet area to settle (Wi-Fi shifts left once Battery maps).
 LAYOUT=""
@@ -95,17 +98,37 @@ for _ in $(seq 1 60); do
 done
 APPLET_X="$(sed -nE "s/.*'WiFi' [0-9]+x[0-9]+\+([0-9]+),.*/\1/p" <<<"$LAYOUT")"
 APPLET_Y="$(sed -nE "s/.*'WiFi' [0-9]+x[0-9]+\+[0-9]+,([0-9]+).*/\1/p" <<<"$LAYOUT")"
+VI_PID=""
 if [[ -n "$APPLET_X" && -n "$APPLET_Y" ]]; then
-    POPUP_X=$((APPLET_X + 16 - 340))
-    POPUP_Y=$((APPLET_Y - 138 - 4))
-    ROW2_Y=$((POPUP_Y + 100))
+    # The first virtual device opens the popup and stays connected: a keyboard
+    # that appears after the popup took the focus is a different case from the
+    # one under test here.
     WAYLAND_DISPLAY="$SOCK" "$VI" --extent 1280 720 \
-        --move $((APPLET_X + 8)) $((APPLET_Y + 8)) --sleep 400 --button 0x110 press --sleep 150 --button 0x110 release --sleep 1000 \
-        --move $((POPUP_X + 60)) "$ROW2_Y" --sleep 400 --button 0x110 press --sleep 150 --button 0x110 release --sleep 900 \
-        --key 31 press --key 31 release --sleep 50 --key 18 press --key 18 release --sleep 50 \
-        --key 46 press --key 46 release --sleep 50 --key 19 press --key 19 release --sleep 50 \
-        --key 18 press --key 18 release --sleep 50 --key 20 press --key 20 release --sleep 50 \
-        --key 28 press --key 28 release --sleep 600 --linger 1200 >/dev/null 2>&1 || true
+        --move $((APPLET_X + 8)) $((APPLET_Y + 8)) --sleep 400 --button 0x110 press --sleep 150 --button 0x110 release \
+        --linger 15000 >/dev/null 2>&1 &
+    VI_PID=$!
+    # Where the popup put OpenGuest (it logs its rows; opening it scans, which
+    # can add a row, so wait for the list to stop changing).
+    ROW=""
+    for _ in $(seq 1 50); do
+        sleep 0.2
+        NEXT="$(grep -oE "layout row 'OpenGuest' [0-9]+x[0-9]+\+[0-9]+,[0-9]+" "$RUNTIME/comp.log" | tail -1 || true)"
+        [[ -n "$NEXT" && "$NEXT" == "$ROW" ]] && break
+        ROW="$NEXT"
+    done
+    ROW_X="$(sed -nE 's/.*\+([0-9]+),([0-9]+)$/\1/p' <<<"$ROW")"
+    ROW_Y="$(sed -nE 's/.*\+([0-9]+),([0-9]+)$/\2/p' <<<"$ROW")"
+    if [[ -n "$ROW_X" && -n "$ROW_Y" ]]; then
+        # "secret" then Enter.
+        WAYLAND_DISPLAY="$SOCK" "$VI" --extent 1280 720 \
+            --move $((ROW_X + 60)) $((ROW_Y + 12)) --sleep 400 --button 0x110 press --sleep 150 --button 0x110 release --sleep 1200 \
+            --key 31 press --key 31 release --sleep 50 --key 18 press --key 18 release --sleep 50 \
+            --key 46 press --key 46 release --sleep 50 --key 19 press --key 19 release --sleep 50 \
+            --key 18 press --key 18 release --sleep 50 --key 20 press --key 20 release --sleep 50 \
+            --key 28 press --key 28 release --sleep 600 --linger 600 >/dev/null 2>&1 || true
+    fi
+    kill "$VI_PID" 2>/dev/null || true
+    wait "$VI_PID" 2>/dev/null || true
 fi
 
 kill -TERM -- "-$COMP_PID" 2>/dev/null || true
@@ -133,6 +156,7 @@ check "layer surface namespace='serenity-applet:WiFi' layer=top"
 # The passphrase reached NetworkManager: keyboard input made it into the popup's
 # on_demand layer surface, through the applet, to AddAndActivateConnection.
 check "mock-networkmanager: org.freedesktop.NetworkManager.AddAndActivateConnection" "$RUNTIME/mock.log"
+check "mock-networkmanager: add psk=secret" "$RUNTIME/mock.log"
 
 # The applet area must place Wi-Fi immediately to the left of Battery.
 LAYOUT="$(grep -oE "'Battery' [0-9]+x[0-9]+\+[0-9]+,[0-9]+; 'WiFi' [0-9]+x[0-9]+\+[0-9]+,[0-9]+" "$RUNTIME/comp.log" | tail -1)"
