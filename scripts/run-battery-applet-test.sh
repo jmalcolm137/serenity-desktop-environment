@@ -94,6 +94,31 @@ echo "=== BatteryApplet: no battery ==="
 check "BatteryApplet: no battery" "$RUNTIME/empty.log"
 check "layer surface namespace='serenity-applet:Battery' layer=top" "$RUNTIME/empty.log"
 
+# No power-supply class at all (a plug-in desktop, a container): the applet must
+# treat that as mains power, say so once rather than every poll, and still map.
+ABSENT="$RUNTIME/absent"   # deliberately never created
+run_case "$ABSENT" "$RUNTIME/absent.log"
+echo "--- absent power-supply class ---"
+grep -E "BatteryApplet|serenity-applet" "$RUNTIME/absent.log" || true
+echo "=== BatteryApplet: no power-supply class ==="
+check "no power-supply class at" "$RUNTIME/absent.log"
+# Once, not once per poll: the message used to be logged on every 5s refresh.
+occurrences="$(grep -c "no power-supply class at" "$RUNTIME/absent.log" 2>/dev/null || echo 0)"
+if [[ "$occurrences" -le 1 ]]; then
+    echo "  ok: the missing power-supply class is reported once (not per poll)"
+else
+    echo "  MISSING: reported $occurrences times"
+    fail=1
+fi
+check "layer surface namespace='serenity-applet:Battery' layer=top" "$RUNTIME/absent.log"
+# The old wording read as a fault; a desktop on mains is not one.
+if grep -q "unable to read the power-supply class" "$RUNTIME/absent.log"; then
+    echo "  MISSING: still reports the desktop case as an error"
+    fail=1
+else
+    echo "  ok: the desktop case is not reported as an error"
+fi
+
 if [[ "$fail" -ne 0 ]]; then
     echo "==> BatteryApplet test FAILED"
     exit 1
