@@ -130,6 +130,10 @@ add_sde_test(libwm-eventloop-teardown-test SOURCE EventLoopTeardownTest.cpp)
 # "Clear to previous mark" after the scrollback ring has wrapped (a Terminal crash).
 add_sde_test(libvt-history-test SOURCE VtHistoryTest.cpp LIBS ${LAGOM_vt})
 
+# Types into a text box before and after the only keyboard is unplugged and a
+# new one plugged in: LibWM must re-acquire wl_keyboard when the capability returns.
+add_sde_test(libwm-keyboard-replug-test SOURCE KeyboardReplugTest.cpp)
+
 # One target for the whole group, so scripts/build-tests.sh is a one-liner.
 get_property(SDE_TEST_TARGETS GLOBAL PROPERTY SDE_TEST_TARGETS)
 add_custom_target(sde-tests DEPENDS ${SDE_TEST_TARGETS})
