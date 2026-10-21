@@ -7,3 +7,11 @@
 *.swo
 *~
 /ci-logs/
+
+# AUR package build outputs
+/packaging/aur/*/src/
+/packaging/aur/*/pkg/
+/packaging/aur/*/pkg.root/
+/packaging/aur/*/libgui-wayland/
+/packaging/aur/*/serenity-desktop-environment/
+/packaging/aur/*/wlroots/

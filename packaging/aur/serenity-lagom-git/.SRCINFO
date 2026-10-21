@@ -1,6 +1,6 @@
 pkgbase = serenity-lagom-git
 	pkgdesc = SerenityOS userland framework, applications and resources for SDE
-	pkgver = r478.dbecdd2
+	pkgver = r529.2b2639a
 	pkgrel = 1
 	url = https://github.com/jmalcolm137/libgui-wayland
 	arch = x86_64
