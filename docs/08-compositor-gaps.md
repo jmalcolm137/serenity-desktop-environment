@@ -75,12 +75,16 @@ until proven otherwise.
 ## 3. Ecosystem compatibility (R5)
 
 The compatibility bar is **KDE Plasma / KWin's standard-protocol surface**; SDE
-runs the native-app protocol matrix tests and the X11 suite, but there is no
-GTK/Qt/Firefox conformance matrix in CI yet.
+runs the native-app protocol matrix tests, the X11 suite and a real GTK/Qt/Firefox
+conformance run in CI.
 
-- **No compatibility target or conformance suite (G7, N8).** The protocol matrix
-  (`run-protocol-matrix-test.sh`) and apps-smoke/X11 tests exercise many clients,
-  but a GTK/Qt/SDL/Firefox reference run is still manual.
+- **Compatibility conformance run (G7, N8): done for the toolkit smoke level.**
+  `run-toolkit-conformance-test.sh` starts real GTK3, GTK4, Qt5, Qt6 and Firefox
+  clients on the headless compositor and asserts each maps an `xdg_toplevel` with
+  its toolkit's `app_id`, takes focus from the previous window, and that the
+  compositor survives. The clients come from `scripts/ci-deps.sh`; a missing one
+  fails CI instead of silently skipping. Deeper workflow coverage (dialogs,
+  clipboard, IME, drag-and-drop and SDL clients) is still manual.
 - **Focus/attention (G3, G7): done.** `xdg-activation-v1` is served; launching
   from the Taskbar uses it.
 - **Sandbox & portal interop (G7): mostly done.** `xdg-foreign` v1/v2 and

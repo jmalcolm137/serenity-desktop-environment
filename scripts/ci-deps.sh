@@ -54,6 +54,12 @@ TEST_TOOLS=(
     desktop-file-utils        # desktop-file-validate: the app-file tests
     systemd                   # coredumpctl: the crash-reporter test
     wireplumber               # the audio graph the audio tests inspect
+    # The toolkit conformance run: real GTK3/GTK4/Qt5/Qt6/Firefox clients. These
+    # must be in the image: a missing one is a CI failure, not a silent skip.
+    gtk3-demos gtk4-demos     # gtk3-widget-factory / gtk4-widget-factory
+    qt5-declarative qt5-wayland   # qmlscene + the Qt5 Wayland platform plugin
+    qt6-declarative qt6-wayland   # qml6 + the Qt6 Wayland platform plugin
+    firefox
 )
 
 OPTIONAL=(

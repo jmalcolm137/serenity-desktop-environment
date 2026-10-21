@@ -384,6 +384,9 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   `content-type`, `tearing-control`, `cursor-shape`, `xdg-wm-dialog`,
   single-pixel-buffer and alpha-modifier, alongside the workspace / foreign-
   toplevel / capture globals. Verified by `scripts/run-protocol-matrix-test.sh`.
+  Real **GTK3/GTK4/Qt5/Qt6/Firefox** clients also run headless in CI
+  (`scripts/run-toolkit-conformance-test.sh`): each maps an `xdg_toplevel`, takes
+  focus from the previous window and leaves the compositor healthy.
   `pointer-constraints` (mouse lock/confine for games) is served too: the
   compositor activates the constraint of the surface under the cursor and enforces
   it in the cursor-motion path (locked to the client's hint, or confined to its
