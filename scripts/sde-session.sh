@@ -398,6 +398,7 @@ export SDE_APP_BIN_DIR="$APP_BIN"
 echo "SDE session: session app directory $APP_BIN"
 
 restarts=0
+restart_requested=0
 SAFE=0
 active_compositor="$COMPOSITOR"
 enter_safe_mode() {
@@ -471,6 +472,11 @@ while :; do
     stopping=0
     # shellcheck disable=SC2064
     trap 'stopping=1; kill -TERM $comp_pid $IDLE_PID $SLEEP_PID 2>/dev/null || true' TERM INT
+    # A deliberate in-place restart (deploying a new compositor). SIGTERM from
+    # the trap makes the compositor exit cleanly (0), which normally means "the
+    # user quit"; restart_requested overrides that below.
+    # shellcheck disable=SC2064
+    trap 'restart_requested=1; kill -TERM $comp_pid 2>/dev/null || true' HUP
 
     # Watchdog: restart a wedged compositor (event loop blocked). Backgrounded so
     # the blocking `wait` below stays responsive to SIGTERM.
@@ -482,7 +488,7 @@ while :; do
 
     wait "$comp_pid"
     status=$?
-    trap - TERM INT
+    trap - TERM INT HUP
     # Sweep the compositor's process group: the -s shell and the apps it spawned are
     # in it, and when the compositor exits (crash or SIGTERM) they would otherwise
     # be orphaned, so a restart left a duplicate Taskbar/Desktop/applets running.
@@ -505,6 +511,14 @@ while :; do
         rm -f "$WATCHDOG_MARK"
         echo "SDE session: stopping"
         break
+    fi
+    # SIGHUP: restart in place, keeping the session (and not consuming the crash
+    # budget). This is the safe way to deploy a new compositor without logging
+    # the user out.
+    if [ "$restart_requested" -eq 1 ]; then
+        restart_requested=0
+        echo "SDE session: restarting compositor on request"
+        continue
     fi
     # The watchdog stopped it: a restart, even if the compositor managed a clean
     # (status 0) shutdown on the way out.

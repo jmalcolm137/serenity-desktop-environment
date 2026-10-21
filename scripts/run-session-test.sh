@@ -3,7 +3,7 @@
 #   (A) XDG Autostart entries run (and Hidden=true is skipped);
 #   (B) the supervisor restarts a failing compositor, then gives up;
 #   (C) power actions route through the portable path (mocked here);
-#   (D-G) idle-to-lock, /bin power helpers, SIGTERM, capability probe;
+#   (D-G) idle-to-lock, /bin power helpers, SIGTERM/SIGHUP, capability probe;
 #   (H) the watchdog restarts a wedged compositor (stale heartbeat), (H2) also
 #       one that shuts down cleanly (status 0) on the watchdog's SIGTERM;
 #   (I) repeated failure drops to safe mode instead of ending the session;
@@ -156,6 +156,37 @@ if grep -qF "restart " "$RUNTIME/session-f.log"; then
 else
     echo "  ok: no restart on SIGTERM"
 fi
+
+echo "== (G2) SIGHUP restarts the compositor in place =="
+env SDE_SESSION_COMPOSITOR="sleep 30" \
+    SDE_SESSION_AUTOSTART=0 \
+    SDE_SESSION_MAX_RESTARTS=5 \
+    SDE_SESSION_RESTART_DELAY=0 \
+    "$SDE" > "$RUNTIME/session-g2.log" 2>&1 &
+SUP_G2=$!
+sleep 1
+kill -HUP "$SUP_G2" 2>/dev/null || true
+for _ in $(seq 1 50); do
+    [ "$(grep -c 'starting compositor' "$RUNTIME/session-g2.log" 2>/dev/null || echo 0)" -ge 2 ] && break
+    sleep 0.1
+done
+if kill -0 "$SUP_G2" 2>/dev/null; then
+    echo "  ok: supervisor survived SIGHUP"
+else
+    echo "  FAIL: supervisor exited on SIGHUP"
+    fail=1
+fi
+check "restarting compositor on request" "$RUNTIME/session-g2.log"
+if grep -qF "compositor exited; stopping" "$RUNTIME/session-g2.log"; then
+    echo "  UNEXPECTED: SIGHUP was treated as a user quit"
+    fail=1
+else
+    echo "  ok: SIGHUP was not treated as a user quit"
+fi
+kill -TERM "$SUP_G2" 2>/dev/null || true
+sleep 0.5
+kill -KILL "$SUP_G2" 2>/dev/null || true
+wait "$SUP_G2" 2>/dev/null || true
 
 echo "== (G) degraded environment: capability probe =="
 mkdir -p "$RUNTIME/caps"
