@@ -50,6 +50,40 @@ String ssid_to_string(ByteString const& ssid)
 // caller here runs on the applet's only thread, so the ceiling is a UI freeze.
 static constexpr int networkmanager_call_timeout_ms = 2000;
 
+// Fails the connection check the same way for both senders.
+static bool connection_usable(DBusConnection* connection, DBusMessage* message)
+{
+    if (!connection || !message)
+        return false;
+    if (!dbus_connection_get_is_connected(connection)) {
+        dbus_message_unref(message);
+        return false;
+    }
+    return true;
+}
+
+// Send a call whose result the next refresh will show (connect, disconnect, scan,
+// toggle radio). Nothing waits for the reply: it arrives on the event loop, so the
+// applet's only thread is never blocked on NetworkManager.
+static void send_async(DBusConnection* connection, DBusMessage* message)
+{
+    if (!connection_usable(connection, message))
+        return;
+
+    DBusPendingCall* pending = nullptr;
+    if (!dbus_connection_send_with_reply(connection, message, &pending, 2000) || !pending) {
+        dbus_connection_send(connection, message, nullptr);
+        dbus_message_unref(message);
+        return;
+    }
+    dbus_pending_call_set_notify(pending, [](DBusPendingCall* call, void*) {
+        if (auto* reply = dbus_pending_call_steal_reply(call))
+            dbus_message_unref(reply);
+        dbus_pending_call_unref(call);
+    }, nullptr, nullptr);
+    dbus_message_unref(message);
+}
+
 DBusMessage* send_and_block(DBusConnection* connection, DBusMessage* message)
 {
     if (!connection || !message)
@@ -501,8 +535,7 @@ void NetworkManagerClient::set_wireless_enabled(bool enabled)
     dbus_message_iter_open_container(&iter, DBUS_TYPE_VARIANT, "b", &variant);
     dbus_message_iter_append_basic(&variant, DBUS_TYPE_BOOLEAN, &value);
     dbus_message_iter_close_container(&iter, &variant);
-    if (auto* reply = send_and_block(m_connection, message))
-        dbus_message_unref(reply);
+    send_async(m_connection, message);
     schedule_refresh();
 }
 
@@ -523,8 +556,7 @@ void NetworkManagerClient::connect_to(WifiNetwork const& network, Optional<ByteS
         dbus_message_iter_append_basic(&iter, DBUS_TYPE_OBJECT_PATH, &connection_path);
         dbus_message_iter_append_basic(&iter, DBUS_TYPE_OBJECT_PATH, &device_path);
         dbus_message_iter_append_basic(&iter, DBUS_TYPE_OBJECT_PATH, &specific);
-        if (auto* reply = send_and_block(m_connection, message))
-            dbus_message_unref(reply);
+    send_async(m_connection, message);
         schedule_refresh();
         return;
     }
@@ -573,9 +605,7 @@ void NetworkManagerClient::connect_to(WifiNetwork const& network, Optional<ByteS
     char const* specific = network.access_point_path.characters();
     dbus_message_iter_append_basic(&iter, DBUS_TYPE_OBJECT_PATH, &device_path);
     dbus_message_iter_append_basic(&iter, DBUS_TYPE_OBJECT_PATH, &specific);
-
-    if (auto* reply = send_and_block(m_connection, message))
-        dbus_message_unref(reply);
+    send_async(m_connection, message);
     schedule_refresh();
 }
 
@@ -584,8 +614,7 @@ void NetworkManagerClient::disconnect(WifiNetwork const& network)
     if (!m_connection)
         return;
     auto* message = new_call(network.device_path.characters(), device_iface, "Disconnect");
-    if (auto* reply = send_and_block(m_connection, message))
-        dbus_message_unref(reply);
+    send_async(m_connection, message);
     schedule_refresh();
 }
 
@@ -603,8 +632,7 @@ void NetworkManagerClient::request_scan()
         dbus_message_iter_init_append(message, &iter);
         dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY, "{sv}", &options);
         dbus_message_iter_close_container(&iter, &options);
-        if (auto* reply = send_and_block(m_connection, message))
-            dbus_message_unref(reply);
+        send_async(m_connection, message);
         break;
     }
 }
