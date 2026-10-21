@@ -43,10 +43,10 @@ sudo scripts/install-session.sh    # /usr/local/bin/sde-session + /usr/share/way
 ```
 ## Relationship
 
-SDE is not an official project of SerenityOS.
-The goal of SDE is to run the SerenityOS userland unmodified on Linux.
+SDE is not affiliated with, endorsed by, or sponsored by the SerenityOS project.
+The primary goal of SDE is to run the real, unmodified SerenityOS userland on Linux.
 If you want to see changes in SDE, we suggest you contribute them to SerenityOS first.
-Changes that are truly Linux specific may not be accepted into SerenityOS and will be accepted here.
+Changes that are Linux specific may not be accepted into SerenityOS and may be accepted here.
 
 ## License
 
