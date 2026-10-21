@@ -85,7 +85,7 @@ asserted by `scripts/run-protocol-matrix-test.sh` (the full dump is printed by t
 | Protocol | Advertised | Purpose |
 |---|---|---|
 | `wp_color_representation_manager_v1` | v1 | per-surface colour representation (alpha mode, coefficients, range) |
-| `wp_color_manager_v1` | v1 | colour management; advertised only when the renderer has input colour transforms (Vulkan), because GLES2/pixman cannot perform them |
+| `wp_color_manager_v1` | v1 | colour management; advertised only when the renderer has input colour transforms (Vulkan), because GLES2/pixman cannot perform them (`scripts/run-color-management-test.sh`) |
 
 ## Workspaces & foreign toplevels
 

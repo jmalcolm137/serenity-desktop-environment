@@ -746,6 +746,7 @@ static void server_new_toplevel_decoration(wl_listener* listener, void* data)
 static Server* g_toplevel_tag_server = nullptr;
 static wl_listener g_toplevel_tag_set = {};
 static wl_listener g_toplevel_tag_description = {};
+static bool g_toplevel_tag_listeners_installed = false;
 
 static Toplevel* toplevel_for_tag_event(wlr_xdg_toplevel* xdg_toplevel)
 {
@@ -791,11 +792,19 @@ void initialize_xdg_shell(Server& server)
         wl_signal_add(&tag_manager->events.set_tag, &g_toplevel_tag_set);
         g_toplevel_tag_description.notify = toplevel_tag_description;
         wl_signal_add(&tag_manager->events.set_description, &g_toplevel_tag_description);
+        g_toplevel_tag_listeners_installed = true;
     }
 }
 
 void finish_xdg_shell(Server& server)
 {
+    // wlroots asserts the tag manager's signal lists are empty when the display
+    // is destroyed; our listeners are on the manager, not the Server.
+    if (g_toplevel_tag_listeners_installed) {
+        wl_list_remove(&g_toplevel_tag_set.link);
+        wl_list_remove(&g_toplevel_tag_description.link);
+        g_toplevel_tag_listeners_installed = false;
+    }
     remove_listener(server.new_xdg_toplevel);
     remove_listener(server.new_xdg_popup);
     remove_listener(server.new_toplevel_decoration);

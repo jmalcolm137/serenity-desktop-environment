@@ -116,6 +116,7 @@ static void security_context_committed(wl_listener*, void* data)
 }
 
 static wl_listener g_security_context_commit = {};
+static wlr_security_context_manager_v1* g_security_context_manager = nullptr;
 
 static ErrorOr<void> initialize(Server& server)
 {
@@ -289,6 +290,7 @@ static ErrorOr<void> initialize(Server& server)
     initialize_color_management(server);
 
     if (auto* security_context_manager = wlr_security_context_manager_v1_create(server.display)) {
+        g_security_context_manager = security_context_manager;
         g_security_context_commit.notify = security_context_committed;
         wl_signal_add(&security_context_manager->events.commit, &g_security_context_commit);
         dbgln("WindowServer: security-context-v1 enabled");
@@ -320,6 +322,13 @@ static ErrorOr<void> initialize(Server& server)
 // handler must never run against a half-destroyed compositor. The backend goes
 // before the scene and the seat, because destroying it destroys the outputs and
 // input devices, whose own destroy handlers still use those.
+static void finish_security_context()
+{
+    // The manager asserts its commit signal has no listeners on display destroy.
+    if (g_security_context_manager)
+        wl_list_remove(&g_security_context_commit.link);
+}
+
 static void finish(Server& server)
 {
     wl_display_destroy_clients(server.display);
@@ -336,6 +345,7 @@ static void finish(Server& server)
     finish_interop(server);
     finish_layer_shell(server);
     finish_xdg_shell(server);
+    finish_security_context();
     finish_outputs(server);
 
     // Destroy the compositor's cached overlay nodes while the scene graph still
