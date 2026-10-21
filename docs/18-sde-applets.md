@@ -11,7 +11,7 @@ equivalent**, never shimmed.
 `Applets/CMakeLists.txt` builds each applet from the **unmodified upstream
 sources** in the SerenityOS checkout (`SERENITY_SRC/Userland/Applets/<Name>/`),
 linking the Serenity userland libraries (from the `libgui-wayland` build), the
-in-process WindowServer shim (`windowserver`/LibWM). `compat/` supplies the one Serenity-only header the sources
+in-process WindowServer shim (`windowserver`/LibWM). `Libraries/Compat/` supplies the one Serenity-only header the sources
 need (`WindowServer/Window.h` → `WMEventMask`).
 
 ```sh

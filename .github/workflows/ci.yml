@@ -34,7 +34,7 @@ jobs:
     # framework fails the SDE's patch application deep inside the build, with an
     # error that says nothing about the image -- and every branch then looks
     # broken. The image records what it baked (org.sde.framework-revision, set in
-    # ci/Containerfile), so say so up front instead: this job compares that label
+    # Meta/CI/Containerfile), so say so up front instead: this job compares that label
     # with libgui-wayland main, fails with "rebuild the CI image", and starts the
     # rebuild itself.
     image-freshness:

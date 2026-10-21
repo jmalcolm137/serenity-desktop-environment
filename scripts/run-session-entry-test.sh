@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test the display-manager session entry: session/sde.desktop.in + session/sde-session.in
+# Test the display-manager session entry: Base/session/sde.desktop.in + Base/session/sde-session.in
 # and scripts/install-session.sh (install / uninstall / dry-run), installed into a
 # temp prefix so no system paths are touched. Also validates the .desktop if
 # desktop-file-validate is available.
@@ -19,11 +19,11 @@ BIN="$RUNTIME/bin"
 SESSIONS="$RUNTIME/wayland-sessions"
 
 echo "== (A) templates are well-formed =="
-check "Name=Serenity Desktop Environment" "$(cat "$SDE_ROOT/session/sde.desktop.in")"
-check "Type=Application" "$(cat "$SDE_ROOT/session/sde.desktop.in")"
-check "DesktopNames=SDE" "$(cat "$SDE_ROOT/session/sde.desktop.in")"
-check "Exec=@EXEC@" "$(cat "$SDE_ROOT/session/sde.desktop.in")"
-check "start-sde-session.sh" "$(cat "$SDE_ROOT/session/sde-session.in")"
+check "Name=Serenity Desktop Environment" "$(cat "$SDE_ROOT/Base/session/sde.desktop.in")"
+check "Type=Application" "$(cat "$SDE_ROOT/Base/session/sde.desktop.in")"
+check "DesktopNames=SDE" "$(cat "$SDE_ROOT/Base/session/sde.desktop.in")"
+check "Exec=@EXEC@" "$(cat "$SDE_ROOT/Base/session/sde.desktop.in")"
+check "start-sde-session.sh" "$(cat "$SDE_ROOT/Base/session/sde-session.in")"
 bash -n "$SDE_ROOT/scripts/install-session.sh" && echo "  ok: installer syntax"
 
 echo "== (B) dry run writes nothing =="

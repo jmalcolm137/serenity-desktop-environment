@@ -18,15 +18,15 @@ the Serenity userland libraries from the `libgui-wayland` build. It is a
 
 | Path | Role |
 |---|---|
-| `WifiApplet/src/NetworkManagerClient.h` / `.cpp` | The NetworkManager D-Bus client (system bus, libdbus on LibCore's event loop, every call asynchronous) and the `org.freedesktop.NetworkManager.SecretAgent`. |
-| `WifiApplet/src/WifiIcon.h` / `.cpp` | The Breeze Wi-Fi glyphs, drawn with LibGfx (no theme assets). |
-| `WifiApplet/src/WifiPopup.h` / `.cpp` | The popup: toolbar, network list, inline passphrase field, hidden-network form. |
-| `WifiApplet/src/WifiWidget.h` / `.cpp` | The tray widget, tooltip, context menu and popup host. |
-| `WifiApplet/src/main.cpp` | `serenity_main`, the applet window and the command line. |
+| `Applets/WiFi/src/NetworkManagerClient.h` / `.cpp` | The NetworkManager D-Bus client (system bus, libdbus on LibCore's event loop, every call asynchronous) and the `org.freedesktop.NetworkManager.SecretAgent`. |
+| `Applets/WiFi/src/WifiIcon.h` / `.cpp` | The Breeze Wi-Fi glyphs, drawn with LibGfx (no theme assets). |
+| `Applets/WiFi/src/WifiPopup.h` / `.cpp` | The popup: toolbar, network list, inline passphrase field, hidden-network form. |
+| `Applets/WiFi/src/WifiWidget.h` / `.cpp` | The tray widget, tooltip, context menu and popup host. |
+| `Applets/WiFi/src/main.cpp` | `serenity_main`, the applet window and the command line. |
 | `scripts/build-wifi-applet.sh` | Builds it into `build/WifiApplet/WifiApplet`. |
-| `tools/mock-networkmanager.c` | A stateful mock NetworkManager, with fault injection, for the tests. |
+| `Tools/mock-networkmanager.c` | A stateful mock NetworkManager, with fault injection, for the tests. |
 | `scripts/run-wifi-applet-test.sh` | The headless exit test (the real applet in the compositor). |
-| `test/WifiClientTest.cpp`, `scripts/run-wifi-client-test.sh` | The client's robustness test (no UI). |
+| `Tests/WifiClientTest.cpp`, `scripts/run-wifi-client-test.sh` | The client's robustness test (no UI). |
 
 ## 2. Why NetworkManager over D-Bus
 
@@ -170,7 +170,7 @@ Connected to MockNet
 The popup is a `GUI::WindowType::Popup` (an overlay layer surface), so it is
 undecorated, out of the window list and takes keyboard focus for the search and
 passphrase fields. (Keyboard focus for `on_demand` layer surfaces is provided by
-the compositor; see `focus_layer_surface` in `WindowServer/src/LayerShell.cpp`.)
+the compositor; see `focus_layer_surface` in `Services/WindowServer/src/LayerShell.cpp`.)
 A layer surface has a fixed size, so the popup is hidden and shown again when
 its size changes; it puts the keyboard focus back afterwards.
 
@@ -186,7 +186,7 @@ out in the Taskbar's applet area.
 
 Applet order is right-to-left by descending index, so the compositor appends
 **`WiFi` then `Battery`** to `[Applet] Order` (unless the user placed them), which
-puts Wi-Fi immediately to the left of the battery applet (`WindowServer/src/Config.cpp`).
+puts Wi-Fi immediately to the left of the battery applet (`Services/WindowServer/src/Config.cpp`).
 The session scripts build it on demand and add it to the compositor's startup
 command, next to the battery applet.
 
@@ -202,7 +202,7 @@ defaults to `WiFi`.
 ## 7. Tests
 
 `scripts/run-wifi-applet-test.sh` is hermetic: it starts a **private D-Bus**
-(`dbus-daemon`), serves a **mock NetworkManager** (`tools/mock-networkmanager.c`)
+(`dbus-daemon`), serves a **mock NetworkManager** (`Tools/mock-networkmanager.c`)
 with two networks (`MockNet`, a secured 82 % network that is connected and has a
 saved profile, and the secured `OpenGuest`) and runs the compositor headless. It
 asserts:

@@ -17,13 +17,13 @@ echo "== building prerequisites =="
 mkdir -p "$TOOLS_BUILD"
 WP="$(pkg-config --variable=pkgdatadir wayland-protocols)"
 XDG_SHELL_XML="$WP/stable/xdg-shell/xdg-shell.xml"
-SESSION_XML="$SDE_ROOT/WindowServer/protocol/xdg-session-management-v1.xml"
+SESSION_XML="$SDE_ROOT/Services/WindowServer/protocol/xdg-session-management-v1.xml"
 wayland-scanner client-header "$XDG_SHELL_XML" "$TOOLS_BUILD/xdg-shell-client-protocol.h"
 wayland-scanner private-code  "$XDG_SHELL_XML" "$TOOLS_BUILD/xdg-shell-protocol.c"
 wayland-scanner client-header "$SESSION_XML" "$TOOLS_BUILD/xdg-session-management-v1-client-protocol.h"
 wayland-scanner private-code  "$SESSION_XML" "$TOOLS_BUILD/xdg-session-management-v1-protocol.c"
 cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/tools/session-test.c" \
+    "$SDE_ROOT/Tools/session-test.c" \
     "$TOOLS_BUILD/xdg-shell-protocol.c" \
     "$TOOLS_BUILD/xdg-session-management-v1-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) \

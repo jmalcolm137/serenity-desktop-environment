@@ -31,7 +31,7 @@ wayland-scanner private-code  "$VK_XML" "$VT_BUILD/virtual-keyboard-unstable-v1-
 wayland-scanner client-header "$VP_XML" "$VT_BUILD/wlr-virtual-pointer-unstable-v1-client-protocol.h"
 wayland-scanner private-code  "$VP_XML" "$VT_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c"
 cc -O2 -I "$VT_BUILD" \
-    "$SDE_ROOT/tools/virtual-input-test.c" \
+    "$SDE_ROOT/Tools/virtual-input-test.c" \
     "$VT_BUILD/virtual-keyboard-unstable-v1-protocol.c" \
     "$VT_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c" \
     $(pkg-config --cflags --libs wayland-client xkbcommon) \

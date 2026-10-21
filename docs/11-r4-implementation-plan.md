@@ -180,7 +180,7 @@ cursor). `Super+L` spawns the lock client (`SDE_LOCK_CMD`, default `swaylock`).
 Both scripts pass, including a two-output lock.
 
 **R4.1 complete.** Blank-before-lock and lock-surface reconfiguration landed:
-`tools/sde-dpms.c` sets output power (blank/restore) and `sde-idle` gained a
+`Tools/sde-dpms.c` sets output power (blank/restore) and `sde-idle` gained a
 `resume` command, so the session arms *blank at N s, lock at M s, restore on
 activity* (`SDE_SESSION_IDLE_DPMS_SECONDS`); the compositor re-configures a lock
 surface when its output's size changes while locked (guarded against the
@@ -212,7 +212,7 @@ the session environment (`XDG_SESSION_TYPE`, `XDG_CURRENT_DESKTOP`,
 `WAYLAND_DISPLAY`), runs **XDG Autostart** entries (`$XDG_CONFIG_HOME/autostart`,
 honouring `Hidden=true` and field-code stripping), starts the compositor, and
 restarts it on a non-zero exit within a bounded budget. It arms **idle-to-lock**
-by running the portable **`sde-idle`** daemon (`tools/sde-idle.c`, built by
+by running the portable **`sde-idle`** daemon (`Tools/sde-idle.c`, built by
 `scripts/build-tools.sh`), a plain `ext-idle-notify-v1` client that runs the lock
 command after `SDE_SESSION_IDLE_SECONDS`. `scripts/sde-power.sh` routes
 `logout|reboot|shutdown|suspend` to **logind** (`loginctl`, else `busctl` on
@@ -233,10 +233,10 @@ by `scripts/run-binpath-test.sh` (port-side `/bin` shadow) and
 *permanently inhibited*: wlroots unlinks an inhibitor only *after* its destroy
 signal, so the compositor's `wl_list_empty` check still saw it. The compositor now
 excludes the dying inhibitor when recomputing the inhibited state
-(`update_idle_inhibit` in `WindowServer/src/Idle.cpp`).
+(`update_idle_inhibit` in `Services/WindowServer/src/Idle.cpp`).
 
 **Session restore landed (`xdg-session-management-v1`).** The compositor serves the
-standard protocol (`WindowServer/src/SessionManager.cpp`): `get_session` (new →
+standard protocol (`Services/WindowServer/src/SessionManager.cpp`): `get_session` (new →
 `created`, or load → `restored`; a second client taking an in-use id gets
 `replaced`), `add_toplevel`/`restore_toplevel`/`remove_toplevel`,
 `xdg_toplevel_session_v1.restored`, and per-session geometry persisted under

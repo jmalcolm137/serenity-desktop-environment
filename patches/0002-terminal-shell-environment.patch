@@ -11,7 +11,7 @@ index f6884b73..28793d0b 100644
 +# SDE build passes -DSDE_ROOT; a plain libgui-wayland build leaves it undefined
 +# and is unaffected.
 +if (DEFINED SDE_ROOT AND NOT "${SDE_ROOT}" STREQUAL "")
-+    add_subdirectory("${SDE_ROOT}/src/LibSerenitySystem" "${CMAKE_CURRENT_BINARY_DIR}/LibSerenitySystem")
++    add_subdirectory("${SDE_ROOT}/Libraries/LibSerenitySystem" "${CMAKE_CURRENT_BINARY_DIR}/LibSerenitySystem")
 +    target_link_libraries(Terminal PRIVATE SerenitySystem)
 +endif()
 diff --git a/Userland/Applications/Terminal/main.cpp b/Userland/Applications/Terminal/main.cpp

@@ -3,7 +3,7 @@
 **Status:** current · **Date:** 2026-10-17
 **Related:** [`02-compositor-decision.md`](02-compositor-decision.md) · [`08-compositor-gaps.md`](08-compositor-gaps.md) §6 · [`25-performance.md`](25-performance.md) · [`26-ci.md`](26-ci.md)
 
-`WindowServer/` is a wlroots compositor with one unusual design choice: it does
+`Services/WindowServer/` is a wlroots compositor with one unusual design choice: it does
 not run `wl_display_run()`. Wayland's event loop is pumped through a
 `Core::Notifier` into Serenity's `Core::EventLoop`, so Wayland, the
 WindowManagerServer IPC, timers, config watchers and signals share one loop.

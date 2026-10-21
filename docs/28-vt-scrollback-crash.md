@@ -1,7 +1,7 @@
 # The Terminal scrollback-ring crash
 
 Status: fixed: `libgui-wayland` patch `0064-libvt-history-ring-index.patch`, guarded
-by `scripts/run-vt-history-test.sh` (test/VtHistoryTest.cpp).
+by `scripts/run-vt-history-test.sh` (Tests/VtHistoryTest.cpp).
 
 ## The crash
 
@@ -62,7 +62,7 @@ even if a third path is missed.
 
 ## The regression test
 
-`test/VtHistoryTest.cpp` fills the ring, wraps it, clears to a mark whose line the ring
+`Tests/VtHistoryTest.cpp` fills the ring, wraps it, clears to a mark whose line the ring
 has overwritten, and then scrolls one more line. Before the fix that last scroll is the
 same `VERIFY(index <= size())` → `SIGILL`; the driver treats a signal as the assertion,
 like `run-eventloop-teardown-test.sh`.

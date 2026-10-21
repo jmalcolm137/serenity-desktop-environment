@@ -50,7 +50,7 @@ mkdir -p "$LOCK_BUILD"
 WP="$(pkg-config --variable=pkgdatadir wayland-protocols)"
 wayland-scanner client-header "$WP/staging/ext-session-lock/ext-session-lock-v1.xml" "$LOCK_BUILD/ext-session-lock-v1-client-protocol.h"
 wayland-scanner private-code "$WP/staging/ext-session-lock/ext-session-lock-v1.xml" "$LOCK_BUILD/ext-session-lock-v1-protocol.c"
-cc -O2 -I "$LOCK_BUILD" "$SDE_ROOT/tools/lock-test.c" "$LOCK_BUILD/ext-session-lock-v1-protocol.c" \
+cc -O2 -I "$LOCK_BUILD" "$SDE_ROOT/Tools/lock-test.c" "$LOCK_BUILD/ext-session-lock-v1-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) -o "$LOCK_BUILD/lock-test"
 LOCK="$LOCK_BUILD/lock-test"
 

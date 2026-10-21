@@ -21,7 +21,7 @@ do **not** vendor, fork, or duplicate them.
 - **D-Bus uses the `dbus-1` reference library behind an AK value layer.** SDE services that
   speak D-Bus (the portals, the Wi-Fi applet) use AK types over `dbus-1`, never GLib/GIO
   (`GVariant`, `GDBus`, `GMainLoop`). The shared value/service layer for the portals is
-  `tools/portal/dbus.h` (`Portal::Value`, `Portal::MethodCall`, `Portal::Service`).
+  `Tools/portal/dbus.h` (`Portal::Value`, `Portal::MethodCall`, `Portal::Service`).
 
 ## D1a: One build tree, one entry point
 
@@ -40,9 +40,39 @@ so there is one dependency graph, one `compile_commands.json`, and any target is
   (README, "Building from scratch").
 - **The framework is not a subdirectory.** `libgui-wayland`'s Lagom build has its own
   entry point and its own state (its patch set, its configuration), so the SDE drives
-  it as the `lagom` target instead of re-configuring it (see `cmake/SDELagom.cmake`).
+  it as the `lagom` target instead of re-configuring it (see `Meta/CMake/SDELagom.cmake`).
   The files the SDE links are that target's byproducts, so a change to LibGUI is a
   dependency of the SDE targets that use it, not something to rebuild by hand.
+
+## D1b: Repository layout
+
+The tree is grouped the way SerenityOS groups its own, so a reader who knows one
+knows the other:
+
+| Directory | What goes there |
+|---|---|
+| `Services/` | Session services, each in its own directory: the compositor (`Services/WindowServer/`) and the services SDE builds or provides (`AudioServer`, `ImageDecoder`, `LaunchServer`, `NotificationServer`, `RequestServer`, `SQLServer`, `WebContent`). |
+| `Applets/` | Taskbar applets. SDE's own (`Applets/Battery/`, `Applets/WiFi/`) are full projects; `Applets/CMakeLists.txt` builds SerenityOS's applets from upstream, with SDE's Linux replacements for individual files in `Applets/<Name>/`. |
+| `Dialogs/` | The LibGUI dialogs the xdg-desktop-portal backend launches (`Access`, `AppChooser`, `ColorPicker`, `FileChooser`, `Print`, `ScreenCastChooser`, `ScreenshotOverlay`). |
+| `Libraries/` | Code linked into other components: `LibSerenitySystem`, and `Compat/`, host stand-ins for Serenity-only headers. |
+| `Base/` | Files installed as data rather than built: the display-manager session entry (`Base/session/`) and the portal configuration (`Base/xdg-desktop-portal/`). |
+| `Meta/` | Build and release machinery: `Meta/CMake/` (the CMake modules), `Meta/CI/` (the CI image), `Meta/packaging/` (the AUR packages). |
+| `Tools/` | Session utilities, the portal backends, and the C test clients the scripts drive. |
+| `Tests/` | The C++ test programs (`scripts/build-tests.sh`). |
+| `scripts/` | Build, session and test entry points (`run-*-test.sh`), and `scripts/lib/`. |
+| `patches/` | SDE's changes to the SerenityOS tree (`patches/README.md`). |
+| `docs/` | Design documents and conventions, numbered. |
+
+- **Pick the group by what a component is, not by who wrote it.** A service that
+  wraps upstream sources and one written for SDE both live in `Services/`.
+- **Build outputs do not follow the source.** The top-level `CMakeLists.txt` gives
+  each component an explicit binary directory, so a component's output stays at
+  `build/<Name>/` (`build/WindowServer/WindowServer`, `build/WifiApplet/WifiApplet`,
+  `build/tools/`, `build/test/`) wherever its source moves. Scripts refer to those
+  paths; keep them stable.
+- **Paths into the repository start from `$SDE_ROOT`** (scripts) or
+  `${CMAKE_SOURCE_DIR}` / `${SDE_ROOT}` (CMake), never from a relative `../`, so a
+  component can move without its references breaking.
 
 ## D2: SerenityOS-style `main` (always use LibCore/LibMain)
 
@@ -154,7 +184,7 @@ images. This is the gold standard and the default way we test the UI.
   genuinely needed for headless CI, it is **one** small, general, permanent way to
   capture an output, not a bespoke env var invented to chase one bug.
 - Make the shot reproducible with scripted input
-  (`tools/virtual-input-test` can snap/move/focus) rather than manual steps.
+  (`Tools/virtual-input-test` can snap/move/focus) rather than manual steps.
 
 ## D8: Scripts clean up after themselves
 

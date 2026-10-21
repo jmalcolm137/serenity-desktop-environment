@@ -12,7 +12,7 @@ index 099a8493..5d0054be 100644
 +# passes -DSDE_ROOT; a plain libgui-wayland build leaves it undefined and the
 +# Profiler reports that profiling is unavailable (rather than failing to link).
 +if (DEFINED SDE_ROOT AND NOT "${SDE_ROOT}" STREQUAL "")
-+    add_subdirectory("${SDE_ROOT}/src/LibSerenitySystem" "${CMAKE_CURRENT_BINARY_DIR}/LibSerenitySystem")
++    add_subdirectory("${SDE_ROOT}/Libraries/LibSerenitySystem" "${CMAKE_CURRENT_BINARY_DIR}/LibSerenitySystem")
 +    target_link_libraries(Profiler PRIVATE SerenitySystem)
 +    target_compile_definitions(Profiler PRIVATE SDE_HAVE_SERENITY_SYSTEM=1)
 +endif()

@@ -49,7 +49,7 @@ first (they currently assume the port's patch defines the target).
 
 The port defines and builds it (`libgui-wayland/src/CMakeLists.txt`, from
 Serenity's `Userland/Services/NotificationServer`), and the SDE builds the
-identical thing as a session service (`NotificationServer/`, staged into
+identical thing as a session service (`Services/NotificationServer/`, staged into
 `SDE_APP_BIN_DIR`, spawned on the notify portal). Notifications are the desktop's;
 the port's copy is redundant and is not part of any port build target list.
 
@@ -102,7 +102,7 @@ verified to apply in order after the port's patch stack.
 
 The `libgui-wayland/src/test/*` payloads whose *only* driver is an SDE script
 (`libwm-{binpath,combo,drag,font-parity,launch-exec,notify,procstat,services,tooltip}-test`)
-now live here, in `test/`, and build via `scripts/build-tests.sh`. That is the
+now live here, in `Tests/`, and build via `scripts/build-tests.sh`. That is the
 rule: a test belongs with the repo that owns its expectation. The port keeps the
 payloads it drives itself (`libwm-{test-window,clipboard,about,fullscreen,submenu}-test`,
 plus `appfile`/`hidpi-detail`).
@@ -125,7 +125,7 @@ desktop's, not the application framework's.
 ## Not SDE-specific (leave in the port)
 
 - `libeglgpu/`: a Mesa/EGL-backed `GPU::Device`.
-- `compat/`: host stand-ins for Serenity-only headers.
+- `Libraries/Compat/`: host stand-ins for Serenity-only headers.
 - `Core::PortalServer` plumbing and spawning `WebContent`/`RequestServer`/`SQLServer`:
   the Browser application needs them.
 - The port's own tests (`run-3dfileviewer/-clipboard/-menu/-pdfviewer/-headless-tests/-lib-tests`).
@@ -151,7 +151,7 @@ the compositor serves it, not LibWM, so that separation is done.
 - [x] **4. Move the SDE-specific patches** into this repo's patch set: the
       Taskbar ones and the `LibSerenitySystem` links (see §4).
 - [x] **5. Decide test ownership**: the SDE owns the SDE-driven payloads;
-      they moved to `test/` (`scripts/build-tests.sh`). See §5.
+      they moved to `Tests/` (`scripts/build-tests.sh`). See §5.
 - [x] **6. Build the applications here, not in the framework**:
       `scripts/build-apps.sh`, with the target definitions in
       `patches/0008-sde-lagom-targets.patch`. See §6.

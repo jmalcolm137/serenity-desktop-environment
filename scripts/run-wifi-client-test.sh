@@ -12,7 +12,7 @@ MOCK="$SDE_ROOT/build/tools/mock-networkmanager"
 
 "$SDE_ROOT/scripts/build-tests.sh" libwm-wifi-client-test >/dev/null
 mkdir -p "$SDE_ROOT/build/tools"
-cc -O2 -Wall "$SDE_ROOT/tools/mock-networkmanager.c" $(pkg-config --cflags --libs dbus-1) -o "$MOCK"
+cc -O2 -Wall "$SDE_ROOT/Tools/mock-networkmanager.c" $(pkg-config --cflags --libs dbus-1) -o "$MOCK"
 
 SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/sde-wifi-client.XXXXXX")"
 trap 'rm -rf "$SCRATCH"' EXIT

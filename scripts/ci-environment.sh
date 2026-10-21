@@ -2,7 +2,7 @@
 # Print what a CI job is actually running on, before it does anything.
 #
 # The job is deliberately a hybrid, and its failures are only diagnosable if that
-# is visible in the log: the *userland* is the Arch container in ci/Containerfile
+# is visible in the log: the *userland* is the Arch container in Meta/CI/Containerfile
 # (the toolchain the tests were written against), while the *kernel* is the
 # GitHub runner's — so kernel policy (perf_event_paranoid, unprivileged user
 # namespaces) is Ubuntu policy, not Arch's. The framework commit matters too: the

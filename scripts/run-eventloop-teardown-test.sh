@@ -5,7 +5,7 @@
 # EventLoop while widget trees are still being destroyed, and destroying a widget can
 # defer work. `EventLoop::current()` returned a reference into the empty loop stack
 # there, so clients dumped core around a compositor restart. The payload is the test
-# (test/EventLoopTeardownTest.cpp) and its exit status is the assertion: dying by
+# (Tests/EventLoopTeardownTest.cpp) and its exit status is the assertion: dying by
 # signal is the bug.
 set -euo pipefail
 

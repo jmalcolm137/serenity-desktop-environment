@@ -5,7 +5,7 @@
 [`08-compositor-gaps.md`](08-compositor-gaps.md) §3–4 ·
 [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §R5 ·
 [`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md) ·
-`contrib/xdg-desktop-portal/`
+`Base/xdg-desktop-portal/`
 
 This document resolves the one open ScreenCast/Input problem that needed a
 decision before any code could land: **`org.freedesktop.portal.InputCapture`**
@@ -148,7 +148,7 @@ protocol (`§5`), except the prompt.
 
 ## 5. Private compositor protocol (`serenity_input_capture`)
 
-A small, **privileged** Wayland protocol (new `WindowServer/protocol/…` plus
+A small, **privileged** Wayland protocol (new `Services/WindowServer/protocol/…` plus
 generated bindings, like `serenity-window`). It is only offered when the session
 opts in (`SDE_INPUT_CAPTURE=1`, §6). Sketch:
 
@@ -237,7 +237,7 @@ InputCapture is a **keylogger-class** capability, so:
    keyboard device is created with the configured XKB keymap
    (`eis_device_new_keymap`); while a keyboard-capturing session is active, key
    events and the XKB modifier state are fed over EIS. Covered by the same test.
-4. **P4: D-Bus end-to-end (landed).** `tools/portal/input-capture.{h,cpp}` implements
+4. **P4: D-Bus end-to-end (landed).** `Tools/portal/input-capture.{h,cpp}` implements
    `org.freedesktop.impl.portal.InputCapture` in `xdg-desktop-portal-serenity`:
    session/receiving relay to the compositor over the private protocol, the EIS fd
    from `ConnectToEIS`, the `Activated`/`Deactivated`/`Disabled`/`ZonesChanged`
@@ -260,7 +260,7 @@ GPU), so CI stays green.
 ## 8. Exit tests
 
 - `scripts/run-input-capture-test.sh` (headless; **P1–P3 landed**): starts the
-  compositor with `SDE_INPUT_CAPTURE=1`; `tools/input-capture-test.c` creates a
+  compositor with `SDE_INPUT_CAPTURE=1`; `Tools/input-capture-test.c` creates a
   session, connects the libei receiver, requests zones, installs a valid and an
   invalid barrier, arms capture (keyboard + pointer), and the test moves a virtual
   pointer across the barrier and types a key. Asserts: a seat and both devices are
@@ -276,8 +276,8 @@ GPU), so CI stays green.
   crossing, `Disable`, and persistence (`persist_mode` returns a `restore_data`
   that suppresses the prompt on the next `Start`, and legacy version 1 data still
   restores).
-- `tools/input-capture-test.c` (new): a small libei passive client, mirroring
-  `tools/screencast-consumer.c` for the capture side; reports
+- `Tools/input-capture-test.c` (new): a small libei passive client, mirroring
+  `Tools/screencast-consumer.c` for the capture side; reports
   `device_start_emulating seq=N`, received motion/keys, and can inject emulated
   events.
 

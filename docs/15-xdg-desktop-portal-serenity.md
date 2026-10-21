@@ -3,7 +3,7 @@
 **Status:** Phase 1 + Phase 2 landed. Metadata cursor mode and zero-copy DMA-BUF are in place and verified on a live TTY; Camera works via the frontend (§6); InputCapture is landed (P1–P5, [`17-input-capture.md`](17-input-capture.md)); the USB portal's backend is a real broker (§6.5); `Inhibit` (and the `Request` object machinery) is served (§2); the dialogs run asynchronously (§6.6); grants are remembered in the freedesktop permission store (§6.6). No code-only work remains.
 **Related:** [`08-compositor-gaps.md`](08-compositor-gaps.md) §3,
 [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §R5,
-`contrib/xdg-desktop-portal/`
+`Base/xdg-desktop-portal/`
 
 ## 1. What it is
 
@@ -13,32 +13,32 @@ talk to the portal frontend, which routes to a backend implementing
 `-gtk`; this is the SDE backend, **`xdg-desktop-portal-serenity`**.
 
 It is a **portable host D-Bus service** (AK/LibCore over the `dbus-1` transport,
-see `tools/portal/dbus.h`; standard protocols only: P8/P9):
+see `Tools/portal/dbus.h`; standard protocols only: P8/P9):
 it runs under any compositor, and reaches SDE-specific behaviour through small,
 overridable seams. It aims for **standards compliance** (the documented impl
 interfaces, no vendor-private surface).
 
 - Bus name: `org.freedesktop.impl.portal.desktop.serenity`
 - Object path: `/org/freedesktop/portal/desktop`
-- `.portal` file: `contrib/xdg-desktop-portal/serenity.portal`
-- Selection: `contrib/xdg-desktop-portal/portals.conf` (prefer us where we
+- `.portal` file: `Base/xdg-desktop-portal/serenity.portal`
+- Selection: `Base/xdg-desktop-portal/portals.conf` (prefer us where we
   implement an interface, fall back to `gtk` otherwise)
 
-This supersedes the earlier single-interface `tools/portal/settings-portal.cpp` (R4.4):
+This supersedes the earlier single-interface `Tools/portal/settings-portal.cpp` (R4.4):
 `Settings` now lives here alongside the other interfaces.
 
 **Implementation.** The backend is Serenity-style C++ (AK/LibCore) over the
-`dbus-1` transport, **no GLib/GIO**. `tools/portal/dbus.h` is the AK value and
+`dbus-1` transport, **no GLib/GIO**. `Tools/portal/dbus.h` is the AK value and
 service layer (`Portal::Value`, `Portal::MethodCall`, `Portal::Service`); the
-backend is split into `tools/portal/backend.cpp` (the non-capture interfaces)
+backend is split into `Tools/portal/backend.cpp` (the non-capture interfaces)
 plus `screencast.cpp`, `remote-desktop.cpp`, `input-capture.cpp` and
 `global-shortcuts.cpp`, each registering its own interface on the shared
 `Portal::Service`. Image decoding/encoding (wallpaper, screenshots, colour
 sampling) uses **LibGfx**; there is no gdk-pixbuf. The service also answers
 `org.freedesktop.DBus.Introspectable` from the interfaces' definitions
-(`tools/portal/introspection.cpp`), so `gdbus introspect`, `busctl introspect`
+(`Tools/portal/introspection.cpp`), so `gdbus introspect`, `busctl introspect`
 and `d-feet` work (and clients type their arguments from it). The R4.4 Settings
-portal is the standalone `tools/portal/settings-portal.cpp` binary.
+portal is the standalone `Tools/portal/settings-portal.cpp` binary.
 
 ## 2. Interfaces
 
@@ -103,7 +103,7 @@ a frontend stored before. RemoteDesktop (`SelectDevices`/`Start`) and InputCaptu
 extras (dynamic cast target, "block out from screencast") remain.
 
 **Source selection is a LibGUI app.** As with all SDE UI, the picker is a
-SerenityOS **LibGUI** app, `ScreenCastChooser/` (built by
+SerenityOS **LibGUI** app, `Dialogs/ScreenCastChooser/` (built by
 `scripts/build-screen-cast-chooser.sh`), launched asynchronously by the backend
 (`run_command_async()`, like the dialogs; §6.6) when `SDE_PORTAL_CHOOSER` is set,
 with the monitor + window candidates as arguments; it prints the chosen index, and
@@ -111,14 +111,14 @@ with the monitor + window candidates as arguments; it prints the chosen index, a
 `ext_foreign_toplevel_image_capture_source_manager_v1`, and the embedded cursor
 mode uses the capture session's `PAINT_CURSORS` option.
 
-The **FileChooser** portal is likewise a LibGUI app, `FileChooserDialog/`
+The **FileChooser** portal is likewise a LibGUI app, `Dialogs/FileChooser/`
 (`scripts/build-file-chooser-dialog.sh`), wrapping `GUI::FilePicker`, launched
-via `SDE_PORTAL_FILE_CHOOSER`. The **Print** dialog is `PrintDialog/`
-(`scripts/build-print-dialog.sh`), and the permission prompt is `AccessDialog/`
-(`scripts/build-access-dialog.sh`). The color picker is `ColorPicker/`
+via `SDE_PORTAL_FILE_CHOOSER`. The **Print** dialog is `Dialogs/Print/`
+(`scripts/build-print-dialog.sh`), and the permission prompt is `Dialogs/Access/`
+(`scripts/build-access-dialog.sh`). The color picker is `Dialogs/ColorPicker/`
 (`scripts/build-color-picker.sh`), and the application chooser is
-`AppChooserDialog/` (`scripts/build-app-chooser-dialog.sh`). The interactive
-screenshot area selector is `ScreenshotOverlay/`
+`Dialogs/AppChooser/` (`scripts/build-app-chooser-dialog.sh`). The interactive
+screenshot area selector is `Dialogs/ScreenshotOverlay/`
 (`scripts/build-screenshot-overlay.sh`). `scripts/build-portal-apps.sh` builds
 all of them in one go.
 
@@ -157,11 +157,11 @@ hard-coding them (the backend stays portable, with fallbacks):
 build/tools/xdg-desktop-portal-serenity &
 
 # Tell the frontend about it:
-install -Dm644 contrib/xdg-desktop-portal/serenity.portal \
+install -Dm644 Base/xdg-desktop-portal/serenity.portal \
     ~/.local/share/xdg-desktop-portal/portals/serenity.portal
-install -Dm644 contrib/xdg-desktop-portal/org.freedesktop.impl.portal.desktop.serenity.service \
+install -Dm644 Base/xdg-desktop-portal/org.freedesktop.impl.portal.desktop.serenity.service \
     ~/.local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.serenity.service
-install -Dm644 contrib/xdg-desktop-portal/portals.conf \
+install -Dm644 Base/xdg-desktop-portal/portals.conf \
     ~/.config/xdg-desktop-portal/portals.conf
 ```
 
@@ -199,7 +199,7 @@ To reach and surpass `xdg-desktop-portal-kde`:
 These ScreenCast items need a **real output** and a GPU renderer; the
 compositor side is done and both are now landed and verified on a live TTY/DRM
 session (`scripts/run-screencast-live-test.sh`,
-`scripts/run-screencast-dmabuf-test.sh`, `tools/capture-probe.c`).
+`scripts/run-screencast-dmabuf-test.sh`, `Tools/capture-probe.c`).
 
 | Item | State |
 |---|---|
@@ -214,12 +214,12 @@ session (`scripts/run-screencast-live-test.sh`,
 - A running SDE session with a **real output** (TTY/DRM or nested) and a
   **GLES2** renderer, not pixman:
   `WLR_RENDERER=gles2 WLR_RENDER_DRM_DEVICE=/dev/dri/renderD128`.
-- `tools/capture-probe.c` reports what the live compositor can offer the
+- `Tools/capture-probe.c` reports what the live compositor can offer the
   portal: capture-session **DMA-BUF formats** (and captures a real frame into
   an imported DMA-BUF), plus the **pointer-cursor session** and a cursor
   bitmap frame. `scripts/run-screencast-live-test.sh` runs it against
   `$WAYLAND_DISPLAY`; it skips (pass) with no display, so CI stays green.
-- `tools/screencast-consumer.c` connects to the published PipeWire node and
+- `Tools/screencast-consumer.c` connects to the published PipeWire node and
   reports the delivered buffer type (`SPA_DATA_DmaBuf` vs `MemFd`) and whether
   `SPA_META_Cursor` is present. `CONSUMER_DMABUF=1` makes it advertise a
   fixated DMA-BUF modifier.
@@ -253,7 +253,7 @@ session (`scripts/run-screencast-live-test.sh`,
   metadata mode the backend creates the pointer cursor session, tracks
   position/hotspot, captures the cursor bitmap and publishes `SPA_META_Cursor`
   (RGBA bitmap + hotspot), with `SPA_META_Header` and `SPA_META_VideoDamage`.
-- **Verify:** `tools/screencast-consumer.c` reports `cursor_meta` and
+- **Verify:** `Tools/screencast-consumer.c` reports `cursor_meta` and
   `cursor_bitmap` (verified live).
 
 ### 6.4 InputCapture
@@ -263,7 +263,7 @@ session (`scripts/run-screencast-live-test.sh`,
   via libei/EIS or a `WindowServer` input-capture path.
 - **Landed (P1–P5)** ([`17-input-capture.md`](17-input-capture.md)): the compositor
   hosts the EIS implementation (`libeis`) and the portal backend
-  (`tools/portal/input-capture.cpp`) is the D-Bus adapter, returning the session EIS
+  (`Tools/portal/input-capture.cpp`) is the D-Bus adapter, returning the session EIS
   fd from `ConnectToEIS`; zones, barriers and enable/disable travel over the
   private `serenity_input_capture` protocol, the compositor's
   Activated/Deactivated/Disabled/ZonesChanged events are forwarded as D-Bus
@@ -284,7 +284,7 @@ code in the usual sense:
   = device id, the app's permissions `["read"]`/`["read","write"]`; the flat file
   `usb-permissions` is the fallback when no store is on the bus, and a flat-file
   grant is migrated into the store on first use) and answers with the granted
-  subset; see `tools/portal/usb.cpp`, `tools/portal/permission-store.{h,cpp}` and
+  subset; see `Tools/portal/usb.cpp`, `Tools/portal/permission-store.{h,cpp}` and
   `scripts/run-usb-portal-test.sh`.
 - **Camera** is implemented **inside the frontend** (`desktop-portal/camera.c`):
   it tracks the camera nodes PipeWire exposes, and for access it uses the
@@ -314,11 +314,11 @@ These live in §5 and are plain backend work:
   (`org.freedesktop.impl.portal.PermissionStore`) instead of a private file, so
   they are visible to the standard tooling
   (`flatpak permission-show`). A small blocking client over a private session-bus
-  connection (`tools/portal/permission-store.{h,cpp}`, the `inhibit.cpp` idiom)
+  connection (`Tools/portal/permission-store.{h,cpp}`, the `inhibit.cpp` idiom)
   does `Lookup`/`SetPermission`/`Delete`; when no store is on the bus it falls back
   to the legacy flat file, and a legacy grant is migrated into the store on first
   use (`scripts/run-usb-portal-test.sh`). The `Request`/`Response` choreography
-  landed earlier with `Inhibit` (`tools/portal/inhibit.cpp`: the service serves the
+  landed earlier with `Inhibit` (`Tools/portal/inhibit.cpp`: the service serves the
   request paths, and `Request.Close` releases).
 - ~~**`Inhibit`**~~: **done**; the `Inhibit` interface (with the `Request`
   object) is served, wired to logind and to the `SDE_PORTAL_INHIBIT_CMD` seam
@@ -344,12 +344,12 @@ compositor, screenshots it and asserts the client area rendered (a blank-dialog
 regression guard).
 
 `scripts/run-screencast-live-test.sh` (a real TTY session; skipped in CI)
-drives `tools/capture-probe` to prove the compositor offers DMA-BUF capture and
+drives `Tools/capture-probe` to prove the compositor offers DMA-BUF capture and
 a pointer-cursor session, and captures real DMA-BUF and cursor-bitmap frames.
 `scripts/run-screencast-dmabuf-test.sh` (also a real session) runs a private
 PipeWire + WirePlumber and asserts the consumer receives `SPA_DATA_DmaBuf`.
 `scripts/run-camera-test.sh` (a real session) checks the frontend's
 `org.freedesktop.portal.Camera` (`IsCameraPresent`). The live tests skip (pass)
 without a session so CI stays green.
-`tools/screencast-consumer.c` is a libpipewire consumer that reports the
+`Tools/screencast-consumer.c` is a libpipewire consumer that reports the
 delivered buffer type and `SPA_META_Cursor`.

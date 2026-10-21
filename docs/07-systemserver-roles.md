@@ -59,8 +59,8 @@ compositor-agnostic fallback, so an application works with no session at all:
 When a session is desired, `scripts/start-sde-session.sh` starts the *session
 services* before the compositor:
 
-- `LaunchServer/`: owns the launch portal.
-- `ImageDecoder/`: owns the image portal.
+- `Services/LaunchServer/`: owns the launch portal.
+- `Services/ImageDecoder/`: owns the image portal.
 
 A session service "takes over" a portal simply by **listening on its path**:
 `LibWM::make_portal()` then defers the client to it instead of the in-process
@@ -97,8 +97,8 @@ the listener we just set up (no startup race). This is the one place the shim, n
 the service, owns the listening socket, mirroring SystemServer.
 
 > **Status:** done. `WebContent`, `RequestServer`, `SQLServer` and
-> `NotificationServer` are built by **SDE** (the `WebContent/`, `RequestServer/`,
-> `SQLServer/` and `NotificationServer/` projects, via `scripts/build-services.sh`):
+> `NotificationServer` are built by **SDE** (the `Services/WebContent/`, `Services/RequestServer/`,
+> `Services/SQLServer/` and `Services/NotificationServer/` projects, via `scripts/build-services.sh`):
 > they are session services, so they belong with the session, not in the
 > compositor-agnostic libgui-wayland client stack. The session assembles an
 > **SDE-owned app directory** (`SDE_APP_BIN_DIR`, `scripts/sde-session.sh`) that
@@ -117,7 +117,7 @@ need it.
 ### 2.4 The WindowManagerServer
 
 SerenityOS's WindowServer serves the WindowManagerServer at `/tmp/portal/wm`. Ours
-is served by the **compositor** (`WindowServer/src/main.cpp`), which also relays
+is served by the **compositor** (`Services/WindowServer/src/main.cpp`), which also relays
 window events to the Taskbar. `SDE_WM_PORTAL_PATH` relocates the socket (the
 headless tests use it so they cannot disturb a live session).
 

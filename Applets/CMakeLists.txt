@@ -82,7 +82,7 @@ function(add_sde_applet name)
         "${SERENITY_BUILD_DIR}/Userland/Services"
         "${LIBGUI_WAYLAND_SRC}/src")
     # Host stubs for Serenity-only headers (WindowServer/Window.h -> WMEventMask).
-    target_include_directories(${name} BEFORE PRIVATE "${SDE_ROOT}/compat")
+    target_include_directories(${name} BEFORE PRIVATE "${SDE_ROOT}/Libraries/Compat")
     target_compile_options(${name} PRIVATE -Wno-literal-suffix -fno-exceptions)
     target_link_options(${name} PRIVATE "-Wl,--no-as-needed")
     target_link_directories(${name} PRIVATE "${SERENITY_BUILD_DIR}/lib")

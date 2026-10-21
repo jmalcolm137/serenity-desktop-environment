@@ -35,12 +35,12 @@ wayland-scanner client-header "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstab
 wayland-scanner private-code  "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c"
 
 cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/tools/key-repeat-test.c" \
+    "$SDE_ROOT/Tools/key-repeat-test.c" \
     "$TOOLS_BUILD/xdg-shell-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/key-repeat-test"
 cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/tools/virtual-input-test.c" \
+    "$SDE_ROOT/Tools/virtual-input-test.c" \
     "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c" \
     "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c" \
     $(pkg-config --cflags --libs wayland-client xkbcommon) \

@@ -19,7 +19,7 @@ wayland-scanner private-code "$XML" "$TOOLS_BUILD/wlr-layer-shell-unstable-v1-cl
 wayland-scanner client-header "$XDG_XML" "$TOOLS_BUILD/xdg-shell-client-protocol.h"
 wayland-scanner private-code "$XDG_XML" "$TOOLS_BUILD/xdg-shell-protocol.c"
 cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/tools/layer-shell-test.c" \
+    "$SDE_ROOT/Tools/layer-shell-test.c" \
     "$TOOLS_BUILD/wlr-layer-shell-unstable-v1-client-protocol.c" \
     "$TOOLS_BUILD/xdg-shell-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) \

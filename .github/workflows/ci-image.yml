@@ -15,7 +15,7 @@ on:
         - cron: "23 3 * * 0"
     push:
         paths:
-            - "ci/Containerfile"
+            - "Meta/CI/Containerfile"
             - "scripts/ci-deps.sh"
             - ".github/workflows/ci-image.yml"
 
@@ -56,7 +56,7 @@ jobs:
               uses: docker/build-push-action@v7
               with:
                   context: .
-                  file: ci/Containerfile
+                  file: Meta/CI/Containerfile
                   push: true
                   build-args: |
                       SDE_REVISION=${{ steps.revisions.outputs.sde }}

@@ -27,7 +27,7 @@ XDG_XML="$(pkg-config --variable=pkgdatadir wayland-protocols)/stable/xdg-shell/
 wayland-scanner client-header "$XDG_XML" "$TOOLS_BUILD/xdg-shell-client-protocol.h"
 wayland-scanner private-code  "$XDG_XML" "$TOOLS_BUILD/xdg-shell-protocol.c"
 cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/tools/dnd-test.c" "$TOOLS_BUILD/xdg-shell-protocol.c" \
+    "$SDE_ROOT/Tools/dnd-test.c" "$TOOLS_BUILD/xdg-shell-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/dnd-test"
 

@@ -12,7 +12,7 @@ policy (cursor constraints, layer arrangement, decoration negotiation, the X11 s
 [`08-compositor-gaps.md`](08-compositor-gaps.md).
 
 The list is not aspirational: it is the exact set of globals a fresh headless compositor
-advertises. It is emitted by `tools/wayland-globals-test.c` and the compatibility subset is
+advertises. It is emitted by `Tools/wayland-globals-test.c` and the compatibility subset is
 asserted by `scripts/run-protocol-matrix-test.sh` (the full dump is printed by that test).
 
 ## Core

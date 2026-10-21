@@ -32,12 +32,12 @@ wayland-scanner private-code  "$VK_XML" "$TOOLS_BUILD/virtual-keyboard-unstable-
 wayland-scanner client-header "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-client-protocol.h"
 wayland-scanner private-code  "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c"
 cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/tools/lock-test.c" \
+    "$SDE_ROOT/Tools/lock-test.c" \
     "$TOOLS_BUILD/ext-session-lock-v1-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/lock-test"
 cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/tools/virtual-input-test.c" \
+    "$SDE_ROOT/Tools/virtual-input-test.c" \
     "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c" \
     "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c" \
     $(pkg-config --cflags --libs wayland-client xkbcommon) \
@@ -46,7 +46,7 @@ OM_XML="$WLROOTS_SRC/protocol/wlr-output-management-unstable-v1.xml"
 wayland-scanner client-header "$OM_XML" "$TOOLS_BUILD/wlr-output-management-unstable-v1-client-protocol.h"
 wayland-scanner private-code  "$OM_XML" "$TOOLS_BUILD/wlr-output-management-unstable-v1-protocol.c"
 cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/tools/output-mode-test.c" \
+    "$SDE_ROOT/Tools/output-mode-test.c" \
     "$TOOLS_BUILD/wlr-output-management-unstable-v1-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/output-mode-test"

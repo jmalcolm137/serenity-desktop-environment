@@ -13,7 +13,7 @@ TOOLS_BUILD="$SDE_ROOT/build/protocol-matrix-test"
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 
 mkdir -p "$TOOLS_BUILD"
-cc -O2 "$SDE_ROOT/tools/wayland-globals-test.c" \
+cc -O2 "$SDE_ROOT/Tools/wayland-globals-test.c" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/wayland-globals-test"
 

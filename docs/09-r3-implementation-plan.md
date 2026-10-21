@@ -46,7 +46,7 @@ monolith:
 
 1. **Module split: done.** `Overlays`, `WindowManager` and the shared `Model` are
    out of `main.cpp`
-   (`WindowServer/src/{Overlays,WindowManager,Config,Model}.{h,cpp}`); `main.cpp`
+   (`Services/WindowServer/src/{Overlays,WindowManager,Config,Model}.{h,cpp}`); `main.cpp`
    is now wiring plus the policies not yet extracted. `WindowSwitcher` (WS3) and
    `AppletManager` (WS4) have landed.
 2. **Overlay + snapshot infrastructure: done.** `ChromeNode` renders LibGfx
@@ -81,7 +81,7 @@ scheduled as prerequisites rather than late surprises.
 - **Thumbnail capture: resolved (prototype).** Read the client's submitted buffer
   back directly with `wlr_buffer_begin_data_ptr_access()`; our clients submit
   `wl_shm` buffers, so this is a straight copy into a `Gfx::Bitmap`
-  (`WindowServer/src/Overlays.cpp`, `snapshot_toplevel()`). A non-mappable
+  (`Services/WindowServer/src/Overlays.cpp`, `snapshot_toplevel()`). A non-mappable
   (DMA-BUF) buffer returns `nullptr` and callers fall back to the app icon;
   `ext-image-copy-capture-v1` or a scene-subtree render would lift that later.
   Verified headlessly: `scripts/run-input-test.sh` captures a 320×200 toplevel and

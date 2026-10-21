@@ -36,7 +36,7 @@ VK_XML="${WLROOTS_SRC:-$SDE_ROOT/third_party/wlroots}/protocol/virtual-keyboard-
     wayland-scanner client-header "$VK_XML" "$TOOLS_BUILD/virtual-keyboard-unstable-v1-client-protocol.h"
     wayland-scanner private-code  "$VK_XML" "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c"
     cc -O2 -I "$TOOLS_BUILD" \
-        "$SDE_ROOT/tools/virtual-input-test.c" \
+        "$SDE_ROOT/Tools/virtual-input-test.c" \
         "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c" \
         "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c" \
         $(pkg-config --cflags --libs wayland-client xkbcommon) \

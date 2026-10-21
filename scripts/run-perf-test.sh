@@ -3,7 +3,7 @@
 #
 # N3's budget: "low, predictable input latency; smooth 60 Hz; a software
 # compositor fallback". The compositor meters its own frame time and the input ->
-# present interval (see the meter above output_frame() in WindowServer/src/Output.cpp
+# present interval (see the meter above output_frame() in Services/WindowServer/src/Output.cpp
 # and docs/25-performance.md); this drives it headless with the *software* renderer
 # (the fallback) and asserts the budget.
 #

@@ -7,7 +7,7 @@
 # them, to splice into the compositor's startup command. The set and the
 # arguments mirror SerenityOS's Base/etc/SystemServerUser.ini. The Audio applet is
 # the AudioManager (mixer) client; the SDE AudioServer service serves that
-# protocol over the audiomanager portal (see the AudioServer/ service).
+# protocol over the audiomanager portal (see the Services/AudioServer/ service).
 sde_applet_startup_commands() {
     local root="$1"
     # Optional wrapper to prefix each command with (scripts/sde-supervise-applet.sh

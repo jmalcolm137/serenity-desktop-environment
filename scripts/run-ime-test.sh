@@ -32,13 +32,13 @@ wayland-scanner private-code  "$TI_XML" "$TOOLS/text-input-unstable-v3-protocol.
 wayland-scanner client-header "$IM_XML" "$TOOLS/input-method-unstable-v2-client-protocol.h"
 wayland-scanner private-code  "$IM_XML" "$TOOLS/input-method-unstable-v2-protocol.c"
 
-cc -O2 -I "$TOOLS" "$SDE_ROOT/tools/text-input-test.c" \
+cc -O2 -I "$TOOLS" "$SDE_ROOT/Tools/text-input-test.c" \
     "$TOOLS/xdg-shell-protocol.c" "$TOOLS/text-input-unstable-v3-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) -o "$TOOLS/text-input-test"
-cc -O2 -I "$TOOLS" "$SDE_ROOT/tools/input-method-test.c" \
+cc -O2 -I "$TOOLS" "$SDE_ROOT/Tools/input-method-test.c" \
     "$TOOLS/input-method-unstable-v2-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) -o "$TOOLS/input-method-test"
-cc -O2 "$SDE_ROOT/tools/wayland-globals-test.c" \
+cc -O2 "$SDE_ROOT/Tools/wayland-globals-test.c" \
     $(pkg-config --cflags --libs wayland-client) -o "$TOOLS/globals"
 
 # The virtual keyboard, to prove the input method's keyboard grab gets the keys.

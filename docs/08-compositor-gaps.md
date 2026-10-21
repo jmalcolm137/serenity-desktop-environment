@@ -14,7 +14,7 @@ Entries are grouped by theme and tagged with the goal (`G`) and the milestone
 (`R`) that should own them. Legend: **G?** = goal, **R?** = milestone,
 **(host)** = a gap in `libgui-wayland` rather than this repository.
 
-Context for the current state: `WindowServer/src/main.cpp` `initialize()` (and the
+Context for the current state: `Services/WindowServer/src/main.cpp` `initialize()` (and the
 subsystem `initialize_*()` functions it calls) registers `wl_compositor`, `wl_subcompositor`, `wl_data_device_manager`,
 `wl_output`/`xdg_output_v1`, the scene, `xdg_shell`, `wlr-layer-shell`,
 `xdg-decoration`, `wlr-foreign-toplevel-management`, `wlr-output-management`,
@@ -60,7 +60,7 @@ until proven otherwise.
   renderer; a failed GPU path falls back to the software renderer instead of
   ending the session. Covered by `run-headless-test.sh`.
 - **Protocol-error & state-machine coverage (N4, N8): partial.** Error
-  *isolation* is covered (`tools/protocol-error-test.c` plus
+  *isolation* is covered (`Tools/protocol-error-test.c` plus
   `run-headless-test.sh`), and structured fuzzers cover config, the
   WindowManagerServer and the xdg-shell surface/toplevel path. Broader
   conformance of configure/commit sequences, decoration negotiation, popup/layer

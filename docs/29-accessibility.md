@@ -23,7 +23,7 @@ the compositor plus LibGUI that have to expose the accessibility tree.
   `/run/user/<uid>/sde-theme` and the port applies it to every client
   (`WindowServerConnection::apply_theme_from_broker`), so one place can change the
   whole desktop's palette at runtime.
-* **Input routing to test.** `tools/virtual-input-test.c` injects key and pointer
+* **Input routing to test.** `Tools/virtual-input-test.c` injects key and pointer
   events through the wlroots virtual-input protocols and reads back what a client
   received (`scripts/run-terminal-keys-test.sh`), so an assistive *input* feature
   can be asserted end to end and headless.
@@ -151,7 +151,7 @@ See [`30-at-spi.md`](30-at-spi.md) for the interface/object mapping.
 ## Testing notes
 
 Everything here is assertable headless, which is the constraint the rest of R5
-already works under: input features through `tools/virtual-input-test.c`, theme and
+already works under: input features through `Tools/virtual-input-test.c`, theme and
 mode features by reading the broker file and the compositor's own logs, and AT-SPI
 over D-Bus. None of them needs a real display, a session, or an assistive
 technology installed.

@@ -53,7 +53,7 @@ if [[ -f "$VK_XML" && -f "$VP_XML" ]] && command -v wayland-scanner >/dev/null &
     wayland-scanner client-header "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-client-protocol.h"
     wayland-scanner private-code  "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c"
     cc -O2 -I "$TOOLS_BUILD" \
-        "$SDE_ROOT/tools/virtual-input-test.c" \
+        "$SDE_ROOT/Tools/virtual-input-test.c" \
         "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c" \
         "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c" \
         $(pkg-config --cflags --libs wayland-client xkbcommon) \
@@ -72,7 +72,7 @@ LAUNCH_SERVER="$SDE_ROOT/build/LaunchServer/LaunchServer"
 XICON="$TOOLS_BUILD/x11-icon-test"
 if command -v cc >/dev/null && pkg-config --exists xcb xcb-ewmh; then
     mkdir -p "$TOOLS_BUILD"
-    cc -O2 "$SDE_ROOT/tools/x11-icon-test.c" $(pkg-config --cflags --libs xcb xcb-ewmh) -o "$XICON" 2>/dev/null || true
+    cc -O2 "$SDE_ROOT/Tools/x11-icon-test.c" $(pkg-config --cflags --libs xcb xcb-ewmh) -o "$XICON" 2>/dev/null || true
 fi
 
 fail=0

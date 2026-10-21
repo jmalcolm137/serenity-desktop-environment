@@ -42,7 +42,7 @@ manual.
 compositor-side window menu, fullscreen, Show Desktop, and theme-broker restyle
 (see `README.md` and `04-known-gaps.md`).
 
-**Stubs / no-ops in `WindowServer/src/main.cpp`:**
+**Stubs / no-ops in `Services/WindowServer/src/main.cpp`:**
 
 | Item | Where |
 |---|---|
@@ -62,7 +62,7 @@ is addressed here (WS2).
 
 ## 3. Foundation (do first)
 
-The compositor is currently one 2,790-line `WindowServer/src/main.cpp`. R3 adds
+The compositor is currently one 2,790-line `Services/WindowServer/src/main.cpp`. R3 adds
 four policy areas that SerenityOS keeps as separate classes. Before adding them:
 
 - **Split policy into modules** mirroring Serenity: `WindowManager`
@@ -131,7 +131,7 @@ geometry.
 handling), `WindowServer/Overlays.{h,cpp}` (`TileWindowOverlay`,
 `WindowGeometryOverlay`).
 
-> **Status (R3):** implemented in `WindowServer/src/WindowManager.cpp`. The tile
+> **Status (R3):** implemented in `Services/WindowServer/src/WindowManager.cpp`. The tile
 > preview and the geometry HUD are `ChromeNode` overlays in `overlay_tree`; the
 > move path drives both from `update_move_snap()` (and `finish_move_snap()` on
 > release), the resize path from `update_resize_hud()`, and `start_window_resize`

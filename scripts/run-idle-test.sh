@@ -31,7 +31,7 @@ wayland-scanner client-header "$POWER_XML" "$TOOLS_BUILD/wlr-output-power-manage
 wayland-scanner private-code  "$POWER_XML" "$TOOLS_BUILD/wlr-output-power-management-unstable-v1-protocol.c"
 
 cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/tools/idle-test.c" \
+    "$SDE_ROOT/Tools/idle-test.c" \
     "$TOOLS_BUILD/ext-idle-notify-v1-protocol.c" \
     "$TOOLS_BUILD/idle-inhibit-unstable-v1-protocol.c" \
     "$TOOLS_BUILD/wlr-output-power-management-unstable-v1-protocol.c" \
@@ -50,7 +50,7 @@ wayland-scanner private-code  "$VK_XML" "$TOOLS_BUILD/virtual-keyboard-unstable-
 wayland-scanner client-header "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-client-protocol.h"
 wayland-scanner private-code  "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c"
 cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/tools/virtual-input-test.c" \
+    "$SDE_ROOT/Tools/virtual-input-test.c" \
     "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c" \
     "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c" \
     $(pkg-config --cflags --libs wayland-client xkbcommon) \

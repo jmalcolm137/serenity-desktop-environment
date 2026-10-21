@@ -24,7 +24,7 @@ scan "$WP/stable/xdg-shell/xdg-shell.xml" xdg-shell
 scan "$WP/staging/xdg-toplevel-icon/xdg-toplevel-icon-v1.xml" xdg-toplevel-icon-v1
 scan "$WP/staging/xdg-system-bell/xdg-system-bell-v1.xml" xdg-system-bell-v1
 cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/tools/xdg-icon-bell-test.c" \
+    "$SDE_ROOT/Tools/xdg-icon-bell-test.c" \
     "$TOOLS_BUILD/xdg-shell-client-protocol.c" \
     "$TOOLS_BUILD/xdg-toplevel-icon-v1-client-protocol.c" \
     "$TOOLS_BUILD/xdg-system-bell-v1-client-protocol.c" \

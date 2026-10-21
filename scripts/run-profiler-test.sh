@@ -5,7 +5,7 @@
 #
 # On SerenityOS the kernel samples a process via profiling_enable(pid, mask) and
 # publishes perfcore JSON at /proc/<pid>/perf_events. Linux has no such kernel
-# interface, so src/LibSerenitySystem/Profiling.cpp samples with perf_event_open
+# interface, so Libraries/LibSerenitySystem/Profiling.cpp samples with perf_event_open
 # (PERF_SAMPLE_IP|TID|TIME|CALLCHAIN, plus mmap/comm/fork/exit records) and
 # writes the same perfcore JSON. This test:
 #
@@ -74,7 +74,7 @@ CPP
 if ! c++ -std=c++26 -fno-exceptions -O1 -Wno-literal-suffix \
     -I "$SERENITY" -I "$SERENITY/Userland" -I "$SERENITY/Userland/Libraries" -I "$SERENITY/Userland/Services" \
     -I "$BUILD" -I "$BUILD/Userland/Libraries" -I "$BUILD/Userland/Services" \
-    -I "$LIBGUI_WAYLAND_ROOT/compat" -I "$SDE_ROOT/src" \
+    -I "$LIBGUI_WAYLAND_ROOT/compat" -I "$SDE_ROOT/Libraries" \
     "$RUNTIME/prof-harness.cpp" "$BUILD/lib/libSerenitySystem.a" \
     -L "$BUILD/lib" -Wl,-rpath,"$BUILD/lib" \
     -llagom-core -llagom-ak -llagom-coreminimal -llagom-corebasic -lpthread \

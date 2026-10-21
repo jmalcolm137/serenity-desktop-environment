@@ -310,7 +310,7 @@ if [ -n "$FRONTEND" ] && [ -n "$PERMISSION_STORE" ] && python3 -c 'import gi.rep
     echo "=== frontend: remembered source via the permission store (best effort) ==="
     mkdir -p "$RUNTIME/fe-config/xdg-desktop-portal" "$RUNTIME/fe-data/xdg-desktop-portal/portals"
     printf '[preferred]\ndefault=serenity\n' > "$RUNTIME/fe-config/xdg-desktop-portal/portals.conf"
-    cp "$SDE_ROOT/contrib/xdg-desktop-portal/serenity.portal" "$RUNTIME/fe-data/xdg-desktop-portal/portals/"
+    cp "$SDE_ROOT/Base/xdg-desktop-portal/serenity.portal" "$RUNTIME/fe-data/xdg-desktop-portal/portals/"
     # Wait for a name with NameHasOwner: a call *to* the name would make D-Bus
     # activate another instance with the session's real environment.
     wait_for_name() {
@@ -329,7 +329,7 @@ if [ -n "$FRONTEND" ] && [ -n "$PERMISSION_STORE" ] && python3 -c 'import gi.rep
         WAYLAND_DISPLAY="$SOCK" "$FRONTEND" --replace > "$RUNTIME/frontend.log" 2>&1 &
     FRONTEND_PID=$!
     wait_for_name org.freedesktop.portal.Desktop || true
-    first="$(timeout 20 python3 "$SDE_ROOT/tools/screencast-frontend-client.py" 2>&1 || true)"
+    first="$(timeout 20 python3 "$SDE_ROOT/Tools/screencast-frontend-client.py" 2>&1 || true)"
     fe_token="$(grep -oP 'restore_token=\K\S+' <<<"$first" || true)"
     if grep -q "^start 0 " <<<"$first" && [ -n "$fe_token" ]; then
         echo "  ok: the frontend handed the app a restore token ($fe_token)"
@@ -338,7 +338,7 @@ if [ -n "$FRONTEND" ] && [ -n "$PERMISSION_STORE" ] && python3 -c 'import gi.rep
             --method org.freedesktop.impl.portal.PermissionStore.Lookup screencast "$fe_token" 2>&1 || true)"
         check "'SDE', uint32 2" "$stored"
         before_restore="$(grep -c "screencast restored from restore_data" "$RUNTIME/portal.log" || true)"
-        second="$(timeout 20 python3 "$SDE_ROOT/tools/screencast-frontend-client.py" --restore-token "$fe_token" 2>&1 || true)"
+        second="$(timeout 20 python3 "$SDE_ROOT/Tools/screencast-frontend-client.py" --restore-token "$fe_token" 2>&1 || true)"
         check "start 0 " "$second"
         after_restore="$(grep -c "screencast restored from restore_data" "$RUNTIME/portal.log" || true)"
         if [ "$after_restore" -gt "$before_restore" ]; then

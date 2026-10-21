@@ -13,7 +13,7 @@
 #                       the scene is visible on screen.
 #   --headless          run on the headless backend at --size (default
 #                       1024x768); with --screenshot, capture the output to PNG
-#                       (via tools/sde-screenshot + wlr-screencopy).
+#                       (via Tools/sde-screenshot + wlr-screencopy).
 #
 # Env: HOST_DISPLAY (default wayland-0), SDE_SESSION_DISPLAY (default sde),
 #      SDE_SCENE_BROWSER (default: the built-in Browser), SDE_SCENE_NO_BROWSER=1
@@ -81,7 +81,7 @@ trap cleanup EXIT
 
 # --- Wallpaper: convert a PNG to the compositor's raw "SDWP" format ----------
 # Header: magic "SDWP", format (Gfx::BitmapFormat::BGRA8888 == 2), width, height,
-# pitch, then BGRA pixels (see WindowServer/src/Wallpaper.cpp).
+# pitch, then BGRA pixels (see Services/WindowServer/src/Wallpaper.cpp).
 write_wallpaper() {
     local png="$1"
     [[ -f "$png" ]] || { echo "note: wallpaper '$png' not found; using the theme background" >&2; return; }

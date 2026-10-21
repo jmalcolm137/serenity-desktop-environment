@@ -3,7 +3,7 @@
 #
 # The applet fronts NetworkManager over the system D-Bus, so a real radio would
 # make the result non-deterministic. Instead we start a private D-Bus with the
-# mock NetworkManager (tools/mock-networkmanager.c), point the applet's system
+# mock NetworkManager (Tools/mock-networkmanager.c), point the applet's system
 # bus at it via DBUS_SYSTEM_BUS_ADDRESS, and run the compositor headless.
 #
 # It asserts:
@@ -30,7 +30,7 @@ if [[ ! -x "$BATTERY_APPLET" ]]; then
 fi
 
 mkdir -p "$SDE_ROOT/build/tools"
-cc -O2 -Wall "$SDE_ROOT/tools/mock-networkmanager.c" \
+cc -O2 -Wall "$SDE_ROOT/Tools/mock-networkmanager.c" \
     $(pkg-config --cflags --libs dbus-1) \
     -o "$MOCK"
 

@@ -37,16 +37,16 @@ the compositor maps as a separate scene surface. Landed, in order:
 
 Where the code lives:
 
-- `WindowServer/src/XWayland.cpp`: the X11 model wiring: `initialize_xwayland`,
+- `Services/WindowServer/src/XWayland.cpp`: the X11 model wiring: `initialize_xwayland`,
   `server_new_xwayland_surface`, the `x11_surface_*` listeners,
   `focus_x11_toplevel` and `focus_window_at`.
-- `WindowServer/src/XWaylandFrame.cpp`: the X11 server-side frames: `x11_update_frame` /
+- `Services/WindowServer/src/XWaylandFrame.cpp`: the X11 server-side frames: `x11_update_frame` /
   `x11_hit_test_frame`, `x11_begin_interactive`, `handle_x11_frame_*`, and the
   `hook_*_x11` calls into the WM.
-- `WindowServer/src/Model.h`: `struct X11Toplevel`; `XWaylandState.h`: the
+- `Services/WindowServer/src/Model.h`: `struct X11Toplevel`; `XWaylandState.h`: the
   XWayland state (held as `Server::xwayland`); the X11 window list itself is the
   core `Server::x11_toplevels` (`Server.h`), next to `Server::toplevels`.
-- `WindowServer/src/WindowManager.{h,cpp}`: `emit_window_state(X11Toplevel&)`,
+- `Services/WindowServer/src/WindowManager.{h,cpp}`: `emit_window_state(X11Toplevel&)`,
   `find_x11_by_wm_id`, and the Taskbar request routing.
 - `scripts/run-xwayland-test.sh`: X11 client maps, gets a frame, and is reported
   to the WM (both with XWayland on and off).
@@ -134,7 +134,7 @@ workspaces). `scripts/run-xwayland-exit-test.sh` guards the client-exit path (an
 X11 client going away must not abort the compositor, nor must the default icon go
 missing from the WM). Anything that needs a compositor with a Taskbar can run one
 as in `scripts/run-headless-test.sh`; `scripts/run-virtual-touch-test.sh` +
-`tools/virtual-input-test.c` drive pointer/keyboard.
+`Tools/virtual-input-test.c` drive pointer/keyboard.
 
 **Two X clients started together sometimes leave one unmapped.** In the headless
 harness Xwayland announces the second window (the compositor logs its `WM_CLASS` and

@@ -24,7 +24,7 @@ XDG_XML="$WP/stable/xdg-shell/xdg-shell.xml"
 wayland-scanner client-header "$XDG_XML" "$TOOLS_BUILD/xdg-shell-client-protocol.h"
 wayland-scanner private-code "$XDG_XML" "$TOOLS_BUILD/xdg-shell-protocol.c"
 cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/tools/pointer-warp-test.c" \
+    "$SDE_ROOT/Tools/pointer-warp-test.c" \
     "$TOOLS_BUILD/pointer-warp-v1-protocol.c" \
     "$TOOLS_BUILD/wlr-layer-shell-unstable-v1-protocol.c" \
     "$TOOLS_BUILD/xdg-shell-protocol.c" \
@@ -36,7 +36,7 @@ wayland-scanner private-code "$WLROOTS_SRC/protocol/virtual-keyboard-unstable-v1
 wayland-scanner client-header "$WLROOTS_SRC/protocol/wlr-virtual-pointer-unstable-v1.xml" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-client-protocol.h"
 wayland-scanner private-code "$WLROOTS_SRC/protocol/wlr-virtual-pointer-unstable-v1.xml" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c"
 cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/tools/virtual-input-test.c" \
+    "$SDE_ROOT/Tools/virtual-input-test.c" \
     "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c" \
     "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c" \
     $(pkg-config --cflags --libs wayland-client xkbcommon) \

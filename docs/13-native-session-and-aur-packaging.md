@@ -7,7 +7,7 @@ This document plans how to run SDE **natively** (DRM/KMS + libinput, no host
 compositor underneath) and how to **package it for Arch/EndeavourOS (AUR)** so a
 display manager lists it as a session. The **session entry + installer** (§6), the
 **private-prefix install layout** (§6) and the split AUR package set (§3–§5, §9;
-`packaging/aur/`) are implemented. What remains is installing the packages on a
+`Meta/packaging/aur/`) are implemented. What remains is installing the packages on a
 real machine. It records the package split, the install layout, the packaging
 traps we have verified against the current build, and the order to bring it up
 safely.
@@ -125,8 +125,8 @@ A **display manager session entry** + launcher, so SDDM/GDM list *Serenity Deskt
 Environment* at the login screen. Two templates and an installer live in the repo:
 
 ```
-session/sde.desktop.in        the wayland-sessions entry (@EXEC@ substituted)
-session/sde-session.in        the launcher (@SDE_ROOT@ substituted)
+Base/session/sde.desktop.in        the wayland-sessions entry (@EXEC@ substituted)
+Base/session/sde-session.in        the launcher (@SDE_ROOT@ substituted)
 scripts/install-session.sh    installs both (or --uninstall / --dry-run)
 ```
 
@@ -156,7 +156,7 @@ seams the session scripts use (`SDE_*_BIN`, `SDE_APPLET_DIR`,
 `scripts/run-install-layout-test.sh` installs a staged prefix and starts a
 headless session from it (Taskbar, applets and the private LaunchServer), which
 keeps the layout honest. The split PKGBUILDs are implemented under
-`packaging/aur/`; `run-packaging-test.sh` validates their metadata. Local
+`Meta/packaging/aur/`; `run-packaging-test.sh` validates their metadata. Local
 `makepkg`/`pacman -U` and AUR publication remain the release step.
 
 The entry:
@@ -225,7 +225,7 @@ Keep `Ctrl+Alt+F2` as the escape hatch throughout; if SDE hangs, switch VT and
 
 ## 9. PKGBUILD sketches (outline)
 
-**Split packages (implemented).** `packaging/aur/` has the three packages:
+**Split packages (implemented).** `Meta/packaging/aur/` has the three packages:
 Arch `wlroots0.20`, `serenity-lagom-git` (the framework, apps and resources plus the
 headers/source the compositor build needs) and
 `serenity-desktop-environment-git` (the compositor, services and session, built
@@ -304,7 +304,7 @@ RUNPATH to `/usr/lib/sde/lib`.
 
 ## Appendix A: HiDPI and fractional output scale
 
-**Status:** implemented · `WindowServer/src/main.cpp`, `docs/11` §11.
+**Status:** implemented · `Services/WindowServer/src/main.cpp`, `docs/11` §11.
 
 Serenity's LibGUI renders on the CPU and its fonts are fixed bitmaps, so a
 high-DPI panel is made usable by **scaling the output**: integer by default,

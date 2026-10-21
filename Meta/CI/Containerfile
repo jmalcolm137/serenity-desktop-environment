@@ -1,0 +1,85 @@
+# The CI image: everything a job needs except the SDE's working tree.
+#
+# Building the SerenityOS Lagom framework is ~1.2 GB of artifacts and, cold, an
+# hour or two — far too much per push. This image bakes in the distro
+# dependencies, wlroots, the pinned SerenityOS checkout and a built framework, so
+# a job only rebuilds what its checkout changes and then runs tests. See
+# docs/26-ci.md.
+#
+#   podman build -f Meta/CI/Containerfile -t ghcr.io/jmalcolm137/sde-ci:latest .
+#
+# It is built the way a developer builds it, and it has to be: the WindowServer
+# shim includes Config endpoint headers that only the *SDE's* patch set generates,
+# so a framework-only build cannot produce it at all (found by the first clean
+# build — the development machine had them already, from an earlier SDE build).
+ARG BASE=archlinux:base-devel
+FROM ${BASE}
+
+# Dependencies first: this layer changes rarely.
+COPY scripts/ci-deps.sh /tmp/ci-deps.sh
+RUN bash /tmp/ci-deps.sh \
+    && git config --system --add safe.directory '*' \
+    && rm /tmp/ci-deps.sh
+
+ARG SDE_REPO=https://github.com/jmalcolm137/serenity-desktop-environment.git
+ARG SDE_REVISION=main
+ARG LIBGUI_WAYLAND_REPO=https://github.com/jmalcolm137/libgui-wayland.git
+ARG LIBGUI_WAYLAND_REVISION=main
+
+# Where the ports and the build scripts expect to find each other.
+ENV LIBGUI_WAYLAND_ROOT=/opt/libgui-wayland \
+    SERENITY_SRC=/opt/libgui-wayland/serenity \
+    SERENITY_BUILD_DIR=/opt/libgui-wayland/build/lagom \
+    WLROOTS_SRC=/opt/sde/third_party/wlroots
+
+# The framework sources: the port's own patches plus its pinned SerenityOS
+# revision (fetch-serenity.sh is the single source of truth for the pin).
+# Cloned at an explicit revision, passed by the workflow as a commit. With a
+# constant argument (`main`) Docker caches this layer, and the image then carries
+# whatever `main` was the *first* time it was built — which silently withheld a
+# framework fix from every job using the image.
+RUN git init /opt/libgui-wayland \
+    && git -C /opt/libgui-wayland remote add origin "$LIBGUI_WAYLAND_REPO" \
+    && git -C /opt/libgui-wayland fetch --depth 1 origin "$LIBGUI_WAYLAND_REVISION" \
+    && git -C /opt/libgui-wayland checkout --quiet FETCH_HEAD \
+    && /opt/libgui-wayland/scripts/fetch-serenity.sh
+
+# wlroots, which the SDE vendors as a build, not as source.
+# Same reason as the framework clone above: an explicit revision, not a branch.
+RUN git init /opt/sde \
+    && git -C /opt/sde remote add origin "$SDE_REPO" \
+    && git -C /opt/sde fetch --depth 1 origin "$SDE_REVISION" \
+    && git -C /opt/sde checkout --quiet FETCH_HEAD \
+    && /opt/sde/scripts/fetch-wlroots.sh
+
+# The framework, then the desktop — the same sequence a developer runs, and both
+# patch sets land on the shared SerenityOS checkout:
+#
+#   * build-libgui.sh applies the *port's* patches and builds the framework: the
+#     libraries, then every endpoint generator the shim's headers include, then the
+#     shim itself (see that script — header inclusion is invisible to ninja);
+#   * build.sh applies the *SDE's* patches, configures Lagom with SDE_ROOT and
+#     builds its application stack (its default target is Terminal);
+#   * build-full-sde.sh adds the services, applets, tools and test clients
+#     starts.
+#
+# The *applications* (Browser, Terminal, the demos/games/DevTools menus) are
+# deliberately not baked in: they are the heaviest part of the tree, only the
+# nightly `full` job needs them, and that job builds them with `--with-apps` where
+# a failure's whole log is visible — a container build truncates the tail, as the
+# first attempt at this step showed.
+RUN cd /opt/libgui-wayland \
+    && scripts/build-libgui.sh --no-tests $(/opt/sde/scripts/lagom-libraries.sh) \
+    && cd /opt/sde \
+    && scripts/build.sh \
+    && scripts/build-full-sde.sh
+
+# The framework revision the image actually baked. CI compares this with
+# libgui-wayland main before it builds anything: when the port's patches move, an
+# image built from an older framework fails the SDE's patch application deep in
+# the build with an error that says nothing about the image. See
+# .github/workflows/ci.yml (the `image-freshness` job) and docs/26-ci.md.
+LABEL org.opencontainers.image.source="https://github.com/jmalcolm137/serenity-desktop-environment" \
+      org.opencontainers.image.description="SDE CI: wlroots, the pinned SerenityOS port and the built desktop" \
+      org.sde.framework-revision="${LIBGUI_WAYLAND_REVISION}" \
+      org.sde.revision="${SDE_REVISION}"

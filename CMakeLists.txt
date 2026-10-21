@@ -13,7 +13,7 @@
 # The framework the SDE builds on (libgui-wayland's Lagom: AK, LibCore, LibGUI,
 # LibGfx, LibVT, the windowserver shim) is not a subdirectory: it has its own
 # entry point and its own build directory, and the SDE reads and drives it (see
-# cmake/SDELagom.cmake). Its `lagom` step builds the framework and the programs
+# Meta/CMake/SDELagom.cmake). Its `lagom` step builds the framework and the programs
 # that live in that tree (the Taskbar, Terminal, FileManager, the app suite).
 #
 # Built (default): the compositor, the shell, the services, the applets, the
@@ -42,7 +42,7 @@ if (SDE_SANITIZE)
     add_link_options(-fsanitize=${SDE_SANITIZE})
 endif()
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/Meta/CMake")
 include(SDELagom)
 
 # wlroots: the compositor's plumbing (0.20, the release Arch ships; see
@@ -67,38 +67,43 @@ set(WLROOTS_PROTOCOL_INCLUDE_DIR "${SDE_WLROOTS_SRC}/build/protocol")
 set(SDE_ROOT "${CMAKE_SOURCE_DIR}")
 
 # --- The components ---------------------------------------------------------
-# Grouped as the documentation groups them (docs/03-engineering-conventions.md).
-# Each directory owns its targets and its output subdirectory.
+# Grouped as the documentation groups them (docs/03-engineering-conventions.md),
+# and as SerenityOS lays out its own tree: Services/, Applets/, Libraries/, Base/,
+# Meta/. Each directory owns its targets. The second argument keeps every
+# component's build output where it has always been (build/WindowServer/,
+# build/WifiApplet/, build/tools/, ...), whichever group its source sits in.
 
 # The compositor.
-add_subdirectory(WindowServer)
+add_subdirectory(Services/WindowServer WindowServer)
 
-# The shell's services and dialogs.
-add_subdirectory(NotificationServer)
-add_subdirectory(AudioServer)
-add_subdirectory(RequestServer)
-add_subdirectory(WebContent)
-add_subdirectory(SQLServer)
-add_subdirectory(ImageDecoder)
-add_subdirectory(LaunchServer)
-add_subdirectory(WifiApplet)
-add_subdirectory(BatteryApplet)
+# The shell's services.
+add_subdirectory(Services/NotificationServer NotificationServer)
+add_subdirectory(Services/AudioServer AudioServer)
+add_subdirectory(Services/RequestServer RequestServer)
+add_subdirectory(Services/WebContent WebContent)
+add_subdirectory(Services/SQLServer SQLServer)
+add_subdirectory(Services/ImageDecoder ImageDecoder)
+add_subdirectory(Services/LaunchServer LaunchServer)
+
+# The Taskbar applets: SDE's own, and SerenityOS's built from upstream.
+add_subdirectory(Applets/WiFi WifiApplet)
+add_subdirectory(Applets/Battery BatteryApplet)
 add_subdirectory(Applets)
 
 # The portal's LibGUI dialogs (docs/15-xdg-desktop-portal-serenity.md).
-add_subdirectory(AccessDialog)
-add_subdirectory(AppChooserDialog)
-add_subdirectory(FileChooserDialog)
-add_subdirectory(PrintDialog)
-add_subdirectory(ColorPicker)
-add_subdirectory(ScreenCastChooser)
-add_subdirectory(ScreenshotOverlay)
+add_subdirectory(Dialogs/Access AccessDialog)
+add_subdirectory(Dialogs/AppChooser AppChooserDialog)
+add_subdirectory(Dialogs/FileChooser FileChooserDialog)
+add_subdirectory(Dialogs/Print PrintDialog)
+add_subdirectory(Dialogs/ColorPicker ColorPicker)
+add_subdirectory(Dialogs/ScreenCastChooser ScreenCastChooser)
+add_subdirectory(Dialogs/ScreenshotOverlay ScreenshotOverlay)
 
 # The portable tools, the portal backends and the test clients.
-add_subdirectory(tools)
+add_subdirectory(Tools tools)
 
 # The test programs.
-add_subdirectory(test)
+add_subdirectory(Tests test)
 
 # Building the applications: the same list scripts/build-apps.sh builds, in the
 # Lagom tree where they live (they are SerenityOS apps, not SDE components).

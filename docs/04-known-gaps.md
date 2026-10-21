@@ -44,7 +44,7 @@ calls are now either handled or explicitly reassigned:
 - **`set_keymap` (G5 / W4)**: belongs with the R3/R4 keymap-switching work, not R2.
 
 The stale, unreachable "right-clicking the titlebar opens the window menu (not
-implemented yet)" branch in `WindowServer/src/main.cpp` has been removed (right
+implemented yet)" branch in `Services/WindowServer/src/main.cpp` has been removed (right
 click was already handled and returned earlier).
 
 - **Taskbar teardown crash: closed, not reproducible.** A SIGSEGV on Taskbar
@@ -170,7 +170,7 @@ still does **not** reproduce in full.
   `set_automatic_cursor_tracking_window` keeps delivering pointer events to the
   window that received a press until every button is released (and lets several
   windows track at once). SDE has the single-window form as its **implicit
-  pointer grab** (`Server::pointer.grab_surface` in `WindowServer/src/Pointer.cpp`,
+  pointer grab** (`Server::pointer.grab_surface` in `Services/WindowServer/src/Pointer.cpp`,
   set on a press and cleared when the last button is released, mirroring
   SerenityOS's `process_ongoing_active_input_mouse_event`); SerenityOS's
   multi-window tracking and its `did_popup_a_menu` reset are not reproduced.
@@ -298,7 +298,7 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal`; see
   to be ported to **native Linux** (patch 0036: Linux ptrace, `struct
   user_regs_struct`, `/proc/<pid>/maps`, except that Linux exposes no readable
   pagemap) rather than a SerenityOS kernel-ABI shim. **`Profiler` runs** on
-  native Linux: `LibSerenitySystem::Profiling` (`src/LibSerenitySystem/
+  native Linux: `LibSerenitySystem::Profiling` (`Libraries/LibSerenitySystem/
   Profiling.{h,cpp}`) samples with `perf_event_open` (`PERF_SAMPLE_IP|TID|TIME|
   CALLCHAIN`, plus mmap/comm/fork/exit records), seeds the current `/proc/<pid>/
   maps` mappings, and writes the same perfcore JSON that `Profiler` parses,
@@ -420,7 +420,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   and `Device` was superseded by USB; **InputCapture** is landed
   ([`17-input-capture.md`](17-input-capture.md)), and the **USB** portal's backend
   is a real broker (policy + user prompt + remembered grants,
-  `tools/portal/usb.cpp`, `scripts/run-usb-portal-test.sh`).
+  `Tools/portal/usb.cpp`, `scripts/run-usb-portal-test.sh`).
 - **Text input / IME (G5) and accessibility (G1): done (R5).** `text-input-v3`
   / `input-method-v2` are served (see [`22-input-method.md`](22-input-method.md)),
   so an input method can compose CJK text into a focused field. **Sticky keys, high
@@ -563,7 +563,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
 - **CI (N6): green.** `scripts/run-all-tests.sh` runs the `run-*-test.sh`
   tests by tier (every test is headless by design), `.github/workflows/ci.yml`
   gates a push on the fast tier and runs the rest nightly, and
-  `ci/Containerfile` bakes the dependencies, wlroots and the ~1.2 GB Lagom
+  `Meta/CI/Containerfile` bakes the dependencies, wlroots and the ~1.2 GB Lagom
   framework build into an image so a job only builds the SDE. Both repositories
   are public, so standard GitHub-hosted runners are free and unlimited (never use
   a *larger* runner; those are always billed). Each test gets its own
@@ -609,7 +609,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   symptom turned out to be a *signal-disposition* bug rather than an encoding one.
 - **Packaging** of `WindowServer` and the session: the **private-prefix install
   layout** is landed (`scripts/install-sde.sh`, `run-install-layout-test.sh`) and
-  the **split AUR package set** is in `packaging/aur/` (`wlroots0.20`,
+  the **split AUR package set** is in `Meta/packaging/aur/` (`wlroots0.20`,
   `serenity-lagom-git` and `serenity-desktop-environment-git`).
   `run-split-framework-test.sh` stages a framework prefix and builds/runs a
   prebuilt-framework compositor; `run-packaging-test.sh` validates every
@@ -700,7 +700,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   every window kept its active frame (and raised Taskbar button) as it mapped even
   though it was never focused; the desktop scene showed several windows with
   active titlebars and no window marked active in the Taskbar. Focus now scans the
-  window list (`deactivate_other_windows` in `WindowServer/src/Focus.cpp`) and
+  window list (`deactivate_other_windows` in `Services/WindowServer/src/Focus.cpp`) and
   reports the change to the WindowManagerServer, so exactly one window is active
   and the Taskbar's active/sunken button states follow. Covered by
   `scripts/run-active-window-test.sh`.
@@ -724,7 +724,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   focuses such a surface when it maps (and on commit), and restores focus to the
   topmost toplevel when it unmaps; `focus_toplevel` clears the layer focus. Panels,
   the desktop and applets use `NONE` and are unaffected. See
-  `WindowServer/src/LayerShell.cpp` (`focus_layer_surface`).
+  `Services/WindowServer/src/LayerShell.cpp` (`focus_layer_surface`).
 
 - **Wi-Fi applet (G5/W6).** `WifiApplet` is a LibGUI frontend to **NetworkManager**
   over the system D-Bus (libdbus + `Core::Notifier`), modeled on KDE Plasma's
@@ -843,7 +843,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   `run-headless-test.sh` (a broken DRM render node forces the fallback; an
   explicit `SDE_RENDERER=pixman` selects it directly).
 
-- **Protocol-error isolation (R6/N4).** `tools/protocol-error-test.c` deliberately
+- **Protocol-error isolation (R6/N4).** `Tools/protocol-error-test.c` deliberately
   violates a protocol rule (an invalid surface scale; an invalid shm pool size);
   `run-headless-test.sh` checks each error is delivered to the offending client
   (its connection is dropped) while the compositor keeps running and a fresh
@@ -932,7 +932,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   paths not resolved to host binaries (launching failed with ENOENT); Launch
   service implemented (handler resolution + spawn).
 - **`ImageDecoder` portal**: served in-process by libgui-wayland (its in-process
-  fallback) and, when SDE runs, by the `ImageDecoder/` session service. This fixes
+  fallback) and, when SDE runs, by the `Services/ImageDecoder/` session service. This fixes
   the `FileSystemModel`/wallpaper thumbnails (`connect: No such file or
   directory`) and lets **ImageViewer** decode images. The in-process host decodes
   **inline on its own thread**: `ImageDecoder`'s upstream job runs on

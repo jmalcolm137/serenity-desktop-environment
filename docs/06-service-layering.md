@@ -97,7 +97,7 @@ roles:
     `FileSystemModel` renders thumbnails *on that same thread* and then blocks in
     `send_sync` waiting for the decode, so sharing it deadlocked thumbnails. A
     separate process has its own background thread and never hits this.
-- **SDE (session service):** `ImageDecoder/` (built by
+- **SDE (session service):** `Services/ImageDecoder/` (built by
   `scripts/build-imagedecoder.sh`) listens on the image portal when SDE runs;
   `LibWM::make_portal()` then defers to it. As a separate process it keeps the
   class's normal background decode job and needs only
@@ -127,7 +127,7 @@ neither forks the decoder.
 - **`LibLaunch`** (the shared resolver, `Launch::HandlerDatabase`) lives in the
   Serenity tree (LibCore + LibURL only) and is used by libgui-wayland's
   in-process fallback.
-- The **SDE `LaunchServer`** service (`LaunchServer/`, built by
+- The **SDE `LaunchServer`** service (`Services/LaunchServer/`, built by
   `scripts/build-launch-server.sh`) owns the launch portal when it runs; it is
   started by `scripts/start-sde-session.sh` and reuses the same protocol
   implementation (libgui-wayland's `LaunchServerConnection`, compiled in; it
@@ -135,14 +135,14 @@ neither forks the decoder.
 - `LibWM::make_portal()` **defers to a session service** when a socket exists on
   the portal path, otherwise serves in-process. Verified: an application under
   SDE connects to the session `LaunchServer` instead of the fallback.
-- The **SDE `ImageDecoder`** service (`ImageDecoder/`, built by
+- The **SDE `ImageDecoder`** service (`Services/ImageDecoder/`, built by
   `scripts/build-imagedecoder.sh`) likewise owns the image portal when it runs,
   reusing SerenityOS's `ImageDecoder::ConnectionFromClient`; without it,
   libgui-wayland's in-process decoder answers. Verified both ways.
 - **Stand-alone (no SDE) is unchanged**: the in-process fallback answers.
 
 Covered by a headless test: `scripts/run-services-test.sh` runs the same client
-(the SDE's `libwm-services-test`, `test/`) twice, once with no external service and
+(the SDE's `libwm-services-test`, `Tests/`) twice, once with no external service and
 once with the SDE `LaunchServer` and `ImageDecoder` running, and asserts that the
 in-process fallback answers in the first case and LibWM **defers** to the services
 in the second, for both the launch and image portals. It needs no compositor and

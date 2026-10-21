@@ -126,7 +126,7 @@ Headless, on the same terms as the rest of R5:
 * The CI image already installs `dbus`; a test can run `dbus-run-session` plus a
   private `at-spi-bus-launcher` (or a stand-in registry) exactly as
   `run-screencast-test.sh` now brings its own PipeWire.
-* A small `tools/atspi-probe.cpp` client walks the tree of a running SDE
+* A small `Tools/atspi-probe.cpp` client walks the tree of a running SDE
   application (a `TextEditor` with a known title, a `Button` with a known label) and
   asserts roles, names, states and geometry; the same client drives step 3 once
   actions exist.

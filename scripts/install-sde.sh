@@ -136,7 +136,7 @@ exec "$prefix/share/sde/scripts/start-sde-session.sh" "$@"
 LAUNCHER
 chmod 0755 "$BIN/sde-session"
 
-sed "s|@EXEC@|$PREFIX/bin/sde-session|g" "$SDE_ROOT/session/sde.desktop.in" > "$DESKTOP"
+sed "s|@EXEC@|$PREFIX/bin/sde-session|g" "$SDE_ROOT/Base/session/sde.desktop.in" > "$DESKTOP"
 chmod 0644 "$DESKTOP"
 
 echo "==> installed"

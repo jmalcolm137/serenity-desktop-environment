@@ -38,8 +38,8 @@ done
 
 WRAPPER="$BIN_DIR/sde-session"
 ENTRY="$SESSIONS_DIR/sde.desktop"
-TEMPLATE_DESKTOP="$SDE_ROOT/session/sde.desktop.in"
-TEMPLATE_WRAPPER="$SDE_ROOT/session/sde-session.in"
+TEMPLATE_DESKTOP="$SDE_ROOT/Base/session/sde.desktop.in"
+TEMPLATE_WRAPPER="$SDE_ROOT/Base/session/sde-session.in"
 
 # Use sudo only when needed (a system dir and not already root).
 SUDO=""
@@ -67,7 +67,7 @@ if [[ ! -x "$SDE_ROOT/build/WindowServer/WindowServer" ]]; then
     echo "warning: $SDE_ROOT/build/WindowServer/WindowServer is not built;" >&2
     echo "         run scripts/build-window-server.sh before logging in" >&2
 fi
-[[ -f "$TEMPLATE_DESKTOP" && -f "$TEMPLATE_WRAPPER" ]] || { echo "error: session templates missing under $SDE_ROOT/session" >&2; exit 1; }
+[[ -f "$TEMPLATE_DESKTOP" && -f "$TEMPLATE_WRAPPER" ]] || { echo "error: session templates missing under $SDE_ROOT/Base/session" >&2; exit 1; }
 
 echo "==> installing the SDE session entry"
 echo "    launcher : $WRAPPER -> $SDE_ROOT/scripts/start-sde-session.sh"

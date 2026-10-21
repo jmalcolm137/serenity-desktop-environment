@@ -80,7 +80,7 @@ for dir in "$SDE_ROOT"/packaging/aur/*/; do
 done
 
 if [[ "$found" -eq 0 ]]; then
-    echo "FAIL: no packaging/aur/*/PKGBUILD found"
+    echo "FAIL: no Meta/packaging/aur/*/PKGBUILD found"
     fail=1
 fi
 

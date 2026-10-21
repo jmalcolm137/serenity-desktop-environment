@@ -16,9 +16,9 @@ built against the Serenity userland libraries from the `libgui-wayland` build.
 
 | Path | Role |
 |---|---|
-| `BatteryApplet/src/Battery.h` / `Battery.cpp` | The power-supply reader and the aggregated summary. |
-| `BatteryApplet/src/BatteryWidget.h` / `BatteryWidget.cpp` | The compact tray widget, the tooltip and the detail popup. |
-| `BatteryApplet/src/main.cpp` | `serenity_main`, the applet window and the command line. |
+| `Applets/Battery/src/Battery.h` / `Battery.cpp` | The power-supply reader and the aggregated summary. |
+| `Applets/Battery/src/BatteryWidget.h` / `BatteryWidget.cpp` | The compact tray widget, the tooltip and the detail popup. |
+| `Applets/Battery/src/main.cpp` | `serenity_main`, the applet window and the command line. |
 | `scripts/build-battery-applet.sh` | Builds it into `build/BatteryApplet/BatteryApplet`. |
 | `scripts/run-battery-applet-test.sh` | The headless exit test. |
 

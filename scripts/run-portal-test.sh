@@ -290,8 +290,8 @@ check "uint32 0" "$(cat "$RUNTIME/slow-access.out" 2>/dev/null || echo '(no repl
 rm -f "$RUNTIME/slow-dialog"
 
 echo "=== backend declaration ==="
-portals_conf="$SDE_ROOT/contrib/xdg-desktop-portal/portals.conf"
-portal_file="$SDE_ROOT/contrib/xdg-desktop-portal/serenity.portal"
+portals_conf="$SDE_ROOT/Base/xdg-desktop-portal/portals.conf"
+portal_file="$SDE_ROOT/Base/xdg-desktop-portal/serenity.portal"
 dupes="$(grep -E '^org\.freedesktop\.portal\.' "$portals_conf" | cut -d= -f1 | sort | uniq -d)"
 if [ -z "$dupes" ]; then
     echo "  ok: portals.conf has no duplicate interface keys"
@@ -334,7 +334,7 @@ if [ -n "$FRONTEND" ]; then
     echo "=== frontend integration (best effort) ==="
     mkdir -p "$RUNTIME/config/xdg-desktop-portal" "$RUNTIME/data/xdg-desktop-portal/portals"
     printf '[preferred]\norg.freedesktop.portal.Settings=serenity\norg.freedesktop.portal.Inhibit=serenity\n' > "$RUNTIME/config/xdg-desktop-portal/portals.conf"
-    cp "$SDE_ROOT/contrib/xdg-desktop-portal/serenity.portal" "$RUNTIME/data/xdg-desktop-portal/portals/"
+    cp "$SDE_ROOT/Base/xdg-desktop-portal/serenity.portal" "$RUNTIME/data/xdg-desktop-portal/portals/"
     env XDG_CONFIG_HOME="$RUNTIME/config" XDG_DATA_HOME="$RUNTIME/data" XDG_CURRENT_DESKTOP=Serenity \
         "$FRONTEND" > "$RUNTIME/frontend.log" 2>&1 &
     FRONTEND_PID=$!

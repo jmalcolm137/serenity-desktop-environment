@@ -10,7 +10,7 @@
 # history and left the index pointing past the end. The next linefeed then scrolled
 # a line into history and inserted at m_history_start - 1, out of bounds --
 # AK::Vector::insert's `index <= size()` VERIFY, i.e. SIGILL. The payload is the
-# test (test/VtHistoryTest.cpp) and its exit status is the assertion: dying by
+# test (Tests/VtHistoryTest.cpp) and its exit status is the assertion: dying by
 # signal is the bug.
 set -euo pipefail
 
