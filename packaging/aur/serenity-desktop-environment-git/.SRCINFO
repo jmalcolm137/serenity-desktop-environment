@@ -36,6 +36,7 @@ pkgbase = serenity-desktop-environment-git
 	depends = libunwind
 	depends = libelf
 	depends = libei
+	depends = libliftoff
 	depends = xorg-xwayland
 	optdepends = sddm: display manager that lists the SDE Wayland session
 	provides = serenity-desktop-environment

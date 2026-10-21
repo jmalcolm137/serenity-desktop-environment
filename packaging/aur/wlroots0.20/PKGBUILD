@@ -11,7 +11,7 @@ pkgdesc="Modular Wayland compositor library (0.20, pinned for SDE)"
 arch=('x86_64')
 url="https://gitlab.freedesktop.org/wlroots/wlroots"
 license=('MIT')
-depends=('libinput' 'libdrm' 'libxkbcommon' 'pixman' 'wayland' 'seatd')
+depends=('libinput' 'libdrm' 'libxkbcommon' 'pixman' 'wayland' 'seatd' 'libliftoff')
 makedepends=('meson' 'ninja' 'wayland-protocols')
 source=("git+https://gitlab.freedesktop.org/wlroots/wlroots.git#tag=$pkgver")
 sha256sums=('SKIP')

@@ -17,7 +17,7 @@ depends=(
     'serenity-lagom-git'
     wayland libdrm libinput libxkbcommon pixman seatd libxcb xcb-util-wm
     libdisplay-info pipewire libpipewire dbus glib2 fontconfig freetype2
-    libunwind libelf libei xorg-xwayland
+    libunwind libelf libei libliftoff xorg-xwayland
 )
 optdepends=('sddm: display manager that lists the SDE Wayland session')
 makedepends=(
