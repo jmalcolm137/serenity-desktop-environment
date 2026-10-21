@@ -164,7 +164,12 @@ env SDE_SESSION_COMPOSITOR="sleep 30" \
     SDE_SESSION_RESTART_DELAY=0 \
     "$SDE" > "$RUNTIME/session-g2.log" 2>&1 &
 SUP_G2=$!
-sleep 1
+# Wait for the supervisor to install its signal traps; a fixed sleep is a race
+# on a slower CI runner.
+for _ in $(seq 1 100); do
+    grep -qF 'supervisor ready' "$RUNTIME/session-g2.log" 2>/dev/null && break
+    sleep 0.1
+done
 kill -HUP "$SUP_G2" 2>/dev/null || true
 for _ in $(seq 1 50); do
     [ "$(grep -c 'starting compositor' "$RUNTIME/session-g2.log" 2>/dev/null || echo 0)" -ge 2 ] && break

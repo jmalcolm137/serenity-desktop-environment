@@ -429,6 +429,19 @@ while :; do
     fi
     comp_pid=$!
 
+    # Install the signal handlers as soon as the compositor exists, before the
+    # idle/autostart/restore work. A SIGHUP can arrive while those are still
+    # running; the default action would end the session.
+    stopping=0
+    # shellcheck disable=SC2064
+    trap 'stopping=1; [ -n "${comp_pid:-}" ] && kill -TERM "${comp_pid:-}" "${IDLE_PID:-}" "${SLEEP_PID:-}" 2>/dev/null || true' TERM INT
+    # A deliberate in-place restart (deploying a new compositor). SIGTERM from
+    # the trap makes the compositor exit cleanly (0), which normally means "the
+    # user quit"; restart_requested overrides that below.
+    # shellcheck disable=SC2064
+    trap 'restart_requested=1; [ -n "${comp_pid:-}" ] && kill -TERM "${comp_pid:-}" 2>/dev/null || true' HUP
+    echo "SDE session: supervisor ready"
+
     # Idle-to-lock (optional): wait briefly for the compositor socket, then arm
     # the portable idle daemon against it.
     if [ "$IDLE_SECONDS" -gt 0 ] && [ -x "$IDLE_BIN" ]; then
@@ -465,18 +478,6 @@ while :; do
         wait_for_socket || true
         run_restore
     fi
-
-    # A SIGTERM/SIGINT means "stop the session", not "restart the compositor":
-    # kill it and break out of the loop (this is how logout shuts the session
-    # down). Single quotes so comp_pid/IDLE_PID resolve when the signal arrives.
-    stopping=0
-    # shellcheck disable=SC2064
-    trap 'stopping=1; kill -TERM $comp_pid $IDLE_PID $SLEEP_PID 2>/dev/null || true' TERM INT
-    # A deliberate in-place restart (deploying a new compositor). SIGTERM from
-    # the trap makes the compositor exit cleanly (0), which normally means "the
-    # user quit"; restart_requested overrides that below.
-    # shellcheck disable=SC2064
-    trap 'restart_requested=1; kill -TERM $comp_pid 2>/dev/null || true' HUP
 
     # Watchdog: restart a wedged compositor (event loop blocked). Backgrounded so
     # the blocking `wait` below stays responsive to SIGTERM.
