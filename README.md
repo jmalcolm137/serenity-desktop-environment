@@ -41,6 +41,12 @@ sudo scripts/install-session.sh    # /usr/local/bin/sde-session + /usr/share/way
 # ... then log out and pick it at the login screen.
 # Remove it with: sudo scripts/install-session.sh --uninstall
 ```
+## Relationship
+
+SDE is not an official project of SerenityOS.
+The goal of SDE is to run the SerenityOS userland unmodified on Linux.
+If you want to see changes in SDE, we suggest you contribute them to SerenityOS first.
+Changes that are truly Linux specific may not be accepted into SerenityOS and will be accepted here.
 
 ## License
 
