@@ -10,8 +10,8 @@
 
 #include "Wlroots.h"
 
-// The layout-space origin of a surface, for a constraint on an xdg toplevel (the
-// case games use). Returns false for other surfaces.
+// The layout-space origin of a surface (toplevel, layer surface or popup), used
+// by pointer constraints and wp-pointer-warp-v1.
 bool surface_global_origin(Server& server, wlr_surface* surface, double* out_x, double* out_y)
 {
     for (auto& toplevel : server.toplevels) {
@@ -20,6 +20,31 @@ bool surface_global_origin(Server& server, wlr_surface* surface, double* out_x, 
         int lx = 0;
         int ly = 0;
         if (!wlr_scene_node_coords(&toplevel->content_tree->node, &lx, &ly))
+            return false;
+        *out_x = lx;
+        *out_y = ly;
+        return true;
+    }
+    for (auto& layer : server.layer_surfaces) {
+        if (!layer->layer_surface || layer->layer_surface->surface != surface || !layer->scene)
+            continue;
+        int lx = 0;
+        int ly = 0;
+        if (!wlr_scene_node_coords(&layer->scene->tree->node, &lx, &ly))
+            return false;
+        *out_x = lx;
+        *out_y = ly;
+        return true;
+    }
+    for (auto& popup : server.popups) {
+        if (!popup->xdg_popup || popup->xdg_popup->base->surface != surface)
+            continue;
+        auto* tree = static_cast<wlr_scene_tree*>(popup->xdg_popup->base->data);
+        if (!tree)
+            return false;
+        int lx = 0;
+        int ly = 0;
+        if (!wlr_scene_node_coords(&tree->node, &lx, &ly))
             return false;
         *out_x = lx;
         *out_y = ly;

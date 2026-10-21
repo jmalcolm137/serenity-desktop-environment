@@ -104,6 +104,19 @@ add_custom_command(
     VERBATIM
 )
 
+# wp-pointer-warp-v1: standard protocol; wlroots 0.20 has no manager, so the
+# compositor implements the server side (see src/Pointer.cpp).
+set(POINTER_WARP_XML "${WAYLAND_PROTOCOLS_DATADIR}/staging/pointer-warp/pointer-warp-v1.xml")
+add_custom_command(
+    OUTPUT
+        "${SERENITY_WINDOW_PROTOCOL_DIR}/pointer-warp-v1-server-protocol.h"
+        "${SERENITY_WINDOW_PROTOCOL_DIR}/pointer-warp-v1-protocol.c"
+    COMMAND "${WAYLAND_SCANNER}" server-header "${POINTER_WARP_XML}" "${SERENITY_WINDOW_PROTOCOL_DIR}/pointer-warp-v1-server-protocol.h"
+    COMMAND "${WAYLAND_SCANNER}" private-code "${POINTER_WARP_XML}" "${SERENITY_WINDOW_PROTOCOL_DIR}/pointer-warp-v1-protocol.c"
+    DEPENDS "${POINTER_WARP_XML}"
+    VERBATIM
+)
+
 add_executable(WindowServer
     src/main.cpp
     src/Animations.cpp
@@ -149,7 +162,8 @@ add_executable(WindowServer
     "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-input-capture-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-virtual-input-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-shell-protocol.c"
-    "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-session-management-v1-protocol.c")
+    "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-session-management-v1-protocol.c"
+    "${SERENITY_WINDOW_PROTOCOL_DIR}/pointer-warp-v1-protocol.c")
 
 target_include_directories(WindowServer PRIVATE
     ${WLROOTS_INCLUDE_DIRS}

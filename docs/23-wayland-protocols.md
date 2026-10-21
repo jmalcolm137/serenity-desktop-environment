@@ -45,6 +45,7 @@ asserted by `scripts/run-protocol-matrix-test.sh` (the full dump is printed by t
 | Protocol | Advertised | Purpose |
 |---|---|---|
 | `zwp_relative_pointer_manager_v1` | v1 | relative pointer motion (games, pointer lock) |
+| `wp_pointer_warp_v1` | v1 | warp the pointer to a surface-local position (implemented by SDE) |
 | `zwp_pointer_constraints_v1` | v1 | pointer lock / confinement, **enforced by SDE** |
 | `zwp_pointer_gestures_v1` | v3 | swipe / pinch / hold gestures |
 | `zwp_tablet_manager_v2` | v1 | graphics tablet tools + tablet pads |
@@ -120,8 +121,8 @@ These are **not** advertised, and are tracked in
 [`21-r5-protocol-parity-plan.md`](21-r5-protocol-parity-plan.md):
 
 - **wlroots 0.21 / not in the pinned 0.20.2:** XWayland drag-and-drop (XDND,
-  `xwayland/selection/dnd.c`), `ext-background-effect-v1`, `wp-pointer-warp-v1`,
-  `wp-fifo-v1`, `wp-commit-timing-v1`.
+  `xwayland/selection/dnd.c`), `ext-background-effect-v1`, `wp-fifo-v1`,
+  `wp-commit-timing-v1`.
 - **In no wlroots release:** `xwayland-keyboard-grab-v1`, `xdg-toplevel-drag`.
 
 The compositor pins the wlroots **release** that Arch Linux ships (currently `0.20.2`); these

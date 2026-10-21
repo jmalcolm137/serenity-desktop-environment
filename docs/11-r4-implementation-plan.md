@@ -688,7 +688,7 @@ Legend: **✓** have · **↗** planned R4 · **→** planned R5 · **·** plann
 | `wp-single-pixel-buffer-v1` | ✓ | ✓ | R6 (landed) |
 | `wp-tearing-control-v1` | ✓ | ✓ | R4.5 |
 | `wp-alpha-modifier-v1` | ✓ | ✓ | R6 (landed) |
-| `wp-pointer-warp-v1` | ✓ | ✗ | R5 (needs a wlroots bump) |
+| `wp-pointer-warp-v1` | ✓ | ✓ | R5 (served directly; no wlroots manager) |
 | `wp-pointer-constraints-v1` | ✓ | ✓ | R5 |
 | `wp-pointer-gestures-v1` | ✓ | ✓ | R5 |
 | `wp-relative-pointer-v1` | ✓ | ✓ | R5 |

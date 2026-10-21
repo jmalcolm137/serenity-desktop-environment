@@ -26,6 +26,7 @@
 #include "Wlroots.h"
 
 extern "C" {
+#include "pointer-warp-v1-server-protocol.h"
 #include "serenity-window-server-protocol.h"
 }
 
@@ -229,6 +230,18 @@ static void new_pointer_constraint(wl_listener* listener, void* data)
     wl_signal_add(&constraint->events.destroy, &entry->destroy);
 }
 
+// The last serial sent with wl_pointer.enter. wp-pointer-warp-v1 requests quote
+// it; wlroots does not retain it, so track our focus changes.
+static uint32_t g_last_pointer_enter_serial = 0;
+
+static void notify_pointer_enter(Server& server, wlr_surface* surface, double sx, double sy)
+{
+    auto* previous = server.seat->pointer_state.focused_surface;
+    wlr_seat_pointer_notify_enter(server.seat, surface, sx, sy);
+    if (previous != surface)
+        g_last_pointer_enter_serial = wl_display_get_serial(server.display);
+}
+
 static void process_cursor_motion(Server& server, uint32_t time)
 {
     // While the session is locked, only the lock surface receives input.
@@ -238,7 +251,7 @@ static void process_cursor_motion(Server& server, uint32_t time)
             wlr_output_layout_get_box(server.output_layout, lock->lock_surface->output, &box);
             double x = server.cursor->x - box.x;
             double y = server.cursor->y - box.y;
-            wlr_seat_pointer_notify_enter(server.seat, lock->lock_surface->surface, x, y);
+            notify_pointer_enter(server, lock->lock_surface->surface, x, y);
             wlr_seat_pointer_notify_motion(server.seat, time, x, y);
         }
         return;
@@ -333,7 +346,7 @@ static void process_cursor_motion(Server& server, uint32_t time)
     if (surface) {
         if (server.seat->pointer_state.focused_surface != surface)
             wlr_cursor_set_xcursor(server.cursor, server.cursor_manager, "default");
-        wlr_seat_pointer_notify_enter(server.seat, surface, sx, sy);
+        notify_pointer_enter(server, surface, sx, sy);
         wlr_seat_pointer_notify_motion(server.seat, time, sx, sy);
     } else {
         wlr_seat_pointer_clear_focus(server.seat);
@@ -648,7 +661,7 @@ static void cursor_button(wl_listener* listener, void* data)
             wlr_output_layout_get_box(server->output_layout, lock->lock_surface->output, &box);
             double x = server->cursor->x - box.x;
             double y = server->cursor->y - box.y;
-            wlr_seat_pointer_notify_enter(server->seat, lock->lock_surface->surface, x, y);
+            notify_pointer_enter(*server, lock->lock_surface->surface, x, y);
         }
         wlr_seat_pointer_notify_button(server->seat, event->time_msec, event->button, event->state);
         return;
@@ -817,6 +830,65 @@ static void cursor_shape_request(wl_listener* listener, void* data)
         wlr_cursor_set_xcursor(server->cursor, server->cursor_manager, name);
 }
 
+// --- wp-pointer-warp-v1 ---------------------------------------------------
+// wlroots 0.20 has no manager for this standard protocol, so the compositor
+// serves the small server side. A request is honored only for a surface with
+// pointer focus (or the implicit-grab surface), with the current pointer-enter
+// serial, and inside the surface.
+static void pointer_warp_destroy(wl_client*, wl_resource* resource)
+{
+    wl_resource_destroy(resource);
+}
+
+static void pointer_warp_warp(wl_client*, wl_resource* resource, wl_resource* surface_resource, wl_resource* pointer_resource, wl_fixed_t x, wl_fixed_t y, uint32_t serial)
+{
+    auto* server = static_cast<Server*>(wl_resource_get_user_data(resource));
+    if (!server)
+        return;
+    auto* surface = wlr_surface_from_resource(surface_resource);
+    if (!surface || !surface->mapped)
+        return;
+    if (wl_resource_get_interface(pointer_resource) != &wl_pointer_interface)
+        return;
+    if (wl_resource_get_client(surface_resource) != wl_resource_get_client(pointer_resource))
+        return;
+    if (serial == 0 || serial != g_last_pointer_enter_serial)
+        return;
+    if (server->seat->pointer_state.focused_surface != surface && server->pointer.grab_surface != surface)
+        return;
+
+    int const scale = max(surface->current.scale, 1);
+    double const width = static_cast<double>(surface->current.width) / scale;
+    double const height = static_cast<double>(surface->current.height) / scale;
+    double const local_x = wl_fixed_to_double(x);
+    double const local_y = wl_fixed_to_double(y);
+    if (local_x < 0 || local_y < 0 || local_x >= width || local_y >= height)
+        return;
+
+    double origin_x = 0;
+    double origin_y = 0;
+    if (!surface_global_origin(*server, surface, &origin_x, &origin_y))
+        return;
+
+    dbgln("WindowServer: pointer warp to {:.1f},{:.1f} (surface-local {:.1f},{:.1f})", origin_x + local_x, origin_y + local_y, local_x, local_y);
+    wlr_cursor_warp_closest(server->cursor, nullptr, origin_x + local_x, origin_y + local_y);
+}
+
+static struct wp_pointer_warp_v1_interface const pointer_warp_implementation = {
+    .destroy = pointer_warp_destroy,
+    .warp_pointer = pointer_warp_warp,
+};
+
+static void pointer_warp_bind(wl_client* client, void* data, uint32_t version, uint32_t id)
+{
+    auto* resource = wl_resource_create(client, &wp_pointer_warp_v1_interface, version, id);
+    if (!resource) {
+        wl_client_post_no_memory(client);
+        return;
+    }
+    wl_resource_set_implementation(resource, &pointer_warp_implementation, data, nullptr);
+}
+
 void initialize_pointer(Server& server)
 {
     server.pointer.relative_pointer_manager = wlr_relative_pointer_manager_v1_create(server.display);
@@ -856,6 +928,9 @@ void initialize_pointer(Server& server)
     server.pointer.constraints = wlr_pointer_constraints_v1_create(server.display);
     server.pointer.new_constraint.notify = new_pointer_constraint;
     wl_signal_add(&server.pointer.constraints->events.new_constraint, &server.pointer.new_constraint);
+
+    // wp-pointer-warp-v1 (R6): the protocol has no wlroots manager on 0.20.
+    (void)wl_global_create(server.display, &wp_pointer_warp_v1_interface, 1, &server, pointer_warp_bind);
 }
 
 void finish_pointer(Server& server)

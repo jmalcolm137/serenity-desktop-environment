@@ -85,6 +85,7 @@ echo "=== R6 protocol catch-up (colour, security, tag, sync, lease) ==="
 check xdg_toplevel_tag_manager_v1
 check wp_color_representation_manager_v1
 check wp_security_context_manager_v1
+check wp_pointer_warp_v1
 if grep -q 'color management enabled' "$RUNTIME/comp.log"; then
     check wp_color_manager_v1
 else
