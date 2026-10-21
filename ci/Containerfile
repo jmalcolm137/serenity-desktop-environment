@@ -69,7 +69,7 @@ RUN git init /opt/sde \
 # a failure's whole log is visible — a container build truncates the tail, as the
 # first attempt at this step showed.
 RUN cd /opt/libgui-wayland \
-    && ALLOW_UNVERIFIED_PATCHES=1 scripts/build-libgui.sh --no-tests $(/opt/sde/scripts/lagom-libraries.sh) \
+    && scripts/build-libgui.sh --no-tests $(/opt/sde/scripts/lagom-libraries.sh) \
     && cd /opt/sde \
     && scripts/build.sh \
     && scripts/build-full-sde.sh
