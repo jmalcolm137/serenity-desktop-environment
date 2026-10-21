@@ -732,6 +732,38 @@ static void server_new_toplevel_decoration(wl_listener* listener, void* data)
     server->decorations.append(move(decoration));
 }
 
+// xdg-toplevel-tag-v1 (R6): a client can tag its toplevel and describe it. The
+// tag is stored for window rules; the compositor has no rule engine yet, but the
+// protocol is served so toolkits that set it (and future rules) work.
+static Server* g_toplevel_tag_server = nullptr;
+static wl_listener g_toplevel_tag_set = {};
+static wl_listener g_toplevel_tag_description = {};
+
+static Toplevel* toplevel_for_tag_event(wlr_xdg_toplevel* xdg_toplevel)
+{
+    if (!g_toplevel_tag_server)
+        return nullptr;
+    for (auto& toplevel : g_toplevel_tag_server->toplevels) {
+        if (toplevel->xdg_toplevel == xdg_toplevel)
+            return toplevel.ptr();
+    }
+    return nullptr;
+}
+
+static void toplevel_tag_set(wl_listener*, void* data)
+{
+    auto* event = static_cast<wlr_xdg_toplevel_tag_manager_v1_set_tag_event*>(data);
+    if (auto* toplevel = toplevel_for_tag_event(event->toplevel))
+        toplevel->tag = event->tag ? event->tag : "";
+}
+
+static void toplevel_tag_description(wl_listener*, void* data)
+{
+    auto* event = static_cast<wlr_xdg_toplevel_tag_manager_v1_set_description_event*>(data);
+    if (auto* toplevel = toplevel_for_tag_event(event->toplevel))
+        toplevel->tag_description = event->description ? event->description : "";
+}
+
 void initialize_xdg_shell(Server& server)
 {
     server.xdg_shell = wlr_xdg_shell_create(server.display, 3);
@@ -743,6 +775,14 @@ void initialize_xdg_shell(Server& server)
     if (auto* decoration_manager = wlr_xdg_decoration_manager_v1_create(server.display)) {
         server.new_toplevel_decoration.notify = server_new_toplevel_decoration;
         wl_signal_add(&decoration_manager->events.new_toplevel_decoration, &server.new_toplevel_decoration);
+    }
+
+    if (auto* tag_manager = wlr_xdg_toplevel_tag_manager_v1_create(server.display, 1)) {
+        g_toplevel_tag_server = &server;
+        g_toplevel_tag_set.notify = toplevel_tag_set;
+        wl_signal_add(&tag_manager->events.set_tag, &g_toplevel_tag_set);
+        g_toplevel_tag_description.notify = toplevel_tag_description;
+        wl_signal_add(&tag_manager->events.set_description, &g_toplevel_tag_description);
     }
 }
 

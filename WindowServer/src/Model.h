@@ -262,6 +262,10 @@ struct Toplevel {
     bool session_managed { false };
     ByteString session_id;
     ByteString session_name;
+    // xdg-toplevel-tag-v1 (R6): the client's window tag and description. Stored
+    // for window rules; no rule engine consumes them yet.
+    ByteString tag;
+    ByteString tag_description;
     Gfx::IntPoint session_restore_position;
     bool has_session_restore_position { false };
     // Applied at the initial commit (restore_toplevel runs before the toplevel

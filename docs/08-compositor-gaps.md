@@ -85,8 +85,8 @@ GTK/Qt/Firefox conformance matrix in CI yet.
   from the Taskbar uses it.
 - **Sandbox & portal interop (G7): mostly done.** `xdg-foreign` v1/v2 and
   `xdg-wm-dialog-v1` are served; `xdg-system-bell-v1` and
-  `xdg-toplevel-icon-v1` are served. `xdg-toplevel-drag` is not present in the
-  pinned wlroots.
+  `xdg-toplevel-icon-v1` are served; `wp-security-context-v1` identifies
+  sandboxed clients. `xdg-toplevel-drag` is not present in the pinned wlroots.
 - **Clipboard completeness (G4): done.** `set_selection`, primary selection
   (`zwp_primary_selection_device_manager_v1`) and both data-control variants are
   served. Explicit data-device drag-and-drop is routed by the compositor with a
@@ -99,9 +99,9 @@ GTK/Qt/Firefox conformance matrix in CI yet.
 - **Presentation & scaling (N3, N5): largely done.** `wp-viewporter`,
   `content-type-v1`, `tearing-control`, `wp-single-pixel-buffer`,
   `wp-alpha-modifier`, `presentation-time` and `wp-fractional-scale-v1` are
-  served; output scale is fractional and live. Still missing: `commit-timing` /
-  `fifo` (wlroots bump) and dmabuf feedback/explicit sync
-  (`wp-linux-drm-syncobj`).
+  served; output scale is fractional and live. Explicit synchronization
+  (`wp-linux-drm-syncobj`) is served on DRM. Still missing: `commit-timing` /
+  `fifo` (wlroots bump) and dmabuf feedback.
 - **Portals (G7): done.** `xdg-desktop-portal-serenity` implements the
   freedesktop portal interfaces; ScreenCast/RemoteDesktop/InputCapture,
   GlobalShortcuts, DynamicLauncher, FileChooser and Print are in place, along
@@ -158,12 +158,14 @@ GTK/Qt/Firefox conformance matrix in CI yet.
   A fullscreen client on real DRM is the manual positive check. Overlay-plane
   selection and per-monitor VRR are still not exposed; this panel reports
   `vrr_capable=0`. The `tearing-control` protocol is served.
-- **Color management / HDR (N5).** No `wlr-color-management`, gamma or color
-  profiles. The eDP panel has no HDR metadata, so HDR/colour validation needs
-  different hardware.
+- **Color management / HDR (N5).** Colour representation and colour management
+  are wired; management is only advertised when the renderer has input colour
+  transforms (wlroots' Vulkan renderer; GLES2/pixman omit it rather than fake it).
+  HDR metadata and colour profiles still need hardware/renderer support; this eDP
+  panel has no HDR metadata.
 - **Capture & leasing (G3).** General screencopy/`ext-image-copy-capture` is
-  served (screenshots, ScreenCast, the Magnifier's region capture); `wp-drm-lease`
-  (VR) is not planned.
+  served (screenshots, ScreenCast, the Magnifier's region capture);
+  `wp-drm-lease` is served on DRM backends (the primary output is not offered).
 - **Performance budget & instrumentation (N3): done.** Frame time,
   input → present latency and memory are metered; `scripts/run-perf-test.sh`
   enforces the budget headless (including "no frames while idle") and

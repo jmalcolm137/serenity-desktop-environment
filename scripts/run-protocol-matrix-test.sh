@@ -81,6 +81,26 @@ check xdg_wm_dialog_v1
 check wp_presentation
 check wp_fractional_scale_manager_v1
 
+echo "=== R6 protocol catch-up (colour, security, tag, sync, lease) ==="
+check xdg_toplevel_tag_manager_v1
+check wp_color_representation_manager_v1
+check wp_security_context_manager_v1
+if grep -q 'color management enabled' "$RUNTIME/comp.log"; then
+    check wp_color_manager_v1
+else
+    echo "  skip: wp_color_manager_v1 (renderer has no input color transform)"
+fi
+if grep -q 'explicit sync enabled' "$RUNTIME/comp.log"; then
+    check wp_linux_drm_syncobj_manager_v1
+else
+    echo "  skip: wp_linux_drm_syncobj_manager_v1 (no DRM fd)"
+fi
+if grep -q 'DRM lease enabled' "$RUNTIME/comp.log"; then
+    check wp_drm_lease_device_v1
+else
+    echo "  skip: wp_drm_lease_device_v1 (no DRM backend)"
+fi
+
 echo "=== standard-protocol parity (docs/21-r5-protocol-parity-plan.md) ==="
 check xdg_toplevel_icon_manager_v1
 check xdg_system_bell_v1

@@ -271,6 +271,54 @@ static void output_manager_test(wl_listener* listener, void* data)
     output_manager_apply_or_test(*server, static_cast<wlr_output_configuration_v1*>(data), true);
 }
 
+// --- DRM leasing (wp-drm-lease-v1, R6) ------------------------------------
+
+static wlr_drm_lease_v1_manager* g_drm_lease_manager = nullptr;
+static Server* g_drm_lease_server = nullptr;
+static wl_listener g_drm_lease_request = {};
+
+static void drm_lease_request(wl_listener*, void* data)
+{
+    auto* request = static_cast<wlr_drm_lease_request_v1*>(data);
+    if (!g_drm_lease_server || !g_drm_lease_server->primary_output) {
+        wlr_drm_lease_request_v1_reject(request);
+        return;
+    }
+    // Keep the panel on the desktop; lease external outputs (VR headsets).
+    for (size_t i = 0; i < request->n_connectors; ++i) {
+        if (request->connectors[i]->output == g_drm_lease_server->primary_output) {
+            dbgln("WindowServer: rejecting a DRM lease request for the primary output");
+            wlr_drm_lease_request_v1_reject(request);
+            return;
+        }
+    }
+    if (wlr_drm_lease_request_v1_grant(request))
+        dbgln("WindowServer: granted a DRM lease");
+    else
+        dbgln("WindowServer: failed to grant a DRM lease");
+}
+
+void initialize_drm_lease(Server& server)
+{
+    g_drm_lease_server = &server;
+    g_drm_lease_manager = wlr_drm_lease_v1_manager_create(server.display, server.backend);
+    if (!g_drm_lease_manager) {
+        dbgln("WindowServer: DRM lease unavailable (no DRM backend)");
+        return;
+    }
+    g_drm_lease_request.notify = drm_lease_request;
+    wl_signal_add(&g_drm_lease_manager->events.request, &g_drm_lease_request);
+    dbgln("WindowServer: DRM lease enabled");
+}
+
+void offer_output_for_lease(Server& server, wlr_output* output)
+{
+    if (!g_drm_lease_manager || !output || output == server.primary_output)
+        return;
+    if (!wlr_drm_lease_v1_manager_offer_output(g_drm_lease_manager, output))
+        dbgln("WindowServer: output '{}' cannot be offered for lease", output->name ? output->name : "?");
+}
+
 void initialize_output_management(Server& server)
 {
     server.output_management.manager = wlr_output_manager_v1_create(server.display);
@@ -284,4 +332,6 @@ void finish_output_management(Server& server)
 {
     remove_listener(server.output_management.apply);
     remove_listener(server.output_management.test);
+    if (g_drm_lease_manager)
+        wl_list_remove(&g_drm_lease_request.link);
 }

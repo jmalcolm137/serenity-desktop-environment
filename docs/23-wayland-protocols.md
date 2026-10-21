@@ -1,6 +1,6 @@
 # SDE: the Wayland protocols it implements
 
-**Status:** living · **Updated:** 2026-10-13
+**Status:** living · **Updated:** 2026-10-20
 **Related:** [`21-r5-protocol-parity-plan.md`](21-r5-protocol-parity-plan.md) (the standard-protocol
 parity plan and the wlroots version policy) · [`04-known-gaps.md`](04-known-gaps.md)
 
@@ -38,6 +38,7 @@ asserted by `scripts/run-protocol-matrix-test.sh` (the full dump is printed by t
 | `xdg_activation_v1` | v1 | activation tokens (taskbar/portal "activate this window") |
 | `xdg_system_bell_v1` | v1 | the system bell (global advertised; no audible output yet) |
 | `zwlr_foreign_toplevel_manager_v1` | v3 | taskbar-style task list from an external client |
+| `xdg_toplevel_tag_manager_v1` | v1 | per-toplevel tag and description, for window rules |
 
 ## Input
 
@@ -73,6 +74,16 @@ asserted by `scripts/run-protocol-matrix-test.sh` (the full dump is printed by t
 | `ext_session_lock_manager_v1` | v1 | session locking |
 | `zwlr_output_manager_v1` | v4 | output configuration (Display Settings) |
 | `zwlr_output_power_manager_v1` | v1 | output power / DPMS |
+| `wp_security_context_manager_v1` | v1 | sandboxed-client identification (Flatpak, …) |
+| `wp_linux_drm_syncobj_manager_v1` | v1 | explicit synchronization (DRM renderers) |
+| `wp_drm_lease_device_v1` | v1 | DRM leasing (DRM backends; the primary output is not offered) |
+
+## Colour
+
+| Protocol | Advertised | Purpose |
+|---|---|---|
+| `wp_color_representation_manager_v1` | v1 | per-surface colour representation (alpha mode, coefficients, range) |
+| `wp_color_manager_v1` | v1 | colour management; advertised only when the renderer has input colour transforms (Vulkan), because GLES2/pixman cannot perform them |
 
 ## Workspaces & foreign toplevels
 
@@ -108,9 +119,10 @@ asserted by `scripts/run-protocol-matrix-test.sh` (the full dump is printed by t
 These are **not** advertised, and are tracked in
 [`21-r5-protocol-parity-plan.md`](21-r5-protocol-parity-plan.md):
 
-- **wlroots 0.21 (unreleased):** XWayland drag-and-drop (XDND, `xwayland/selection/dnd.c`),
-  `ext-background-effect-v1`, `wp-pointer-warp-v1`.
-- **In no wlroots release:** `xwayland-keyboard-grab-v1`, `xdg-toplevel-drag`, `wp-fifo-v1`.
+- **wlroots 0.21 / not in the pinned 0.20.2:** XWayland drag-and-drop (XDND,
+  `xwayland/selection/dnd.c`), `ext-background-effect-v1`, `wp-pointer-warp-v1`,
+  `wp-fifo-v1`, `wp-commit-timing-v1`.
+- **In no wlroots release:** `xwayland-keyboard-grab-v1`, `xdg-toplevel-drag`.
 
 The compositor pins the wlroots **release** that Arch Linux ships (currently `0.20.2`); these
 land when the pin moves to the 0.21 release (expected late 2026 / early 2027).

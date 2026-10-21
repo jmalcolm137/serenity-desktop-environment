@@ -474,6 +474,7 @@ static void server_new_output(wl_listener* listener, void* data)
     auto const logical_size = output_logical_size(wlr_output);
     dbgln("WindowServer: output '{}' {}x{} @{}x", wlr_output->name ? wlr_output->name : "?", logical_size.width(), logical_size.height(), wlr_output->scale);
     server->outputs.append(move(output));
+    offer_output_for_lease(*server, wlr_output);
     update_desktop_background(*server, *server->outputs.last());
     arrange_layers(*server, wlr_output);
     output_manager_send_configuration(*server);

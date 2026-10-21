@@ -657,7 +657,7 @@ Legend: **✓** have · **↗** planned R4 · **→** planned R5 · **·** plann
 | `wlr-layer-shell` | ✓ | ✓ | none |
 | `linux-dmabuf` | ✓ | ✓ | none |
 | `presentation-time` | ✓ | ✓ | R6 (landed) |
-| `tablet-v2` | ✓ | ✗ | R5 |
+| `tablet-v2` | ✓ | ✓ | R5 |
 | `viewporter` | ✓ | ✓ | R4.5 |
 | `xdg-activation-v1` | ✓ | ✓ | R4.2 |
 | `xdg-session-management-v1` | ✓ | ✓ | R4.2 |
@@ -666,33 +666,35 @@ Legend: **✓** have · **↗** planned R4 · **→** planned R5 · **·** plann
 | `xdg-system-bell-v1` | ✓ | ✓ | R5 (landed) |
 | `xdg-toplevel-drag-v1` | ✓ | ✗ | R5 (in neither wlroots 0.20 nor master) |
 | `xdg-toplevel-icon-v1` | ✓ | ✓ | R5 (landed) |
-| `xdg-toplevel-tag-v1` | ✓ | ✗ | R5 |
-| `xwayland-shell-v1`, `xwayland-keyboard-grab-v1` | ✓ | ✗ | R5 (XWayland) |
+| `xdg-toplevel-tag-v1` | ✓ | ✓ | R5 (landed) |
+| `xwayland-shell-v1` | ✓ | ✓ | R5 |
+| `xwayland-keyboard-grab-v1` | ✓ | ✗ | R5 (no wlroots release) |
 | `ext-idle-notify-v1` | ✓ | ✓ | R4.1 |
 | `ext-session-lock-v1` | – (private overlay) | ✓ | R4.1 |
 | `ext-workspace-v1` | – (private) | ✓ | R4.8 |
 | `ext-foreign-toplevel-list-v1` | – (private) | ✓ | R4.8 |
-| `ext-data-control-v1` | ✓ | ✗ | R5 |
+| `ext-data-control-v1` | ✓ | ✓ | R5 |
 | `ext-image-copy-capture-v1` | – | ✓ | R5 |
 | `ext-transient-seat-v1` | ✗ | ✗ | R4.3 / R6 |
 | `ext-background-effect-v1` | ✓ | ✗ | R6 (needs a wlroots bump) |
 | `wp-fractional-scale-v1` | ✓ | ✓ | R6 (landed) |
-| `wp-color-management-v1` | ✓ | ✗ | R6 |
-| `wp-color-representation-v1` | ✓ | ✗ | R6 |
+| `wp-color-management-v1` | ✓ | ✓ | R6 (landed; Vulkan renderer, GLES2 omits) |
+| `wp-color-representation-v1` | ✓ | ✓ | R6 (landed) |
 | `wp-content-type-v1` | ✓ | ✓ | R4.5 |
 | `wp-cursor-shape-v1` | ✓ | ✓ | R4.7 |
-| `wp-drm-lease-v1` | ✓ | ✗ | R6 |
+| `wp-drm-lease-v1` | ✓ | ✓ | R6 (landed; DRM) |
 | `wp-fifo-v1` | ✓ | ✗ | R6 (needs a wlroots bump) |
+| `wp-security-context-v1` | ✓ | ✓ | R6 (landed) |
 | `wp-single-pixel-buffer-v1` | ✓ | ✓ | R6 (landed) |
 | `wp-tearing-control-v1` | ✓ | ✓ | R4.5 |
 | `wp-alpha-modifier-v1` | ✓ | ✓ | R6 (landed) |
 | `wp-pointer-warp-v1` | ✓ | ✗ | R5 (needs a wlroots bump) |
-| `wp-pointer-constraints-v1` | ✓ | ✗ | R5 |
-| `wp-pointer-gestures-v1` | ✓ | ✗ | R5 |
+| `wp-pointer-constraints-v1` | ✓ | ✓ | R5 |
+| `wp-pointer-gestures-v1` | ✓ | ✓ | R5 |
 | `wp-relative-pointer-v1` | ✓ | ✓ | R5 |
 | `wp-primary-selection-v1` | ✓ | ✓ | R5 |
 | `wp-keyboard-shortcuts-inhibit-v1` | ✓ | ✓ | R5 |
-| `wp-linux-drm-syncobj-v1` | ✓ | ✗ | R6 |
+| `wp-linux-drm-syncobj-v1` | ✓ | ✓ | R6 (landed; DRM) |
 | `xdpip` (`xx-pip-v1`) | ✓ (private) | ✗ | R6 (private) |
 
 > **wlroots availability & order.** Which rows can be implemented on the current

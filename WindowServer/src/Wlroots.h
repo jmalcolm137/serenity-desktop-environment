@@ -40,6 +40,12 @@ static inline char const* xwayland_surface_class(wlr_xwayland_surface* surface) 
 #include <wlr/types/wlr_primary_selection_v1.h>
 #include <wlr/types/wlr_xdg_toplevel_icon_v1.h>
 #include <wlr/types/wlr_xdg_system_bell_v1.h>
+#include <wlr/types/wlr_color_management_v1.h>
+#include <wlr/types/wlr_color_representation_v1.h>
+#include <wlr/types/wlr_drm_lease_v1.h>
+#include <wlr/types/wlr_linux_drm_syncobj_v1.h>
+#include <wlr/types/wlr_security_context_v1.h>
+#include <wlr/types/wlr_xdg_toplevel_tag_v1.h>
 #include <wlr/types/wlr_buffer.h>
 #include <wlr/types/wlr_data_control_v1.h>
 #include <wlr/types/wlr_ext_data_control_v1.h>

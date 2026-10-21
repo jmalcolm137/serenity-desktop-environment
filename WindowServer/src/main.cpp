@@ -65,6 +65,57 @@
 
 #include "Wlroots.h"
 
+// R6: colour management (wp-color-management-v1). wlroots can only advertise it
+// for a renderer with input colour transforms (its Vulkan renderer today); on
+// GLES2/pixman the capability is absent, and claiming it would produce wrong
+// colours, so the global is omitted rather than faked.
+static void initialize_color_management(Server& server)
+{
+    size_t transfer_functions_len = 0;
+    auto* transfer_functions = wlr_color_manager_v1_transfer_function_list_from_renderer(server.renderer, &transfer_functions_len);
+    size_t primaries_len = 0;
+    auto* primaries = wlr_color_manager_v1_primaries_list_from_renderer(server.renderer, &primaries_len);
+    if (!transfer_functions || transfer_functions_len == 0) {
+        dbgln("WindowServer: color management unavailable (the renderer has no input color transform)");
+        free(transfer_functions);
+        free(primaries);
+        return;
+    }
+
+    static constexpr enum wp_color_manager_v1_render_intent render_intents[] = {
+        WP_COLOR_MANAGER_V1_RENDER_INTENT_PERCEPTUAL,
+    };
+    wlr_color_manager_v1_options options {
+        .features = { .parametric = true },
+        .render_intents = render_intents,
+        .render_intents_len = 1,
+        .transfer_functions = transfer_functions,
+        .transfer_functions_len = transfer_functions_len,
+        .primaries = primaries,
+        .primaries_len = primaries_len,
+    };
+    if (wlr_color_manager_v1_create(server.display, 1, &options))
+        dbgln("WindowServer: color management enabled ({} transfer functions, {} primaries)", transfer_functions_len, primaries_len);
+    else
+        dbgln("WindowServer: color management unavailable");
+    free(transfer_functions);
+    free(primaries);
+}
+
+// R6: security-context-v1 identifies a sandboxed client (Flatpak, ...). The
+// compositor records it; restricting globals for sandboxed clients is a policy
+// follow-up (the portal remains the supported path for capture and clipboard).
+static void security_context_committed(wl_listener*, void* data)
+{
+    auto* event = static_cast<wlr_security_context_v1_commit_event*>(data);
+    dbgln("WindowServer: security context: sandbox='{}' app_id='{}' instance='{}'",
+        event->state->sandbox_engine ? event->state->sandbox_engine : "",
+        event->state->app_id ? event->state->app_id : "",
+        event->state->instance_id ? event->state->instance_id : "");
+}
+
+static wl_listener g_security_context_commit = {};
+
 static ErrorOr<void> initialize(Server& server)
 {
     server.display = wl_display_create();
@@ -227,6 +278,32 @@ static ErrorOr<void> initialize(Server& server)
     auto* foreign_registry = wlr_xdg_foreign_registry_create(server.display);
     wlr_xdg_foreign_v1_create(server.display, foreign_registry);
     wlr_xdg_foreign_v2_create(server.display, foreign_registry);
+
+    // R6 protocol catch-up (docs/23): colour representation/management,
+    // security-context, explicit sync and DRM leasing. Each is conditional on
+    // what the renderer/backend can honestly support.
+    if (!wlr_color_representation_manager_v1_create_with_renderer(server.display, 1, server.renderer))
+        dbgln("WindowServer: color representation unavailable");
+    initialize_color_management(server);
+
+    if (auto* security_context_manager = wlr_security_context_manager_v1_create(server.display)) {
+        g_security_context_commit.notify = security_context_committed;
+        wl_signal_add(&security_context_manager->events.commit, &g_security_context_commit);
+        dbgln("WindowServer: security-context-v1 enabled");
+    } else {
+        dbgln("WindowServer: security-context-v1 unavailable");
+    }
+
+    if (int drm_fd = wlr_renderer_get_drm_fd(server.renderer); drm_fd >= 0) {
+        if (wlr_linux_drm_syncobj_manager_v1_create(server.display, 1, drm_fd))
+            dbgln("WindowServer: explicit sync enabled");
+        else
+            dbgln("WindowServer: explicit sync unavailable");
+    } else {
+        dbgln("WindowServer: explicit sync unavailable (no DRM fd)");
+    }
+
+    initialize_drm_lease(server);
 
     // R5 IME: text-input-v3 + input-method-v2 (docs/22-input-method.md).
     InputMethod::initialize(server);
