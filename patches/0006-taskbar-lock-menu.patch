@@ -1,0 +1,38 @@
+diff --git a/Userland/Services/Taskbar/main.cpp b/Userland/Services/Taskbar/main.cpp
+--- a/Userland/Services/Taskbar/main.cpp
++++ b/Userland/Services/Taskbar/main.cpp
+@@ -7,6 +7,7 @@
+ 
+ #include "ShutdownDialog.h"
+ #include "TaskbarWindow.h"
++#include <AK/Array.h>
+ #include <AK/Debug.h>
+ #include <AK/QuickSort.h>
+ #include <AK/Try.h>
+@@ -28,6 +29,8 @@
+ #include <LibGUI/Window.h>
+ #include <LibGfx/Palette.h>
+ #include <LibGfx/SystemTheme.h>
++
++#include <stdlib.h>
+ #include <LibMain/Main.h>
+ #include <WindowServer/Window.h>
+ #include <signal.h>
+@@ -137,6 +140,17 @@
+     Vector<ByteString> const sorted_app_categories = TRY(discover_apps_and_categories());
+     auto system_menu = GUI::Menu::construct("\xE2\x9A\xA1"_string); // HIGH VOLTAGE SIGN
+ 
++    // Lock first: it is the item a user reaches for while stepping away. The
++    // session exports SDE_LOCK_CMD, so this and Super+L use the same locker.
++    system_menu->add_action(GUI::Action::create("&Lock", [&](auto&) {
++        auto const* configured = getenv("SDE_LOCK_CMD");
++        auto command = configured && *configured ? ByteString(configured) : ByteString("swaylock");
++        Array<StringView, 2> arguments { "-c"sv, command };
++        GUI::Process::spawn_or_show_error(&window, "/bin/sh"sv, ReadonlySpan<StringView> { arguments.data(), arguments.size() });
++    }));
++
++    system_menu->add_separator();
++
+     system_menu->add_action(GUI::Action::create("&About SerenityOS", TRY(Gfx::Bitmap::load_from_uri("resource://icons/16x16/ladyball.png"sv)), [&](auto&) {
+         GUI::Process::spawn_or_show_error(&window, "/bin/About"sv);
+     }));

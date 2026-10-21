@@ -37,8 +37,9 @@ until proven otherwise.
 - **Idle / inhibit / lock / DPMS (G6): done.** `ext-idle-notify-v1`,
   `zwp_idle_inhibit_v1`, `ext-session-lock-v1` (per-output lock surfaces, input
   routed to the lock, re-configure on output size/scale changes) and DPMS via
-  `sde-dpms` are served. `Super+L` uses any conformant locker; a native SDE lock
-  client is still a future deliverable, not a protocol gap.
+  `sde-dpms` are served. `Super+L` uses any conformant locker; the SDE also ships
+  `sde-lock`, a plain `ext-session-lock-v1` client (PAM, LibGfx UI), so this is a
+  shipped client rather than a protocol gap.
 - **System-session integration (G6): done (portable).** The standard session
   environment (`XDG_SESSION_TYPE=wayland`, `WAYLAND_DISPLAY`,
   `XDG_CURRENT_DESKTOP`, `dbus-update-activation-environment` where a bus exists)

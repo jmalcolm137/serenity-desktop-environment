@@ -19,6 +19,8 @@ TOOLS_BUILD="$SDE_ROOT/build/lock-test"
 
 echo "== building prerequisites =="
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
+# The native locker; the phase below skips if it cannot be built.
+"$SDE_ROOT/scripts/build-target.sh" sde-lock >/dev/null 2>&1 || true
 
 mkdir -p "$TOOLS_BUILD"
 WP="$(pkg-config --variable=pkgdatadir wayland-protocols)"
@@ -149,6 +151,66 @@ grep "surface configured" "$RUNTIME/lock-c.log" || true
 
 check "WindowServer: lock surface re-configured" "$RUNTIME/comp-lock-c.log"
 check "LOCK-TEST: surface configured 1024x768" "$RUNTIME/lock-c.log"
+
+echo "== (D) the native SDE locker =="
+if [[ -x "$SDE_ROOT/build/tools/sde-lock" ]]; then
+    start_compositor lock-d 1
+    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
+        env WAYLAND_DISPLAY=lock-d timeout 30 "$SDE_ROOT/build/tools/sde-lock" > "$RUNTIME/lock-d.log" 2>&1 &
+    LOCK_D_PID=$!
+    for _ in $(seq 1 80); do
+        grep -qF "WindowServer: session locked" "$RUNTIME/comp-lock-d.log" && break
+        sleep 0.1
+    done
+    check "WindowServer: session locked" "$RUNTIME/comp-lock-d.log"
+    d_covered="$(grep -cF "WindowServer: session lock surface covered an output" "$RUNTIME/comp-lock-d.log" || true)"
+    if [[ "$d_covered" -ge 1 ]]; then
+        echo "  ok: the native locker covered the output (surfaces=$d_covered)"
+    else
+        echo "  MISSING: the native locker covered no output"
+        fail=1
+    fi
+
+    # PAM: type a wrong password and Enter. The client must report the failure and
+    # stay locked ("login" is the default service; the password is deliberately
+    # wrong, so no account is touched). evdev: w=17 r=19 o=24 n=49 g=34 Enter=28.
+    env WAYLAND_DISPLAY=lock-d "$TOOLS_BUILD/virtual-input-test" \
+        --key 17 press --key 17 release --key 19 press --key 19 release \
+        --key 24 press --key 24 release --key 49 press --key 49 release \
+        --key 34 press --key 34 release --key 28 press --key 28 release \
+        --sleep 200 > "$RUNTIME/type.log" 2>&1 || true
+    for _ in $(seq 1 100); do
+        grep -qE "sde-lock: authentication (failed|error)" "$RUNTIME/lock-d.log" && break
+        sleep 0.1
+    done
+    if grep -qE "sde-lock: authentication (failed|error)" "$RUNTIME/lock-d.log"; then
+        echo "  ok: PAM rejected a wrong password"
+    else
+        echo "  MISSING: PAM did not answer a wrong password"
+        fail=1
+    fi
+    if grep -qF "WindowServer: session unlocked" "$RUNTIME/comp-lock-d.log"; then
+        echo "  MISSING: a wrong password unlocked the session"
+        fail=1
+    else
+        echo "  ok: a wrong password leaves the session locked"
+    fi
+
+    kill -TERM "$LOCK_D_PID" 2>/dev/null || true
+    d_status=0
+    wait "$LOCK_D_PID" 2>/dev/null || d_status=$?
+    if [[ "$d_status" -eq 0 ]]; then
+        echo "  ok: the native locker unlocked and exited cleanly on SIGTERM"
+    else
+        echo "  MISSING: the native locker exited with status $d_status"
+        fail=1
+    fi
+    check "WindowServer: session unlocked" "$RUNTIME/comp-lock-d.log"
+    stop_compositor
+    tail -5 "$RUNTIME/lock-d.log" || true
+else
+    echo "  note: sde-lock is not built; skipping the native locker phase"
+fi
 
 if [[ "$fail" -ne 0 ]]; then
     echo "==> session-lock test FAILED"

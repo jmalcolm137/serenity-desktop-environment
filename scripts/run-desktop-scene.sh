@@ -127,7 +127,11 @@ export SERENITY_RES_ROOT="$SERENITY/Base/res"
 export LD_LIBRARY_PATH="$BUILD/lib"
 export SDE_APP_BIN_DIR="$BUILD/bin"
 export SDE_WM_PORTAL_PATH="/tmp/portal/wm"
-export SDE_LOCK_CMD="${SDE_LOCK_CMD:-swaylock}"
+SDE_LOCK_BIN="${SDE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/build/tools/sde-lock"
+if [ -z "${SDE_LOCK_CMD:-}" ]; then
+    if [ -x "$SDE_LOCK_BIN" ]; then SDE_LOCK_CMD="$SDE_LOCK_BIN"; else SDE_LOCK_CMD=swaylock; fi
+fi
+export SDE_LOCK_CMD
 export SDE_SESSION_IDLE_SECONDS="${SDE_SESSION_IDLE_SECONDS:-0}"
 
 # --- The scene's startup command --------------------------------------------

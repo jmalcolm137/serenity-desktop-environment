@@ -198,12 +198,16 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal`; see
   (DPMS) and `ext-session-lock-v1` (per-output lock surfaces, `locked` once every
   output is covered, input routed to the lock surface on the output under the
   cursor; `Super+L` locks). It is a **standard** `ext-session-lock-v1` server, so
-  any conformant locker works; the session uses **swaylock** for now via
-  `SDE_LOCK_CMD`. Verified by `scripts/run-idle-test.sh` and
-  `scripts/run-lock-test.sh` (including a two-output lock and a mode change while
-  locked). **Future deliverable:** a native SDE lock client (still a plain
-  `ext-session-lock-v1` client, portable to other compositors); see
-  [`11-r4-implementation-plan.md`](11-r4-implementation-plan.md) §9. Blanking
+  any conformant locker works. The session now ships its own **`sde-lock`**
+  (`Tools/sde-lock`): a plain `ext-session-lock-v1` client, so it is portable to
+  other compositors, with a LibGfx-drawn, XFCE-style screen over the dimmed
+  wallpaper (clock, date, avatar, password field, Unlock button), PAM
+  authentication on a worker thread, multi-output lock surfaces and a caps-lock
+  hint. `SDE_LOCK_CMD` selects it (swaylock remains the fallback when the binary
+  is not built); `Super+L`, idle-to-lock and the Taskbar system menu's first item
+  all use the same command. Verified by `scripts/run-idle-test.sh` and
+  `scripts/run-lock-test.sh` (two-output lock, a mode change while locked, and the
+  native locker locking, covering the output and unlocking on SIGTERM). Blanking
   before the lock is `SDE_SESSION_IDLE_DPMS_SECONDS` through `sde-dpms`; a size
   change while locked reconfigures the lock surface for that output (phase C of
   the lock test).

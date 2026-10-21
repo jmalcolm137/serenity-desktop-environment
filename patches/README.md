@@ -29,6 +29,7 @@ rebased tip.
 | [`0002`](0002-terminal-shell-environment.patch) Terminal: the shell environment, LibSerenitySystem | SDE | SDE | SDE behaviour: the session's environment and the SDE's host-integration library. | n/a |
 | [`0004`](0004-profiler-libserenitysystem.patch) Profiler: link LibSerenitySystem | SDE | SDE | The SDE's host profiling backend; not a SerenityOS concept. | n/a |
 | [`0005`](0005-taskbar-window-grouping.patch) Taskbar window grouping, and its LibGUI/IPC half (app id, `taskbar_group_windows`) | SDE | SDE | The IPC change only has a sender in the SDE's compositor. SerenityOS's own WindowServer would need a matching change and has no app-id concept to send, so it is not sensible in isolation as it stands. | Would need a SerenityOS WindowServer change first |
+| [`0006`](0006-taskbar-lock-menu.patch) Taskbar: a Lock item, first in the system menu | SDE | SDE | SDE behaviour: the entry locks through `SDE_LOCK_CMD`, which the SDE session exports (and which selects `sde-lock` or a third-party locker). | n/a |
 | [`0008`](0008-sde-lagom-targets.patch) The SDE's Lagom targets (the Taskbar, the app suite) | SDE | SDE | SDE build integration: which SerenityOS programs the desktop builds on Lagom. | n/a |
 
 `libgui-wayland`'s former `0035` (an empty stub left behind when its targets moved

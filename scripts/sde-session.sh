@@ -168,7 +168,18 @@ WATCHDOG_MARK="${XDG_RUNTIME_DIR:-/tmp}/sde-watchdog-$SESSION_DISPLAY.$$"
 # plain ext-idle-notify-v1 client, so this works under any compositor.
 IDLE_SECONDS="${SDE_SESSION_IDLE_SECONDS:-0}"
 IDLE_BIN="${SDE_SESSION_IDLE_BIN:-$SDE_ROOT/build/tools/sde-idle}"
-LOCK_CMD="${SDE_LOCK_CMD:-swaylock}"
+# Prefer the SDE's native locker when it is built; SDE_LOCK_CMD still wins, and
+# swaylock remains the fallback for a tree without it. Exported so the compositor's
+# Super+L and the Taskbar's system menu use the same locker as idle-to-lock.
+LOCK_BIN="${SDE_LOCK_BIN:-$SDE_ROOT/build/tools/sde-lock}"
+if [ -n "${SDE_LOCK_CMD:-}" ]; then
+    LOCK_CMD="$SDE_LOCK_CMD"
+elif [ -x "$LOCK_BIN" ]; then
+    LOCK_CMD="$LOCK_BIN"
+else
+    LOCK_CMD=swaylock
+fi
+export SDE_LOCK_CMD="$LOCK_CMD"
 DPMS_BIN="${SDE_SESSION_DPMS_BIN:-$SDE_ROOT/build/tools/sde-dpms}"
 DPMS_SECONDS="${SDE_SESSION_IDLE_DPMS_SECONDS:-0}"
 IDLE_PID=""

@@ -158,10 +158,12 @@ dim). `wlr_idle_notifier_v1_notify_activity()` runs on every input event and
 The compositor implements the **`ext-session-lock-v1` contract**: one lock at a
 time; a lock surface configured per output (including hotplug while locked);
 `locked` once every output is covered; no input or normal surfaces shown while
-locked; `unlock` tears the lock down. **SDE does not ship its own lock client**:
-the compositor is a standard server, so any conformant locker works. The session
-uses **swaylock** today (`SDE_LOCK_CMD`); a native SDE lock client is a documented
-future deliverable (§10) and must itself be a plain `ext-session-lock-v1` client.
+locked; `unlock` tears the lock down. The compositor is a standard server, so any
+conformant locker works, and the SDE also ships **`sde-lock`** (`Tools/sde-lock`):
+a plain `ext-session-lock-v1` client (no SDE-specific protocols, so portability is
+kept), with PAM authentication, a LibGfx-drawn XFCE-style screen, multi-output
+surfaces and a caps-lock hint. `SDE_LOCK_CMD` selects it, with swaylock as the
+fallback for a tree without the binary.
 
 **Interop rule (P8).** Do **not** build idle-to-lock into the compositor. Expose
 `ext-idle-notify-v1` + `ext-session-lock-v1` so the standard stack (`swayidle` +
@@ -176,7 +178,7 @@ idle-inhibit, output-power and session-lock managers; notifies activity on key,
 pointer, button and axis input; suppresses idle while inhibited; turns outputs
 off/on; and implements the lock contract (per-output lock surfaces, `locked` when
 all outputs are covered, input routed to the lock surface on the output under the
-cursor). `Super+L` spawns the lock client (`SDE_LOCK_CMD`, default `swaylock`).
+cursor). `Super+L` spawns the lock client (`SDE_LOCK_CMD`; the session exports the built `sde-lock`, else `swaylock`).
 Both scripts pass, including a two-output lock.
 
 **R4.1 complete.** Blank-before-lock and lock-surface reconfiguration landed:
@@ -522,7 +524,7 @@ R4.9 can run alongside once the session is safe and startable.
 
 | Spike | Question | Decision it unblocks |
 |---|---|---|
-| **Lock client** | SerenityOS has no lock screen; port one, write one, or use an external locker? | R4.1, **resolved: use a standard client (swaylock) now**; native client deferred (§10) |
+| **Lock client** | SerenityOS has no lock screen; port one, write one, or use an external locker? | R4.1, **resolved: ship a standard `ext-session-lock-v1` client (`sde-lock`), keeping swaylock as the fallback** |
 | **Restart semantics** | What can the supervisor preserve across a restart? Use `xdg-session-management-v1` or a private restore? | R4.2 scope |
 | **Portals** | Which `xdg-desktop-portal` backend(s) and `portals.conf` for SDE? Does `-wlr` suffice once capture protocols land? | R4.3/R5 |
 | **Output management on nested vs DRM** | How much of the Monitor tab is meaningful headless/nested vs real hardware? | R4.5 exit test |
@@ -574,7 +576,7 @@ R4 is done when:
 | Standard-vs-`wlr-*` for output management | R4.5 | No standard yet; `zwlr_output_management_v1` is de-facto; revisit as a standard lands |
 | A standard workspace protocol would supersede the private one | R4.8 | Adopt `ext-workspace-v1` as primary **and** keep `WindowManagerServer` for parity |
 | No SerenityOS lock screen | R4.1 | Use a standard locker; native client is future work (§10) |
-| Lock needs authentication (PAM) | R4.1 | Native client only; swaylock already does PAM |
+| Lock needs authentication (PAM) | R4.1 | Native client only; swaylock already does PAM. Resolved: `sde-lock` authenticates through PAM (`login` by default, `--pam-service`/`SDE_LOCK_PAM_SERVICE`) |
 | `xdg-desktop-portal` coverage | R4.3/R5 | `-wlr` for capture; `-gtk` fallback; Settings backend of our own for R4 |
 | logind/systemd may be absent | R4.2/R4.3 | Now a **first-class supported mode**, detected and never required ([`12`](12-r4.3-portable-session-integration.md)) |
 | `ext-session-lock-v1` on hotplug/scale | R4.1 | Must cover every output, including new ones |
@@ -605,14 +607,6 @@ Documented so they are not lost; none blocks R4.
   `portals.conf`. This can land **after** R4; it is the missing half of "portal
   parity" (§11). InputCapture's architecture is decided in
   [`17-input-capture.md`](17-input-capture.md).
-- **A native SDE lock client.** SDE uses **swaylock** (or any conformant locker)
-  today: the compositor is a standard `ext-session-lock-v1` server. A native
-  client is future work and **must be a plain Wayland `ext-session-lock-v1`
-  client** (no SDE-specific protocols), so it runs under **any** compositor
-  (sway, Hyprland, KWin, SDE) and so SDE keeps working with third-party lockers.
-  Intended shape: Serenity-themed screen over every output (per-output wallpapers,
-  dim/blur); **PAM** authentication; multi-output + hotplug; idle-to-lock. Until
-  then `SDE_LOCK_CMD` (default `swaylock`) selects the client.
 - **A portable SDE idle daemon** (`swayidle`-equivalent) for idle-to-lock/blank.
 - **Multi-seat & VT-switch polish: done.** `scripts/sde-seat.sh` derives
   `XDG_SEAT`/`XDG_VTNR` (from the display manager, else logind, else the active

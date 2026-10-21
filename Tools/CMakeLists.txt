@@ -105,6 +105,7 @@ target_link_libraries(screencast-consumer PRIVATE PkgConfig::PIPEWIRE PkgConfig:
 # virtual-input-test: scripted keyboard/pointer/touch/tablet input for the
 # headless tests (virtual-keyboard, virtual-pointer, serenity-virtual-input).
 pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
+pkg_check_modules(PAM REQUIRED IMPORTED_TARGET pam)
 set(protocols)
 sde_wayland_client_protocol(protocols NAME virtual-keyboard-unstable-v1 XML "${WLR_PROTOCOLS}/virtual-keyboard-unstable-v1.xml")
 sde_wayland_client_protocol(protocols NAME wlr-virtual-pointer-unstable-v1 XML "${WLR_PROTOCOLS}/wlr-virtual-pointer-unstable-v1.xml")
@@ -174,10 +175,21 @@ sde_portal_tool(xdg-desktop-portal-serenity
     LAGOM ${PORTAL_LAGOM} gfx compress crypto textcodec unicode url filesystem riff ipc
     LIBRARIES PkgConfig::WAYLAND_CLIENT PkgConfig::PIPEWIRE PkgConfig::XKBCOMMON PkgConfig::GBM PkgConfig::LIBDRM)
 
+# sde-lock: the native session locker (docs/11 §10). A plain
+# ext-session-lock-v1 client drawn with LibGfx rather than LibGUI: LibGUI goes
+# through LibWM, which speaks the SDE's own window protocol, and the locker must
+# run under any conformant compositor.
+set(lock_protocols)
+sde_wayland_client_protocol(lock_protocols NAME ext-session-lock-v1 XML "${WP}/staging/ext-session-lock/ext-session-lock-v1.xml")
+sde_portal_tool(sde-lock
+    SOURCES sde-lock/main.cpp sde-lock/LockScreen.cpp sde-lock/Auth.cpp ${lock_protocols}
+    LAGOM ak coreminimal corebasic core gfx threading
+    LIBRARIES PkgConfig::WAYLAND_CLIENT PkgConfig::XKBCOMMON PkgConfig::PAM)
+
 # One target for the whole group (scripts/build-tools.sh). The portals and the
 # test clients are scripts/build-tools.sh's "SDE tools"; the Lagom-linked portal
 # backends come with it.
 add_custom_target(sde-tools DEPENDS
     sde-idle sde-dpms sde-screenshot native-app-test wayland-fuzz-test layer-fuzz-test data-device-fuzz-test
     ext-workspace-test output-management-test capture-probe screencast-consumer
-    virtual-input-test sde-settings-portal xdg-desktop-portal-serenity)
+    virtual-input-test sde-settings-portal xdg-desktop-portal-serenity sde-lock)
