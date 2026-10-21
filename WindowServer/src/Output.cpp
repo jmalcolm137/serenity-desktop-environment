@@ -320,6 +320,9 @@ static void output_commit(wl_listener* listener, void* data)
         if (Trace::enabled())
             Trace::event("output"sv, ByteString::formatted("enabled name='{}'", output->output->name ? output->output->name : "?"));
         maybe_restore_primary_output(server);
+        // A layer surface created while the output was blanked (DPMS) was
+        // arranged against an empty area; re-arrange now that it is back.
+        arrange_layers(server, output->output);
     }
     output->was_enabled = enabled;
     reconfigure_lock_surface(*output->server, output->output);

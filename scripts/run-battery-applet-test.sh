@@ -37,6 +37,14 @@ check() {
         fail=1
     fi
 }
+check_absent() {
+    if grep -qF "$1" "$2"; then
+        echo "  UNEXPECTED ($2): $1"
+        fail=1
+    else
+        echo "  ok (absent): $1"
+    fi
+}
 
 # Runs the applet against `fixture` and prints the compositor log path.
 run_case() {
@@ -135,6 +143,54 @@ if grep -q "unable to read the power-supply class" "$RUNTIME/absent.log"; then
 else
     echo "  ok: the desktop case is not reported as an error"
 fi
+
+# An applet may start while the display is blanked (DPMS off). With no enabled
+# output the compositor clears the primary output; it used to refuse the layer
+# surface and the client died with "unknown wl_surface". It must instead accept
+# the surface and configure it when the output comes back.
+"$SDE_ROOT/scripts/build-tools.sh" >/dev/null
+SDE_DPMS="$SDE_ROOT/build/tools/sde-dpms"
+DPMS_SOCK="sde-battery-dpms-$$-$RANDOM"
+DPMS_LOG="$RUNTIME/dpms.log"
+DPMS_APPLET_LOG="$RUNTIME/dpms-applet.log"
+env -u WAYLAND_DISPLAY -u DISPLAY \
+    WLR_BACKENDS=headless \
+    WLR_HEADLESS_OUTPUTS=1 \
+    SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
+    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
+    LD_LIBRARY_PATH="$BUILD/lib" \
+    "$COMP" -n "$DPMS_SOCK" > "$DPMS_LOG" 2>&1 &
+dpms_comp_pid=$!
+for _ in $(seq 1 50); do
+    [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$DPMS_SOCK" ]] && break
+    sleep 0.1
+done
+env WAYLAND_DISPLAY="$DPMS_SOCK" "$SDE_DPMS" off >/dev/null 2>&1 || true
+sleep 0.5
+env WAYLAND_DISPLAY="$DPMS_SOCK" \
+    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
+    LD_LIBRARY_PATH="$BUILD/lib" \
+    "$APPLET" --power-supply-root "$FIXTURE" > "$DPMS_APPLET_LOG" 2>&1 &
+dpms_applet_pid=$!
+sleep 2
+if kill -0 "$dpms_applet_pid" 2>/dev/null; then
+    echo "  ok: the applet stays up while the display is off"
+else
+    echo "  MISSING: the applet died while the display was off"
+    fail=1
+fi
+env WAYLAND_DISPLAY="$DPMS_SOCK" "$SDE_DPMS" on >/dev/null 2>&1 || true
+sleep 2
+echo "=== BatteryApplet: starting while DPMS-off ==="
+check "BatteryApplet: 1 batteries, 42%, Charging" "$DPMS_APPLET_LOG"
+check "layer surface namespace='serenity-applet:Battery' layer=top" "$DPMS_LOG"
+check "layer configure 50x16" "$DPMS_APPLET_LOG"
+check_absent "unknown wl_surface" "$DPMS_APPLET_LOG"
+kill "$dpms_applet_pid" 2>/dev/null || true
+wait "$dpms_applet_pid" 2>/dev/null || true
+pkill -P "$dpms_comp_pid" 2>/dev/null || true
+kill "$dpms_comp_pid" 2>/dev/null || true
+wait "$dpms_comp_pid" 2>/dev/null || true
 
 if [[ "$fail" -ne 0 ]]; then
     echo "==> BatteryApplet test FAILED"

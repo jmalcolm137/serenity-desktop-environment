@@ -193,8 +193,11 @@ static void serenity_window_manager_get_toplevel(wl_client* client, wl_resource*
         }
     }
     if (!toplevel && !layer) {
-        wl_resource_post_error(resource, WL_DISPLAY_ERROR_INVALID_OBJECT, "unknown wl_surface");
-        return;
+        // Do not disconnect a client that asks for chrome before we know its
+        // surface (for example an applet that started while the display was
+        // off). Hand it an inert handle; every request handler is a no-op
+        // until it is attached to a toplevel or layer surface.
+        dbgln("WindowServer: get_toplevel for an unknown surface; returning an inert handle");
     }
 
     auto* chrome = wl_resource_create(client, &serenity_toplevel_interface, 1, id);

@@ -251,6 +251,18 @@ static void server_new_layer_surface(wl_listener* listener, void* data)
     if (!layer_surface->output)
         layer_surface->output = server->primary_output;
     if (!layer_surface->output) {
+        // All outputs can be disabled (DPMS) while the primary is cleared. An
+        // applet restarted then must still get a layer surface; park it on any
+        // known output and let the arrange pass size it when the output comes
+        // back. Refusing it here left the client with an unknown-surface error.
+        for (auto& output : server->outputs) {
+            if (output->output) {
+                layer_surface->output = output->output;
+                break;
+            }
+        }
+    }
+    if (!layer_surface->output) {
         wlr_layer_surface_v1_destroy(layer_surface);
         return;
     }
