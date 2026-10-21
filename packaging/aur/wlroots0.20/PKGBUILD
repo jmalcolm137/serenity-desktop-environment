@@ -19,8 +19,7 @@ sha256sums=('SKIP')
 build() {
     cd wlroots
     arch-meson build \
-        -Dexamples=false \
-        -Dtests=false
+        -Dexamples=false
     ninja -C build
 }
 
