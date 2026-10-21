@@ -101,7 +101,7 @@ void BatteryDetailsWidget::paint_event(GUI::PaintEvent& event)
     y += 8;
 
     if (m_batteries.is_empty()) {
-        painter.draw_text(Gfx::IntRect { padding, y, width() - 2 * padding, 16 }, "No battery detected"sv, font, Gfx::TextAlignment::CenterLeft, muted_color);
+        painter.draw_text(Gfx::IntRect { padding, y, width() - 2 * padding, 16 }, "Running on mains power"sv, font, Gfx::TextAlignment::CenterLeft, muted_color);
         return;
     }
 
@@ -140,7 +140,7 @@ void BatteryWidget::set_show_percentage(bool show_percentage)
     m_show_percentage = show_percentage;
 
     if (auto* applet_window = window()) {
-        if (m_show_percentage) {
+        if (m_show_percentage && m_summary.has_battery) {
             auto& font = Gfx::FontDatabase::default_font();
             auto text_width = static_cast<int>(font.width("100%"sv));
             applet_window->resize(percentage_text_x + text_width + 4, icon_cell_size);
@@ -157,7 +157,14 @@ void BatteryWidget::refresh()
 {
     auto batteries = Battery::read_all(m_power_supply_root);
     if (batteries.is_error()) {
-        dbgln("BatteryApplet: unable to read the power-supply class");
+        // A machine with no power-supply class at all (a plain desktop, a
+        // container) runs from mains: that is the expected state, not a failure,
+        // and it must not log a line every poll.
+        static bool s_reported_missing = false;
+        if (!s_reported_missing) {
+            dbgln("BatteryApplet: no power-supply class at {}; assuming mains power", m_power_supply_root);
+            s_reported_missing = true;
+        }
         m_batteries.clear();
     } else {
         m_batteries = batteries.release_value();
@@ -188,7 +195,7 @@ void BatteryWidget::refresh()
 void BatteryWidget::update_tooltip()
 {
     if (!m_summary.has_battery) {
-        set_tooltip("No battery detected"_string);
+        set_tooltip("Running on mains power (no battery)"_string);
         return;
     }
 
