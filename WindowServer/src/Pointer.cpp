@@ -872,6 +872,9 @@ static void pointer_warp_warp(wl_client*, wl_resource* resource, wl_resource* su
 
     dbgln("WindowServer: pointer warp to {:.1f},{:.1f} (surface-local {:.1f},{:.1f})", origin_x + local_x, origin_y + local_y, local_x, local_y);
     wlr_cursor_warp_closest(server->cursor, nullptr, origin_x + local_x, origin_y + local_y);
+    // Moving the cursor is not enough: the client expects the resulting pointer
+    // motion (and any focus change) on its wl_pointer.
+    process_cursor_motion(*server, 0);
 }
 
 static struct wp_pointer_warp_v1_interface const pointer_warp_implementation = {
