@@ -140,15 +140,34 @@ env SDE_SESSION_COMPOSITOR="sleep 30" \
     SDE_SESSION_RESTART_DELAY=0 \
     "$SDE" > "$RUNTIME/session-f.log" 2>&1 &
 SUP_PID=$!
-sleep 1
+# Like G2, wait for the traps rather than racing a fixed sleep on a slow runner.
+for _ in $(seq 1 100); do
+    grep -qF 'supervisor ready' "$RUNTIME/session-f.log" 2>/dev/null && break
+    sleep 0.1
+done
 kill -TERM "$SUP_PID" 2>/dev/null || true
-sleep 1
-if kill -0 "$SUP_PID" 2>/dev/null; then
+# Poll: an exited child can linger as a zombie until reaped, which still
+# satisfies kill -0. Treat Z as stopped and reap it with wait below.
+stopped=0
+for _ in $(seq 1 50); do
+    if ! kill -0 "$SUP_PID" 2>/dev/null; then
+        stopped=1
+        break
+    fi
+    state="$(ps -o stat= -p "$SUP_PID" 2>/dev/null || true)"
+    case "$state" in
+        Z*) stopped=1; break ;;
+    esac
+    sleep 0.1
+done
+if [ "$stopped" -eq 1 ]; then
+    echo "  ok: supervisor stopped on SIGTERM"
+    wait "$SUP_PID" 2>/dev/null || true
+else
     echo "  FAIL: supervisor still running after SIGTERM"
     kill -KILL "$SUP_PID" 2>/dev/null || true
+    wait "$SUP_PID" 2>/dev/null || true
     fail=1
-else
-    echo "  ok: supervisor stopped on SIGTERM"
 fi
 if grep -qF "restart " "$RUNTIME/session-f.log"; then
     echo "  UNEXPECTED: supervisor restarted on SIGTERM"

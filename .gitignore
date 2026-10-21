@@ -15,3 +15,4 @@
 /packaging/aur/*/libgui-wayland/
 /packaging/aur/*/serenity-desktop-environment/
 /packaging/aur/*/wlroots/
+/packaging/aur/*/*.pkg.tar.zst

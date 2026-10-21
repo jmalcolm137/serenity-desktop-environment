@@ -281,6 +281,11 @@ wait_for_socket() {
     local i
     for i in $(seq 1 50); do
         [ -e "$socket" ] && return 0
+        # A signal handler may have fired while startup work was still running
+        # (the trap only runs between commands). Do not keep waiting for a socket
+        # that the now-stopping/restarting compositor will never create.
+        [ "${stopping:-0}" = "1" ] && return 1
+        [ "${restart_requested:-0}" = "1" ] && return 1
         sleep 0.1
     done
     return 1
@@ -468,13 +473,13 @@ while :; do
     # the loop so they are relaunched after a compositor restart (they were
     # disconnected when the old compositor exited), and never before the socket
     # exists. The shell is (re)launched by the compositor's own -s command.
-    if [ "$RUN_AUTOSTART" = "1" ]; then
+    if [ "$RUN_AUTOSTART" = "1" ] && [ "$stopping" -eq 0 ] && [ "$restart_requested" -eq 0 ]; then
         wait_for_socket || true
         run_autostart
     fi
 
     # Then the applications the previous compositor had open (R4.2).
-    if [ "$RUN_RESTORE" = "1" ]; then
+    if [ "$RUN_RESTORE" = "1" ] && [ "$stopping" -eq 0 ] && [ "$restart_requested" -eq 0 ]; then
         wait_for_socket || true
         run_restore
     fi
