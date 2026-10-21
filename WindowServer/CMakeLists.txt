@@ -117,6 +117,19 @@ add_custom_command(
     VERBATIM
 )
 
+# xdg-toplevel-drag-v1: standard protocol; wlroots 0.20 has no manager, so the
+# compositor implements the server side (see src/XdgToplevelDrag.cpp).
+set(XDG_TOPLEVEL_DRAG_XML "${WAYLAND_PROTOCOLS_DATADIR}/staging/xdg-toplevel-drag/xdg-toplevel-drag-v1.xml")
+add_custom_command(
+    OUTPUT
+        "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-toplevel-drag-v1-server-protocol.h"
+        "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-toplevel-drag-v1-protocol.c"
+    COMMAND "${WAYLAND_SCANNER}" server-header "${XDG_TOPLEVEL_DRAG_XML}" "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-toplevel-drag-v1-server-protocol.h"
+    COMMAND "${WAYLAND_SCANNER}" private-code "${XDG_TOPLEVEL_DRAG_XML}" "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-toplevel-drag-v1-protocol.c"
+    DEPENDS "${XDG_TOPLEVEL_DRAG_XML}"
+    VERBATIM
+)
+
 add_executable(WindowServer
     src/main.cpp
     src/Animations.cpp
@@ -158,12 +171,14 @@ add_executable(WindowServer
     src/XWayland.cpp
     src/XWaylandFrame.cpp
     src/XdgShell.cpp
+    src/XdgToplevelDrag.cpp
     "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-window-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-input-capture-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-virtual-input-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-shell-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-session-management-v1-protocol.c"
-    "${SERENITY_WINDOW_PROTOCOL_DIR}/pointer-warp-v1-protocol.c")
+    "${SERENITY_WINDOW_PROTOCOL_DIR}/pointer-warp-v1-protocol.c"
+    "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-toplevel-drag-v1-protocol.c")
 
 target_include_directories(WindowServer PRIVATE
     ${WLROOTS_INCLUDE_DIRS}

@@ -122,8 +122,9 @@ match what Arch Linux ships: deliberately a release, not the `master` dev
 branch. wlroots `master` (`0.21.0-dev`, unreleased) adds **XDND** and
 `ext-background-effect-v1`; `wp-pointer-warp-v1` has no manager and SDE serves it
 directly; `xdg-toplevel-icon-v1` and `xdg-system-bell-v1` are already served on
-0.20.2. Bump to the 0.21 **release** when it lands for the remaining items. `xdg-toplevel-drag`, `wp-fifo-v1` and
-`xwayland-keyboard-grab-v1` are in neither 0.20 nor master.
+0.20.2. Bump to the 0.21 **release** when it lands for the remaining items.
+`wp-fifo-v1` and `xwayland-keyboard-grab-v1` are in neither 0.20 nor master;
+`xdg-toplevel-drag` is served directly.
 
 ## Testing notes
 

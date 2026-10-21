@@ -7,6 +7,7 @@
 #include "Compositor.h"
 #include "DragAndDrop.h"
 #include "Pointer.h"
+#include "XdgToplevelDrag.h"
 
 #include "Wlroots.h"
 
@@ -78,6 +79,7 @@ static void drag_destroyed(wl_listener* listener, void*)
 {
     Server* server = nullptr;
     server = wl_container_of(listener, server, drag.destroy);
+    xdg_toplevel_drag_end(*server);
     destroy_drag_icon_node(*server);
     server->drag.active = nullptr;
     server->drag.target = nullptr;
@@ -102,6 +104,7 @@ static void seat_start_drag(wl_listener* listener, void* data)
         server->drag.icon_destroy.notify = drag_icon_destroyed;
         wl_signal_add(&drag->icon->events.destroy, &server->drag.icon_destroy);
     }
+    xdg_toplevel_drag_start(*server, drag);
     dbgln("WindowServer: drag started (icon={})", server->drag.icon_node ? "yes" : "no");
 }
 
@@ -130,7 +133,15 @@ bool drag_motion(Server& server, uint32_t time)
     double dx = 0;
     double dy = 0;
     wlr_surface* target = nullptr;
+    // An attached xdg-toplevel-drag window follows the cursor and must not be
+    // its own drop target. Hide it for the hit test, then put it back.
+    auto* dragged = xdg_toplevel_drag_active_toplevel(server);
+    bool const dragged_was_enabled = dragged && dragged->scene_tree && dragged->scene_tree->node.enabled;
+    if (dragged_was_enabled)
+        wlr_scene_node_set_enabled(&dragged->scene_tree->node, false);
     toplevel_at(server, server.cursor->x, server.cursor->y, &target, &dx, &dy);
+    if (dragged_was_enabled)
+        wlr_scene_node_set_enabled(&dragged->scene_tree->node, true);
     if (target != server.drag.target) {
         server.drag.target = target;
         if (target)
@@ -142,6 +153,7 @@ bool drag_motion(Server& server, uint32_t time)
     }
     if (server.drag.icon_node)
         wlr_scene_node_set_position(server.drag.icon_node, static_cast<int>(server.cursor->x), static_cast<int>(server.cursor->y));
+    xdg_toplevel_drag_motion(server);
     return true;
 }
 

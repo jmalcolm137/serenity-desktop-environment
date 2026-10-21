@@ -664,7 +664,7 @@ Legend: **✓** have · **↗** planned R4 · **→** planned R5 · **·** plann
 | `xdg-dialog-v1` | ✓ | ✓ | R6 (landed) |
 | `xdg-foreign-v2` | ✓ | ✓ | R5 |
 | `xdg-system-bell-v1` | ✓ | ✓ | R5 (landed) |
-| `xdg-toplevel-drag-v1` | ✓ | ✗ | R5 (in neither wlroots 0.20 nor master) |
+| `xdg-toplevel-drag-v1` | ✓ | ✓ | R5 (served directly; no wlroots manager) |
 | `xdg-toplevel-icon-v1` | ✓ | ✓ | R5 (landed) |
 | `xdg-toplevel-tag-v1` | ✓ | ✓ | R5 (landed) |
 | `xwayland-shell-v1` | ✓ | ✓ | R5 |

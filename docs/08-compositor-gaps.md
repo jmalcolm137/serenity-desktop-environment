@@ -86,7 +86,7 @@ GTK/Qt/Firefox conformance matrix in CI yet.
 - **Sandbox & portal interop (G7): mostly done.** `xdg-foreign` v1/v2 and
   `xdg-wm-dialog-v1` are served; `xdg-system-bell-v1` and
   `xdg-toplevel-icon-v1` are served; `wp-security-context-v1` identifies
-  sandboxed clients. `xdg-toplevel-drag` is not present in the pinned wlroots.
+  sandboxed clients. `xdg-toplevel-drag` is served by the compositor directly.
 - **Clipboard completeness (G4): done.** `set_selection`, primary selection
   (`zwp_primary_selection_device_manager_v1`) and both data-control variants are
   served. Explicit data-device drag-and-drop is routed by the compositor with a

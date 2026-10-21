@@ -399,7 +399,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   served** (compositor-routed data-device DnD with a drag icon), and the port
   bridges LibGUI's `DragOperation` onto it both ways, so SerenityOS applications
   offer and accept drag-and-drop interoperably with standard Wayland clients.
-  **Still absent:** `xdg-toplevel-drag` (not present in the pinned wlroots).
+  **Window dragging during DnD** is served too (`xdg-toplevel-drag`, implemented by the compositor).
   **Text input / IME is now served**: `text-input-v3` +
   `input-method-v2` (see [`22-input-method.md`](22-input-method.md),
   `scripts/run-ime-test.sh`). **Accessibility is now served** (see G1 below and

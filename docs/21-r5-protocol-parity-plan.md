@@ -31,6 +31,7 @@ Diffing `master` (0.21-dev) against `0.20.2`, and checking the pinned headers:
 | `xdg-toplevel-icon-v1` | `wlr_xdg_toplevel_icon_manager_v1_create()` |
 | `xdg-system-bell-v1` | `wlr_xdg_system_bell_v1_create()` |
 | `wp-pointer-warp-v1` | no wlroots manager; served by the compositor directly (`src/Pointer.cpp`) |
+| `xdg-toplevel-drag-v1` | no wlroots manager; served by the compositor directly (`src/XdgToplevelDrag.cpp`) |
 | `wp-color-representation-v1` | `wlr_color_representation_manager_v1_create_with_renderer()` |
 | `wp-color-management-v1` | `wlr_color_manager_v1_create()` (the renderer must expose input colour transforms; wlroots' Vulkan renderer does, GLES2 does not) |
 | `wp-security-context-v1` | `wlr_security_context_manager_v1_create()` |
@@ -49,7 +50,7 @@ Diffing `master` (0.21-dev) against `0.20.2`, and checking the pinned headers:
 
 ### (c) Not in 0.20 **or** master (effectively blocked)
 
-`xdg-toplevel-drag`, `xwayland-keyboard-grab-v1`.
+`xwayland-keyboard-grab-v1`.
 
 ## 3. Order of work
 
@@ -62,7 +63,7 @@ Diffing `master` (0.21-dev) against `0.20.2`, and checking the pinned headers:
    Re-check the parity table then.
 3. **Landed on 0.20.2 (2026-10-20):** colour representation,
    colour management (Vulkan-only), security-context, toplevel-tag, explicit sync
-   (DRM), DRM lease (DRM) and pointer-warp.
+   (DRM), DRM lease (DRM), pointer-warp and xdg-toplevel-drag.
 4. Re-evaluate tier (c) against whatever 0.21 (and later) actually ships.
 
 This keeps SDE aligned with distributions while still clearing the parity table

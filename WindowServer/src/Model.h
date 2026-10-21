@@ -217,6 +217,9 @@ struct Toplevel {
     Gfx::IntPoint restore_position;
     bool frame_active { true };
     bool mapped { false };
+    // xdg-toplevel-drag-v1: the compositor is moving this toplevel with a drag;
+    // skip the normal map placement.
+    bool dragged_by_toplevel_drag { false };
     bool maximized { false };
     // A client (Firefox/GTK) may ask to be maximized before its first map. Apply
     // it after placement, otherwise the cascade would move the "maximized" window

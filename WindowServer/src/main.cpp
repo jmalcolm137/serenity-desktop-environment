@@ -37,6 +37,7 @@
 #include "XWayland.h"
 #include "XWaylandFrame.h"
 #include "XdgShell.h"
+#include "XdgToplevelDrag.h"
 
 #include <AK/LexicalPath.h>
 #include <AK/StringBuilder.h>
@@ -242,6 +243,7 @@ static ErrorOr<void> initialize(Server& server)
     initialize_pointer(server);
     initialize_tablet(server);
     initialize_drag_and_drop(server);
+    initialize_xdg_toplevel_drag(server);
     initialize_xwayland(server);
 
     // Screen capture. Expose the standard ext-image-copy-capture-v1 (the primary,

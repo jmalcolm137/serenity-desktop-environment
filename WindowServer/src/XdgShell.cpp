@@ -21,6 +21,7 @@
 #include "WindowMenu.h"
 #include "WindowSwitcher.h"
 #include "XdgShell.h"
+#include "XdgToplevelDrag.h"
 
 #include <AK/StdLibExtras.h>
 #include <LibCore/File.h>
@@ -154,11 +155,14 @@ static void toplevel_map(wl_listener* listener, void*)
     // The new window joins the current workspace stack.
     WindowManager::on_toplevel_mapped(*toplevel);
     // Apply a restored session position (R4.2), then report the final position.
-    bool placed = toplevel->has_session_restore_position;
+    // A toplevel attached to an xdg-toplevel-drag is positioned at the cursor
+    // instead of the normal placement.
+    bool const dragged = toplevel->dragged_by_toplevel_drag;
+    bool placed = dragged || toplevel->has_session_restore_position;
     SessionManager::on_toplevel_mapped(*toplevel);
     // [Placement] window rules: set the new window's geometry (overrides the
     // session restore), so a script can reproduce a specific desktop layout.
-    if (toplevel->xdg_toplevel->title) {
+    if (!dragged && toplevel->xdg_toplevel->title) {
         if (auto placement = Config::window_placement_for(StringView { toplevel->xdg_toplevel->title, strlen(toplevel->xdg_toplevel->title) }); placement.has_value()) {
             auto* geometry = &toplevel->xdg_toplevel->base->geometry;
             wlr_scene_node_set_position(&toplevel->scene_tree->node, placement->x() - geometry->x, placement->y() - geometry->y);
@@ -175,13 +179,17 @@ static void toplevel_map(wl_listener* listener, void*)
         toplevel->pending_maximize = false;
         toplevel_set_maximized(*toplevel, true);
     }
+    if (dragged)
+        xdg_toplevel_drag_place(*toplevel->server, *toplevel);
     toplevel_report_position(*toplevel);
     if (toplevel->foreign_handle && toplevel->server->primary_output)
         wlr_foreign_toplevel_handle_v1_output_enter(toplevel->foreign_handle, toplevel->server->primary_output);
     focus_toplevel(*toplevel->server, toplevel);
     WindowManager::emit_window_state(*toplevel);
     // SerenityOS: the window grows out of the rect it was launched from (R3).
-    start_launch_animation(*toplevel->server, *toplevel);
+    // A toplevel being dragged has no launch rect; it is already at the cursor.
+    if (!dragged)
+        start_launch_animation(*toplevel->server, *toplevel);
     // A new window means a new running application to restore (R4.2).
     SessionManager::update_running_apps(*toplevel->server);
 }

@@ -39,6 +39,7 @@ asserted by `scripts/run-protocol-matrix-test.sh` (the full dump is printed by t
 | `xdg_system_bell_v1` | v1 | the system bell (global advertised; no audible output yet) |
 | `zwlr_foreign_toplevel_manager_v1` | v3 | taskbar-style task list from an external client |
 | `xdg_toplevel_tag_manager_v1` | v1 | per-toplevel tag and description, for window rules |
+| `xdg_toplevel_drag_manager_v1` | v1 | move a toplevel with a drag-and-drop operation (implemented by SDE) |
 
 ## Input
 
@@ -123,7 +124,7 @@ These are **not** advertised, and are tracked in
 - **wlroots 0.21 / not in the pinned 0.20.2:** XWayland drag-and-drop (XDND,
   `xwayland/selection/dnd.c`), `ext-background-effect-v1`, `wp-fifo-v1`,
   `wp-commit-timing-v1`.
-- **In no wlroots release:** `xwayland-keyboard-grab-v1`, `xdg-toplevel-drag`.
+- **In no wlroots release:** `xwayland-keyboard-grab-v1`.
 
 The compositor pins the wlroots **release** that Arch Linux ships (currently `0.20.2`); these
 land when the pin moves to the 0.21 release (expected late 2026 / early 2027).
