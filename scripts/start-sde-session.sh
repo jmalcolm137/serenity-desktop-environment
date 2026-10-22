@@ -134,7 +134,7 @@ framework_is_newer_than_sde() {
     return 1
 }
 
-if framework_is_newer_than_sde; then
+if [[ -x "$SDE_ROOT/scripts/build-target.sh" ]] && framework_is_newer_than_sde; then
     echo "SDE: the framework is newer than the session's programs; rebuilding them"
     if ! "$SDE_ROOT/scripts/build-target.sh"; then
         echo "SDE: warning: the rebuild failed; continuing with the existing programs" >&2

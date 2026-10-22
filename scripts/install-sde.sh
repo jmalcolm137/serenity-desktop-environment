@@ -117,6 +117,11 @@ self="$(readlink -f "$0")"
 prefix="$(CDPATH= cd -- "$(dirname -- "$self")/.." && pwd)"
 export SDE_ROOT="$prefix/share/sde"
 export BUILD="$prefix"
+# The split package keeps the libgui-wayland source/header tree (including the
+# SerenityOS resources seed-serenity-home reads) under framework/.
+export LIBGUI_WAYLAND_ROOT="$prefix/framework"
+export SERENITY="$prefix/framework/serenity"
+export SERENITY_SRC="$SERENITY"
 export SDE_APP_BIN_DIR="$prefix/bin"
 export SDE_APPLET_DIR="$prefix/bin"
 export SDE_SERVICE_BIN_DIR="$prefix/bin"
