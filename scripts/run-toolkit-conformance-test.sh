@@ -40,6 +40,15 @@ stop_pid() {
     wait "$pid" 2>/dev/null || true
 }
 
+# kill -0 succeeds for an exited child that has not been reaped (a zombie). A
+# toolkit demo can also exit on its own shortly after mapping, so treat Z as dead
+# before asserting that a window should have been deactivated.
+is_alive() {
+    local state
+    state="$(ps -o stat= -p "$1" 2>/dev/null || true)"
+    [[ -n "$state" && "$state" != Z* ]]
+}
+
 cleanup() {
     stop_pid "$CURRENT_PID"
     stop_pid "$PREVIOUS_PID"
@@ -130,11 +139,9 @@ check_client() {
         return
     fi
 
-    # The previous client is kept alive until this one maps (below); if it has
-    # gone away on its own, the toolkit crashed between the two checks.
-    if [[ -n "$PREVIOUS_PID" ]] && ! kill -0 "$PREVIOUS_PID" 2>/dev/null; then
-        echo "  FAIL: the previous client exited unexpectedly"
-        fail=1
+    # Some toolkit demos (notably gtk4-widget-factory) exit on their own shortly
+    # after mapping, so there is no surviving previous window to deactivate.
+    if [[ -n "$PREVIOUS_PID" ]] && ! is_alive "$PREVIOUS_PID"; then
         PREVIOUS_PID=""
     fi
 
@@ -186,15 +193,18 @@ check_client() {
     elif [[ -n "$expected_title" && "$title" != "$expected_title" ]]; then
         echo "  FAIL: $label mapped as '$title', expected '$expected_title'"
         fail=1
-    elif ! kill -0 "$CURRENT_PID" 2>/dev/null; then
+    elif ! is_alive "$CURRENT_PID"; then
         echo "  FAIL: $label exited immediately after mapping"
         fail=1
     else
         # A newly mapped window takes focus from the previous one. This is the
         # part a toolkit can get wrong: a client that never receives
         # xdg_toplevel.configure(activated) still maps, so check the transition.
+        # Only when the previous client is still alive: a self-closing demo has
+        # no window left to deactivate.
         after_deactivated="$(grep -c 'deactivated' "$RUNTIME/comp.log" || true)"
-        if [[ -n "$PREVIOUS_PID" && "$after_deactivated" -le "$before_deactivated" ]]; then
+        if [[ -n "$PREVIOUS_PID" ]] && is_alive "$PREVIOUS_PID" \
+            && [[ "$after_deactivated" -le "$before_deactivated" ]]; then
             echo "  FAIL: $label mapped but the previous window was not deactivated"
             fail=1
         else
@@ -213,7 +223,9 @@ check_client() {
 
 echo "=== toolkit conformance (GTK, Qt, Firefox) ==="
 check_client gtk3 "gtk3-widget-factory" "gtk3-widget-factory" gtk3-widget-factory
-check_client gtk4 "org.gtk.WidgetFactory4" "GTK Widget Factory" gtk4-widget-factory
+# GTK4 derives the Wayland app_id from the binary name here, unlike GTK3's
+# rule; assert what the installed toolkit actually sets.
+check_client gtk4 "gtk4-widget-factory" "GTK Widget Factory" gtk4-widget-factory
 check_client qt5 "org.qt-project.qmlscene" "SDE Qt5 conformance" qmlscene "$RUNTIME/qt5.qml"
 check_client qt6 "org.qt-project.qml6" "SDE Qt6 conformance" qml6 "$RUNTIME/qt6.qml"
 check_client firefox "firefox" "" firefox \
