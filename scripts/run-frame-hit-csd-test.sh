@@ -67,10 +67,19 @@ COMP_PID=""
 BACK_PID=""
 FRONT_PID=""
 cleanup() {
-    [[ -n "$FRONT_PID" ]] && kill "$FRONT_PID" 2>/dev/null || true
-    [[ -n "$BACK_PID" ]] && kill "$BACK_PID" 2>/dev/null || true
-    [[ -n "$COMP_PID" ]] && kill "$COMP_PID" 2>/dev/null || true
-    rm -rf "$R"
+    # Reap the clients and compositor before removing the state directory: a
+    # late state write racing `rm -rf` can otherwise fail the EXIT trap with
+    # "Directory not empty", turning a passed test into a CI failure.
+    for pid in "$FRONT_PID" "$BACK_PID" "$COMP_PID"; do
+        [[ -n "$pid" ]] || continue
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+    done
+    for _ in $(seq 1 20); do
+        rm -rf "$R" 2>/dev/null && return 0
+        sleep 0.05
+    done
+    rm -rf "$R" 2>/dev/null || true
 }
 trap cleanup EXIT
 

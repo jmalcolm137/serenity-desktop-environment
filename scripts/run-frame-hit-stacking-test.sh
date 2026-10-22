@@ -73,10 +73,23 @@ COMP_PID=""
 A_PID=""
 B_PID=""
 cleanup() {
-    [[ -n "$A_PID" ]] && kill "$A_PID" 2>/dev/null || true
-    [[ -n "$B_PID" ]] && kill "$B_PID" 2>/dev/null || true
-    [[ -n "$COMP_PID" ]] && kill "$COMP_PID" 2>/dev/null || true
-    rm -rf "$R"
+    # Stop the clients and the compositor *and reap them* before removing the
+    # state directory. Without the wait, a compositor that is still writing its
+    # state can race `rm -rf`; on CI that surfaced as "Directory not empty" and
+    # made a passing test exit non-zero.
+    for pid in "$A_PID" "$B_PID" "$COMP_PID"; do
+        [[ -n "$pid" ]] || continue
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+    done
+    # Even after reaping, a child may have handed off a last state write. Retry
+    # briefly rather than turning a successful assertion run into a failure in
+    # the EXIT trap.
+    for _ in $(seq 1 20); do
+        rm -rf "$R" 2>/dev/null && return 0
+        sleep 0.05
+    done
+    rm -rf "$R" 2>/dev/null || true
 }
 trap cleanup EXIT
 
