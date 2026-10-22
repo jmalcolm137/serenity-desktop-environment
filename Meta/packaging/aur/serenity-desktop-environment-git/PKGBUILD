@@ -5,7 +5,7 @@
 # installs only its own binaries/scripts; the framework package owns bin/lib/share.
 
 pkgname=serenity-desktop-environment-git
-pkgver=r478.dbecdd2
+pkgver=r549.3126e92
 pkgrel=1
 pkgdesc="The SerenityOS desktop experience on Wayland (compositor, shell and services)"
 arch=('x86_64')
@@ -38,10 +38,15 @@ pkgver() {
 build() {
     cd "$srcdir/serenity-desktop-environment"
     export SDE_PREBUILT_FRAMEWORK=ON
+    # build-target.sh reads these unsuffixed names and passes them to CMake.
+    # The framework package installs the libgui-wayland source/header tree at
+    # /usr/lib/sde/framework, so the SDE build must not look for a sibling
+    # libgui-wayland checkout that does not exist in an AUR $srcdir.
+    export LIBGUI_WAYLAND_ROOT=/usr/lib/sde/framework
+    export SDE_LIBGUI_WAYLAND_ROOT=/usr/lib/sde/framework
     export SDE_LAGOM_BUILD_DIR=/usr/lib/sde
     export SDE_SERENITY_BUILD_DIR=/usr/lib/sde/framework
     export SDE_SERENITY_SRC=/usr/lib/sde/framework/serenity
-    export SDE_LIBGUI_WAYLAND_ROOT=/usr/lib/sde/framework
     export SERENITY_SRC="$SDE_SERENITY_SRC"
     export BUILD="$SDE_LAGOM_BUILD_DIR"
     export WLROOTS_SRC="$srcdir/serenity-desktop-environment/third_party/wlroots"
