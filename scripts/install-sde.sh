@@ -63,6 +63,7 @@ install_if_executable "$SDE_ROOT/build/WebContent/WebContent"
 install_if_executable "$SDE_ROOT/build/SQLServer/SQLServer"
 install_if_executable "$SDE_ROOT/build/BatteryApplet/BatteryApplet"
 install_if_executable "$SDE_ROOT/build/WifiApplet/WifiApplet"
+install_if_executable "$SDE_ROOT/build/AuthDialog/sde-auth-dialog"
 for applet in "$SDE_ROOT"/build/Applets/*; do
     [[ -f "$applet" && -x "$applet" ]] && install_if_executable "$applet"
 done
@@ -105,7 +106,7 @@ fi
 for script in \
     start-sde-session.sh sde-session.sh sde-shell.sh sde-service-supervisor.sh \
     sde-applets.sh sde-power.sh sde-seat.sh sde-sleep.sh sde-accessibility.sh \
-    seed-serenity-home.sh; do
+    seed-serenity-home.sh sde-polkit-agent.py; do
     install -m 0755 "$SDE_ROOT/scripts/$script" "$SCRIPTS/$script"
 done
 
@@ -134,6 +135,7 @@ export SDE_BATTERY_APPLET="$prefix/bin/BatteryApplet"
 export SDE_WIFI_APPLET="$prefix/bin/WifiApplet"
 export SDE_SESSION_IDLE_BIN="$prefix/bin/sde-idle"
 export SDE_SESSION_DPMS_BIN="$prefix/bin/sde-dpms"
+export SDE_AUTH_DIALOG="$prefix/bin/sde-auth-dialog"
 # The native ext-session-lock client shipped by this package. Without this the
 # fallback is swaylock, which the package does not depend on.
 export SDE_LOCK_CMD="${SDE_LOCK_CMD:-$prefix/bin/sde-lock}"

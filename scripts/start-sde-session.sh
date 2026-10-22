@@ -296,6 +296,17 @@ if [[ "${SDE_SESSION_PORTAL:-1}" == "1" ]]; then
     fi
 fi
 
+# PolicyKit authentication agent: the SDE-owned prompt (and the "do not ask
+# again this session" cache). The trusted polkit helper still performs PAM.
+POLKIT_AGENT="${SDE_POLKIT_AGENT:-$SDE_ROOT/scripts/sde-polkit-agent.py}"
+AUTH_DIALOG="${SDE_AUTH_DIALOG:-$SDE_ROOT/build/AuthDialog/sde-auth-dialog}"
+[[ -x "$AUTH_DIALOG" ]] || AUTH_DIALOG="$BUILD/bin/sde-auth-dialog"
+POLKIT_AGENT_PID=""
+if [[ -x "$POLKIT_AGENT" && -x "$AUTH_DIALOG" ]]; then
+    SDE_AUTH_DIALOG="$AUTH_DIALOG" "$POLKIT_AGENT" &
+    POLKIT_AGENT_PID=$!
+fi
+
 echo "SDE: starting WindowServer (${SDE_BACKENDS:-drm,libinput}) on $XDG_RUNTIME_DIR"
 # Build the portable session tools (sde-idle) if needed.
 if [ ! -x "${SDE_SESSION_IDLE_BIN:-$SDE_ROOT/build/tools/sde-idle}" ]; then
@@ -332,5 +343,8 @@ if [[ -n "$IMAGE_DECODER_PID" ]]; then
 fi
 if [[ -n "$PORTAL_PID" ]]; then
     kill "$PORTAL_PID" 2>/dev/null || true
+fi
+if [[ -n "$POLKIT_AGENT_PID" ]]; then
+    kill "$POLKIT_AGENT_PID" 2>/dev/null || true
 fi
 exit "$status"

@@ -101,6 +101,7 @@ add_subdirectory(Dialogs/ScreenshotOverlay ScreenshotOverlay)
 
 # The portable tools, the portal backends and the test clients.
 add_subdirectory(Tools tools)
+add_subdirectory(Tools/AuthDialog AuthDialog)
 
 # The test programs.
 add_subdirectory(Tests test)
