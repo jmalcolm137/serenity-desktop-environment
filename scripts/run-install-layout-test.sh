@@ -74,6 +74,9 @@ check "resources are installed" "[[ -d '$PREFIX/share/res/themes' && -d '$PREFIX
 check "the runtime scripts are installed" "[[ -x '$PREFIX/share/sde/scripts/start-sde-session.sh' ]]"
 check "the applet supervisor is installed" "[[ -x '$PREFIX/share/sde/scripts/sde-supervise-applet.sh' ]]"
 check "the polkit agent is installed" "[[ -x '$PREFIX/share/sde/scripts/sde-polkit-agent.py' && -x '$PREFIX/bin/sde-auth-dialog' ]]"
+for applet in WorkspacePicker ResourceGraph Network ClipboardHistory Audio Keymap; do
+    check "the $applet applet is installed" "[[ -x '$PREFIX/bin/$applet' ]]"
+done
 check "the launcher is installed" "[[ -x '$LAUNCHER' ]]"
 check "the session entry is installed" "[[ -f '$ROOT/usr/share/wayland-sessions/sde.desktop' ]]"
 check "the session entry runs the installed launcher" \
@@ -114,6 +117,19 @@ check "the installed Taskbar mapped" \
     "grep -qF \"layer surface namespace='serenity-taskbar'\" '$SESSION_LOG' 2>/dev/null"
 check "the installed LaunchServer started on the private session" \
     "grep -qF \"SDE LaunchServer: listening on '$RUNTIME/session/portal/launch'\" '$SESSION_LOG' 2>/dev/null"
+
+# Regression: a missing sde-supervise-applet.sh used to leave every applet as a
+# zombie, with no visible error on the panel. The supervisor logs one line per
+# applet before each run, so this is independent of whether a particular applet's
+# hardware-dependent UI can map in the headless test.
+for applet in WorkspacePicker ResourceGraph Network ClipboardHistory Audio Keymap; do
+    for _ in $(seq 1 50); do
+        grep -qF "sde-supervise-applet: $applet: starting" "$SESSION_LOG" 2>/dev/null && break
+        sleep 0.1
+    done
+    check "the $applet applet was started" \
+        "grep -qF 'sde-supervise-applet: $applet: starting' '$SESSION_LOG' 2>/dev/null"
+done
 
 kill -TERM -- "-$SESSION_PID" 2>/dev/null || kill -TERM "$SESSION_PID" 2>/dev/null || true
 wait "$SESSION_PID" 2>/dev/null || true
