@@ -66,7 +66,7 @@ install_if_executable "$SDE_ROOT/build/WifiApplet/WifiApplet"
 for applet in "$SDE_ROOT"/build/Applets/*; do
     [[ -f "$applet" && -x "$applet" ]] && install_if_executable "$applet"
 done
-for tool in sde-idle sde-dpms sde-settings-portal xdg-desktop-portal-serenity; do
+for tool in sde-idle sde-dpms sde-settings-portal xdg-desktop-portal-serenity sde-lock; do
     install_if_executable "$SDE_ROOT/build/tools/$tool"
 done
 # The portal's LibGUI dialogs are spawned by the backend through the app bin dir.
@@ -129,6 +129,9 @@ export SDE_BATTERY_APPLET="$prefix/bin/BatteryApplet"
 export SDE_WIFI_APPLET="$prefix/bin/WifiApplet"
 export SDE_SESSION_IDLE_BIN="$prefix/bin/sde-idle"
 export SDE_SESSION_DPMS_BIN="$prefix/bin/sde-dpms"
+# The native ext-session-lock client shipped by this package. Without this the
+# fallback is swaylock, which the package does not depend on.
+export SDE_LOCK_CMD="${SDE_LOCK_CMD:-$prefix/bin/sde-lock}"
 export SDE_SKELETON_DIR="$prefix/share/skeleton"
 export SERENITY_RES_ROOT="$prefix/share/res"
 export LD_LIBRARY_PATH="$prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
