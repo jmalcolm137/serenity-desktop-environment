@@ -303,7 +303,11 @@ AUTH_DIALOG="${SDE_AUTH_DIALOG:-$SDE_ROOT/build/AuthDialog/sde-auth-dialog}"
 [[ -x "$AUTH_DIALOG" ]] || AUTH_DIALOG="$BUILD/bin/sde-auth-dialog"
 POLKIT_AGENT_PID=""
 if [[ -x "$POLKIT_AGENT" && -x "$AUTH_DIALOG" ]]; then
-    SDE_AUTH_DIALOG="$AUTH_DIALOG" "$POLKIT_AGENT" &
+    # The agent launches a LibGUI dialog, so it needs the compositor's socket
+    # name. This script unset WAYLAND_DISPLAY at the top; without setting it
+    # back the dialog process has no Wayland connection and never appears.
+    WAYLAND_DISPLAY="$SESSION_DISPLAY" \
+        SDE_AUTH_DIALOG="$AUTH_DIALOG" "$POLKIT_AGENT" &
     POLKIT_AGENT_PID=$!
 fi
 

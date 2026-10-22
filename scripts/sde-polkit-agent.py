@@ -200,8 +200,11 @@ def prompt(username, message):
     lines = completed.stdout.splitlines()
     if not lines:
         return None
-    remember = len(lines) > 1 and lines[1].strip() == "1"
-    return lines[0], remember
+    # The dialog writes <password> then <remember 1|0> last. LibWM diagnostics
+    # may precede them on stdout, so take the tail rather than the first line.
+    remember = len(lines) > 1 and lines[-1].strip() == "1"
+    password = lines[-2] if remember else lines[-1]
+    return password, remember
 
 def main():
     bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
