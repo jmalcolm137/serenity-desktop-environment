@@ -59,7 +59,7 @@ check() {
 }
 
 found=0
-for dir in "$SDE_ROOT"/packaging/aur/*/; do
+for dir in "$SDE_ROOT"/Meta/packaging/aur/*/; do
     [[ -f "$dir/PKGBUILD" ]] || continue
     found=1
     name="$(basename "$dir")"
