@@ -145,6 +145,8 @@ void stop_key_repeat()
     s_key_repeat_keyboard = nullptr;
 }
 
+static void send_key_to_focus(Server& server, uint32_t time, uint32_t key, uint32_t state);
+
 // A single-shot timer: it first fires after the delay, then re-arms itself at
 // the steady repeat rate.
 static void key_repeat_timer_fired()
@@ -157,7 +159,7 @@ static void key_repeat_timer_fired()
     // A held key is input activity: keep the seat from going idle mid-key.
     notify_activity(server);
     wlr_seat_set_keyboard(server.seat, s_key_repeat_keyboard->keyboard);
-    wlr_seat_keyboard_notify_key(server.seat, monotonic_time_msec(), s_key_repeat_keycode, WL_KEYBOARD_KEY_STATE_PRESSED);
+    send_key_to_focus(server, monotonic_time_msec(), s_key_repeat_keycode, WL_KEYBOARD_KEY_STATE_PRESSED);
     // Repeat is generated outside the Wayland event dispatch, so flush the
     // queued key event to the client now instead of waiting for the next
     // unrelated Wayland event (which would deliver repeats in bursts).
@@ -223,6 +225,47 @@ static uint32_t sticky_modifier_for_keysym(xkb_keysym_t keysym)
     default:
         return 0;
     }
+}
+
+struct LockKeyEvent {
+    uint32_t serial;
+    uint32_t time;
+    uint32_t key;
+    uint32_t state;
+};
+
+static enum wl_iterator_result send_lock_key_to_resource(wl_resource* resource, void* data)
+{
+    if (wl_resource_get_interface(resource) != &wl_keyboard_interface)
+        return WL_ITERATOR_CONTINUE;
+    auto& event = *static_cast<LockKeyEvent*>(data);
+    wl_keyboard_send_key(resource, event.serial, event.time, event.key, event.state);
+    return WL_ITERATOR_CONTINUE;
+}
+
+static void send_lock_key(wl_client* client, uint32_t time, uint32_t key, uint32_t state)
+{
+    LockKeyEvent event {
+        .serial = wl_display_next_serial(wl_client_get_display(client)),
+        .time = time,
+        .key = key,
+        .state = state,
+    };
+    wl_client_for_each_resource(client, send_lock_key_to_resource, &event);
+}
+
+// Deliver a key to the locker while locked. The lock surface's client is
+// authoritative: wlr_seat's focused seat-client can be the pre-capabilities
+// object and have no wl_keyboard resource after the locker connected. The
+// direct path also covers key repeat, which is generated outside dispatch.
+static void send_key_to_focus(Server& server, uint32_t time, uint32_t key, uint32_t state)
+{
+    if (session_locked(server)) {
+        if (auto* lock = lock_surface_at_cursor(server))
+            send_lock_key(wl_resource_get_client(lock->lock_surface->surface->resource), time, key, state);
+        return;
+    }
+    wlr_seat_keyboard_notify_key(server.seat, time, key, state);
 }
 
 void keyboard_key(wl_listener* listener, void* data)
@@ -301,9 +344,13 @@ void keyboard_key(wl_listener* listener, void* data)
     // While the session is locked, keys go to the lock surface, not the shell.
     if (session_locked(server)) {
         if (auto* lock = lock_surface_at_cursor(server)) {
+            if (keyboard->lock_focus_pending) {
+                keyboard->lock_focus_pending = false;
+                wlr_seat_keyboard_clear_focus(server.seat);
+            }
             wlr_seat_set_keyboard(server.seat, keyboard->keyboard);
             wlr_seat_keyboard_notify_enter(server.seat, lock->lock_surface->surface, keyboard->keyboard->keycodes, keyboard->keyboard->num_keycodes, &keyboard->keyboard->modifiers);
-            wlr_seat_keyboard_notify_key(server.seat, event->time_msec, event->keycode, event->state);
+            send_lock_key(wl_resource_get_client(lock->lock_surface->surface->resource), event->time_msec, event->keycode, event->state);
             if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
                 start_key_repeat(*keyboard, event->keycode);
         }

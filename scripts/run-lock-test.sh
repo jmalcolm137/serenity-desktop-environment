@@ -171,6 +171,21 @@ if [[ -x "$SDE_ROOT/build/tools/sde-lock" ]]; then
         fail=1
     fi
 
+    # Wait until the lock client has processed ext-session-lock-v1.locked. The
+    # compositor focuses the lock surface when it sends that event, but typing
+    # before the client's own event loop has seen it can lose the first keys on
+    # a loaded CI runner.
+    for _ in $(seq 1 100); do
+        grep -qF "sde-lock: locked" "$RUNTIME/lock-d.log" && break
+        sleep 0.1
+    done
+    # The compositor must have given the locker a wl_keyboard resource before
+    # keys can be delivered. The client logs this when the keyboard enters.
+    for _ in $(seq 1 150); do
+        grep -qF "sde-lock: keyboard ready" "$RUNTIME/lock-d.log" && break
+        sleep 0.1
+    done
+
     # PAM: type a wrong password and Enter. The client must report the failure and
     # stay locked ("login" is the default service; the password is deliberately
     # wrong, so no account is touched). evdev: w=17 r=19 o=24 n=49 g=34 Enter=28.
@@ -179,7 +194,7 @@ if [[ -x "$SDE_ROOT/build/tools/sde-lock" ]]; then
         --key 24 press --key 24 release --key 49 press --key 49 release \
         --key 34 press --key 34 release --key 28 press --key 28 release \
         --sleep 200 > "$RUNTIME/type.log" 2>&1 || true
-    for _ in $(seq 1 100); do
+    for _ in $(seq 1 200); do
         grep -qE "sde-lock: authentication (failed|error)" "$RUNTIME/lock-d.log" && break
         sleep 0.1
     done

@@ -391,6 +391,7 @@ void App::keyboard_enter(void* data, wl_keyboard* keyboard, uint32_t serial, wl_
     (void)serial;
     (void)surface;
     (void)keys;
+    dbgln("sde-lock: keyboard ready");
 }
 
 void App::keyboard_leave(void* data, wl_keyboard* keyboard, uint32_t serial, wl_surface* surface)
@@ -505,6 +506,7 @@ void App::lock_locked(void* data, ext_session_lock_v1* lock)
     auto& app = *static_cast<App*>(data);
     app.m_locked = true;
     app.mark_all_dirty();
+    dbgln("sde-lock: locked");
 }
 
 void App::lock_finished(void* data, ext_session_lock_v1* lock)

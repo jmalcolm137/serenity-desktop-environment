@@ -9,6 +9,7 @@
 #include "Idle.h"
 #include "InputDevices.h"
 #include "Keyboard.h"
+#include "SessionLock.h"
 #include "Tablet.h"
 
 #include <AK/StringBuilder.h>
@@ -258,6 +259,9 @@ static void server_new_input(wl_listener* listener, void* data)
         auto keyboard = make<Keyboard>();
         keyboard->server = server;
         keyboard->keyboard = wlr_keyboard_from_input_device(device);
+        // Keep the raw device alive for the focus path below: the owning
+        // NonnullOwnPtr is moved into the keyboard list before that runs.
+        auto* keyboard_device = keyboard->keyboard;
 
         keyboard->modifiers.notify = keyboard_modifiers;
         wl_signal_add(&keyboard->keyboard->events.modifiers, &keyboard->modifiers);
@@ -265,19 +269,29 @@ static void server_new_input(wl_listener* listener, void* data)
         wl_signal_add(&keyboard->keyboard->events.key, &keyboard->key);
         keyboard->destroy.notify = keyboard_destroy;
         wl_signal_add(&device->events.destroy, &keyboard->destroy);
+        keyboard->lock_focus_pending = server->lock.locked;
 
         wlr_seat_set_keyboard(server->seat, keyboard->keyboard);
         server->input.keyboards.append(move(keyboard));
         // Keymap and repeat come from the input config (R4.6).
         apply_keyboard_input(*server);
 
-        // If a window is already mapped but has no keyboard focus (e.g. the first
-        // keyboard just appeared), focus the topmost one so keybindings act on it.
+        // If a surface is already up but has no keyboard focus (e.g. the first
+        // keyboard just appeared), focus the right one. While the session is
+        // locked that is the lock surface, never a normal window: otherwise a
+        // keyboard hotplug (or the harness's virtual keyboard, which is created
+        // after the lock in the test) would leave the password field unable to
+        // receive keys.
         if (!server->seat->keyboard_state.focused_surface) {
-            for (auto it = server->toplevels.rbegin(); it != server->toplevels.rend(); ++it) {
-                if (!(*it)->minimized) {
-                    focus_toplevel(*server, it->ptr());
-                    break;
+            if (server->lock.locked) {
+                if (auto* lock = lock_surface_at_cursor(*server))
+                    wlr_seat_keyboard_notify_enter(server->seat, lock->lock_surface->surface, keyboard_device->keycodes, keyboard_device->num_keycodes, &keyboard_device->modifiers);
+            } else {
+                for (auto it = server->toplevels.rbegin(); it != server->toplevels.rend(); ++it) {
+                    if (!(*it)->minimized) {
+                        focus_toplevel(*server, it->ptr());
+                        break;
+                    }
                 }
             }
         }

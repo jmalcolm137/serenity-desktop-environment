@@ -363,6 +363,11 @@ struct Keyboard {
     wl_listener modifiers { };
     wl_listener key { };
     wl_listener destroy { };
+    // The first key from a keyboard that appeared during a lock must force a
+    // fresh enter, so the locker's newly-created wl_keyboard resource receives
+    // the seat state. wlr_seat_keyboard_notify_enter() is a no-op when the
+    // focused surface has not changed.
+    bool lock_focus_pending { false };
 
     // R5 accessibility (docs/29-accessibility.md): sticky keys. A modifier tapped on
     // its own latches (`sticky_mask`); the next key press is delivered with it and

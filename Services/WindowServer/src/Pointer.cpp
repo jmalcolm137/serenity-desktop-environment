@@ -236,10 +236,14 @@ static uint32_t g_last_pointer_enter_serial = 0;
 
 static void notify_pointer_enter(Server& server, wlr_surface* surface, double sx, double sy)
 {
+    // wlr_seat_pointer_notify_enter() sends wl_pointer.enter unconditionally.
+    // Motion within one surface must only send wl_pointer.motion: a second
+    // enter without an intervening leave is a protocol violation.
     auto* previous = server.seat->pointer_state.focused_surface;
+    if (previous == surface)
+        return;
     wlr_seat_pointer_notify_enter(server.seat, surface, sx, sy);
-    if (previous != surface)
-        g_last_pointer_enter_serial = wl_display_get_serial(server.display);
+    g_last_pointer_enter_serial = wl_display_get_serial(server.display);
 }
 
 static void process_cursor_motion(Server& server, uint32_t time)
@@ -787,6 +791,12 @@ static void seat_request_cursor(wl_listener* listener, void* data)
     Server* server = nullptr;
     server = wl_container_of(listener, server, pointer.seat_request_cursor);
     auto* event = static_cast<wlr_seat_pointer_request_set_cursor_event*>(data);
+    // wl_pointer.set_cursor is only valid with the serial from the latest
+    // wl_pointer.enter. wlroots forwards the request without checking it, so a
+    // stale serial would otherwise be honoured (and could incorrectly give a
+    // roled surface the cursor role).
+    if (event->serial != g_last_pointer_enter_serial)
+        return;
     if (server->seat->pointer_state.focused_client == event->seat_client)
         wlr_cursor_set_surface(server->cursor, event->surface, event->hotspot_x, event->hotspot_y);
 }
