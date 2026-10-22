@@ -74,7 +74,7 @@ check "resources are installed" "[[ -d '$PREFIX/share/res/themes' && -d '$PREFIX
 check "the runtime scripts are installed" "[[ -x '$PREFIX/share/sde/scripts/start-sde-session.sh' ]]"
 check "the applet supervisor is installed" "[[ -x '$PREFIX/share/sde/scripts/sde-supervise-applet.sh' ]]"
 check "the polkit agent is installed" "[[ -x '$PREFIX/share/sde/scripts/sde-polkit-agent.py' && -x '$PREFIX/bin/sde-auth-dialog' ]]"
-for applet in WorkspacePicker ResourceGraph Network ClipboardHistory Audio Keymap; do
+for applet in WorkspacePicker ResourceGraph Network ClipboardHistory Audio Keymap BatteryApplet WifiApplet; do
     check "the $applet applet is installed" "[[ -x '$PREFIX/bin/$applet' ]]"
 done
 check "the launcher is installed" "[[ -x '$LAUNCHER' ]]"
@@ -122,7 +122,7 @@ check "the installed LaunchServer started on the private session" \
 # zombie, with no visible error on the panel. The supervisor logs one line per
 # applet before each run, so this is independent of whether a particular applet's
 # hardware-dependent UI can map in the headless test.
-for applet in WorkspacePicker ResourceGraph Network ClipboardHistory Audio Keymap; do
+for applet in WorkspacePicker ResourceGraph Network ClipboardHistory Audio Keymap BatteryApplet WifiApplet; do
     for _ in $(seq 1 50); do
         grep -qF "sde-supervise-applet: $applet: starting" "$SESSION_LOG" 2>/dev/null && break
         sleep 0.1
