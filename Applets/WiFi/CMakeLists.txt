@@ -45,6 +45,7 @@ target_include_directories(WifiApplet PRIVATE
 
 target_compile_options(WifiApplet PRIVATE -Wno-literal-suffix -fno-exceptions)
 target_link_directories(WifiApplet PRIVATE "${SERENITY_BUILD_DIR}/lib" ${DBUS_LIBRARY_DIRS})
+target_link_options(WifiApplet PRIVATE "LINKER:--no-as-needed")
 target_link_libraries(WifiApplet PRIVATE
     ${LAGOM_ak}
     ${LAGOM_coreminimal}

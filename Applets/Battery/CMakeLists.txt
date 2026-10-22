@@ -40,6 +40,7 @@ target_include_directories(BatteryApplet PRIVATE
 target_compile_options(BatteryApplet PRIVATE -Wno-literal-suffix -fno-exceptions)
 
 target_link_directories(BatteryApplet PRIVATE "${SERENITY_BUILD_DIR}/lib")
+target_link_options(BatteryApplet PRIVATE "LINKER:--no-as-needed")
 target_link_libraries(BatteryApplet PRIVATE
     ${LAGOM_ak}
     ${LAGOM_coreminimal}
