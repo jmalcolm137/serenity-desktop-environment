@@ -105,7 +105,7 @@ fi
 # The runtime scripts (not the test drivers or build wrappers).
 for script in \
     start-sde-session.sh sde-session.sh sde-shell.sh sde-service-supervisor.sh \
-    sde-applets.sh sde-power.sh sde-seat.sh sde-sleep.sh sde-accessibility.sh \
+    sde-applets.sh sde-supervise-applet.sh sde-power.sh sde-seat.sh sde-sleep.sh sde-accessibility.sh \
     seed-serenity-home.sh sde-polkit-agent.py; do
     install -m 0755 "$SDE_ROOT/scripts/$script" "$SCRIPTS/$script"
 done

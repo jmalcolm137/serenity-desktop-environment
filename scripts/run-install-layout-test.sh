@@ -72,6 +72,8 @@ check "sde-idle is installed" "[[ -x '$PREFIX/bin/sde-idle' ]]"
 check "framework libraries are installed" "[[ -n \"\$(find '$PREFIX/lib' -maxdepth 1 -name 'liblagom-*.so*' -print -quit)\" ]]"
 check "resources are installed" "[[ -d '$PREFIX/share/res/themes' && -d '$PREFIX/share/res/fonts' ]]"
 check "the runtime scripts are installed" "[[ -x '$PREFIX/share/sde/scripts/start-sde-session.sh' ]]"
+check "the applet supervisor is installed" "[[ -x '$PREFIX/share/sde/scripts/sde-supervise-applet.sh' ]]"
+check "the polkit agent is installed" "[[ -x '$PREFIX/share/sde/scripts/sde-polkit-agent.py' && -x '$PREFIX/bin/sde-auth-dialog' ]]"
 check "the launcher is installed" "[[ -x '$LAUNCHER' ]]"
 check "the session entry is installed" "[[ -f '$ROOT/usr/share/wayland-sessions/sde.desktop' ]]"
 check "the session entry runs the installed launcher" \
