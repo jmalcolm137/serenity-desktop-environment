@@ -43,8 +43,8 @@ sudo scripts/install-session.sh    # /usr/local/bin/sde-session + /usr/share/way
 ```
 ## Reading
 
-See the [SDE User Manual](docs/SDE-User-Manual.pdf) for the session, settings,
-applications and troubleshooting.
+The [SDE User Manual](docs/SDE-User-Manual.pdf) provides an introductory overview of the desktop capabilities, 
+options, applications, and troubleshooting.
 
 ## Relationship
 
