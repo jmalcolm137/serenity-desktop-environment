@@ -18,23 +18,26 @@ diff --git a/Userland/Services/Taskbar/main.cpp b/Userland/Services/Taskbar/main
  #include <LibMain/Main.h>
  #include <WindowServer/Window.h>
  #include <signal.h>
-@@ -135,7 +138,18 @@
+@@ -135,7 +138,7 @@
      Vector<ByteString> const sorted_app_categories = TRY(discover_apps_and_categories());
      auto system_menu = GUI::Menu::construct("\xE2\x9A\xA1"_string); // HIGH VOLTAGE SIGN
  
 -    system_menu->add_action(GUI::Action::create("&About SerenityOS", TRY(Gfx::Bitmap::load_from_uri("resource://icons/16x16/ladyball.png"sv)), [&](auto&) {
-+    // Lock first: it is the item a user reaches for while stepping away. The
-+    // session exports SDE_LOCK_CMD, so this and Super+L use the same locker.
++    system_menu->add_action(GUI::Action::create("&About SDE", TRY(Gfx::Bitmap::load_from_uri("resource://icons/16x16/ladyball.png"sv)), [&](auto&) {
+         GUI::Process::spawn_or_show_error(&window, "/bin/About"sv);
+     }));
+ 
+@@ -249,6 +252,13 @@
+         GUI::Process::spawn_or_show_error(&window, "/bin/Run"sv, ReadonlySpan<StringView> {}, Core::StandardPaths::home_directory());
+     }));
+     system_menu->add_separator();
++    // Lock belongs with the session actions, just above Exit.
 +    system_menu->add_action(GUI::Action::create("&Lock", [&](auto&) {
 +        auto const* configured = getenv("SDE_LOCK_CMD");
 +        auto command = configured && *configured ? ByteString(configured) : ByteString("swaylock");
 +        Array<StringView, 2> arguments { "-c"sv, command };
 +        GUI::Process::spawn_or_show_error(&window, "/bin/sh"sv, ReadonlySpan<StringView> { arguments.data(), arguments.size() });
 +    }));
-+
-+    system_menu->add_separator();
-+
-+    system_menu->add_action(GUI::Action::create("&About SDE", TRY(Gfx::Bitmap::load_from_uri("resource://icons/16x16/ladyball.png"sv)), [&](auto&) {
-         GUI::Process::spawn_or_show_error(&window, "/bin/About"sv);
-     }));
- 
+     system_menu->add_action(GUI::Action::create("E&xit...", TRY(Gfx::Bitmap::load_from_uri("resource://icons/16x16/power.png"sv)), [&](auto&) {
+         if (auto command = ShutdownDialog::show(); command.has_value())
+             GUI::Process::spawn_or_show_error(&window, command->executable, command->arguments);
