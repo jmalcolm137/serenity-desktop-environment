@@ -34,6 +34,10 @@ target_include_directories(sde-auth-dialog PRIVATE
 target_compile_options(sde-auth-dialog PRIVATE -Wno-literal-suffix -fno-exceptions)
 
 target_link_directories(sde-auth-dialog PRIVATE "${SERENITY_BUILD_DIR}/lib")
+# Arch passes --as-needed; this app does not reference a windowserver symbol
+# directly, but it must link the in-process shim or GUI::Application::create()
+# cannot connect to the WindowServer portal.
+target_link_options(sde-auth-dialog PRIVATE "LINKER:--no-as-needed")
 target_link_libraries(sde-auth-dialog PRIVATE
     ${LAGOM_ak}
     ${LAGOM_coreminimal}
