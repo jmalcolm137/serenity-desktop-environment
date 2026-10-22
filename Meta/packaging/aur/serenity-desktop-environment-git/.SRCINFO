@@ -1,6 +1,6 @@
 pkgbase = serenity-desktop-environment-git
 	pkgdesc = The SerenityOS desktop experience on Wayland (compositor, shell and services)
-	pkgver = r553.5474ca4
+	pkgver = r559.bafab43
 	pkgrel = 1
 	url = https://github.com/jmalcolm137/serenity-desktop-environment
 	arch = x86_64
