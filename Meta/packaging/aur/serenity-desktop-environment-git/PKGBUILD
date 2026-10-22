@@ -5,7 +5,7 @@
 # installs only its own binaries/scripts; the framework package owns bin/lib/share.
 
 pkgname=serenity-desktop-environment-git
-pkgver=r549.3126e92
+pkgver=r553.5474ca4
 pkgrel=1
 pkgdesc="The SerenityOS desktop experience on Wayland (compositor, shell and services)"
 arch=('x86_64')

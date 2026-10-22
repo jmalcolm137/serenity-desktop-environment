@@ -16,3 +16,7 @@
 /Meta/packaging/aur/*/serenity-desktop-environment/
 /Meta/packaging/aur/*/wlroots/
 /Meta/packaging/aur/*/*.pkg.tar.zst
+
+# Python bytecode from the SDE scripts
+__pycache__/
+*.pyc
