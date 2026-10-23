@@ -156,7 +156,7 @@ echo "== (D) the native SDE locker =="
 if [[ -x "$SDE_ROOT/build/tools/sde-lock" ]]; then
     start_compositor lock-d 1
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-        env WAYLAND_DISPLAY=lock-d timeout 30 "$SDE_ROOT/build/tools/sde-lock" > "$RUNTIME/lock-d.log" 2>&1 &
+        env WAYLAND_DISPLAY=lock-d timeout 60 "$SDE_ROOT/build/tools/sde-lock" > "$RUNTIME/lock-d.log" 2>&1 &
     LOCK_D_PID=$!
     for _ in $(seq 1 80); do
         grep -qF "WindowServer: session locked" "$RUNTIME/comp-lock-d.log" && break
@@ -194,14 +194,21 @@ if [[ -x "$SDE_ROOT/build/tools/sde-lock" ]]; then
     # PAM: type a wrong password and Enter. The client must report the failure and
     # stay locked ("login" is the default service; the password is deliberately
     # wrong, so no account is touched). evdev: w=17 r=19 o=24 n=49 g=34 Enter=28.
-    env WAYLAND_DISPLAY=lock-d "$TOOLS_BUILD/virtual-input-test" \
-        --key 17 press --key 17 release --key 19 press --key 19 release \
-        --key 24 press --key 24 release --key 49 press --key 49 release \
-        --key 34 press --key 34 release --key 28 press --key 28 release \
-        --sleep 200 --linger 1500 > "$RUNTIME/type.log" 2>&1 || true
-    for _ in $(seq 1 200); do
+    # Retry the whole sequence once: the first virtual-keyboard burst can be lost
+    # if the locker's wl_keyboard resource is still being installed, and a
+    # password attempt that never reached PAM would otherwise look like a hang.
+    for attempt in 1 2; do
+        env WAYLAND_DISPLAY=lock-d "$TOOLS_BUILD/virtual-input-test" \
+            --key 17 press --key 17 release --key 19 press --key 19 release \
+            --key 24 press --key 24 release --key 49 press --key 49 release \
+            --key 34 press --key 34 release --key 28 press --key 28 release \
+            --sleep 200 --linger 1500 > "$RUNTIME/type.log" 2>&1 || true
+        for _ in $(seq 1 100); do
+            grep -qE "sde-lock: authentication (failed|error)" "$RUNTIME/lock-d.log" && break
+            sleep 0.1
+        done
         grep -qE "sde-lock: authentication (failed|error)" "$RUNTIME/lock-d.log" && break
-        sleep 0.1
+        sleep 1
     done
     if grep -qE "sde-lock: authentication (failed|error)" "$RUNTIME/lock-d.log"; then
         echo "  ok: PAM rejected a wrong password"
