@@ -19,6 +19,8 @@ set -euo pipefail
 BUILD=(
     # Toolchain
     base-devel cmake ninja meson pkgconf git python
+    # WLCS (compositor conformance): GoogleTest and the Boost headers it uses.
+    gtest boost
     # Compositor: wlroots + the SDE's own pkg-config requirements
     wayland wayland-protocols libxkbcommon pixman libdrm libinput seatd
     libdisplay-info libxcb xcb-util-wm xcb-util-renderutil valgrind debuginfod

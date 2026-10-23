@@ -80,6 +80,19 @@ add_custom_command(
     VERBATIM
 )
 
+# serenity-wlcs-control: the WLCS harness's test-only placement channel. It is
+# only advertised when SDE_WLCS_CONTROL=1.
+set(SERENITY_WLCS_CONTROL_XML "${CMAKE_CURRENT_SOURCE_DIR}/protocol/serenity-wlcs-control.xml")
+add_custom_command(
+    OUTPUT
+        "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-wlcs-control-server-protocol.h"
+        "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-wlcs-control-protocol.c"
+    COMMAND "${WAYLAND_SCANNER}" server-header "${SERENITY_WLCS_CONTROL_XML}" "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-wlcs-control-server-protocol.h"
+    COMMAND "${WAYLAND_SCANNER}" private-code "${SERENITY_WLCS_CONTROL_XML}" "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-wlcs-control-protocol.c"
+    DEPENDS "${SERENITY_WLCS_CONTROL_XML}"
+    VERBATIM
+)
+
 # xdg-session-management-v1: let apps restore their toplevels across a restart
 # (R4.2). Standard protocol; wlroots 0.20 has no manager for it, so we generate
 # and implement the server side (see src/SessionManager.cpp). The protocol
@@ -163,6 +176,7 @@ add_executable(WindowServer
     src/Tablet.cpp
     src/Trace.cpp
     src/VirtualInput.cpp
+    src/WlcsControl.cpp
     src/Wallpaper.cpp
     src/WindowManager.cpp
     src/WindowMenu.cpp
@@ -175,6 +189,7 @@ add_executable(WindowServer
     "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-window-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-input-capture-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-virtual-input-protocol.c"
+    "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-wlcs-control-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-shell-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-session-management-v1-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/pointer-warp-v1-protocol.c"

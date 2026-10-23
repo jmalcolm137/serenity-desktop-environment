@@ -30,6 +30,7 @@
 #include "Tablet.h"
 #include "Trace.h"
 #include "VirtualInput.h"
+#include "WlcsControl.h"
 #include "Wallpaper.h"
 #include "WindowManager.h"
 #include "WindowMenu.h"
@@ -231,8 +232,10 @@ static ErrorOr<void> initialize(Server& server)
     initialize_xdg_shell(server);
     initialize_layer_shell(server);
     initialize_serenity_window(server);
-    // Test harness: virtual touch/tablet injection (see serenity-virtual-input).
+    // Test harness: virtual touch/tablet injection (see serenity-virtual-input)
+    // and the WLCS placement control channel (serenity-wlcs-control).
     initialize_virtual_input(server);
+    initialize_wlcs_control(server);
     SessionManager::initialize(server);
     // R5: InputCapture portal support (compositor-hosted EIS; docs/17).
     InputCapture::initialize(server);

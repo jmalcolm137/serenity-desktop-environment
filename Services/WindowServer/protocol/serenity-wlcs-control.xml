@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="serenity_wlcs_control">
+
+  <copyright>
+    Copyright (c) 2026, Serenity Desktop Environment contributors.
+
+    SPDX-License-Identifier: BSD-2-Clause
+  </copyright>
+
+  <!--
+    serenity-wlcs-control: a test-only control channel for the WLCS harness.
+
+    WLCS needs to move a client's toplevel in compositor coordinates, but
+    Wayland deliberately has no client request for that: the compositor owns
+    placement. The harness binds this global on the same connection that owns
+    the surface and passes the wl_surface object, so the request needs no
+    cross-client identity lookup. This global is only created when
+    SDE_WLCS_CONTROL=1; it is never part of a normal session.
+  -->
+
+  <interface name="serenity_wlcs_control_v1" version="1">
+    <description summary="test-only compositor control">
+      One global per test compositor.
+    </description>
+
+    <request name="move_surface">
+      <description summary="place a toplevel's surface at compositor coordinates">
+        x and y are the desired left/top of the window in compositor
+        coordinates. The surface belongs to the client issuing the request.
+      </description>
+      <arg name="surface" type="object" interface="wl_surface"/>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+    </request>
+  </interface>
+</protocol>
