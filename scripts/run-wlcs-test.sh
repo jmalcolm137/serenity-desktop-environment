@@ -21,7 +21,13 @@ INTEGRATION="${INTEGRATION:-$WLCS_BUILD_DIR/sde_wlcs_integration.so}"
 WLCS_FILTER="${WLCS_FILTER:-WlSubcompositorTest.*:SurfaceTest.*:KeyboardTest.*:WlSurfaceTest.*:WlSurfaceEventsTest.*:WlOutputTest.*}"
 WLCS_TIMEOUT="${WLCS_TIMEOUT:-600}"
 
-"$SDE_ROOT/scripts/build-wlcs.sh" >/dev/null
+wlcs_build_log="${WLCS_BUILD_LOG:-$WLCS_BUILD_DIR/build.log}"
+mkdir -p "$(dirname "$wlcs_build_log")"
+if ! "$SDE_ROOT/scripts/build-wlcs.sh" >"$wlcs_build_log" 2>&1; then
+    echo "==> WLCS build FAILED; log follows"
+    cat "$wlcs_build_log"
+    exit 1
+fi
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 [[ -x "$WLCS_BIN" ]] || { echo "SKIP: WLCS was not built"; exit 0; }
 [[ -f "$INTEGRATION" ]] || { echo "SKIP: SDE WLCS integration was not built"; exit 0; }

@@ -71,25 +71,44 @@ cmake --build "$WLCS_BUILD_DIR" -j "$JOBS"
 # The integration module uses client-side generated protocol code. WLCS's own
 # generated code covers server-side interfaces; the compositor's protocols need
 # client headers and interface symbols here.
-scanner=wayland-scanner
-"$scanner" client-header "$SDE_ROOT/third_party/wlroots/protocol/wlr-virtual-pointer-unstable-v1.xml" "$PROTOCOL_DIR/wlr-virtual-pointer-unstable-v1-client-protocol.h"
-"$scanner" private-code "$SDE_ROOT/third_party/wlroots/protocol/wlr-virtual-pointer-unstable-v1.xml" "$PROTOCOL_DIR/wlr-virtual-pointer-unstable-v1-protocol.c"
-"$scanner" client-header "$SDE_ROOT/third_party/wlroots/protocol/virtual-keyboard-unstable-v1.xml" "$PROTOCOL_DIR/virtual-keyboard-unstable-v1-client-protocol.h"
-"$scanner" private-code "$SDE_ROOT/third_party/wlroots/protocol/virtual-keyboard-unstable-v1.xml" "$PROTOCOL_DIR/virtual-keyboard-unstable-v1-protocol.c"
-"$scanner" client-header "$SDE_ROOT/Services/WindowServer/protocol/serenity-virtual-input.xml" "$PROTOCOL_DIR/serenity-virtual-input-client-protocol.h"
-"$scanner" private-code "$SDE_ROOT/Services/WindowServer/protocol/serenity-virtual-input.xml" "$PROTOCOL_DIR/serenity-virtual-input-protocol.c"
-"$scanner" client-header "$SDE_ROOT/Services/WindowServer/protocol/serenity-wlcs-control.xml" "$PROTOCOL_DIR/serenity-wlcs-control-client-protocol.h"
-"$scanner" private-code "$SDE_ROOT/Services/WindowServer/protocol/serenity-wlcs-control.xml" "$PROTOCOL_DIR/serenity-wlcs-control-protocol.c"
+command -v wayland-scanner >/dev/null || {
+    echo "build-wlcs: wayland-scanner is required" >&2
+    exit 1
+}
 
-for source in "$PROTOCOL_DIR"/*-protocol.c; do
-    "$CC" -std=c11 -fPIC -O2 -c "$source" -o "${source%.c}.o"
+# Keep this list explicit. A shell glob here used to turn a failed generation
+# into a confusing `cc: Could not open input file` in the full-suite job.
+protocol_specs=(
+    "$SDE_ROOT/third_party/wlroots/protocol/wlr-virtual-pointer-unstable-v1.xml"
+    "$SDE_ROOT/third_party/wlroots/protocol/virtual-keyboard-unstable-v1.xml"
+    "$SDE_ROOT/Services/WindowServer/protocol/serenity-virtual-input.xml"
+    "$SDE_ROOT/Services/WindowServer/protocol/serenity-wlcs-control.xml"
+)
+protocol_objects=()
+for xml in "${protocol_specs[@]}"; do
+    [[ -f "$xml" ]] || {
+        echo "build-wlcs: missing protocol XML: $xml" >&2
+        exit 1
+    }
+    name="$(basename "$xml" .xml)"
+    header="$PROTOCOL_DIR/$name-client-protocol.h"
+    source="$PROTOCOL_DIR/$name-protocol.c"
+    object="$PROTOCOL_DIR/$name-protocol.o"
+    wayland-scanner client-header "$xml" "$header"
+    wayland-scanner private-code "$xml" "$source"
+    [[ -s "$header" && -s "$source" ]] || {
+        echo "build-wlcs: wayland-scanner did not generate $name" >&2
+        exit 1
+    }
+    "$CC" -std=c11 -fPIC -O2 -c "$source" -o "$object"
+    protocol_objects+=("$object")
 done
 
 "$CXX" -std=c++20 -shared -fPIC -O2 -g \
     -I"$WLCS_SRC/include" -I"$PROTOCOL_DIR" \
     -o "$WLCS_BUILD_DIR/sde_wlcs_integration.so" \
     "$SDE_ROOT/Tests/wlcs/sde_wlcs_integration.cpp" \
-    "$PROTOCOL_DIR"/*-protocol.o \
+    "${protocol_objects[@]}" \
     -lwayland-client -lxkbcommon
 
 echo "==> WLCS and SDE integration built in $WLCS_BUILD_DIR"
