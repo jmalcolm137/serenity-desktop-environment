@@ -42,10 +42,13 @@ STARTUP="$BUILD/bin/Taskbar & $BUILD/bin/FileManager -d"
 [[ -x "$BATTERY_APPLET" ]] && STARTUP="$STARTUP & $BATTERY_APPLET"
 
 sde_test_compositor --startup "$STARTUP" SDE_WM_PORTAL_PATH="$RUNTIME/portal/wm" SDE_APP_BIN_DIR="$BUILD/bin" SDE_SESSION_BIN_DIR="$RUNTIME/sbin"
-# The Desktop (FileManager -d) can take a moment to come up, so wait for its
-# layer surface rather than racing a fixed sleep.
+# Both shell processes have to finish mapping their layer surfaces. Wait for
+# both, not just the Desktop: on a loaded runner the Taskbar can still be
+# connecting to the WM portal when the Desktop is already up, and stopping the
+# compositor then records a false "Taskbar did not map" failure.
 for _ in $(seq 1 300); do
-    grep -q "layer surface namespace='serenity-desktop'" "$RUNTIME/comp.log" && break
+    grep -q "layer surface namespace='serenity-taskbar'" "$RUNTIME/comp.log" &&
+        grep -q "layer surface namespace='serenity-desktop'" "$RUNTIME/comp.log" && break
     sleep 0.1
 done
 # The compositor must have created the override path's parent directory and be

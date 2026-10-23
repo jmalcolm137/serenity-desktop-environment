@@ -382,6 +382,8 @@ void App::keyboard_keymap(void* data, wl_keyboard* keyboard, uint32_t format, in
     if (app.m_xkb_state)
         xkb_state_unref(app.m_xkb_state);
     app.m_xkb_state = xkb_state_new(app.m_xkb_keymap);
+    if (app.m_xkb_state)
+        dbgln("sde-lock: keymap ready");
 }
 
 void App::keyboard_enter(void* data, wl_keyboard* keyboard, uint32_t serial, wl_surface* surface, wl_array* keys)

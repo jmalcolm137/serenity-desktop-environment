@@ -179,10 +179,12 @@ if [[ -x "$SDE_ROOT/build/tools/sde-lock" ]]; then
         grep -qF "sde-lock: locked" "$RUNTIME/lock-d.log" && break
         sleep 0.1
     done
-    # The compositor must have given the locker a wl_keyboard resource before
-    # keys can be delivered. The client logs this when the keyboard enters.
+    # The compositor must have given the locker a wl_keyboard resource and the
+    # client must have installed its xkb keymap before keys can be text. Wait for
+    # both; the keymap can arrive just after the enter event on a loaded runner.
     for _ in $(seq 1 150); do
-        grep -qF "sde-lock: keyboard ready" "$RUNTIME/lock-d.log" && break
+        grep -qF "sde-lock: keymap ready" "$RUNTIME/lock-d.log" &&
+            grep -qF "sde-lock: keyboard ready" "$RUNTIME/lock-d.log" && break
         sleep 0.1
     done
 
@@ -193,7 +195,7 @@ if [[ -x "$SDE_ROOT/build/tools/sde-lock" ]]; then
         --key 17 press --key 17 release --key 19 press --key 19 release \
         --key 24 press --key 24 release --key 49 press --key 49 release \
         --key 34 press --key 34 release --key 28 press --key 28 release \
-        --sleep 200 > "$RUNTIME/type.log" 2>&1 || true
+        --sleep 200 --linger 1500 > "$RUNTIME/type.log" 2>&1 || true
     for _ in $(seq 1 200); do
         grep -qE "sde-lock: authentication (failed|error)" "$RUNTIME/lock-d.log" && break
         sleep 0.1
