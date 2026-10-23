@@ -234,16 +234,29 @@ struct LockKeyEvent {
     uint32_t state;
 };
 
+struct PendingLockKey {
+    uint32_t time;
+    uint32_t key;
+    uint32_t state;
+};
+
+// A locked client can be "ready" before it has exported its wl_keyboard
+// resource: the capability event and the client's get_keyboard request race the
+// first key burst. Keep those events rather than dropping them.
+static Vector<PendingLockKey> s_pending_lock_keys;
+static size_t s_lock_key_resources_sent { 0 };
+
 static enum wl_iterator_result send_lock_key_to_resource(wl_resource* resource, void* data)
 {
     if (wl_resource_get_interface(resource) != &wl_keyboard_interface)
         return WL_ITERATOR_CONTINUE;
     auto& event = *static_cast<LockKeyEvent*>(data);
     wl_keyboard_send_key(resource, event.serial, event.time, event.key, event.state);
+    ++s_lock_key_resources_sent;
     return WL_ITERATOR_CONTINUE;
 }
 
-static void send_lock_key(wl_client* client, uint32_t time, uint32_t key, uint32_t state)
+static bool send_lock_key_now(wl_client* client, uint32_t time, uint32_t key, uint32_t state)
 {
     LockKeyEvent event {
         .serial = wl_display_next_serial(wl_client_get_display(client)),
@@ -251,7 +264,26 @@ static void send_lock_key(wl_client* client, uint32_t time, uint32_t key, uint32
         .key = key,
         .state = state,
     };
+    s_lock_key_resources_sent = 0;
     wl_client_for_each_resource(client, send_lock_key_to_resource, &event);
+    return s_lock_key_resources_sent > 0;
+}
+
+static void send_lock_key(wl_client* client, uint32_t time, uint32_t key, uint32_t state)
+{
+    if (!send_lock_key_now(client, time, key, state)) {
+        s_pending_lock_keys.append({ time, key, state });
+        return;
+    }
+    // The keyboard resource exists now; replay anything that arrived before it.
+    for (auto const& pending : s_pending_lock_keys)
+        (void)send_lock_key_now(client, pending.time, pending.key, pending.state);
+    s_pending_lock_keys.clear();
+}
+
+void clear_pending_lock_keys()
+{
+    s_pending_lock_keys.clear();
 }
 
 // Deliver a key to the locker while locked. The lock surface's client is

@@ -160,6 +160,7 @@ static void session_lock_unlock(wl_listener* listener, void*)
     Server* server = nullptr;
     server = wl_container_of(listener, server, lock.unlock);
     dbgln("WindowServer: session unlocked");
+    clear_pending_lock_keys();
     // wlroots destroys the lock surfaces (and our per-surface handlers clean them
     // up) as the client destroys the lock right after this signal.
     server->lock.locked = false;
