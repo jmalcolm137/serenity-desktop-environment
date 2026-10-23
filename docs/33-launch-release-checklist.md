@@ -15,6 +15,9 @@ experience must also be reproducible on a clean machine.
 - [ ] The nightly/full suite is red in `run-wlcs-test.sh`.
 - [ ] The AUR package still uses an unpinned `git+…` source and stale
       `pkgver`/`.SRCINFO`.
+- [ ] The AUR packages are not published yet. The README therefore documents
+      the local `makepkg` path; publish both packages before claiming
+      `yay -S`/AUR installation.
 - [ ] No clean-machine install has been recorded for the current `main`.
 - [ ] `README.md` documents source builds but not the package install path.
 

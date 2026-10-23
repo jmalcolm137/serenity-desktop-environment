@@ -26,6 +26,23 @@ The stack is split across a small family of repositories:
 scripts/build-full-sde.sh --with-apps
 ```
 
+**Arch Linux packages (experimental).** The split package recipes live in
+[`Meta/packaging/aur`](Meta/packaging/aur): `serenity-lagom-git` (the framework
+and SerenityOS applications) and `serenity-desktop-environment-git` (the
+compositor and session). Until they are published to the AUR, build and install
+the framework first, then the session:
+
+```sh
+cd Meta/packaging/aur/serenity-lagom-git
+makepkg -si
+cd ../serenity-desktop-environment-git
+makepkg -si
+```
+
+Install a display manager such as SDDM, log out, and select **Serenity Desktop
+Environment** at the login screen. The packages build from source, so the first
+install is large. SDE is experimental; keep another desktop session available.
+
 **Real hardware (DRM/KMS + libinput).** From a TTY (`Ctrl+Alt+F3`) or a display
 manager session entry:
 

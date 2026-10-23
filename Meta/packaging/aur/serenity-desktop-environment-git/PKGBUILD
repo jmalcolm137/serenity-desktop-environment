@@ -5,7 +5,7 @@
 # installs only its own binaries/scripts; the framework package owns bin/lib/share.
 
 pkgname=serenity-desktop-environment-git
-pkgver=r559.bafab43
+pkgver=r570.04a2577
 pkgrel=1
 pkgdesc="The SerenityOS desktop experience on Wayland (compositor, shell and services)"
 arch=('x86_64')
@@ -24,7 +24,7 @@ optdepends=('sddm: display manager that lists the SDE Wayland session')
 makedepends=(
     'serenity-lagom-git' wlroots0.20
     base-devel cmake ninja meson pkgconf git python wayland-protocols
-    libpulse zip unzip
+    libpulse zip unzip patchelf
 )
 source=(
     "serenity-desktop-environment::git+https://github.com/jmalcolm137/serenity-desktop-environment.git"
@@ -59,4 +59,9 @@ package() {
     export BUILD=/usr/lib/sde
     export SERENITY=/usr/lib/sde/framework/serenity
     scripts/install-sde.sh --destdir "$pkgdir" --prefix /usr/lib/sde --without-framework
+
+    # The compositor is linked against the staging wlroots checkout, so its
+    # build RUNPATH contains the AUR $srcdir. Replace it with the installed
+    # framework location; the system loader still supplies libwlroots.
+    patchelf --set-rpath /usr/lib/sde/lib "$pkgdir/usr/lib/sde/bin/WindowServer"
 }
