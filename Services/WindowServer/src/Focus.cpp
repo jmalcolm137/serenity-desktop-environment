@@ -70,6 +70,15 @@ void focus_toplevel(Server& server, Toplevel* toplevel)
     if (!toplevel)
         return;
 
+    // A layer surface with exclusive keyboard interactivity owns the keyboard
+    // until it goes away or changes interactivity. Mapping or activating a
+    // normal window must not steal it (zwlr-layer-shell-v1).
+    if (server.keyboard_focus_layer
+        && server.keyboard_focus_layer->layer_surface
+        && server.keyboard_focus_layer->layer_surface->current.keyboard_interactive
+            == ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE)
+        return;
+
     toplevel->focus_order = ++g_focus_order_counter;
 
     // Exactly one window is active (see deactivate_other_windows). Run this even

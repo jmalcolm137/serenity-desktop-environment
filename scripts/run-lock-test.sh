@@ -187,6 +187,9 @@ if [[ -x "$SDE_ROOT/build/tools/sde-lock" ]]; then
             grep -qF "sde-lock: keyboard ready" "$RUNTIME/lock-d.log" && break
         sleep 0.1
     done
+    # Let the locker's event loop finish installing the keyboard state before
+    # the virtual keyboard starts delivering a burst of keys.
+    sleep 0.5
 
     # PAM: type a wrong password and Enter. The client must report the failure and
     # stay locked ("login" is the default service; the password is deliberately
