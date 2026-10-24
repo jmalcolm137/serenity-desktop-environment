@@ -14,6 +14,8 @@ set -euo pipefail
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WLCS_SRC="${WLCS_SRC:-$SDE_ROOT/third_party/wlcs}"
 WLCS_BUILD_DIR="${WLCS_BUILD_DIR:-$SDE_ROOT/build/wlcs}"
+WLROOTS_SRC="${WLROOTS_SRC:-${SDE_WLROOTS_SRC:-$SDE_ROOT/third_party/wlroots}}"
+WLROOTS_VERSION="${WLROOTS_VERSION:-0.20.2}"
 PROTOCOL_DIR="$WLCS_BUILD_DIR/protocol"
 JOBS="${JOBS:-$(nproc)}"
 CXX="${CXX:-c++}"
@@ -68,9 +70,15 @@ cmake -S "$WLCS_SRC" -B "$WLCS_BUILD_DIR" -G Ninja \
     "${boost_args[@]}"
 cmake --build "$WLCS_BUILD_DIR" -j "$JOBS"
 
-# The integration module uses client-side generated protocol code. WLCS's own
-# generated code covers server-side interfaces; the compositor's protocols need
-# client headers and interface symbols here.
+# The integration module uses client-side generated protocol code. The full-suite
+# checkout is built against the system wlroots package and need not contain a
+# source checkout, so fetch the pinned source for its protocol XMLs when needed.
+if [[ ! -f "$WLROOTS_SRC/protocol/wlr-virtual-pointer-unstable-v1.xml" ]]; then
+    mkdir -p "$(dirname "$WLROOTS_SRC")"
+    git clone --depth 1 --branch "$WLROOTS_VERSION" \
+        https://gitlab.freedesktop.org/wlroots/wlroots.git "$WLROOTS_SRC"
+fi
+
 command -v wayland-scanner >/dev/null || {
     echo "build-wlcs: wayland-scanner is required" >&2
     exit 1
@@ -79,8 +87,8 @@ command -v wayland-scanner >/dev/null || {
 # Keep this list explicit. A shell glob here used to turn a failed generation
 # into a confusing `cc: Could not open input file` in the full-suite job.
 protocol_specs=(
-    "$SDE_ROOT/third_party/wlroots/protocol/wlr-virtual-pointer-unstable-v1.xml"
-    "$SDE_ROOT/third_party/wlroots/protocol/virtual-keyboard-unstable-v1.xml"
+    "$WLROOTS_SRC/protocol/wlr-virtual-pointer-unstable-v1.xml"
+    "$WLROOTS_SRC/protocol/virtual-keyboard-unstable-v1.xml"
     "$SDE_ROOT/Services/WindowServer/protocol/serenity-virtual-input.xml"
     "$SDE_ROOT/Services/WindowServer/protocol/serenity-wlcs-control.xml"
 )
