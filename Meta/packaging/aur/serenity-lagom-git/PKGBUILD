@@ -7,7 +7,7 @@
 
 pkgname=serenity-lagom-git
 pkgver=r570.04a2577
-pkgrel=1
+pkgrel=2
 pkgdesc="SerenityOS userland framework, applications and resources for SDE"
 arch=('x86_64')
 url="https://github.com/jmalcolm137/libgui-wayland"
@@ -17,7 +17,7 @@ conflicts=('serenity-lagom')
 depends=(
     wayland libdrm libinput libxkbcommon pixman libxcb xcb-util-wm
     libdisplay-info pipewire libpipewire dbus glib2 fontconfig freetype2
-    libunwind libelf libei
+    libunwind libelf libei libpulse
 )
 makedepends=(
     base-devel cmake ninja meson pkgconf git python wayland-protocols

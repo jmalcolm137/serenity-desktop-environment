@@ -1,4 +1,4 @@
-# SDE v0.1.0-rc1
+# SDE v0.1.0-rc2
 
 **Status:** experimental release candidate · **Date:** 2026-10-24
 
@@ -21,7 +21,7 @@ The release uses the split package layout:
 Install the framework package first, then the session package:
 
 ```sh
-sudo pacman -U serenity-lagom-git-r570.04a2577-1-x86_64.pkg.tar.zst
+sudo pacman -U serenity-lagom-git-r570.04a2577-2-x86_64.pkg.tar.zst
 sudo pacman -U serenity-desktop-environment-git-r572.6cbda1c-1-x86_64.pkg.tar.zst
 ```
 

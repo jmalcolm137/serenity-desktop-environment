@@ -11,7 +11,7 @@ experience must also be reproducible on a clean machine.
 ## Progress as of 2026-10-24
 
 - Full suite, smoke, image and budget checks pass on run `40048413024`.
-- Framework package built: `serenity-lagom-git r570.04a2577-1`.
+- Framework package built: `serenity-lagom-git r570.04a2577-2`.
 - Session package built: `serenity-desktop-environment-git r572.6cbda1c-1`.
 - Both packages were extracted into a clean prefix and started headless; Taskbar,
   Desktop and all eight applets mapped without a crash.
@@ -19,7 +19,8 @@ experience must also be reproducible on a clean machine.
   `/usr/lib/sde/lib`.
 - AUR publication is blocked on missing AUR SSH credentials on the maintainer
   machine.
-- The machine-level clean install and reboot test is still pending.
+- A clean Arch cloud VM installed the packages through SDDM autologin and
+  rebooted twice; Taskbar, Desktop and all eight applets returned automatically.
 
 ## 0. Current blockers
 
