@@ -71,6 +71,11 @@ HEIGHT="${SIZE#*x}"
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-scene.XXXXXX")"
 chmod 700 "$RUNTIME"
 export SDE_STATE_DIR="$RUNTIME"
+# Keep scene services off the live session's /tmp/session/0 portal sockets.
+# In particular, Browser creates a WebView database through SQLServer; sharing
+# the live SQL socket can make it fail before its first window is mapped.
+export SDE_SESSION_DIR="$RUNTIME/session"
+mkdir -p "$SDE_SESSION_DIR/portal"
 : "${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"
 export XDG_RUNTIME_DIR
 
@@ -248,7 +253,7 @@ EOF
 
     if [[ -n "$SCREENSHOT" ]]; then
         echo "==> letting the scene settle (browser startup can be slow)..."
-        sleep "${SDE_SCENE_SETTLE:-12}"
+        sleep "${SDE_SCENE_SETTLE:-20}"
         # Type `uname -a` and `df -Th` into the Terminal (so the capture shows the
         # prompt, the commands and the output), then click the File Manager (the
         # reference screenshot has File Manager as the active window — exactly one
@@ -294,7 +299,8 @@ EOF
             --sleep 300 \
             --move $((WIDTH * 3 / 4)) 10 --button 0x110 press --sleep 60 --button 0x110 release --sleep 400 \
             --move 20 $((HEIGHT - 14)) --button 0x110 press --sleep 80 --button 0x110 release --sleep 400 \
-            --move 60 $((HEIGHT - 302)) --sleep 700 >/dev/null 2>&1 || true
+            --move 60 $((HEIGHT - 326)) --sleep 800 \
+            --move 300 $((HEIGHT - 206)) --sleep 900 >/dev/null 2>&1 || true
         sleep 0.5
         if [[ ! -x "$SDE_ROOT/build/tools/sde-screenshot" ]]; then
             "$SDE_ROOT/scripts/build-tools.sh" >/dev/null 2>&1 || true
