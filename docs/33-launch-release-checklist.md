@@ -58,6 +58,7 @@ protocol paths.
 - [x] Release notes include known limitations and verification evidence.
 - [x] Repository topics and the issue template are configured.
 - [ ] Repository social preview is still a manual GitHub settings step.
+      Source image: `docs/images/sde-social-preview.png` (1200x630).
 
 ## Sign-off
 
