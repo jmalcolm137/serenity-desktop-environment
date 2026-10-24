@@ -21,3 +21,6 @@
 # Python bytecode from the SDE scripts
 __pycache__/
 *.pyc
+
+# Release package artifacts
+/dist/
