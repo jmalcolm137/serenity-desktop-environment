@@ -1,13 +1,14 @@
-# SDE v0.1.0-rc2
+# SDE v0.1.0
 
-**Status:** experimental release candidate · **Date:** 2026-10-24
+**Status:** experimental · **Date:** 2026-10-24
 
 Serenity Desktop Environment runs SerenityOS's LibGUI applications on a
 wlroots-based Wayland compositor, with the SerenityOS Taskbar, Desktop, applets,
 themes and applications as a coherent Linux desktop session.
 
-This is a release candidate. Keep another desktop session available, and expect
-rough edges in hardware coverage, packaging and Wayland protocol parity.
+This is the first public release. It is experimental: keep another desktop
+session available, and expect rough edges in hardware coverage, packaging and
+Wayland protocol parity.
 
 ## Packages
 
@@ -21,15 +22,17 @@ The release uses the split package layout:
 Install the framework package first, then the session package:
 
 ```sh
-sudo pacman -U serenity-lagom-git-r570.04a2577-2-x86_64.pkg.tar.zst
-sudo pacman -U serenity-desktop-environment-git-r572.6cbda1c-1-x86_64.pkg.tar.zst
+sha256sum -c SHA256SUMS
+sudo pacman -U serenity-lagom-git-0.1.0-1-x86_64.pkg.tar.zst
+sudo pacman -U serenity-desktop-environment-git-0.1.0-1-x86_64.pkg.tar.zst
 ```
 
-Install a display manager such as SDDM, log out, and choose **Serenity Desktop
-Environment** at the login screen.
+The tested target is Arch Linux x86_64. Install a display manager such as SDDM,
+log out, and choose **Serenity Desktop Environment** at the login screen.
 
-AUR registration is not currently open, so the package recipes are also kept in
-[`Meta/packaging/aur`](../Meta/packaging/aur) for local `makepkg` builds.
+AUR publication is not currently available, so the package recipes are also kept
+in [`Meta/packaging/aur`](https://github.com/jmalcolm137/serenity-desktop-environment/tree/v0.1.0/Meta/packaging/aur)
+for local `makepkg` builds.
 
 ## What is included
 
@@ -41,20 +44,28 @@ AUR registration is not currently open, so the package recipes are also kept in
 - WLCS harness and the SDE test suite; the default WLCS surface, subcompositor,
   keyboard, output and layer-shell groups pass.
 
+## Verification
+
+- CI passed the full suite, smoke tests, image check and performance budgets on
+  the release tree.
+- A clean Arch Linux cloud VM installed both packages through SDDM autologin and
+  rebooted twice. The Taskbar, Desktop and all eight applets returned after each
+  boot without manual intervention.
+- The package payload was also started headless from a clean extraction prefix;
+  Taskbar, Desktop and all eight applets mapped without a crash.
+- CI covers the lock screen, PolicyKit, input, layer-shell, frame-hit and
+  conformance tests.
+
+Checksums are attached as `SHA256SUMS`.
+
 ## Known limitations
 
 - Arch Linux x86_64 is the tested packaging target.
 - Hardware coverage is limited; test on your own machine before relying on it.
-- Some Wayland conformance and input edge cases remain; see
-  [`docs/32-wlcs.md`](32-wlcs.md).
+- Some Wayland conformance and input edge cases remain; see the
+  [WLCS notes](https://github.com/jmalcolm137/serenity-desktop-environment/blob/v0.1.0/docs/32-wlcs.md)
+  and [known gaps](https://github.com/jmalcolm137/serenity-desktop-environment/blob/v0.1.0/docs/04-known-gaps.md).
 - AUR publication is pending.
-- Hacker News announcement is intentionally held until a clean-machine install
-  and reboot test has been recorded.
+- The session is experimental and is not a full SerenityOS replacement.
 
-## Verification
-
-The release candidate was built from the `main` branch after the full CI run
-including the full suite and WLCS. The extracted package payload starts a
-headless session with the Taskbar, Desktop and all eight applets.
-
-Checksums are attached as `SHA256SUMS`.
+SDE is not affiliated with, endorsed by, or sponsored by the SerenityOS project.

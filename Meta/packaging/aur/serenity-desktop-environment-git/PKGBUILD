@@ -5,7 +5,7 @@
 # installs only its own binaries/scripts; the framework package owns bin/lib/share.
 
 pkgname=serenity-desktop-environment-git
-pkgver=r572.6cbda1c
+pkgver=0.1.0
 pkgrel=1
 pkgdesc="The SerenityOS desktop experience on Wayland (compositor, shell and services)"
 arch=('x86_64')
@@ -27,11 +27,15 @@ makedepends=(
     libpulse zip unzip patchelf
 )
 source=(
-    "serenity-desktop-environment::git+https://github.com/jmalcolm137/serenity-desktop-environment.git"
+    "serenity-desktop-environment::git+https://github.com/jmalcolm137/serenity-desktop-environment.git#tag=v0.1.0"
 )
 sha256sums=('SKIP')
 
 pkgver() {
+    if [[ -n ${SDE_RELEASE_VERSION:-} ]]; then
+        printf '%s' "$SDE_RELEASE_VERSION"
+        return 0
+    fi
     cd "$srcdir/serenity-desktop-environment"
     printf 'r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
 }
@@ -64,4 +68,7 @@ package() {
     # build RUNPATH contains the AUR $srcdir. Replace it with the installed
     # framework location; the system loader still supplies libwlroots.
     patchelf --set-rpath /usr/lib/sde/lib "$pkgdir/usr/lib/sde/bin/WindowServer"
+
+    install -Dm644 "$srcdir/serenity-desktop-environment/LICENSE" \
+        "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

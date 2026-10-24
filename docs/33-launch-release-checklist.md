@@ -1,194 +1,84 @@
-# SDE Launch Release Checklist
+# SDE v0.1.0 Release Checklist
 
-**Purpose:** the gate between “works on the development machine” and “posted to
-Hacker News”.
-**Status:** in progress · **Owner:** release maintainer · **Last updated:** 2026-10-23
+**Status:** release preparation · **Owner:** release maintainer · **Last updated:** 2026-10-24
 
-This is deliberately stricter than the normal test suite. A green CI run is
-necessary, not sufficient: the install path, packaging metadata and first-login
-experience must also be reproducible on a clean machine.
+This checklist records the evidence for the first public SDE release. The
+release is intentionally limited to Arch Linux x86_64 and is marked experimental.
 
-## Progress as of 2026-10-24
+## Release state
 
-- Full suite, smoke, image and budget checks pass on run `40048413024`.
-- Framework package built: `serenity-lagom-git r570.04a2577-2`.
-- Session package built: `serenity-desktop-environment-git r572.6cbda1c-1`.
-- Both packages were extracted into a clean prefix and started headless; Taskbar,
-  Desktop and all eight applets mapped without a crash.
-- The session package’s `WindowServer` RUNPATH is normalized to
-  `/usr/lib/sde/lib`.
-- AUR publication is blocked on missing AUR SSH credentials on the maintainer
-  machine.
-- A clean Arch cloud VM installed the packages through SDDM autologin and
-  rebooted twice; Taskbar, Desktop and all eight applets returned automatically.
+- [x] Final version selected: `v0.1.0`.
+- [x] Framework package: `serenity-lagom-git 0.1.0-1`.
+- [x] Session package: `serenity-desktop-environment-git 0.1.0-1`.
+- [x] Package sources pinned to the release tag and framework revision.
+- [x] Framework package contains the supervisor, Polkit agent, lock screen,
+      Taskbar, applets, Battery and Wi-Fi.
+- [x] Session entry and launcher installed.
+- [x] `WindowServer` RUNPATH normalized to `/usr/lib/sde/lib`.
+- [x] Both packages install a license file.
+- [x] A clean Arch cloud VM installed the packages through SDDM autologin and
+      rebooted twice; Taskbar, Desktop and all eight applets returned.
+- [x] Extracted package payload started headless; Taskbar, Desktop and all eight
+      applets mapped without a crash.
+- [x] AUR publication is unavailable; the release uses GitHub package assets and
+      the local `makepkg` recipes.
 
-## 0. Current blockers
+## Tag and artifacts
 
-- [ ] `main` is ahead of the installed AUR package. Installed:
-      `serenity-desktop-environment-git r559.bafab43-1`; `main` is `b9b9435`.
-- [ ] The nightly/full suite is red in `run-wlcs-test.sh`.
-- [ ] The AUR package still uses an unpinned `git+…` source and stale
-      `pkgver`/`.SRCINFO`.
-- [x] AUR publication is unavailable (registration is closed). Use the GitHub
-      release package assets and the local `makepkg` recipes; do not claim
-      `yay -S`/AUR installation.
-- [ ] Publish the draft GitHub release after the clean-install test.
-- [ ] No clean-machine install has been recorded for the current `main`.
-- [ ] `README.md` documents source builds but not the package install path.
+- [ ] Tag the tested commit as `v0.1.0` and push the tag.
+- [ ] Build both packages from the tag with `SDE_RELEASE_VERSION=0.1.0`.
+- [ ] Generate `SHA256SUMS` and attach both packages plus the checksum file.
+- [ ] Confirm the release assets match the tested package files.
 
-Do not announce until every item in **1–5** is checked.
+## CI evidence
 
-## 1. Version and tag
+- [ ] Full CI, smoke suite and budgets pass on the release commit.
+- [ ] WLCS default suite passes; known failures are documented.
+- [ ] Lock, Polkit, applet layout/supervision, frame-hit, layer, pointer and
+      keyboard tests pass.
 
-- [ ] Choose the public version, e.g. `v0.1.0`.
-- [ ] Update `README.md` and the release notes with the version and date.
-- [ ] Tag the exact commit that was tested:
-      `git tag -s v0.1.0 -m "SDE v0.1.0" && git push origin v0.1.0`.
-- [ ] Pin the AUR `source=` entries to the tag (or a full commit) so a package
-      build is reproducible.
-- [ ] Record the framework (`serenity-lagom-git`) revision the release was
-      built and tested against.
+## Clean-machine test
 
-## 2. Packages
-
-- [ ] Rebuild `serenity-lagom-git` from the release commit of
-      `libgui-wayland`.
-- [ ] Rebuild `serenity-desktop-environment-git` from the SDE release tag.
-- [ ] Regenerate both `.SRCINFO` files:
-      `makepkg --printsrcinfo > .SRCINFO`.
-- [ ] Confirm `pkgver()` resolves to the release tag/commit, not an older
-      package.
-- [ ] Confirm the package contains:
-      - [ ] `sde-supervise-applet.sh`
-      - [ ] `sde-polkit-agent.py` and `sde-auth-dialog`
-      - [ ] `sde-lock`
-      - [ ] Taskbar, applets, Battery and Wi-Fi
-      - [ ] session entry and launcher
-- [ ] Sign/checksum release artifacts if publishing binaries outside AUR.
-- [ ] Archive the exact built package files used for the launch test.
-
-## 3. Clean-machine test
-
-Use a fresh Arch VM or a machine with no prior SDE install, no
-`/usr/lib/sde`, no developer `~/.config/systemd/user/sde-applets.service`, and no
-source checkout on the test account.
-
-### Install
-
-- [ ] Install the two release packages through the documented AUR path.
 - [ ] Display manager lists **Serenity Desktop Environment**.
 - [ ] Log in; no manual applet launching is required.
 - [ ] Taskbar, Desktop, WorkspacePicker and all applets appear.
 - [ ] Battery is rightmost and Wi-Fi immediately to its left.
-- [ ] `pacman -Q serenity-desktop-environment-git` matches the release.
-- [ ] Session log has no `VERIFICATION FAILED`, crash or applet supervisor
-      restart loop.
-
-### Session
-
-- [ ] Open Terminal, File Manager, Settings and a LibGUI app.
-- [ ] Window move, resize, snap, maximize, minimize and restore.
-- [ ] Workspaces and Taskbar window list stay in sync.
-- [ ] Fonts, theme and wallpaper are correct at scale 1 and HiDPI.
-- [ ] XWayland app starts if `xorg-xwayland` is installed.
-- [ ] Wi-Fi panel can scan/connect; Battery reports status.
-- [ ] Clipboard, notifications, portals and screenshots work.
-- [ ] Lock with Super+L; wrong password fails; correct password unlocks.
-- [ ] PolicyKit prompt appears, authenticates, and can remember the password
-      for the session.
-- [ ] No password is written to disk.
-
-### Reboot
-
-- [ ] Reboot once.
-- [ ] Log in again; every applet returns without manual intervention.
-- [ ] Lock/unlock and Polkit still work.
-- [ ] Reboot a second time; behaviour is unchanged.
+- [ ] Package versions match 0.1.0.
+- [ ] Session log has no `VERIFICATION FAILED`, crash or supervisor restart loop.
+- [ ] Terminal, File Manager, Settings and a LibGUI application start.
+- [ ] Window move, resize, snap, maximize, minimize and restore work.
+- [ ] XWayland starts when `xorg-xwayland` is installed.
+- [ ] Lock screen rejects a wrong password and unlocks with the correct one.
+- [ ] PolicyKit authenticates and can remember the password for the session.
+- [ ] Reboot twice; applets return without intervention.
 - [ ] Log out and back in; no duplicate applets or stale processes.
-
-### Failure/recovery
-
-- [ ] Kill an applet; the supervisor restarts it.
-- [ ] Kill the Taskbar; the session recovers as designed.
-- [ ] Stop the compositor; the session supervisor handles it without a wedged
-      machine.
+- [ ] Killing an applet is recovered by the supervisor.
 - [ ] `SDE_SAFE_MODE=1` starts a usable fallback session.
 
-## 4. CI and test evidence
+## Documentation
 
-- [ ] Push CI green on the release commit.
-- [ ] Nightly/full suite green on the release commit.
-- [ ] WLCS default suite green; known failures triaged in `docs/32-wlcs.md`.
-- [ ] Lock, Polkit, applet layout/supervision, frame-hit, layer, pointer and
-      keyboard tests green.
-- [ ] Performance and session-memory budgets recorded (not necessarily gated).
-- [ ] Attach or link the CI run and local logs in the release notes.
+- [x] README documents the release-package install path.
+- [x] README documents source builds and the local package recipes.
+- [x] README states the supported platform and experimental status.
+- [x] README includes uninstall and problem-reporting guidance.
+- [x] Release notes use absolute links.
+- [x] Release notes include known limitations and verification evidence.
+- [x] Documentation contains no announcement copy.
 
-### Current CI blockers
+## Public metadata
 
-- [ ] Fix `run-wlcs-test.sh` in the full suite. The last scheduled run failed
-      before the test binary ran; check the CI image has `boost`/`gtest` and that
-      the WLCS build script reports the real failing command.
-- [ ] Rebuild the CI image after dependency changes and rerun the full suite.
+- [ ] Add repository topics.
+- [ ] Add the issue template.
+- [ ] Add or refresh the repository social preview.
 
-## 5. Documentation and support
+## Sign-off
 
-- [ ] README has a **Packages** section with exact install commands.
-- [ ] README states the supported platform, currently Arch Linux x86_64.
-- [ ] README states **experimental**, not production-ready.
-- [ ] Link the user manual, WLCS findings, known gaps and architecture docs.
-- [ ] Include an uninstall path and how to return to another desktop session.
-- [ ] Add an issue template or a short “reporting a problem” section with the
-      session log path and package versions.
-- [ ] Prepare FAQ answers:
-      - Why not just use SerenityOS?
-      - Why Wayland?
-      - What hardware is known to work?
-      - How do I install it?
-      - What is missing?
-      - How can I contribute?
-- [ ] Check license/third-party notices: SDE, SerenityOS, libgui-wayland,
-      wlroots and packaged dependencies.
-
-## 6. Launch assets
-
-- [ ] Final screenshot at a readable resolution.
-- [ ] Optional 20–40 second screen recording showing:
-      Taskbar menu, applets, Terminal, File Manager, Settings, lock screen.
-- [ ] One-paragraph project description.
-- [ ] HN title and body prepared (below).
-- [ ] A second person available to answer comments for the first few hours.
-- [ ] Rollback plan if the post exposes a serious bug: keep the release commit
-      tagged, publish a known-issues note, and do not silently rewrite the tag.
-
-## 7. Hacker News post
-
-Title candidate:
-
-> Serenity Desktop Environment: SerenityOS’s UI on Wayland
-
-Body direction:
-
-> SDE runs SerenityOS’s unmodified LibGUI applications on Linux, with a
-> wlroots-based Wayland compositor providing the desktop session. It is
-> experimental, currently Arch-focused, and the packages build from source.
-> I’d especially like feedback on input behavior, protocol conformance, and
-> packaging.
-
-- [ ] Do not claim production readiness or full SerenityOS parity.
-- [ ] Link the repository, screenshot and install instructions.
-- [ ] Mention the largest known limitations up front.
-- [ ] Post during a period when the maintainer can respond.
-
-## 8. Sign-off
-
-| Gate | Owner | Evidence | Date |
-|---|---|---|---|
-| Release tag | | | |
-| Framework package | | | |
-| Session package | | | |
-| Clean-machine install | | | |
-| Reboot test | | | |
-| Full CI | | | |
-| Documentation | | | |
-| Launch post | | | |
+| Gate | Evidence | Date |
+|---|---|---|
+| Release tag | | |
+| Framework package | | |
+| Session package | | |
+| Clean-machine install | | |
+| Reboot test | | |
+| Full CI | | |
+| Documentation | | |

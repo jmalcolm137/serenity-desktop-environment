@@ -1,7 +1,7 @@
 pkgbase = serenity-lagom-git
 	pkgdesc = SerenityOS userland framework, applications and resources for SDE
-	pkgver = r570.04a2577
-	pkgrel = 2
+	pkgver = 0.1.0
+	pkgrel = 1
 	url = https://github.com/jmalcolm137/libgui-wayland
 	arch = x86_64
 	license = BSD-2-Clause
@@ -36,8 +36,8 @@ pkgbase = serenity-lagom-git
 	depends = libpulse
 	provides = serenity-lagom
 	conflicts = serenity-lagom
-	source = libgui-wayland::git+https://github.com/jmalcolm137/libgui-wayland.git
-	source = serenity-desktop-environment::git+https://github.com/jmalcolm137/serenity-desktop-environment.git
+	source = libgui-wayland::git+https://github.com/jmalcolm137/libgui-wayland.git#commit=154be0c994f2515b68ed63b8b9e528ac355134d4
+	source = serenity-desktop-environment::git+https://github.com/jmalcolm137/serenity-desktop-environment.git#tag=v0.1.0
 	sha256sums = SKIP
 	sha256sums = SKIP
 

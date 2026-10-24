@@ -1,0 +1,67 @@
+name: Bug report
+description: Report a reproducible problem with SDE
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing SDE. Please include enough detail to reproduce the
+        problem on a current Arch Linux x86_64 install.
+  - type: input
+    id: sde-version
+    attributes:
+      label: SDE package version
+      description: Output of `pacman -Q serenity-desktop-environment-git serenity-lagom-git`.
+      placeholder: serenity-desktop-environment-git 0.1.0-1 ...
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU and driver
+      description: GPU model and the DRM driver or virtual machine setup.
+      placeholder: e.g. Intel Iris Xe / i915, or QEMU virtio-gpu
+    validations:
+      required: true
+  - type: dropdown
+    id: session
+    attributes:
+      label: Session backend
+      options:
+        - DRM/KMS on real hardware
+        - DRM/KMS in a virtual machine
+        - Headless backend
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What did you do, and how often does it happen?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Session log
+      description: |
+        Paste the relevant part of `~/.local/state/sde/session.log`, plus any
+        terminal output from the command that failed.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I tested with the latest release packages.
+          required: true
+        - label: I kept another desktop session available and can switch back to it.
+          required: true

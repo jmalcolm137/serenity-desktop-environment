@@ -1,6 +1,6 @@
 pkgbase = serenity-desktop-environment-git
 	pkgdesc = The SerenityOS desktop experience on Wayland (compositor, shell and services)
-	pkgver = r572.6cbda1c
+	pkgver = 0.1.0
 	pkgrel = 1
 	url = https://github.com/jmalcolm137/serenity-desktop-environment
 	arch = x86_64
@@ -46,7 +46,7 @@ pkgbase = serenity-desktop-environment-git
 	optdepends = sddm: display manager that lists the SDE Wayland session
 	provides = serenity-desktop-environment
 	conflicts = serenity-desktop-environment
-	source = serenity-desktop-environment::git+https://github.com/jmalcolm137/serenity-desktop-environment.git
+	source = serenity-desktop-environment::git+https://github.com/jmalcolm137/serenity-desktop-environment.git#tag=v0.1.0
 	sha256sums = SKIP
 
 pkgname = serenity-desktop-environment-git
