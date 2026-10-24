@@ -30,15 +30,10 @@ Download both packages and `SHA256SUMS` from the
 Install the framework first, then the session package:
 
 ```sh
+sudo pacman -Syu
 sha256sum -c SHA256SUMS
 sudo pacman -U serenity-lagom-git-0.1.0-1-x86_64.pkg.tar.zst
 sudo pacman -U serenity-desktop-environment-git-0.1.0-1-x86_64.pkg.tar.zst
-```
-
-Make sure the package database is current before installing:
-
-```sh
-sudo pacman -Syu
 ```
 
 Install a display manager such as SDDM if you do not already have one:
@@ -49,7 +44,7 @@ sudo systemctl enable --now sddm
 ```
 
 Log out, choose **Serenity Desktop Environment** at the login screen, and log
-back in. `xorg-xwayland` is optional; install it if you need X11 applications.
+back in. The session package includes XWayland support.
 
 To remove the session again:
 

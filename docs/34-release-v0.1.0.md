@@ -49,10 +49,8 @@ for local `makepkg` builds.
 - CI passed the full suite, smoke tests, image check and performance budgets on
   the release tree.
 - A clean Arch Linux cloud VM installed both packages through SDDM autologin and
-  rebooted twice. The Taskbar, Desktop and all eight applets returned after each
-  boot without manual intervention.
-- The package payload was also started headless from a clean extraction prefix;
-  Taskbar, Desktop and all eight applets mapped without a crash.
+  rebooted twice. The Taskbar, Desktop and all configured applets returned after
+  each boot without manual intervention.
 - CI covers the lock screen, PolicyKit, input, layer-shell, frame-hit and
   conformance tests.
 
