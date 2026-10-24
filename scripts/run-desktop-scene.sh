@@ -113,7 +113,9 @@ PY
 write_placement() {
     local right=$((WIDTH / 2))
     local top=$((HEIGHT * 45 / 100))
-    local bottom=$((HEIGHT * 47 / 100))
+    # Fill from the top row to the Taskbar; leaving 26px of wallpaper here makes
+    # the lower windows look detached from the panel.
+    local bottom=$((HEIGHT - top - 26))
     cat > "$RUNTIME/WindowServer.ini" <<EOF
 [Placement]
 Windows=Terminal:0,0,${right},${top};File Manager:${right},0,$((WIDTH - right)),${top};Browser:0,${top},${right},${bottom};System Monitor:${right},${top},$((WIDTH - right)),${bottom}
