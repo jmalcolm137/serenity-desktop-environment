@@ -24,6 +24,7 @@ APPS=(
     KeyboardSettings Mail MailSettings Maps MapsSettings MouseSettings NetworkSettings
     Presenter Run Screenshot Settings SpaceAnalyzer Spreadsheet SoundPlayer Piano
     SystemMonitor Debugger CrashReporter TerminalSettings TextEditor ThemeEditor UsersSettings VideoPlayer Weather
+    PixelPaint
     # The games and DevTools (the Taskbar's Games and Development menus).
     2048 BrickGame Chess ColorLines FlappyBug Flood GameOfLife Hearts MasterWord
     Minesweeper Snake Solitaire Spider ChessEngine Sudoku
