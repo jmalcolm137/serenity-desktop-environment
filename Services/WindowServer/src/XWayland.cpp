@@ -32,9 +32,25 @@ static void x11_fetch_icon(X11Toplevel& toplevel);
 
 X11Toplevel* x11_toplevel_for_wlr_surface(Server& server, wlr_surface* surface)
 {
-    for (auto& toplevel : server.x11_toplevels) {
-        if (toplevel->xsurface && toplevel->xsurface->surface == surface)
-            return toplevel.ptr();
+    auto* xsurface = wlr_xwayland_surface_try_from_wlr_surface(surface);
+    if (!xsurface)
+        return nullptr;
+
+    // Some X11 clients (VirtualBox is one) render their content into child X11
+    // windows.  The scene buffer under a click can therefore belong to a child
+    // rather than to the managed top-level.  Walk the X11 parent chain so focus
+    // and raise still target the top-level; otherwise the click leaves the
+    // previously focused native window active, which then raises over the X11
+    // client.  Override-redirect children (menus/tooltips) are not focusable,
+    // so keep walking to their managed ancestor.
+    for (auto* candidate = xsurface; candidate; candidate = candidate->parent) {
+        for (auto& toplevel : server.x11_toplevels) {
+            if (toplevel->xsurface != candidate)
+                continue;
+            if (!toplevel->override_redirect)
+                return toplevel.ptr();
+            break;
+        }
     }
     return nullptr;
 }
