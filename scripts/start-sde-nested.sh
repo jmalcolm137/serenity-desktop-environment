@@ -41,7 +41,12 @@ export SDE_APP_BIN_DIR="$BUILD/bin"
 # shellcheck source=scripts/sde-accessibility.sh
 . "$SDE_ROOT/scripts/sde-accessibility.sh"
 sde_export_at_spi_bus
-export SDE_WM_PORTAL_PATH="/tmp/portal/wm"
+# A nested session is still private: using the live session's /tmp/portal/wm
+# would make its WindowServer unlink and rebind the live Taskbar's socket.
+if [[ -z "${SDE_WM_PORTAL_PATH:-}" ]]; then
+    SDE_WM_PORTAL_PATH="$XDG_RUNTIME_DIR/sde-nested-wm-$SESSION_DISPLAY"
+fi
+export SDE_WM_PORTAL_PATH
 export SDE_LOCK_CMD="${SDE_LOCK_CMD:-swaylock}"
 export SDE_SESSION_IDLE_SECONDS="${SDE_SESSION_IDLE_SECONDS:-0}"
 # Seed a fresh state directory with the intended default wallpaper, as

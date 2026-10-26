@@ -133,7 +133,10 @@ XDG_CONFIG_HOME="$CONFIG_HOME" SERENITY="$SERENITY" "$SDE_ROOT/scripts/seed-sere
 export SERENITY_RES_ROOT="$SERENITY/Base/res"
 export LD_LIBRARY_PATH="$BUILD/lib"
 export SDE_APP_BIN_DIR="$BUILD/bin"
-export SDE_WM_PORTAL_PATH="/tmp/portal/wm"
+# The scene is a private compositor. Never reuse the live session WMS socket:
+# the headless WindowServer unlinks and rebinds its portal path, which would
+# strand a later Taskbar restart on a stale socket.
+export SDE_WM_PORTAL_PATH="$RUNTIME/wm"
 SDE_LOCK_BIN="${SDE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/build/tools/sde-lock"
 if [ -z "${SDE_LOCK_CMD:-}" ]; then
     if [ -x "$SDE_LOCK_BIN" ]; then SDE_LOCK_CMD="$SDE_LOCK_BIN"; else SDE_LOCK_CMD=swaylock; fi
