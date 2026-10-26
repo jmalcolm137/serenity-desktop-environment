@@ -44,6 +44,7 @@ check() {
 check "runtime libraries were installed" "[[ -n \"\$(find '$PREFIX/lib' -name 'liblagom-gui.so*' -print -quit)\" ]]"
 check "applications were installed" "[[ -x '$PREFIX/bin/Taskbar' && -x '$PREFIX/bin/DisplaySettings' ]]"
 check "resources were installed" "[[ -d '$PREFIX/share/res/themes' ]]"
+check "Serenity manual pages were installed" "[[ -f '$RUNTIME/root/usr/share/man/man1/Applications/Terminal.md' && -f '$RUNTIME/root/usr/share/man/man6/Hearts.md' ]]"
 check "generated headers were installed" "[[ -f '$PREFIX/framework/AK/Debug.h' ]]"
 check "the Serenity source was installed" "[[ -f '$PREFIX/framework/serenity/AK/Debug.h.in' ]]"
 check "the LibWM headers were installed" "[[ -f '$PREFIX/framework/src/LibWM.cpp' ]]"

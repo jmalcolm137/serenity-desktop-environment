@@ -47,6 +47,13 @@ if [[ -d "$SERENITY/Base/home/anon/.config" ]]; then
     cp -a "$SERENITY/Base/home/anon/.config/." "$DEST/share/skeleton/"
 fi
 
+# Help (and the framework's Help app) reads manuals from /usr/share/man, not the
+# framework source tree. The manual pages are a framework payload.
+if [[ -d "$SERENITY/Base/usr/share/man" ]]; then
+    mkdir -p "$DESTDIR/usr/share/man"
+    cp -a "$SERENITY/Base/usr/share/man/." "$DESTDIR/usr/share/man/"
+fi
+
 # Generated headers (AK/Debug.h, the IPC endpoint headers, ...) and the source
 # they belong to. Keep the same relative layout the build includes use. Use tar
 # rather than rsync: the CI image carries tar but not rsync.
@@ -60,4 +67,5 @@ install -d "$DEST/framework/bin"
 
 echo "==> installed"
 echo "    runtime : $DEST/{bin,lib,share/res,share/skeleton}"
+echo "    manuals : ${DESTDIR}/usr/share/man"
 echo "    headers : $DEST/framework"

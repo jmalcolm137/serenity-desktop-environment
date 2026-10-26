@@ -89,6 +89,19 @@ sed "s|^Exec=.*|Exec=$PREFIX/bin/xdg-desktop-portal-serenity|" \
     > "$DESTDIR/usr/share/dbus-1/services/org.freedesktop.impl.portal.desktop.serenity.service"
 chmod 0644 "$DESTDIR/usr/share/dbus-1/services/org.freedesktop.impl.portal.desktop.serenity.service"
 
+# Help hardcodes /usr/share/man as its manual root. The Serenity source has the
+# manual pages, and Base/res does not contain them, so install the manual tree
+# alongside the other system integration files. A split install relies on the
+# framework package, which installs the same tree.
+if [[ "$WITHOUT_FRAMEWORK" -eq 0 ]]; then
+    if [[ -d "$SERENITY/Base/usr/share/man" ]]; then
+        mkdir -p "$DESTDIR/usr/share/man"
+        cp -a "$SERENITY/Base/usr/share/man/." "$DESTDIR/usr/share/man/"
+    else
+        echo "warning: no $SERENITY/Base/usr/share/man; Help will have no manuals" >&2
+    fi
+fi
+
 # The framework's applications and shared libraries. bin/ and lib/ are siblings,
 # matching the Lagom RUNPATH ($ORIGIN:$ORIGIN/../lib); the launcher also exports
 # LD_LIBRARY_PATH for the SDE binaries, whose build RUNPATH points at the build
@@ -174,6 +187,7 @@ echo "==> installed"
 echo "    binaries : $BIN"
 echo "    libs     : $LIB"
 echo "    resources: $SHARE/res"
+echo "    manuals  : ${DESTDIR}/usr/share/man"
 echo "    scripts  : $SCRIPTS"
 echo "    launcher : $BIN/sde-session"
 echo "    session  : $DESKTOP"
