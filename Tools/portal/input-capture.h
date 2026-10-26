@@ -17,4 +17,7 @@ namespace InputCapture {
 
 void register_interface(Portal::Service&);
 
+bool has_session(ByteString const& session_handle);
+void set_clipboard_enabled(ByteString const& session_handle, bool enabled);
+
 }

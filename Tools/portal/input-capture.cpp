@@ -59,6 +59,7 @@ struct Session {
     ByteString handle;
     struct serenity_input_capture_session_v1* wl_session { nullptr };
     u32 capabilities { 0 };
+    bool clipboard_enabled { false };
     // The D-Bus call waiting for the compositor's reply; valid only while a
     // request/response method is blocked in wl_display_roundtrip.
     Portal::MethodCall* pending_eis { nullptr };
@@ -368,7 +369,7 @@ void handle_call(Portal::MethodCall& call)
 
         Portal::Dictionary results;
         results.append(Portal::Value::Entry { ByteString { "capabilities"sv }, Portal::Value::make_variant(Portal::Value::make_uint32(granted)) });
-        results.append(Portal::Value::Entry { ByteString { "clipboard_enabled"sv }, Portal::Value::make_variant(Portal::Value::make_bool(false)) });
+        results.append(Portal::Value::Entry { ByteString { "clipboard_enabled"sv }, Portal::Value::make_variant(Portal::Value::make_bool(session->clipboard_enabled)) });
         if (persist_mode != 0) {
             Screencast::RestoreData restore;
             restore.types = granted;
@@ -510,6 +511,17 @@ void handle_call(Portal::MethodCall& call)
     call.reply_error(Portal::ErrorName::UnknownMethod, ByteString::formatted("unknown method {}", method));
 }
 
+}
+
+bool InputCapture::has_session(ByteString const& session_handle)
+{
+    return session_find(session_handle) != nullptr;
+}
+
+void InputCapture::set_clipboard_enabled(ByteString const& session_handle, bool enabled)
+{
+    if (auto* session = session_find(session_handle))
+        session->clipboard_enabled = enabled;
 }
 
 void InputCapture::register_interface(Portal::Service& service)

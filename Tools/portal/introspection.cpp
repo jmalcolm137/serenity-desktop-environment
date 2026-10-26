@@ -180,6 +180,7 @@ constexpr InterfaceIntrospection s_interfaces[] = {
     { "org.freedesktop.impl.portal.GlobalShortcuts"sv,
       R"XML(<interface name='org.freedesktop.impl.portal.GlobalShortcuts'>
       <property name='version' type='u' access='read'/>
+      <property name='AvailableDeviceTypes' type='u' access='read'/>
       <method name='CreateSession'>
       <arg type='o' name='handle' direction='in'/>
       <arg type='o' name='session_handle' direction='in'/>
@@ -542,10 +543,9 @@ constexpr InterfaceIntrospection s_interfaces[] = {
       <arg type='u' name='state' direction='in'/>
       </method>
       <method name='ConnectToEIS'>
-      <arg type='o' name='handle' direction='in'/>
       <arg type='o' name='session_handle' direction='in'/>
+      <arg type='s' name='app_id' direction='in'/>
       <arg type='a{sv}' name='options' direction='in'/>
-      <arg type='u' name='response' direction='out'/>
       <arg type='h' name='fd' direction='out'/>
       </method>
       </interface>)XML"sv },
@@ -671,6 +671,42 @@ constexpr InterfaceIntrospection s_interfaces[] = {
       <arg type='u' name='flags' direction='in'/>
       <arg type='a{sv}' name='options' direction='in'/>
       </method>
+      </interface>)XML"sv },
+    { "org.freedesktop.impl.portal.Clipboard"sv,
+      R"XML(<interface name='org.freedesktop.impl.portal.Clipboard'>
+      <property name='version' type='u' access='read'/>
+      <method name='RequestClipboard'>
+      <arg type='o' name='session_handle' direction='in'/>
+      <arg type='a{sv}' name='options' direction='in'/>
+      </method>
+      <method name='SetSelection'>
+      <arg type='o' name='session_handle' direction='in'/>
+      <arg type='a{sv}' name='options' direction='in'/>
+      </method>
+      <method name='SelectionWrite'>
+      <arg type='o' name='session_handle' direction='in'/>
+      <arg type='u' name='serial' direction='in'/>
+      <arg type='h' name='fd' direction='out'/>
+      </method>
+      <method name='SelectionWriteDone'>
+      <arg type='o' name='session_handle' direction='in'/>
+      <arg type='u' name='serial' direction='in'/>
+      <arg type='b' name='success' direction='in'/>
+      </method>
+      <method name='SelectionRead'>
+      <arg type='o' name='session_handle' direction='in'/>
+      <arg type='s' name='mime_type' direction='in'/>
+      <arg type='h' name='fd' direction='out'/>
+      </method>
+      <signal name='SelectionOwnerChanged'>
+      <arg type='o' name='session_handle' direction='out'/>
+      <arg type='a{sv}' name='options' direction='out'/>
+      </signal>
+      <signal name='SelectionTransfer'>
+      <arg type='o' name='session_handle' direction='out'/>
+      <arg type='s' name='mime_type' direction='out'/>
+      <arg type='u' name='serial' direction='out'/>
+      </signal>
       </interface>)XML"sv },
     { "org.freedesktop.impl.portal.Request"sv,
       R"XML(<interface name='org.freedesktop.impl.portal.Request'>

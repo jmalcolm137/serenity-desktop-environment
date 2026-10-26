@@ -49,6 +49,7 @@
 #include "global-shortcuts.h"
 #include "introspection.h"
 #include "input-capture.h"
+#include "clipboard.h"
 #include "inhibit.h"
 #include "remote-desktop.h"
 #include "screencast.h"
@@ -1305,6 +1306,7 @@ ErrorOr<int> serenity_main(Main::Arguments)
     RemoteDesktop::register_interface(*service);
     InputCapture::register_interface(*service);
     GlobalShortcuts::register_interface(*service);
+    Clipboard::register_interface(*service);
 
     dbgln("xdg-desktop-portal-serenity: serving {} on {}", object_path, bus_name);
     return event_loop.exec();

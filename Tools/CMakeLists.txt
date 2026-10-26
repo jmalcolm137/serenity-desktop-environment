@@ -120,6 +120,7 @@ set_target_properties(virtual-input-test PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${
 # `dbus-1` transport (Tools/portal/dbus.h; no GLib/GIO), linking the Lagom
 # userland libraries.
 pkg_check_modules(DBUS REQUIRED IMPORTED_TARGET dbus-1)
+pkg_check_modules(LIBEIS IMPORTED_TARGET libeis-1.0)
 function(sde_portal_tool name)
     cmake_parse_arguments(PARSE_ARGV 1 ARG "" "" "SOURCES;LAGOM;LIBRARIES")
     add_executable(${name} ${ARG_SOURCES})
@@ -158,6 +159,7 @@ set(protocols ${capture_protocols})
 sde_wayland_client_protocol(protocols NAME wlr-virtual-pointer-unstable-v1 XML "${WLR_PROTOCOLS}/wlr-virtual-pointer-unstable-v1.xml")
 sde_wayland_client_protocol(protocols NAME virtual-keyboard-unstable-v1 XML "${WLR_PROTOCOLS}/virtual-keyboard-unstable-v1.xml")
 sde_wayland_client_protocol(protocols NAME serenity-input-capture XML "${SDE_PROTOCOLS}/serenity-input-capture.xml")
+sde_wayland_client_protocol(protocols NAME ext-data-control-v1 XML "${WP}/staging/ext-data-control/ext-data-control-v1.xml")
 sde_portal_tool(xdg-desktop-portal-serenity
     SOURCES
         portal/dbus.cpp
@@ -167,6 +169,7 @@ sde_portal_tool(xdg-desktop-portal-serenity
         portal/screencast.cpp
         portal/remote-desktop.cpp
         portal/input-capture.cpp
+        portal/clipboard.cpp
         portal/global-shortcuts.cpp
         portal/usb.cpp
         portal/permission-store.cpp
@@ -174,6 +177,10 @@ sde_portal_tool(xdg-desktop-portal-serenity
         ${protocols}
     LAGOM ${PORTAL_LAGOM} gfx compress crypto textcodec unicode url filesystem riff ipc
     LIBRARIES PkgConfig::WAYLAND_CLIENT PkgConfig::PIPEWIRE PkgConfig::XKBCOMMON PkgConfig::GBM PkgConfig::LIBDRM)
+if (LIBEIS_FOUND)
+    target_compile_definitions(xdg-desktop-portal-serenity PRIVATE SDE_HAVE_LIBEIS)
+    target_link_libraries(xdg-desktop-portal-serenity PRIVATE PkgConfig::LIBEIS)
+endif()
 
 # sde-lock: the native session locker (docs/11 §10). A plain
 # ext-session-lock-v1 client drawn with LibGfx rather than LibGUI: LibGUI goes
