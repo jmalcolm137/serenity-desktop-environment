@@ -168,8 +168,8 @@ install -Dm644 Base/xdg-desktop-portal/portals.conf \
 The D-Bus service file lets the frontend activate the backend on demand (install
 the binary somewhere on `PATH`); the session also starts it directly.
 
-`UseIn=Serenity` gates the backend on `XDG_CURRENT_DESKTOP=Serenity`; the session
-sets that. With the mapping above, e.g.
+`UseIn=SDE;Serenity` accepts both the SDE session identity (`XDG_CURRENT_DESKTOP=SDE`)
+and legacy `Serenity` sessions. With the mapping above, e.g.
 `gdbus call --session --dest org.freedesktop.portal.Desktop --object-path
 /org/freedesktop/portal/desktop --method org.freedesktop.portal.Settings.Read
 org.freedesktop.appearance color-scheme` is served by this backend.

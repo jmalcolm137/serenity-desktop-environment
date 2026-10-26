@@ -75,6 +75,20 @@ for dialog in AccessDialog AppChooserDialog FileChooserDialog PrintDialog ColorP
     install_if_executable "$SDE_ROOT/build/$dialog/$dialog"
 done
 
+# Portal registration. The frontend only selects the SDE backend when the
+# .portal file is installed and its UseIn list contains the session's
+# XDG_CURRENT_DESKTOP (SDE). Keep the backend activation file absolute too:
+# the SDE bin directory is not necessarily on the session PATH.
+install -d "$DESTDIR/usr/share/xdg-desktop-portal/portals" "$DESTDIR/usr/share/dbus-1/services"
+install -m 0644 "$SDE_ROOT/Base/xdg-desktop-portal/serenity.portal" \
+    "$DESTDIR/usr/share/xdg-desktop-portal/portals/serenity.portal"
+install -m 0644 "$SDE_ROOT/Base/xdg-desktop-portal/portals.conf" \
+    "$DESTDIR/usr/share/xdg-desktop-portal/portals.conf"
+sed "s|^Exec=.*|Exec=$PREFIX/bin/xdg-desktop-portal-serenity|" \
+    "$SDE_ROOT/Base/xdg-desktop-portal/org.freedesktop.impl.portal.desktop.serenity.service" \
+    > "$DESTDIR/usr/share/dbus-1/services/org.freedesktop.impl.portal.desktop.serenity.service"
+chmod 0644 "$DESTDIR/usr/share/dbus-1/services/org.freedesktop.impl.portal.desktop.serenity.service"
+
 # The framework's applications and shared libraries. bin/ and lib/ are siblings,
 # matching the Lagom RUNPATH ($ORIGIN:$ORIGIN/../lib); the launcher also exports
 # LD_LIBRARY_PATH for the SDE binaries, whose build RUNPATH points at the build
@@ -136,6 +150,13 @@ export SDE_WIFI_APPLET="$prefix/bin/WifiApplet"
 export SDE_SESSION_IDLE_BIN="$prefix/bin/sde-idle"
 export SDE_SESSION_DPMS_BIN="$prefix/bin/sde-dpms"
 export SDE_AUTH_DIALOG="$prefix/bin/sde-auth-dialog"
+export SDE_PORTAL_FILE_CHOOSER="$prefix/bin/FileChooserDialog"
+export SDE_PORTAL_PRINT_DIALOG="$prefix/bin/PrintDialog"
+export SDE_PORTAL_ACCESS_DIALOG="$prefix/bin/AccessDialog"
+export SDE_PORTAL_APP_CHOOSER="$prefix/bin/AppChooserDialog"
+export SDE_PORTAL_COLOR_PICKER="$prefix/bin/ColorPicker"
+export SDE_PORTAL_SCREENSHOT_OVERLAY="$prefix/bin/ScreenshotOverlay"
+export SDE_PORTAL_CHOOSER="$prefix/bin/ScreenCastChooser"
 # The native ext-session-lock client shipped by this package. Without this the
 # fallback is swaylock, which the package does not depend on.
 export SDE_LOCK_CMD="${SDE_LOCK_CMD:-$prefix/bin/sde-lock}"

@@ -81,6 +81,16 @@ check "the launcher is installed" "[[ -x '$LAUNCHER' ]]"
 check "the session entry is installed" "[[ -f '$ROOT/usr/share/wayland-sessions/sde.desktop' ]]"
 check "the session entry runs the installed launcher" \
     "grep -qF 'Exec=/usr/lib/sde/bin/sde-session' '$ROOT/usr/share/wayland-sessions/sde.desktop'"
+check "the SDE portal is installed" \
+    "[[ -f '$ROOT/usr/share/xdg-desktop-portal/portals/serenity.portal' ]]"
+check "the SDE portal accepts the SDE desktop name" \
+    "grep -qE '^UseIn=.*SDE' '$ROOT/usr/share/xdg-desktop-portal/portals/serenity.portal'"
+check "the portal preference map is installed" \
+    "[[ -f '$ROOT/usr/share/xdg-desktop-portal/portals.conf' ]]"
+check "the portal D-Bus activation file is installed" \
+    "grep -qF 'Exec=/usr/lib/sde/bin/xdg-desktop-portal-serenity' '$ROOT/usr/share/dbus-1/services/org.freedesktop.impl.portal.desktop.serenity.service'"
+check "the launcher exports the file chooser portal dialog" \
+    "grep -qF 'SDE_PORTAL_FILE_CHOOSER=\"\$prefix/bin/FileChooserDialog\"' '$LAUNCHER'"
 
 echo "=== a headless session from the installed launcher ==="
 setsid env -u WAYLAND_DISPLAY -u DISPLAY \

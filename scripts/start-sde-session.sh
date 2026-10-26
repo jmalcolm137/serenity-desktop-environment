@@ -146,6 +146,25 @@ fi
 # docs/06-service-layering.md.
 export SDE_APP_BIN_DIR="${SDE_APP_BIN_DIR:-$BUILD/bin}"
 
+# The portal backend launches these LibGUI dialogs by absolute path. Source
+# builds keep the dialogs under build/<name>/<name>; installed trees expose them
+# in the app bin directory.
+portal_dialog() {
+    local name="$1"
+    if [[ -x "$SDE_ROOT/build/$name/$name" ]]; then
+        printf '%s' "$SDE_ROOT/build/$name/$name"
+    elif [[ -x "$SDE_APP_BIN_DIR/$name" ]]; then
+        printf '%s' "$SDE_APP_BIN_DIR/$name"
+    fi
+}
+export SDE_PORTAL_FILE_CHOOSER="${SDE_PORTAL_FILE_CHOOSER:-$(portal_dialog FileChooserDialog)}"
+export SDE_PORTAL_PRINT_DIALOG="${SDE_PORTAL_PRINT_DIALOG:-$(portal_dialog PrintDialog)}"
+export SDE_PORTAL_ACCESS_DIALOG="${SDE_PORTAL_ACCESS_DIALOG:-$(portal_dialog AccessDialog)}"
+export SDE_PORTAL_APP_CHOOSER="${SDE_PORTAL_APP_CHOOSER:-$(portal_dialog AppChooserDialog)}"
+export SDE_PORTAL_COLOR_PICKER="${SDE_PORTAL_COLOR_PICKER:-$(portal_dialog ColorPicker)}"
+export SDE_PORTAL_SCREENSHOT_OVERLAY="${SDE_PORTAL_SCREENSHOT_OVERLAY:-$(portal_dialog ScreenshotOverlay)}"
+export SDE_PORTAL_CHOOSER="${SDE_PORTAL_CHOOSER:-$(portal_dialog ScreenCastChooser)}"
+
 # R5 accessibility: make the session's AT-SPI bus visible to every client. This
 # must happen before the services below start, because the LaunchServer captures
 # its environment and hands it to the applications it spawns.
