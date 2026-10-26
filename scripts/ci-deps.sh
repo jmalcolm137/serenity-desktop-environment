@@ -51,6 +51,8 @@ BUILD=(
 # External clients and tools the tests invoke. Without them the tests skip.
 TEST_TOOLS=(
     xterm xorg-xmessage       # the X11 test clients (WM_CLASS grouping, Xwayland)
+    mesa-utils                # glxgears: the X11 GL client
+    foot yad zenity           # common Wayland terminal and GTK clients
     wl-clipboard              # wl-copy/wl-paste: the selection + XWM bridge tests
     imagemagick netpbm        # compare/convert/identify/pnmtopng: screenshot tests
     glib2                     # gdbus: the D-Bus/portal tests

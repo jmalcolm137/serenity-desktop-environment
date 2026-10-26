@@ -92,6 +92,20 @@ wait_for() {
     return 1
 }
 
+require_client() {
+    local name="$1"
+    if command -v "$name" >/dev/null; then
+        return 0
+    fi
+    if [[ "${CI:-}" == "true" ]]; then
+        echo "  FAIL: $name is not installed (scripts/ci-deps.sh must provide it)"
+        fail=1
+    else
+        echo "  SKIP: $name (not installed)"
+    fi
+    return 1
+}
+
 check_client_log() {
     local name="$1" log="$2"
     if grep -qiE 'SIGSEGV|Segmentation fault|ASSERTION FAILED|VERIFICATION FAILED|Failed to parse IPC message' "$log"; then
@@ -107,7 +121,7 @@ run_x11() {
     local name="$1" title="$2"; shift 2
     local log="$RUNTIME/$name.log"
     [[ -n "$X11_DISPLAY" ]] || { echo "  SKIP: $name (Xwayland/DISPLAY unavailable)"; return 0; }
-    command -v "$name" >/dev/null || { echo "  SKIP: $name (not installed)"; return 0; }
+    require_client "$name" || return 0
 
     env -u WAYLAND_DISPLAY DISPLAY="$X11_DISPLAY" "$@" > "$log" 2>&1 &
     APP_PID=$!
@@ -133,7 +147,7 @@ run_x11() {
 run_wayland() {
     local name="$1" title="$2"; shift 2
     local log="$RUNTIME/$name.log"
-    command -v "$name" >/dev/null || { echo "  SKIP: $name (not installed)"; return 0; }
+    require_client "$name" || return 0
 
     env -u DISPLAY WAYLAND_DISPLAY="$SOCK" GDK_BACKEND=wayland GSK_RENDERER=cairo "$@" > "$log" 2>&1 &
     APP_PID=$!
@@ -152,7 +166,15 @@ run_wayland() {
 run_wayland_native() {
     local name="$1" title="$2"; shift 2
     local log="$RUNTIME/$name.log"
-    [[ -x "$BUILD/bin/$name" ]] || { echo "  SKIP: $name (not built)"; return 0; }
+    if [[ ! -x "$BUILD/bin/$name" ]]; then
+        if [[ "${CI:-}" == "true" ]]; then
+            echo "  FAIL: $name is not built"
+            fail=1
+        else
+            echo "  SKIP: $name (not built)"
+        fi
+        return 0
+    fi
 
     env -u DISPLAY WAYLAND_DISPLAY="$SOCK" \
         SDE_STATE_DIR="$RUNTIME" SDE_SESSION_DIR="$RUNTIME/session" \
@@ -187,7 +209,7 @@ run_wayland zenity common-zenity timeout 10 zenity --info --title=common-zenity 
 
 # Firefox is the heavyweight common client. Its first window can take several
 # seconds to appear, so give it a longer, bounded wait and a private profile.
-if command -v firefox >/dev/null; then
+if require_client firefox; then
     mkdir -p "$RUNTIME/firefox-profile"
     firefox_log="$RUNTIME/firefox.log"
     env -u DISPLAY WAYLAND_DISPLAY="$SOCK" GDK_BACKEND=wayland         MOZ_ENABLE_WAYLAND=1 timeout 20 firefox --no-sandbox --no-remote --new-instance         --profile "$RUNTIME/firefox-profile" about:blank > "$firefox_log" 2>&1 &
@@ -202,8 +224,6 @@ if command -v firefox >/dev/null; then
     kill -TERM "$APP_PID" 2>/dev/null || true
     wait "$APP_PID" 2>/dev/null || true
     APP_PID=""
-else
-    echo "  SKIP: firefox (not installed)"
 fi
 
 run_wayland_native TextEditor 'Untitled[*] - Text Editor' timeout 8 "$BUILD/bin/TextEditor"
