@@ -12,6 +12,8 @@ The goal of SDE is to faithfully recreate the SerenityOS UX on Linux.
 
 The SDE desktop consumes only 150 MB of RAM with Taskbar and applets running.
 
+## Repositories
+
 The stack is split across a small family of repositories:
 
 | Repository | Role |
@@ -20,12 +22,9 @@ The stack is split across a small family of repositories:
 | [`jmalcolm137/libgui-wayland`](https://github.com/jmalcolm137/libgui-wayland) | **LibWindowServer**: runs unmodified Serenity `LibGUI`/`LibGfx` apps natively on Wayland by implementing the WindowServer protocol in-process. |
 | **this repo** | The **system side**: `WindowServer` (a [reasonably complete](docs/23-wayland-protocols.md) wlroots-based Wayland compositor) and the session that runs the **unmodified SerenityOS shell apps** (Taskbar, applets, Desktop, Settings) as Wayland clients, plus services/settings and the integration that turns LibWindowServer-powered apps into a coherent desktop session. |
 
-## Installation
+## Running
 
-SDE is experimental. The tested packaging target is **Arch Linux x86_64**; keep
-another desktop session installed so you can switch back if needed.
-
-### Release packages
+### Arch Linux packages
 
 Download both packages and `SHA256SUMS` from the
 [v0.1.0 release](https://github.com/jmalcolm137/serenity-desktop-environment/releases/tag/v0.1.0).
@@ -48,36 +47,11 @@ sudo systemctl enable --now sddm
 Log out, choose **Serenity Desktop Environment** at the login screen, and log
 back in. The session package includes XWayland support.
 
-To remove the session again:
-
-```sh
-sudo pacman -Rns serenity-desktop-environment-git serenity-lagom-git
-```
-
-Then log out and choose your previous desktop session.
-
 ### Build from source
 
 ```sh
 scripts/build-full-sde.sh --with-apps
 ```
-
-The split package recipes also live in
-[`Meta/packaging/aur`](Meta/packaging/aur): `serenity-lagom-git` (the framework
-and SerenityOS applications) and `serenity-desktop-environment-git` (the
-compositor and session). AUR publication is not currently available, so these
-recipes are for local `makepkg` builds. Install the framework first, then the
-session:
-
-```sh
-cd Meta/packaging/aur/serenity-lagom-git
-makepkg -si
-cd ../serenity-desktop-environment-git
-makepkg -si
-```
-
-The packages build from source, so the first install is large. SDE is
-experimental; keep another desktop session available.
 
 ### Real hardware (DRM/KMS + libinput)
 
@@ -98,6 +72,11 @@ sudo scripts/install-session.sh    # /usr/local/bin/sde-session + /usr/share/way
 # Remove it with: sudo scripts/install-session.sh --uninstall
 ```
 
+## Reading
+
+The [SDE User Manual](docs/SDE-User-Manual.pdf) provides an introductory overview of the desktop capabilities, 
+options, applications, and troubleshooting.
+
 ## Reporting problems
 
 Use [GitHub Issues](https://github.com/jmalcolm137/serenity-desktop-environment/issues)
@@ -107,11 +86,6 @@ and include:
 - your GPU and whether you are using DRM/KMS or the headless backend
 - the relevant part of `~/.local/state/sde/session.log`
 - whether the problem also happens with `SDE_SAFE_MODE=1`
-
-## Reading
-
-The [SDE User Manual](docs/SDE-User-Manual.pdf) provides an introductory overview of the desktop capabilities, 
-options, applications, and troubleshooting.
 
 ## Relationship
 
