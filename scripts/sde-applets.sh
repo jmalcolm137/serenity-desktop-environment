@@ -23,7 +23,20 @@ _sde_emit_applet_spec() {
     local name="$1"
     shift
     printf '%s|' "$name"
-    printf '%q ' "$@"
+    # Join the quoted arguments with single spaces and do not leave a trailing
+    # space. The whole host command is spliced into the compositor's startup
+    # string; an escaped trailing space at the end of that string is fragile
+    # (the last spec loses it and keeps a literal backslash), so the spec must
+    # end with its last argument.
+    local first=1 argument
+    for argument in "$@"; do
+        if [[ "$first" -eq 1 ]]; then
+            first=0
+        else
+            printf ' '
+        fi
+        printf '%q' "$argument"
+    done
     printf '\n'
 }
 
