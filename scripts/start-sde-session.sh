@@ -188,9 +188,9 @@ SERENITY="$SERENITY" "$SDE_ROOT/scripts/seed-serenity-home.sh"
 
 # Start the Taskbar and a File Manager, plus the taskbar applets, unless the
 # caller supplies their own startup command.
-# Every applet runs under a supervising wrapper, so one that dies comes back
-# without the applets themselves knowing anything about it.
-SUPERVISE="$SDE_ROOT/scripts/sde-supervise-applet.sh"
+# One supervisor keeps every applet running, so one that dies comes back without
+# the applets themselves knowing anything about it.
+APPLET_SUPERVISOR="$SDE_ROOT/scripts/sde-supervise-applet.sh"
 BATTERY_APPLET="${SDE_BATTERY_APPLET:-$SDE_ROOT/build/BatteryApplet/BatteryApplet}"
 if [[ ! -x "$BATTERY_APPLET" && -x "$SDE_APP_BIN_DIR/BatteryApplet" ]]; then
     BATTERY_APPLET="$SDE_APP_BIN_DIR/BatteryApplet"
@@ -220,7 +220,7 @@ if [[ ! -x "$APPLET_DIR/WorkspacePicker" ]]; then
 fi
 # shellcheck source=scripts/sde-applets.sh
 . "$SDE_ROOT/scripts/sde-applets.sh"
-APPLET_CMDS="$(sde_applet_startup_commands "$SDE_ROOT" "$SUPERVISE")"
+APPLET_CMDS="$(sde_applet_host_command "$SDE_ROOT" "$APPLET_SUPERVISOR" "$BATTERY_APPLET" "$WIFI_APPLET")"
 
 # R6/N4: a minimal startup for safe mode (used automatically when the compositor
 # keeps failing, and with SDE_SAFE_MODE=1): just the shell, no applets/battery.
@@ -243,12 +243,6 @@ else
     export SDE_SESSION_STARTUP_APPS="Taskbar FileManager"
     if [[ -n "$APPLET_CMDS" ]]; then
         STARTUP="$STARTUP & $APPLET_CMDS"
-    fi
-    if [[ -x "$BATTERY_APPLET" ]]; then
-        STARTUP="$STARTUP & $SUPERVISE $BATTERY_APPLET"
-    fi
-    if [[ -x "$WIFI_APPLET" ]]; then
-        STARTUP="$STARTUP & $SUPERVISE $WIFI_APPLET"
     fi
 fi
 

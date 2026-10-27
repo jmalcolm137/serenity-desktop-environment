@@ -89,7 +89,8 @@ answer (up to the call timeout for a stuck one), so the client never makes one:
   (on a later turn of the loop, never inside its own dispatch), and the client
   retries every 2 s until a bus answers. The same retry covers a bus that is not up
   yet when the session starts.
-- **A crashed applet** is restarted by `scripts/sde-supervise-applet.sh`.
+- **A crashed applet** is restarted by the session's applet supervisor
+  (`scripts/sde-supervise-applet.sh`), which runs one process for every applet.
 
 ### The secret agent
 

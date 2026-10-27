@@ -339,6 +339,12 @@ not grow it** beyond `SDE_PERF_RSS_GROWTH_KB` (default 4 MB). Measured growth: 0
   polkit helper over `/run/polkit/agent-helper.socket` (or the setuid helper's
   pipes). Its idle PSS is ~1 MiB, against ~19 MiB for the Python agent it
   replaces.
+- **One applet supervisor.** The session starts every applet through one
+  `sde-supervise-applet.sh` instead of one Bash wrapper per applet. Each applet's
+  backoff is its own short-lived timer process, so one applet waiting to restart
+  does not delay another. In a controlled eight-applet run the supervisor's PSS
+  fell from ~3.6 MiB (eight Bash wrappers) to ~0.9 MiB (one host). The applets
+  themselves remain one process each (they are unmodified SerenityOS clients).
 - **Bounded per-frame work.** Timers are short-lived (animation timers stop when
   the animation ends), the key-repeat timer is a single `Core::Timer`, and the
   session's watchdog heartbeat is a 1 s file write.
