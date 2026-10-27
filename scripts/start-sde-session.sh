@@ -42,14 +42,32 @@ if [[ ! -t 1 ]]; then
         echo "seat=${XDG_SEAT:-<unset>} vt=${XDG_VTNR:-<unset>} runtime=${XDG_RUNTIME_DIR}"
 
         (
-            while :; do
-                sleep 20
-                size_kb="$(du -k "$SDE_SESSION_LOG" 2>/dev/null | cut -f1)" || continue
-                [[ -n "$size_kb" && "$size_kb" -gt "$SDE_SESSION_LOG_MAX_KB" ]] || continue
+            rotate_session_log() {
+                size_kb="$(du -k "$SDE_SESSION_LOG" 2>/dev/null | cut -f1)" || return 0
+                [[ -n "$size_kb" && "$size_kb" -gt "$SDE_SESSION_LOG_MAX_KB" ]] || return 0
                 tail -c "$((SDE_SESSION_LOG_KEEP_KB * 1024))" "$SDE_SESSION_LOG" > "$SDE_SESSION_LOG.1" 2>/dev/null || true
                 truncate -s 0 "$SDE_SESSION_LOG" 2>/dev/null || true
                 echo "--- SDE session log rotated (> ${SDE_SESSION_LOG_MAX_KB} KiB; the tail is in ${SDE_SESSION_LOG##*/}.1) ---"
-            done
+            }
+
+            # Wait without an external sleep process: the read end of a FIFO
+            # opened read-write returns after the timeout. Fall back to sleep if
+            # the runtime directory cannot hold the FIFO.
+            log_fifo="${XDG_RUNTIME_DIR:-/tmp}/sde-log-rotate.$$"
+            rm -f "$log_fifo" 2>/dev/null || true
+            if mkfifo -m 600 "$log_fifo" 2>/dev/null; then
+                exec 9<>"$log_fifo"
+                rm -f "$log_fifo"
+                while :; do
+                    read -r -t 20 -u 9 _ || true
+                    rotate_session_log
+                done
+            else
+                while :; do
+                    sleep 20
+                    rotate_session_log
+                done
+            fi
         ) &
     fi
 fi

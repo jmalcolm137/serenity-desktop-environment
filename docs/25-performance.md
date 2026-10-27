@@ -345,6 +345,11 @@ not grow it** beyond `SDE_PERF_RSS_GROWTH_KB` (default 4 MB). Measured growth: 0
   does not delay another. In a controlled eight-applet run the supervisor's PSS
   fell from ~3.6 MiB (eight Bash wrappers) to ~0.9 MiB (one host). The applets
   themselves remain one process each (they are unmodified SerenityOS clients).
+- **Small watchers do not spawn helpers.** `sde-sleep.sh` prefers
+  `dbus-monitor`'s libdbus stack over `gdbus` and runs its read loop in the main
+  shell (no pipeline subshell). The session log rotation waits on a FIFO with
+  `read -t` instead of keeping a `sleep` process alive. Both keep their previous
+  behaviour and remove two long-lived helper processes.
 - **Bounded per-frame work.** Timers are short-lived (animation timers stop when
   the animation ends), the key-repeat timer is a single `Core::Timer`, and the
   session's watchdog heartbeat is a 1 s file write.

@@ -47,22 +47,30 @@ on_resume() {
 monitor_dbus() {
     if [ -n "${SDE_SLEEP_MONITOR_CMD:-}" ]; then
         sh -c "$SDE_SLEEP_MONITOR_CMD"
+    elif command -v dbus-monitor >/dev/null 2>&1; then
+        # libdbus only: much smaller than gdbus's GLib/GIO stack.
+        dbus-monitor --system "type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'" 2>/dev/null
     elif command -v gdbus >/dev/null 2>&1; then
         gdbus monitor --system --dest org.freedesktop.login1 --object-path /org/freedesktop/login1 2>/dev/null
-    elif command -v dbus-monitor >/dev/null 2>&1; then
-        dbus-monitor --system "type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'" 2>/dev/null
     else
         return 1
     fi
 }
 
-if ! monitor_dbus | while IFS= read -r line; do
+if [ -z "${SDE_SLEEP_MONITOR_CMD:-}" ] \
+    && ! command -v dbus-monitor >/dev/null 2>&1 \
+    && ! command -v gdbus >/dev/null 2>&1; then
+    # No monitor: nothing to watch (no logind / no D-Bus). Sleep hooks are disabled.
+    echo "sde-sleep: no D-Bus monitor; suspend/hooks disabled" >&2
+    exit 0
+fi
+
+# Process substitution keeps the loop in this shell, so the script is one Bash
+# process plus the monitor instead of a pipeline subshell for each. The hooks
+# detach with setsid and do not hold the loop.
+while IFS= read -r line; do
     case "$line" in
         *'PrepareForSleep(true)'* | *'boolean true'*) on_suspend ;;
         *'PrepareForSleep(false)'* | *'boolean false'*) on_resume ;;
     esac
-done; then
-    # No monitor: nothing to watch (no logind / no D-Bus). Sleep hooks are disabled.
-    [ -z "${SDE_SLEEP_MONITOR_CMD:-}" ] && echo "sde-sleep: no D-Bus monitor; suspend/hooks disabled" >&2
-    exit 0
-fi
+done < <(monitor_dbus)
