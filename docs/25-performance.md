@@ -316,9 +316,14 @@ not grow it** beyond `SDE_PERF_RSS_GROWTH_KB` (default 4 MB). Measured growth: 0
   Settings pay for the image, instead of every applet and terminal carrying a
   private copy (3 MiB each for the default 1024×768 wallpaper, 16 MiB each for
   2560×1600).
-- **A per-frame early-out for the desktop background.** `update_desktop_background()`
-  rebuilds the background bitmap only when the output size or the wallpaper
-  changes.
+- **The desktop background is scene-rendered.** `update_desktop_background()`
+  keeps a solid colour rect plus a wallpaper scene buffer, and only rebuilds
+  those nodes when the output size, wallpaper, mode or colour changes. It no
+  longer allocates a full-output CPU-composited bitmap.
+- **Terminal cells are compact.** Hyperlinks are stored once in a terminal-level
+  table and cells hold a 32-bit index. `VT::Line::Cell` is 28 bytes instead of
+  56, halving scrollback memory (about 4.6 MiB saved for a 1024-line,
+  160-column terminal).
 - **Bounded per-frame work.** Timers are short-lived (animation timers stop when
   the animation ends), the key-repeat timer is a single `Core::Timer`, and the
   session's watchdog heartbeat is a 1 s file write.

@@ -277,8 +277,8 @@ static void output_destroy(wl_listener* listener, void*)
     wl_list_remove(&output->request_state.link);
     wl_list_remove(&output->destroy.link);
     wl_list_remove(&output->commit.link);
-    if (output->background)
-        wlr_scene_node_destroy(&output->background->node);
+    if (output->background.tree)
+        wlr_scene_node_destroy(&output->background.tree->node);
     remove_owned(server.outputs, output);
     // R5: the InputCapture zones are the outputs.
     InputCapture::on_outputs_changed(server);

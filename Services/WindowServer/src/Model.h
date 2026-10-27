@@ -15,6 +15,7 @@
 #include <AK/RefPtr.h>
 #include <AK/Vector.h>
 #include <LibGfx/Bitmap.h>
+#include <LibGfx/Color.h>
 #include <LibGfx/Point.h>
 #include <LibGfx/Rect.h>
 #include <LibGfx/Size.h>
@@ -157,6 +158,19 @@ struct WindowMenu {
     OwnPtr<ChromeNode> node; // The menu's scene node, in overlay_tree.
 };
 
+// The desktop background is rendered by the scene: a solid colour rect plus one
+// or more wallpaper buffers. No full-output CPU-composited bitmap is retained.
+struct DesktopBackground {
+    wlr_scene_tree* tree { nullptr };
+    wlr_scene_rect* color_rect { nullptr };
+    wlr_scene_tree* wallpaper { nullptr };
+    Vector<wlr_scene_buffer*> wallpaper_nodes;
+    Gfx::IntSize output_size;
+    Gfx::Bitmap const* wallpaper_bitmap { nullptr };
+    ByteString wallpaper_mode;
+    Gfx::Color color_value;
+};
+
 struct Output {
     Server* server { nullptr };
     wlr_output* output { nullptr };
@@ -166,8 +180,7 @@ struct Output {
     // it is destroyed, so "where was it" has to have been recorded while it existed.
     wlr_box area { };
     bool was_enabled { false };
-    wlr_scene_buffer* background { nullptr };
-    Gfx::IntSize background_size;
+    DesktopBackground background;
     wl_listener frame { };
     wl_listener request_state { };
     wl_listener destroy { };

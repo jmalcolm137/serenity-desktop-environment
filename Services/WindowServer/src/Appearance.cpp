@@ -48,7 +48,7 @@ void apply_theme_path(Server& server, ByteString const& theme_path)
     for (auto& toplevel : server.toplevels)
         toplevel_update_frame(*toplevel);
     for (auto& output : server.outputs) {
-        output->background_size = { };
+        output->background.output_size = { };
         update_desktop_background(server, *output);
     }
     dbgln("WindowServer: applied system theme '{}'", theme_path);

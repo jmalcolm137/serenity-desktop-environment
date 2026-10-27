@@ -83,6 +83,69 @@ static RefPtr<Gfx::Bitmap> read_sde_wallpaper()
     return bitmap.release_value();
 }
 
+static void set_scene_rect_color(wlr_scene_rect* rect, Gfx::Color color)
+{
+    float const alpha = color.alpha() / 255.0f;
+    float const rgba[4] = {
+        color.red() / 255.0f * alpha,
+        color.green() / 255.0f * alpha,
+        color.blue() / 255.0f * alpha,
+        alpha,
+    };
+    wlr_scene_rect_set_color(rect, rgba);
+}
+
+static void clear_wallpaper_nodes(DesktopBackground& background)
+{
+    if (background.wallpaper) {
+        wlr_scene_node_destroy(&background.wallpaper->node);
+        background.wallpaper = nullptr;
+    }
+    background.wallpaper_nodes.clear();
+}
+
+static void add_wallpaper_node(DesktopBackground& background, wlr_buffer* buffer, Gfx::IntRect dest, Optional<wlr_fbox> source)
+{
+    auto* node = wlr_scene_buffer_create(background.wallpaper, buffer);
+    wlr_scene_node_set_position(&node->node, dest.x(), dest.y());
+    wlr_scene_buffer_set_dest_size(node, dest.width(), dest.height());
+    if (source.has_value())
+        wlr_scene_buffer_set_source_box(node, &source.value());
+    // The old CPU compositor used nearest-neighbour scaling for the wallpaper.
+    wlr_scene_buffer_set_filter_mode(node, WLR_SCALE_FILTER_NEAREST);
+    background.wallpaper_nodes.append(node);
+}
+
+static void dump_background(Gfx::IntSize size, Gfx::Color background_color, StringView dump_path)
+{
+    auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, size);
+    if (bitmap.is_error())
+        return;
+    Gfx::Painter painter(*bitmap.value());
+    painter.fill_rect(bitmap.value()->rect(), background_color);
+    if (g_wallpaper) {
+        auto const& wallpaper = *g_wallpaper;
+        if (g_wallpaper_mode == "tile"sv) {
+            painter.draw_tiled_bitmap(bitmap.value()->rect(), wallpaper);
+        } else if (g_wallpaper_mode == "stretch"sv) {
+            painter.draw_scaled_bitmap(bitmap.value()->rect(), wallpaper, wallpaper.rect());
+        } else if (g_wallpaper_mode == "fill"sv && wallpaper.width() > 0 && wallpaper.height() > 0) {
+            double const scale = max(static_cast<double>(size.width()) / wallpaper.width(), static_cast<double>(size.height()) / wallpaper.height());
+            int const src_width = min(wallpaper.width(), static_cast<int>(size.width() / scale));
+            int const src_height = min(wallpaper.height(), static_cast<int>(size.height() / scale));
+            Gfx::IntRect const src { (wallpaper.width() - src_width) / 2, (wallpaper.height() - src_height) / 2, src_width, src_height };
+            painter.draw_scaled_bitmap(bitmap.value()->rect(), wallpaper, src);
+        } else {
+            Gfx::IntPoint offset { (size.width() - wallpaper.width()) / 2, (size.height() - wallpaper.height()) / 2 };
+            painter.blit(offset, wallpaper, wallpaper.rect());
+        }
+    }
+    if (auto encoded = Gfx::PNGWriter::encode(*bitmap.value()); !encoded.is_error()) {
+        if (auto file = Core::File::open(dump_path, Core::File::OpenMode::Write); !file.is_error())
+            (void)file.value()->write_until_depleted(encoded.value());
+    }
+}
+
 void update_desktop_background(Server& server, Output& output)
 {
     if (!g_palette)
@@ -93,54 +156,102 @@ void update_desktop_background(Server& server, Output& output)
     if (width <= 0 || height <= 0)
         return;
 
-    Gfx::IntSize size { width, height };
-    if (output.background && output.background_size == size)
+    Gfx::IntSize const size { width, height };
+    auto const background_color = g_background_color.value_or(g_palette->desktop_background());
+    auto& background = output.background;
+
+    if (background.tree) {
+        // Layout coordinates can change independently of the output size: keep the
+        // background at the output's current origin even on the early-out path.
+        wlr_box box { };
+        wlr_output_layout_get_box(server.output_layout, output.output, &box);
+        wlr_scene_node_set_position(&background.tree->node, box.x, box.y);
+    }
+
+    if (background.tree
+        && background.output_size == size
+        && background.wallpaper_bitmap == g_wallpaper.ptr()
+        && background.wallpaper_mode == g_wallpaper_mode
+        && background.color_value == background_color)
         return;
 
-    auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, size).release_value_but_fixme_should_propagate_errors();
-    Gfx::Painter painter(*bitmap);
-    painter.fill_rect(bitmap->rect(), g_background_color.value_or(g_palette->desktop_background()));
+    if (auto const* dump_path = getenv("WINDOWSERVER_DUMP_BACKGROUND"); dump_path && *dump_path)
+        dump_background(size, background_color, StringView { dump_path, strlen(dump_path) });
 
-    if (g_wallpaper) {
-        auto const& wallpaper = *g_wallpaper;
+    if (!background.tree) {
+        background.tree = wlr_scene_tree_create(&server.scene->tree);
+        wlr_scene_node_lower_to_bottom(&background.tree->node);
+    }
+    if (!background.color_rect) {
+        float const transparent[4] = { 0, 0, 0, 0 };
+        background.color_rect = wlr_scene_rect_create(background.tree, width, height, transparent);
+    }
+    wlr_scene_rect_set_size(background.color_rect, width, height);
+    set_scene_rect_color(background.color_rect, background_color);
+    wlr_scene_node_set_position(&background.color_rect->node, 0, 0);
+
+    clear_wallpaper_nodes(background);
+
+    if (g_wallpaper && g_wallpaper_mode != "none"sv) {
+        background.wallpaper = wlr_scene_tree_create(background.tree);
+
+        // A tiny tile (the 8x4 grid) would otherwise create tens of thousands of
+        // scene nodes. Build one reasonably sized repeated pattern and tile that.
+        RefPtr<Gfx::Bitmap> pattern;
         if (g_wallpaper_mode == "tile"sv) {
-            painter.draw_tiled_bitmap(bitmap->rect(), wallpaper);
+            int pattern_width = g_wallpaper->width();
+            int pattern_height = g_wallpaper->height();
+            if (pattern_width > 0 && pattern_height > 0 && (pattern_width < 256 || pattern_height < 256)) {
+                int const repeats_x = max(1, (256 + pattern_width - 1) / pattern_width);
+                int const repeats_y = max(1, (256 + pattern_height - 1) / pattern_height);
+                pattern_width *= repeats_x;
+                pattern_height *= repeats_y;
+                auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { pattern_width, pattern_height });
+                if (!bitmap.is_error()) {
+                    Gfx::Painter painter(*bitmap.value());
+                    painter.clear_rect(bitmap.value()->rect(), Gfx::Color::Transparent);
+                    painter.draw_tiled_bitmap(bitmap.value()->rect(), *g_wallpaper);
+                    pattern = bitmap.release_value();
+                }
+            }
+        }
+
+        auto wallpaper_bitmap = pattern ? pattern : g_wallpaper;
+        auto wallpaper_ref = wallpaper_bitmap;
+        auto* buffer = bitmap_buffer_create(wallpaper_ref.release_nonnull());
+        auto const wallpaper_width = wallpaper_bitmap->width();
+        auto const wallpaper_height = wallpaper_bitmap->height();
+
+        if (g_wallpaper_mode == "tile"sv && wallpaper_width > 0 && wallpaper_height > 0) {
+            for (int y = 0; y < height; y += wallpaper_height) {
+                for (int x = 0; x < width; x += wallpaper_width)
+                    add_wallpaper_node(background, buffer, { x, y, wallpaper_width, wallpaper_height }, OptionalNone {});
+            }
         } else if (g_wallpaper_mode == "stretch"sv) {
-            painter.draw_scaled_bitmap(bitmap->rect(), wallpaper, wallpaper.rect());
-        } else if (g_wallpaper_mode == "fill"sv && wallpaper.width() > 0 && wallpaper.height() > 0) {
-            double const scale = max(static_cast<double>(width) / wallpaper.width(), static_cast<double>(height) / wallpaper.height());
-            int const src_width = min(wallpaper.width(), static_cast<int>(width / scale));
-            int const src_height = min(wallpaper.height(), static_cast<int>(height / scale));
-            Gfx::IntRect const src { (wallpaper.width() - src_width) / 2, (wallpaper.height() - src_height) / 2, src_width, src_height };
-            painter.draw_scaled_bitmap(bitmap->rect(), wallpaper, src);
+            add_wallpaper_node(background, buffer, { 0, 0, width, height }, OptionalNone {});
+        } else if (g_wallpaper_mode == "fill"sv && wallpaper_width > 0 && wallpaper_height > 0) {
+            double const scale = max(static_cast<double>(width) / wallpaper_width, static_cast<double>(height) / wallpaper_height);
+            int const src_width = min(wallpaper_width, static_cast<int>(width / scale));
+            int const src_height = min(wallpaper_height, static_cast<int>(height / scale));
+            wlr_fbox source { };
+            source.x = (wallpaper_width - src_width) / 2.0f;
+            source.y = (wallpaper_height - src_height) / 2.0f;
+            source.width = src_width;
+            source.height = src_height;
+            add_wallpaper_node(background, buffer, { 0, 0, width, height }, source);
         } else {
             // Center (the SerenityOS default).
-            Gfx::IntPoint offset { (width - wallpaper.width()) / 2, (height - wallpaper.height()) / 2 };
-            painter.blit(offset, wallpaper, wallpaper.rect());
+            int const x = (width - wallpaper_width) / 2;
+            int const y = (height - wallpaper_height) / 2;
+            add_wallpaper_node(background, buffer, { x, y, wallpaper_width, wallpaper_height }, OptionalNone {});
         }
+        wlr_buffer_drop(buffer);
     }
 
-    if (auto const* dump_path = getenv("WINDOWSERVER_DUMP_BACKGROUND"); dump_path && *dump_path) {
-        if (auto encoded = Gfx::PNGWriter::encode(*bitmap); !encoded.is_error()) {
-            if (auto file = Core::File::open(StringView { dump_path, strlen(dump_path) }, Core::File::OpenMode::Write); !file.is_error())
-                (void)file.value()->write_until_depleted(encoded.value());
-        }
-    }
-
-    auto* buffer = bitmap_buffer_create(move(bitmap));
-    if (!output.background) {
-        output.background = wlr_scene_buffer_create(&server.scene->tree, buffer);
-        wlr_scene_node_lower_to_bottom(&output.background->node);
-    } else {
-        wlr_scene_buffer_set_buffer(output.background, buffer);
-    }
-    use_nearest_filter(&output.background->node);
-    wlr_buffer_drop(buffer);
-    output.background_size = size;
-
-    wlr_box box { };
-    wlr_output_layout_get_box(server.output_layout, output.output, &box);
-    wlr_scene_node_set_position(&output.background->node, box.x, box.y);
+    background.output_size = size;
+    background.wallpaper_bitmap = g_wallpaper.ptr();
+    background.wallpaper_mode = g_wallpaper_mode;
+    background.color_value = background_color;
 }
 
 // Re-read the persisted wallpaper state into the globals (no repaint yet).
@@ -162,7 +273,7 @@ static void apply_wallpaper_from_state(Server& server)
 {
     load_wallpaper_state();
     for (auto& output : server.outputs) {
-        output->background_size = { };
+        output->background.output_size = { };
         update_desktop_background(server, *output);
     }
     dbgln("WindowServer: wallpaper updated (wallpaper={}, mode={}, color={})",
