@@ -273,6 +273,50 @@ Ranked by size × how much of it is actually addressable:
    `scripts/run-taskbar-quicklaunch-test.sh` runs the shell against a resource root
    with no app files at all and asserts it still comes up.
 
+### WindowServer heap profile
+
+A private headless run (2560×1600 at 2×, pixman, Taskbar + FileManager desktop +
+Terminal) was recorded with heaptrack. It is not the live compositor, so the
+absolute numbers are the SDE-owned heap without the Vulkan driver, but the
+allocation sites are representative.
+
+Peak malloc consumers:
+
+| Peak | Allocations | Site |
+|---:|---:|---|
+| 9.75 MiB | 28 | `Gfx::Bitmap` backing stores |
+| 4.72 MiB | 93 | `ByteBuffer` reading `wallpaper.raw` |
+| 2.76 MiB | 480 | wlroots xcursor theme load |
+| 0.47 MiB | 1 289 | small `Vector` growth |
+
+The bitmap peak is dominated by **three 3.15 MiB wallpaper copies**:
+
+1. `initialize_wallpaper()` loads the persisted image at startup.
+2. The desktop's `load_current_wallpaper()` sends the same image back through
+   `serenity_window_manager_set_wallpaper`, which copies it into a new bitmap.
+3. `set_wallpaper` then calls `load_wallpaper_state()`, which reads
+   `wallpaper.raw` through a 4.72 MiB `ByteBuffer` and allocates a *third* copy.
+
+The desktop widget already clears transparent; the compositor owns the visible
+wallpaper. The round trip is redundant. The steady private heap is ~7.4 MiB,
+while the live Vulkan compositor's `[heap]` is ~29.1 MiB and its Gallium/LLVM/
+Vulkan mappings are another ~25.7 MiB PSS: **the renderer, not SDE's bitmaps, is
+the largest heap consumer in the live session.** Leaks were negligible
+(85.65 KiB total).
+
+Follow-ups, in order:
+
+- Skip the desktop's initial `load_current_wallpaper()`: saves the client's 3 MiB
+  wallpaper mapping and the compositor's set/reload churn.
+- In `set_wallpaper`, update mode/colour from the state without reloading the
+  pixels, and write the header + scanlines directly instead of allocating a
+  3 MiB `ByteBuffer`. That removes the 4.72 MiB read buffer and one 3.15 MiB
+  bitmap from the peak.
+- Benchmark `SDE_RENDERER=gles2` and `pixman` against `vulkan`: the Vulkan
+  renderer's heap plus driver mappings are roughly 45 MiB of the compositor's
+  67.5 MiB PSS. The 2.76 MiB cursor theme is the next-largest fixed allocation;
+  a smaller cursor theme or lazy theme load would trim it.
+
 ### The first fruit: `auto` no longer loads software GL for nothing
 
 `auto` used to hand the headless backend to wlroots' GL path, which on a machine
