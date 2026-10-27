@@ -235,6 +235,14 @@ push_dbus_activation_env() {
 }
 push_dbus_activation_env
 
+# XDG user directories (the freedesktop spec's updater): create user-dirs.dirs
+# and the standard directories on first login, before applications ask for them.
+# Core::StandardPaths (the framework patch) reads the file for FileManager,
+# FilePicker and every other standard directory lookup.
+if [[ "${SDE_USER_DIRS_UPDATE:-1}" == "1" ]]; then
+    "$SDE_ROOT/scripts/sde-user-dirs.sh" --update >/dev/null 2>&1 || true
+fi
+
 run_desktop_entry() {
     local entry="$1" line="" exec_line="" hidden="" enabled=""
     while IFS= read -r line || [ -n "$line" ]; do

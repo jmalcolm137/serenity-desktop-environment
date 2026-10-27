@@ -232,6 +232,10 @@ for name in "${selected[@]}"; do
     # for it back (they unset this and skip when a session is live).
     export SDE_XWAYLAND=0
 
+    # Do not let the session updater create XDG user directories in the
+    # developer home while a test runs a session.
+    export SDE_USER_DIRS_UPDATE=0
+
     # And its own liveness heartbeat, so a test that runs a supervisor — or a
     # compositor that stops writing one — can never stall the session's watchdog.
     export SDE_HEARTBEAT_FILE="$RUN_DIR/heartbeat-$name"

@@ -12,6 +12,9 @@
 # compositor + the Taskbar and is skipped if they are not built.
 set -euo pipefail
 
+# The session updater must not create directories in the developer home.
+export SDE_USER_DIRS_UPDATE=0
+
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
 SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"

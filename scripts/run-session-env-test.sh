@@ -5,6 +5,9 @@
 # environment, without requiring systemd or the helper.
 set -euo pipefail
 
+# The session updater must not create directories in the developer home.
+export SDE_USER_DIRS_UPDATE=0
+
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SDE="$SDE_ROOT/scripts/sde-session.sh"
 

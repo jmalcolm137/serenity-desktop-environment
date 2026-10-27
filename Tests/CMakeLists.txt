@@ -107,6 +107,9 @@ add_sde_test(libwm-procstat-test SOURCE ProcStatTest.cpp)
 # Resolves executables through the session's /bin shadow and app directory.
 add_sde_test(libwm-binpath-test SOURCE BinPathTest.cpp)
 
+# XDG user directories: Core::StandardPaths honours user-dirs.dirs.
+add_sde_unit_test(libwm-user-dirs-test SOURCE UserDirsTest.cpp)
+
 # Launches an executable file directly (the desktop's "Display Settings" entry).
 add_sde_test(libwm-launch-exec-test SOURCE LaunchExecTest.cpp
     LIBS ${LAGOM_url} ${LAGOM_desktop} ${LAGOM_imagedecoderclient})

@@ -141,6 +141,7 @@ fi
 for script in \
     start-sde-session.sh sde-session.sh sde-shell.sh sde-service-supervisor.sh \
     sde-applets.sh sde-supervise-applet.sh sde-power.sh sde-seat.sh sde-sleep.sh sde-accessibility.sh \
+    sde-user-dirs.sh \
     seed-serenity-home.sh sde-polkit-agent.py; do
     install -m 0755 "$SDE_ROOT/scripts/$script" "$SCRIPTS/$script"
 done
