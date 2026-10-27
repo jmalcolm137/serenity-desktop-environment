@@ -343,6 +343,12 @@ void broadcast_host_settings(Server& server)
 static void serenity_window_manager_set_wallpaper(wl_client*, wl_resource* resource, int32_t width, int32_t height, int32_t pitch, uint32_t format, int32_t fd)
 {
     auto* server = static_cast<Server*>(wl_resource_get_user_data(resource));
+    if (fd >= 0 && (width <= 0 || height <= 0 || pitch <= 0 || format == 0 || !Gfx::is_valid_bitmap_format(format))) {
+        // A malformed image must not take the compositor down in Gfx::Bitmap.
+        warnln("WindowServer: ignoring a wallpaper with invalid geometry or format ({})", format);
+        ::close(fd);
+        return;
+    }
     if (fd < 0 || width <= 0 || height <= 0 || pitch <= 0) {
         // "No wallpaper" (a zero size, or a client without one). A client may
         // still have handed us a placeholder fd, so close it.
@@ -366,10 +372,16 @@ static void serenity_window_manager_set_wallpaper(wl_client*, wl_resource* resou
         }
         ::close(fd);
     }
-    load_wallpaper_state();
+    load_wallpaper_mode_and_color();
     dbgln("WindowServer: wallpaper set by a client ({}x{})", width, height);
-    if (server)
+    if (server) {
+        // Apply immediately instead of waiting for the state-file watcher, and
+        // ignore that watcher's event for our own write (it would reload the
+        // pixels we already have in g_wallpaper).
+        apply_wallpaper_to_outputs(*server);
+        ignore_next_wallpaper_state_event();
         broadcast_host_settings(*server);
+    }
 }
 
 static void serenity_window_manager_set_host_setting(wl_client*, wl_resource* resource, char const* key, char const* value)

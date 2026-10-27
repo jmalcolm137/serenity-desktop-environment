@@ -50,7 +50,14 @@ void write_sde_wallpaper(RefPtr<Gfx::Bitmap> const& bitmap)
         Config::write_state("wallpaper.raw"sv, {});
         return;
     }
-    auto const pixels = static_cast<size_t>(bitmap->pitch()) * bitmap->height();
+
+    // Write the header and rows directly. A header+pixels ByteBuffer would be a
+    // second full copy of the image, which is pure peak heap for a write that the
+    // kernel can consume row by row.
+    auto file = Core::File::open(Config::state_file("wallpaper.raw"sv), Core::File::OpenMode::Write);
+    if (file.is_error())
+        return;
+    auto& output = *file.value();
     WallpaperHeader header {
         wallpaper_magic,
         static_cast<u32>(bitmap->format()),
@@ -58,28 +65,40 @@ void write_sde_wallpaper(RefPtr<Gfx::Bitmap> const& bitmap)
         static_cast<u32>(bitmap->height()),
         static_cast<u32>(bitmap->pitch()),
     };
-    auto buffer = ByteBuffer::create_uninitialized(sizeof(header) + pixels).release_value_but_fixme_should_propagate_errors();
-    memcpy(buffer.data(), &header, sizeof(header));
-    memcpy(buffer.data() + sizeof(header), bitmap->scanline(0), pixels);
-    Config::write_state("wallpaper.raw"sv, buffer);
+    if (output.write_until_depleted({ &header, sizeof(header) }).is_error())
+        return;
+    auto const row_bytes = static_cast<size_t>(bitmap->pitch());
+    for (int y = 0; y < bitmap->height(); ++y) {
+        if (output.write_until_depleted({ bitmap->scanline(y), row_bytes }).is_error())
+            return;
+    }
 }
 
 static RefPtr<Gfx::Bitmap> read_sde_wallpaper()
 {
-    auto raw = Config::read_state_bytes("wallpaper.raw"sv);
-    if (raw.size() <= sizeof(WallpaperHeader))
+    auto file = Core::File::open(Config::state_file("wallpaper.raw"sv), Core::File::OpenMode::Read);
+    if (file.is_error())
         return nullptr;
+    auto& input = *file.value();
+
     WallpaperHeader header {};
-    memcpy(&header, raw.data(), sizeof(header));
-    if (header.magic != wallpaper_magic || header.width == 0 || header.height == 0 || header.pitch == 0)
+    if (input.read_until_filled({ &header, sizeof(header) }).is_error())
+        return nullptr;
+    if (header.magic != wallpaper_magic || header.width == 0 || header.height == 0 || header.pitch == 0
+        || header.format == 0 || !Gfx::is_valid_bitmap_format(header.format))
         return nullptr;
     auto bitmap = Gfx::Bitmap::create(static_cast<Gfx::BitmapFormat>(header.format), { static_cast<int>(header.width), static_cast<int>(header.height) });
     if (bitmap.is_error())
         return nullptr;
     auto& created = *bitmap.value();
     auto const row_bytes = min(static_cast<size_t>(header.pitch), static_cast<size_t>(created.pitch()));
-    for (int y = 0; y < created.height(); ++y)
-        memcpy(created.scanline(y), raw.data() + sizeof(header) + static_cast<size_t>(y) * header.pitch, row_bytes);
+    for (int y = 0; y < created.height(); ++y) {
+        if (input.read_until_filled({ created.scanline(y), row_bytes }).is_error())
+            return nullptr;
+        auto const extra = static_cast<i64>(header.pitch) - static_cast<i64>(row_bytes);
+        if (extra > 0 && input.seek(extra, SeekMode::FromCurrentPosition).is_error())
+            return nullptr;
+    }
     return bitmap.release_value();
 }
 
@@ -254,11 +273,11 @@ void update_desktop_background(Server& server, Output& output)
     background.color_value = background_color;
 }
 
-// Re-read the persisted wallpaper state into the globals (no repaint yet).
-void load_wallpaper_state()
+// Re-read only the mode and colour. A compositor-originated set_wallpaper already
+// has the pixels in g_wallpaper; re-reading the file would allocate another full
+// copy of the image for no change.
+void load_wallpaper_mode_and_color()
 {
-    g_wallpaper = read_sde_wallpaper();
-
     g_wallpaper_mode = "center";
     if (auto mode = Config::read_state("wallpaper.mode"sv); !mode.is_empty())
         g_wallpaper_mode = mode.to_lowercase();
@@ -268,14 +287,41 @@ void load_wallpaper_state()
         g_background_color = Gfx::Color::from_string(color);
 }
 
-// Re-read the state and repaint every output (used on a live change).
-static void apply_wallpaper_from_state(Server& server)
+// Re-read the persisted wallpaper state into the globals (no repaint yet).
+void load_wallpaper_state()
 {
-    load_wallpaper_state();
+    g_wallpaper = read_sde_wallpaper();
+    load_wallpaper_mode_and_color();
+}
+
+// Repaint every output from the current g_wallpaper/mode/colour.
+void apply_wallpaper_to_outputs(Server& server)
+{
     for (auto& output : server.outputs) {
         output->background.output_size = { };
         update_desktop_background(server, *output);
     }
+}
+
+static bool s_ignore_next_wallpaper_state_event { false };
+
+void ignore_next_wallpaper_state_event()
+{
+    s_ignore_next_wallpaper_state_event = true;
+}
+
+// Re-read the state and repaint every output (used on a live change).
+static void apply_wallpaper_from_state(Server& server)
+{
+    // A compositor-originated set_wallpaper applies the new image immediately and
+    // writes the state file; the watcher's event for that write must not reload
+    // and rebuild the same pixels.
+    if (s_ignore_next_wallpaper_state_event) {
+        s_ignore_next_wallpaper_state_event = false;
+        return;
+    }
+    load_wallpaper_state();
+    apply_wallpaper_to_outputs(server);
     dbgln("WindowServer: wallpaper updated (wallpaper={}, mode={}, color={})",
         g_wallpaper ? ByteString::formatted("{}x{}", g_wallpaper->width(), g_wallpaper->height()) : ByteString { "none" },
         g_wallpaper_mode,

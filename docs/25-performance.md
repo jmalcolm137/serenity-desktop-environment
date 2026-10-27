@@ -304,18 +304,33 @@ Vulkan mappings are another ~25.7 MiB PSS: **the renderer, not SDE's bitmaps, is
 the largest heap consumer in the live session.** Leaks were negligible
 (85.65 KiB total).
 
-Follow-ups, in order:
+Applied:
 
-- Skip the desktop's initial `load_current_wallpaper()`: saves the client's 3 MiB
-  wallpaper mapping and the compositor's set/reload churn.
-- In `set_wallpaper`, update mode/colour from the state without reloading the
-  pixels, and write the header + scanlines directly instead of allocating a
-  3 MiB `ByteBuffer`. That removes the 4.72 MiB read buffer and one 3.15 MiB
-  bitmap from the peak.
+- The desktop no longer calls `load_current_wallpaper()` at startup (port patch
+  `0076-filemanager-desktop-skip-wallpaper`): it paints transparent and lets the
+  compositor's scene background show, so the client no longer maps a private
+  wallpaper or sends it back.
+- `set_wallpaper` updates only mode/colour instead of reloading the pixels, and
+  writes the header + scanlines directly instead of allocating a 3 MiB
+  `ByteBuffer`; it applies the new image to the outputs immediately and ignores
+  the state watcher's event for its own write. `wallpaper.raw` is still read
+  row-by-row for external changes (the portal/Display Settings path).
+- A malformed `set_wallpaper` (an invalid format or geometry) is ignored with a
+  warning instead of taking the compositor down in `Gfx::Bitmap`.
+
+The same heaptrack run after the change peaks at **7.52 MiB**: 3.84 MiB for a
+transient frame canvas, 3.15 MiB for the one initial wallpaper, and 0.22 MiB for
+retained frame strips. The 4.72 MiB read buffer and the two extra wallpaper
+copies are gone. A direct `set_wallpaper` RPC writes an 84-byte 4x4
+`wallpaper.raw` and does not trigger a second `wallpaper updated` reload.
+
+Remaining:
+
 - Benchmark `SDE_RENDERER=gles2` and `pixman` against `vulkan`: the Vulkan
   renderer's heap plus driver mappings are roughly 45 MiB of the compositor's
-  67.5 MiB PSS. The 2.76 MiB cursor theme is the next-largest fixed allocation;
-  a smaller cursor theme or lazy theme load would trim it.
+  67.5 MiB PSS.
+- The 2.76 MiB cursor theme is the next-largest fixed allocation; a smaller
+  cursor theme or lazy theme load would trim it.
 
 ### The first fruit: `auto` no longer loads software GL for nothing
 

@@ -12,7 +12,8 @@
 # built) the desktop. It asserts:
 #   * the Taskbar has no wallpaper-sized anonymous mapping;
 #   * the compositor did not push "host wallpaper";
-#   * FileManager still reads it on demand (the compositor sees set_wallpaper).
+#   * the desktop does not read the image back or send it to the compositor: the
+#     compositor owns the wallpaper and paints it behind the transparent desktop.
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -82,12 +83,18 @@ for _ in $(seq 1 100); do
     sleep 0.1
 done
 
-# FileManager reads the wallpaper when its desktop starts; wait for the
-# compositor to see the re-apply rather than assuming a fixed startup time.
+# Wait for the desktop layer surface, rather than assuming a fixed startup time.
+DESKTOP_PID=""
 if [[ -x "$DESKTOP" ]]; then
     for _ in $(seq 1 100); do
-        grep -q 'wallpaper set by a client' "$R/comp.log" && break
+        grep -q "layer surface namespace='serenity-desktop'" "$R/comp.log" && break
         sleep 0.1
+    done
+    for p in $(pgrep -x FileManager 2>/dev/null || true); do
+        if tr '\0' '\n' < "/proc/$p/environ" 2>/dev/null | grep -qx "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"; then
+            DESKTOP_PID="$p"
+            break
+        fi
     done
 fi
 
@@ -106,7 +113,19 @@ else
 fi
 
 if [[ -x "$DESKTOP" ]]; then
-    check "FileManager read the wallpaper on demand" "grep -q 'wallpaper set by a client' '$R/comp.log'"
+    check "the desktop mapped" "grep -q \"layer surface namespace='serenity-desktop'\" '$R/comp.log'"
+    check "the desktop did not send the wallpaper back" "! grep -q 'wallpaper set by a client' '$R/comp.log'"
+    if [[ -n "$DESKTOP_PID" ]]; then
+        # blue-grid.png is 1024x768, so its private copy is 3,072 kB. The desktop's
+        # own double buffers are the 1280x720 (3,600 kB) mappings; the wallpaper
+        # must not be among them.
+        WALLPAPER_MAP="$(awk '/^[0-9a-f]+-[0-9a-f]+ /{name=$6} /^Size:/{size=$2} /^Rss:/{if(name ~ /memfd/ && size == 3072) print size" kB "name}' "/proc/$DESKTOP_PID/smaps" 2>/dev/null | head -1)"
+        check "the desktop has no wallpaper-sized copy" "[[ -z '$WALLPAPER_MAP' ]]"
+        if [[ -n "$WALLPAPER_MAP" ]]; then echo "    unexpected mapping: $WALLPAPER_MAP"; fi
+    else
+        echo "  FAIL: the desktop process was not found"
+        fail=1
+    fi
 else
     echo "  skip: FileManager was not built"
 fi
