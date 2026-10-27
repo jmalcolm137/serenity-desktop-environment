@@ -67,7 +67,7 @@ install_if_executable "$SDE_ROOT/build/AuthDialog/sde-auth-dialog"
 for applet in "$SDE_ROOT"/build/Applets/*; do
     [[ -f "$applet" && -x "$applet" ]] && install_if_executable "$applet"
 done
-for tool in sde-idle sde-dpms sde-settings-portal xdg-desktop-portal-serenity sde-notifications sde-lock; do
+for tool in sde-idle sde-dpms sde-settings-portal xdg-desktop-portal-serenity sde-notifications sde-lock sde-polkit-agent; do
     install_if_executable "$SDE_ROOT/build/tools/$tool"
 done
 # The portal's LibGUI dialogs are spawned by the backend through the app bin dir.
@@ -142,7 +142,7 @@ for script in \
     start-sde-session.sh sde-session.sh sde-shell.sh sde-service-supervisor.sh \
     sde-applets.sh sde-supervise-applet.sh sde-power.sh sde-seat.sh sde-sleep.sh sde-accessibility.sh \
     sde-user-dirs.sh generate-desktop-entries.sh \
-    seed-serenity-home.sh sde-polkit-agent.py; do
+    seed-serenity-home.sh; do
     install -m 0755 "$SDE_ROOT/scripts/$script" "$SCRIPTS/$script"
 done
 

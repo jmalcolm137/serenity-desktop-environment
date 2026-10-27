@@ -330,7 +330,10 @@ fi
 
 # PolicyKit authentication agent: the SDE-owned prompt (and the "do not ask
 # again this session" cache). The trusted polkit helper still performs PAM.
-POLKIT_AGENT="${SDE_POLKIT_AGENT:-$SDE_ROOT/scripts/sde-polkit-agent.py}"
+# The source tree keeps it in build/tools; an installed session keeps it beside
+# the other SDE binaries.
+POLKIT_AGENT="${SDE_POLKIT_AGENT:-$SDE_ROOT/build/tools/sde-polkit-agent}"
+[[ -x "$POLKIT_AGENT" ]] || POLKIT_AGENT="$BUILD/bin/sde-polkit-agent"
 AUTH_DIALOG="${SDE_AUTH_DIALOG:-$SDE_ROOT/build/AuthDialog/sde-auth-dialog}"
 [[ -x "$AUTH_DIALOG" ]] || AUTH_DIALOG="$BUILD/bin/sde-auth-dialog"
 POLKIT_AGENT_PID=""

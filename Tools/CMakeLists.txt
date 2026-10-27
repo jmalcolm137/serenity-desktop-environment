@@ -205,10 +205,19 @@ sde_portal_tool(sde-lock
     LAGOM ak coreminimal corebasic core gfx threading
     LIBRARIES PkgConfig::WAYLAND_CLIENT PkgConfig::XKBCOMMON PkgConfig::PAM)
 
+# sde-polkit-agent: the graphical PolicyKit authentication agent. It registers
+# for the login session on the system bus, serves
+# org.freedesktop.PolicyKit1.AuthenticationAgent, and runs sde-auth-dialog. The
+# trusted polkit helper does the PAM conversation; this process never handles a
+# password itself beyond passing it to that helper.
+sde_portal_tool(sde-polkit-agent
+    SOURCES sde-polkit-agent/main.cpp portal/dbus.cpp
+    LAGOM ${PORTAL_LAGOM})
+
 # One target for the whole group (scripts/build-tools.sh). The portals and the
 # test clients are scripts/build-tools.sh's "SDE tools"; the Lagom-linked portal
 # backends come with it.
 add_custom_target(sde-tools DEPENDS
     sde-idle sde-dpms sde-screenshot native-app-test wayland-fuzz-test layer-fuzz-test data-device-fuzz-test
     ext-workspace-test output-management-test capture-probe screencast-consumer
-    virtual-input-test sde-settings-portal xdg-desktop-portal-serenity sde-notifications sde-lock)
+    virtual-input-test sde-settings-portal xdg-desktop-portal-serenity sde-notifications sde-lock sde-polkit-agent)

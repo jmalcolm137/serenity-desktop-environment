@@ -254,6 +254,12 @@ public:
     // (defaults to /org/freedesktop/portal/desktop).
     static ErrorOr<NonnullRefPtr<Service>> create(ByteString bus_name, ByteString object_path);
 
+    // Connects to another bus (the system bus, for polkit) and serves
+    // `object_path`. An empty `bus_name` serves the path under the connection's
+    // unique name, which is what an authentication agent registered with
+    // polkitd needs.
+    static ErrorOr<NonnullRefPtr<Service>> create_on_bus(DBusBusType, ByteString bus_name, ByteString object_path);
+
     virtual ~Service() override;
 
     ByteString const& bus_name() const { return m_bus_name; }

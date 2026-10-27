@@ -74,7 +74,7 @@ check "resources are installed" "[[ -d '$PREFIX/share/res/themes' && -d '$PREFIX
 check "Serenity manual pages are installed" "[[ -f '$ROOT/usr/share/man/man1/Applications/Terminal.md' && -f '$ROOT/usr/share/man/man6/Hearts.md' ]]"
 check "the runtime scripts are installed" "[[ -x '$PREFIX/share/sde/scripts/start-sde-session.sh' ]]"
 check "the applet supervisor is installed" "[[ -x '$PREFIX/share/sde/scripts/sde-supervise-applet.sh' ]]"
-check "the polkit agent is installed" "[[ -x '$PREFIX/share/sde/scripts/sde-polkit-agent.py' && -x '$PREFIX/bin/sde-auth-dialog' ]]"
+check "the polkit agent is installed" "[[ -x '$PREFIX/bin/sde-polkit-agent' && -x '$PREFIX/bin/sde-auth-dialog' ]]"
 for applet in WorkspacePicker ResourceGraph Network ClipboardHistory Audio Keymap BatteryApplet WifiApplet; do
     check "the $applet applet is installed" "[[ -x '$PREFIX/bin/$applet' ]]"
 done

@@ -18,7 +18,7 @@ depends=(
     wayland libdrm libinput libxkbcommon pixman seatd libxcb xcb-util-wm
     libdisplay-info pipewire libpipewire dbus glib2 fontconfig freetype2
     libunwind libelf libei libliftoff wlroots0.20 xorg-xwayland
-    polkit python-gobject
+    polkit
 )
 optdepends=('sddm: display manager that lists the SDE Wayland session')
 makedepends=(

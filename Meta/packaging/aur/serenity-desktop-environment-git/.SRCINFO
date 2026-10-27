@@ -42,7 +42,6 @@ pkgbase = serenity-desktop-environment-git
 	depends = wlroots0.20
 	depends = xorg-xwayland
 	depends = polkit
-	depends = python-gobject
 	optdepends = sddm: display manager that lists the SDE Wayland session
 	provides = serenity-desktop-environment
 	conflicts = serenity-desktop-environment

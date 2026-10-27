@@ -706,33 +706,44 @@ Service::~Service()
 {
     if (m_connection) {
         dbus_connection_remove_filter(m_connection, &Service::filter, this);
-        dbus_connection_close(m_connection);
+        // dbus_bus_get() returns a shared connection; closing it is a libdbus
+        // error ("Applications must not close shared connections"). Dropping the
+        // reference is enough, and it closes the socket when it was the last one.
         dbus_connection_unref(m_connection);
     }
 }
 
 ErrorOr<NonnullRefPtr<Service>> Service::create(ByteString bus_name, ByteString object_path)
 {
+    return create_on_bus(DBUS_BUS_SESSION, move(bus_name), move(object_path));
+}
+
+ErrorOr<NonnullRefPtr<Service>> Service::create_on_bus(DBusBusType bus_type, ByteString bus_name, ByteString object_path)
+{
     DBusError error;
     dbus_error_init(&error);
 
-    auto* connection = dbus_bus_get(DBUS_BUS_SESSION, &error);
+    auto* connection = dbus_bus_get(bus_type, &error);
     if (!connection) {
         if (dbus_error_is_set(&error)) {
-            dbgln("portal: no session bus: {} ({})", error.name, error.message);
+            dbgln("portal: no {} bus: {} ({})", bus_type == DBUS_BUS_SYSTEM ? "system" : "session", error.name, error.message);
             dbus_error_free(&error);
         }
-        return Error::from_string_literal("no session bus");
+        return Error::from_string_literal("no D-Bus connection");
     }
     dbus_connection_set_exit_on_disconnect(connection, false);
 
-    auto request = dbus_bus_request_name(connection, bus_name.characters(), DBUS_NAME_FLAG_DO_NOT_QUEUE, &error);
-    if (dbus_error_is_set(&error)) {
-        dbus_error_free(&error);
-        return Error::from_string_literal("could not own bus name");
+    // An authentication agent is addressed by its unique name when polkitd
+    // calls it back, so it does not need (and must not claim) a well-known name.
+    if (!bus_name.is_empty()) {
+        auto request = dbus_bus_request_name(connection, bus_name.characters(), DBUS_NAME_FLAG_DO_NOT_QUEUE, &error);
+        if (dbus_error_is_set(&error)) {
+            dbus_error_free(&error);
+            return Error::from_string_literal("could not own bus name");
+        }
+        if (request != DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER)
+            return Error::from_string_literal("bus name already owned");
     }
-    if (request != DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER)
-        return Error::from_string_literal("bus name already owned");
 
     auto service = adopt_ref(*new Service(connection, move(bus_name), move(object_path)));
     dbus_connection_add_filter(connection, &Service::filter, service.ptr(), nullptr);

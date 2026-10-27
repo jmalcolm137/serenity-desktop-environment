@@ -332,6 +332,13 @@ not grow it** beyond `SDE_PERF_RSS_GROWTH_KB` (default 4 MB). Measured growth: 0
   table and cells hold a 32-bit index. `VT::Line::Cell` is 28 bytes instead of
   56, halving scrollback memory (about 4.6 MiB saved for a 1024-line,
   160-column terminal).
+- **The polkit agent is native.** `sde-polkit-agent` is a small AK/LibCore
+  service over the same `dbus-1` transport as the portals (no GLib/GIO, no
+  PyGObject). It registers on the system bus, serves
+  `org.freedesktop.PolicyKit1.AuthenticationAgent`, and talks to the trusted
+  polkit helper over `/run/polkit/agent-helper.socket` (or the setuid helper's
+  pipes). Its idle PSS is ~1 MiB, against ~19 MiB for the Python agent it
+  replaces.
 - **Bounded per-frame work.** Timers are short-lived (animation timers stop when
   the animation ends), the key-repeat timer is a single `Core::Timer`, and the
   session's watchdog heartbeat is a 1 s file write.
