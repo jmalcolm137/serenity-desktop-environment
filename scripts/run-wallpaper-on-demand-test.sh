@@ -8,8 +8,8 @@
 # Settings need the image, so the shim now reads the compositor's persisted raw
 # state when get_wallpaper() is first called.
 #
-# This runs a private headless session with a wallpaper, a LibGUI test client and
-# (when built) the desktop. It asserts:
+# This runs a private headless session with a wallpaper, the Taskbar and (when
+# built) the desktop. It asserts:
 #   * the client has no wallpaper-sized anonymous mapping;
 #   * the compositor did not push "host wallpaper";
 #   * FileManager still reads it on demand (the compositor sees set_wallpaper).
@@ -20,7 +20,9 @@ LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
 SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
 BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
 COMP="$SDE_ROOT/build/WindowServer/WindowServer"
-CLIENT="$BUILD/bin/libwm-test-window"
+# Taskbar is built in every configuration and is a plain LibGUI client; before
+# this fix it received (and copied) the wallpaper just like an applet.
+CLIENT="$BUILD/bin/Taskbar"
 DESKTOP="$BUILD/bin/FileManager"
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
@@ -31,7 +33,7 @@ check() { if eval "$2"; then echo "  ok: $1"; else echo "  FAIL: $1"; fail=1; fi
 R="$(mktemp -d "${TMPDIR:-/tmp}/sde-wallpaper-ondemand.XXXXXX")"
 chmod 700 "$R"
 export XDG_RUNTIME_DIR="$R/run"
-mkdir -p "$XDG_RUNTIME_DIR" "$R/session" "$R/wm"
+mkdir -p "$XDG_RUNTIME_DIR" "$R/session"
 chmod 700 "$XDG_RUNTIME_DIR"
 SOCK="sde-wallpaper-ondemand-$$"
 
@@ -48,7 +50,7 @@ setsid env -u WAYLAND_DISPLAY -u DISPLAY \
     SDE_WALLPAPER=blue-grid.png SDE_WALLPAPER_MODE=fill \
     LD_LIBRARY_PATH="$BUILD/lib" \
     SDE_APP_BIN_DIR="$BUILD/bin" SDE_SESSION_BIN_DIR="$BUILD/bin" \
-    SDE_SESSION_DIR="$R/session" SDE_WM_PORTAL_PATH="$R/wm" \
+    SDE_SESSION_DIR="$R/session" SDE_WM_PORTAL_PATH="$R/wm.sock" \
     "$COMP" -n "$SOCK" -s "$STARTUP" > "$R/comp.log" 2>&1 &
 CP=$!
 cleanup() {
@@ -70,8 +72,7 @@ fi
 # Let the test window bind and map, but inspect before its 6 s self-quit.
 sleep 2
 CLIENT_PID=""
-# comm is truncated to 15 characters by the kernel.
-for p in $(pgrep -x "libwm-test-wind" 2>/dev/null || true); do
+for p in $(pgrep -x "Taskbar" 2>/dev/null || true); do
     if tr '\0' '\n' < "/proc/$p/environ" 2>/dev/null | grep -qx "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"; then
         CLIENT_PID="$p"
         break
