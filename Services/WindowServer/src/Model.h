@@ -200,6 +200,7 @@ struct FrameCache {
     bool highlighted { false };
     int hovered_button { -1 };
     int pressed_button { -1 };
+    int menubar_inset { 0 };
     Gfx::Bitmap const* icon { nullptr };
     int scale { 1 };
     ByteString title;
@@ -232,6 +233,10 @@ struct Toplevel {
     int frame_right { 0 };
     int frame_bottom { 0 };
     Gfx::IntSize frame_size;
+    // Logical pixels reserved above the client surface for its menubar. The
+    // client presents the menubar as a subsurface at y = -menubar_inset; the
+    // compositor offsets the client content down by this amount.
+    int menubar_inset { 0 };
     // The window icon, shown by the window switcher (bottom-right of the
     // thumbnail) and by frame/taskbar chrome. Unset for plain Wayland clients
     // (SerenityOS clients supply one over the WindowServer protocol).

@@ -310,6 +310,14 @@ not grow it** beyond `SDE_PERF_RSS_GROWTH_KB` (default 4 MB). Measured growth: 0
   once, then split into titlebar/border strip buffers; the content area is a
   solid scene rect. A maximised 1280×800 window no longer keeps a 16 MiB ARGB
   frame bitmap alive at scale 2.
+- **Menubars are small subsurfaces, not full-window compositions.** A client
+  with a menubar used to redraw the menubar into a second window-sized buffer on
+  every present (about 11 MiB for a large Terminal, and a full-window copy per
+  repaint). The client now presents the strip from a menubar-sized subsurface at
+  `y = -inset` and tells the compositor to offset the content tree with
+  `serenity_toplevel.set_menubar_inset`; the old full-window composition remains
+  as a fallback for a compositor without `wl_subcompositor` or a version-2
+  `serenity_toplevel`. Screenshots are pixel-identical at scale 1 and 2.
 - **The wallpaper is on demand.** The compositor does not push the image when a
   client binds `serenity_window_manager`; `get_wallpaper()` reads the persisted
   raw state when a client actually needs it. Only the desktop and Display

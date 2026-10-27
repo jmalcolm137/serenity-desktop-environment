@@ -288,9 +288,14 @@ void toplevel_update_frame(Toplevel& toplevel)
     frame_buffers_set_visible(toplevel.frame_buffers, true);
 
     auto& theme = g_palette->window_theme();
+    // The client may reserve a menubar strip above its surface. The client
+    // presents that strip from a small subsurface at y = -inset; the scene tree
+    // for the client surface is moved down by the same amount so the strip lands
+    // at the frame's content top.
+    int const menubar_inset = toplevel.menubar_inset;
     // A rolled-up window keeps only its frame: the content is hidden and the
     // frame is laid out as if the content had zero height.
-    int frame_content_height = toplevel.rolled_up ? 0 : content_height;
+    int frame_content_height = toplevel.rolled_up ? 0 : content_height + menubar_inset;
     Gfx::IntRect content_rect { 0, 0, content_width, frame_content_height };
     auto frame_rect = theme.frame_rect_for_window(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette, 0);
     auto frame_size = frame_rect.size();
@@ -321,6 +326,7 @@ void toplevel_update_frame(Toplevel& toplevel)
         && frame_cache->highlighted == highlighted
         && frame_cache->hovered_button == toplevel.hovered_button
         && frame_cache->pressed_button == toplevel.pressed_button
+        && frame_cache->menubar_inset == menubar_inset
         && frame_cache->icon == toplevel.icon.ptr()
         && frame_cache->scale == output_scale()
         && frame_cache->title == title_view)
@@ -377,7 +383,7 @@ void toplevel_update_frame(Toplevel& toplevel)
         }
     }
 
-    wlr_scene_node_set_position(&toplevel.content_tree->node, toplevel.frame_left, toplevel.frame_top);
+    wlr_scene_node_set_position(&toplevel.content_tree->node, toplevel.frame_left, toplevel.frame_top + menubar_inset);
     wlr_scene_node_set_enabled(&toplevel.content_tree->node, !toplevel.rolled_up);
 
     if (auto const* dump_path = getenv("WINDOWSERVER_DUMP_FRAME"); dump_path && *dump_path) {
@@ -405,6 +411,7 @@ void toplevel_update_frame(Toplevel& toplevel)
         .highlighted = highlighted,
         .hovered_button = toplevel.hovered_button,
         .pressed_button = toplevel.pressed_button,
+        .menubar_inset = menubar_inset,
         .icon = toplevel.icon.ptr(),
         .scale = output_scale(),
         .title = ByteString { title_view },
