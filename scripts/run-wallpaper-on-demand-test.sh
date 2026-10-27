@@ -69,15 +69,27 @@ if [[ ! -S "$XDG_RUNTIME_DIR/$SOCK" ]]; then
     exit 1
 fi
 
-# Let the Taskbar and desktop bind and map.
-sleep 2
+# Let the Taskbar bind and map (it loads fonts first on a cold CI image).
 CLIENT_PID=""
-for p in $(pgrep -x "Taskbar" 2>/dev/null || true); do
-    if tr '\0' '\n' < "/proc/$p/environ" 2>/dev/null | grep -qx "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"; then
-        CLIENT_PID="$p"
-        break
-    fi
+for _ in $(seq 1 100); do
+    for p in $(pgrep -x "Taskbar" 2>/dev/null || true); do
+        if tr '\0' '\n' < "/proc/$p/environ" 2>/dev/null | grep -qx "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"; then
+            CLIENT_PID="$p"
+            break
+        fi
+    done
+    [[ -n "$CLIENT_PID" ]] && break
+    sleep 0.1
 done
+
+# FileManager reads the wallpaper when its desktop starts; wait for the
+# compositor to see the re-apply rather than assuming a fixed startup time.
+if [[ -x "$DESKTOP" ]]; then
+    for _ in $(seq 1 100); do
+        grep -q 'wallpaper set by a client' "$R/comp.log" && break
+        sleep 0.1
+    done
+fi
 
 check "the wallpaper state was persisted" "[[ -s '$R/wallpaper.raw' ]]"
 check "no client received a pushed wallpaper" "! grep -q 'LibWM: host wallpaper' '$R/comp.log'"
