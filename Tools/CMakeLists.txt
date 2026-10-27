@@ -182,6 +182,18 @@ if (LIBEIS_FOUND)
     target_link_libraries(xdg-desktop-portal-serenity PRIVATE PkgConfig::LIBEIS)
 endif()
 
+# sde-notifications: the freedesktop notification daemon
+# (org.freedesktop.Notifications). It owns the bus name and forwards each
+# notification to the session NotificationServer through LibGUI's Notification
+# IPC, so host (GTK/Qt/X11) apps and Serenity apps share one banner stack. The
+# unmodified SerenityOS NotificationServer draws the banners; this service only
+# translates the protocol and tracks ids/expiry.
+find_library(SDE_WINDOWSERVER NAMES windowserver PATHS "${SERENITY_BUILD_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
+sde_portal_tool(sde-notifications
+    SOURCES sde-notifications/main.cpp portal/dbus.cpp
+    LAGOM ${PORTAL_LAGOM} gfx gui ipc url desktop
+    LIBRARIES ${SDE_WINDOWSERVER})
+
 # sde-lock: the native session locker (docs/11 §10). A plain
 # ext-session-lock-v1 client drawn with LibGfx rather than LibGUI: LibGUI goes
 # through LibWM, which speaks the SDE's own window protocol, and the locker must
@@ -199,4 +211,4 @@ sde_portal_tool(sde-lock
 add_custom_target(sde-tools DEPENDS
     sde-idle sde-dpms sde-screenshot native-app-test wayland-fuzz-test layer-fuzz-test data-device-fuzz-test
     ext-workspace-test output-management-test capture-probe screencast-consumer
-    virtual-input-test sde-settings-portal xdg-desktop-portal-serenity sde-lock)
+    virtual-input-test sde-settings-portal xdg-desktop-portal-serenity sde-notifications sde-lock)

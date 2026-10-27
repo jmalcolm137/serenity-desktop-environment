@@ -525,13 +525,60 @@ void handle_openuri(Portal::MethodCall& call)
 
 // --- Notification -----------------------------------------------------------
 
-void show_notification(ByteString const& id, ByteString const& title, ByteString const& body, ByteString const& icon)
+// Send a notification to the freedesktop daemon (sde-notifications, which forwards
+// to the session NotificationServer). Works on the same bus connection the portal
+// backend already owns; no external notify-send is needed.
+void send_freedesktop_notification(Portal::Service& service, ByteString const& title, ByteString const& body, ByteString const& icon)
+{
+    auto* connection = service.connection();
+    if (!connection)
+        return;
+
+    auto* message = dbus_message_new_method_call("org.freedesktop.Notifications",
+        "/org/freedesktop/Notifications", "org.freedesktop.Notifications", "Notify");
+    if (!message)
+        return;
+
+    DBusMessageIter args;
+    dbus_message_iter_init_append(message, &args);
+
+    char const* app_name = "SDE";
+    char const* summary = title.characters();
+    char const* text = body.characters();
+    char const* app_icon = icon.characters();
+    dbus_uint32_t replaces_id = 0;
+    // The portal's RemoveNotification is id-based but the id is the frontend's
+    // string; let the banner expire rather than lingering (the daemon's default
+    // would also apply, but be explicit for portal notifications).
+    dbus_int32_t expire_timeout = 5000;
+
+    dbus_message_iter_append_basic(&args, DBUS_TYPE_STRING, &app_name);
+    dbus_message_iter_append_basic(&args, DBUS_TYPE_UINT32, &replaces_id);
+    dbus_message_iter_append_basic(&args, DBUS_TYPE_STRING, &app_icon);
+    dbus_message_iter_append_basic(&args, DBUS_TYPE_STRING, &summary);
+    dbus_message_iter_append_basic(&args, DBUS_TYPE_STRING, &text);
+
+    DBusMessageIter actions;
+    dbus_message_iter_open_container(&args, DBUS_TYPE_ARRAY, "s", &actions);
+    dbus_message_iter_close_container(&args, &actions);
+
+    DBusMessageIter hints;
+    dbus_message_iter_open_container(&args, DBUS_TYPE_ARRAY, "{sv}", &hints);
+    dbus_message_iter_close_container(&args, &hints);
+
+    dbus_message_iter_append_basic(&args, DBUS_TYPE_INT32, &expire_timeout);
+
+    dbus_connection_send(connection, message, nullptr);
+    dbus_message_unref(message);
+}
+
+void show_notification(Portal::Service& service, ByteString const& id, ByteString const& title, ByteString const& body, ByteString const& icon)
 {
     if (auto notifier = environment("SDE_PORTAL_NOTIFIER"sv); notifier.has_value() && !notifier->is_empty()) {
         (void)spawn_async({ notifier.value(), id, title, body, icon });
         return;
     }
-    (void)spawn_async({ "notify-send", title, body });
+    send_freedesktop_notification(service, title, body, icon);
 }
 
 void handle_notification(Portal::Service& service, Portal::MethodCall& call)
@@ -557,7 +604,7 @@ void handle_notification(Portal::Service& service, Portal::MethodCall& call)
                 }
             }
         }
-        show_notification(id, title, body, icon);
+        show_notification(service, id, title, body, icon);
         call.reply();
         return;
     }

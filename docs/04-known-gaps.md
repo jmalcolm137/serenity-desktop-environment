@@ -98,6 +98,10 @@ click was already handled and returned earlier).
   `Desktop::Launcher::open` through the launch portal, and hovering expands it;
   this snapshot of the server has no auto-dismiss timer (it closes on click or
   `close_notification`). Covered by `scripts/run-notification-test.sh`.
+  The freedesktop side is served too: `sde-notifications` owns
+  `org.freedesktop.Notifications` and forwards host-app notifications to this
+  same server (with its own expiry/replaces handling); covered by
+  `scripts/run-notification-dbus-test.sh`.
 - **Tooltips**: done (WS6). `GUI::Application::show_tooltip()` was inert because
   the port's `fast_greet` advertised every system effect as disabled; tooltips are
   now enabled, so the Taskbar quick-launch/clock, widgets and applets show hover

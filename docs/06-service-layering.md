@@ -54,6 +54,13 @@ SDE's **`AudioServer`**, which serves the audio + audiomanager portals from one
 process). Those reach the client the same way: the app connects to the portal,
 `LibWM` spawns the service and hands it the listening socket.
 
+The **freedesktop notification daemon** (`Tools/sde-notifications/`, built by the
+tools target) is a session service, not a portal: it owns
+`org.freedesktop.Notifications` and forwards to the same `NotificationServer`
+through LibGUI's notification IPC. The session starts it, and it is
+D-Bus-activatable for host apps. See
+[`15-xdg-desktop-portal-serenity.md`](15-xdg-desktop-portal-serenity.md).
+
 ## 3. Applied to `LaunchServer`
 
 - **`libgui-wayland` (fallback):** the in-process `LaunchServerConnection` keeps

@@ -67,7 +67,7 @@ install_if_executable "$SDE_ROOT/build/AuthDialog/sde-auth-dialog"
 for applet in "$SDE_ROOT"/build/Applets/*; do
     [[ -f "$applet" && -x "$applet" ]] && install_if_executable "$applet"
 done
-for tool in sde-idle sde-dpms sde-settings-portal xdg-desktop-portal-serenity sde-lock; do
+for tool in sde-idle sde-dpms sde-settings-portal xdg-desktop-portal-serenity sde-notifications sde-lock; do
     install_if_executable "$SDE_ROOT/build/tools/$tool"
 done
 # The portal's LibGUI dialogs are spawned by the backend through the app bin dir.
@@ -88,6 +88,14 @@ sed "s|^Exec=.*|Exec=$PREFIX/bin/xdg-desktop-portal-serenity|" \
     "$SDE_ROOT/Base/xdg-desktop-portal/org.freedesktop.impl.portal.desktop.serenity.service" \
     > "$DESTDIR/usr/share/dbus-1/services/org.freedesktop.impl.portal.desktop.serenity.service"
 chmod 0644 "$DESTDIR/usr/share/dbus-1/services/org.freedesktop.impl.portal.desktop.serenity.service"
+
+# The freedesktop notification daemon (org.freedesktop.Notifications). Installed
+# as a D-Bus activation file with an absolute Exec: the SDE bin directory is not
+# necessarily on the session PATH for the bus.
+sed "s|^Exec=.*|Exec=$PREFIX/bin/sde-notifications|" \
+    "$SDE_ROOT/Base/dbus-1/services/org.freedesktop.Notifications.service" \
+    > "$DESTDIR/usr/share/dbus-1/services/org.freedesktop.Notifications.service"
+chmod 0644 "$DESTDIR/usr/share/dbus-1/services/org.freedesktop.Notifications.service"
 
 # Help hardcodes /usr/share/man as its manual root. The Serenity source has the
 # manual pages, and Base/res does not contain them, so install the manual tree
@@ -158,6 +166,7 @@ export SDE_LAUNCH_SERVER_BIN="$prefix/bin/LaunchServer"
 export SDE_IMAGE_DECODER_BIN="$prefix/bin/ImageDecoder"
 export SDE_PORTAL_BACKEND_BIN="$prefix/bin/xdg-desktop-portal-serenity"
 export SDE_SETTINGS_PORTAL_BIN="$prefix/bin/sde-settings-portal"
+export SDE_NOTIFICATIONS_BIN="$prefix/bin/sde-notifications"
 export SDE_BATTERY_APPLET="$prefix/bin/BatteryApplet"
 export SDE_WIFI_APPLET="$prefix/bin/WifiApplet"
 export SDE_SESSION_IDLE_BIN="$prefix/bin/sde-idle"

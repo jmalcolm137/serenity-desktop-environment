@@ -226,6 +226,10 @@ push_dbus_activation_env() {
     local vars="XDG_SESSION_TYPE XDG_SESSION_CLASS XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION WAYLAND_DISPLAY XDG_SEAT"
     [ -n "${XDG_VTNR:-}" ] && vars="$vars XDG_VTNR"
     [ -n "${XDG_SESSION_ID:-}" ] && vars="$vars XDG_SESSION_ID"
+    # D-Bus-activated SDE services (the notification daemon) must find the
+    # session's service binaries and private portal directory.
+    [ -n "${SDE_APP_BIN_DIR:-}" ] && vars="$vars SDE_APP_BIN_DIR"
+    [ -n "${SDE_SESSION_DIR:-}" ] && vars="$vars SDE_SESSION_DIR"
     # shellcheck disable=SC2086
     WAYLAND_DISPLAY="$SESSION_DISPLAY" "$cmd" $vars >/dev/null 2>&1 || true
 }

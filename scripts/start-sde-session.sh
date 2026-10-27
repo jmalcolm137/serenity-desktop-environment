@@ -315,6 +315,19 @@ if [[ "${SDE_SESSION_PORTAL:-1}" == "1" ]]; then
     fi
 fi
 
+# The freedesktop notification daemon (R5): owns org.freedesktop.Notifications
+# and forwards host (GTK/Qt/X11) notifications to the session NotificationServer,
+# so they share the Serenity banner stack with SDE's own apps. D-Bus activation
+# can start it too (the installed .service file); starting it here makes it
+# immediately available. No restarts: if another daemon already owns the name,
+# this instance exits and the other one keeps serving.
+NOTIFICATIONS_BACKEND="${SDE_NOTIFICATIONS_BIN:-$SDE_ROOT/build/tools/sde-notifications}"
+NOTIFICATIONS_PID=""
+if [[ -x "$NOTIFICATIONS_BACKEND" && "${SDE_SESSION_NOTIFICATIONS:-1}" == "1" ]]; then
+    SDE_SERVICE_MAX_RESTARTS=0 "$SERVICE_SUPERVISOR" Notifications -- "$NOTIFICATIONS_BACKEND" &
+    NOTIFICATIONS_PID=$!
+fi
+
 # PolicyKit authentication agent: the SDE-owned prompt (and the "do not ask
 # again this session" cache). The trusted polkit helper still performs PAM.
 POLKIT_AGENT="${SDE_POLKIT_AGENT:-$SDE_ROOT/scripts/sde-polkit-agent.py}"
@@ -366,6 +379,9 @@ if [[ -n "$IMAGE_DECODER_PID" ]]; then
 fi
 if [[ -n "$PORTAL_PID" ]]; then
     kill "$PORTAL_PID" 2>/dev/null || true
+fi
+if [[ -n "$NOTIFICATIONS_PID" ]]; then
+    kill "$NOTIFICATIONS_PID" 2>/dev/null || true
 fi
 if [[ -n "$POLKIT_AGENT_PID" ]]; then
     kill "$POLKIT_AGENT_PID" 2>/dev/null || true

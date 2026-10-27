@@ -73,6 +73,19 @@ portal is the standalone `Tools/portal/settings-portal.cpp` binary.
 | `Inhibit` (v1) | `Inhibit` (logout / user-switch / suspend / idle flags). The impl method returns nothing, so the backend exports a `Request` object at the call's handle and the caller `Close`s it to release; the response arrives as the `Request.Response` signal. Inhibiting is layered and best-effort: **logind**'s block inhibitor on the system bus (`shutdown`/`sleep`/`idle`, held as an fd) when logind is available, plus the session seam `SDE_PORTAL_INHIBIT_CMD <flags>` (the OR of the live flags, 0 when none) that the session wires to its own idle/power path (`scripts/sde-idle`, `sde-power`). No `xdg-desktop-portal-gtk` fallback any more. Verified directly and through the real frontend by `scripts/run-portal-test.sh`. |
 | `Clipboard` (v1) | Attached to a RemoteDesktop or InputCapture session (`RequestClipboard`). The backend is an `ext-data-control-v1` client: it mirrors the compositor selection, creates a data source for `SetSelection`, returns the source fd from `SelectionWrite`, and provides `SelectionRead` over a pipe. `SelectionOwnerChanged`/`SelectionTransfer` carry the standard MIME metadata. Covered by `scripts/run-portal-clipboard-remote-test.sh`. |
 
+The **freedesktop notification daemon** is a separate session service, not a portal
+interface: `sde-notifications` (`Tools/sde-notifications/`) owns
+`org.freedesktop.Notifications`, implements `GetCapabilities`,
+`GetServerInformation`, `Notify` and `CloseNotification` (plus
+`NotificationClosed`), and forwards each notification to the same unmodified
+`NotificationServer` through LibGUI's `Notification` IPC. GTK/Qt/X11
+notifications therefore share the Serenity banner stack with SDE's own apps. It
+advertises `body` and `icon-static`, honours `replaces_id` and `expire_timeout`
+(default 6 s, except critical urgency), and is both started by the session and
+D-Bus-activatable (`Base/dbus-1/services/org.freedesktop.Notifications.service`).
+The portal's `Notification` backend uses the same daemon when no
+`SDE_PORTAL_NOTIFIER` seam is set. Test: `scripts/run-notification-dbus-test.sh`.
+
 ### ScreenCast pipeline (niri-inspired)
 
 The implementation follows **niri**'s producer design (`src/screencasting/`):
