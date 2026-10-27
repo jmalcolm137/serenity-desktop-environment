@@ -350,6 +350,12 @@ list (Taskbar + Desktop + applets + BatteryApplet):
 scripts/run-session-memory-test.sh
 ```
 
+The per-client wallpaper copy is guarded by:
+
+```sh
+scripts/run-wallpaper-on-demand-test.sh
+```
+
 It asserts the client count, the compositor's PSS, the session's PSS, each
 client's PSS, and that an idle session does not grow
 (`SDE_SESSION_PSS_LIMIT_KB`, `SDE_COMPOSITOR_PSS_LIMIT_KB`,
