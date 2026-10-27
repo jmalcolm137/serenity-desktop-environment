@@ -42,14 +42,18 @@ diff --git a/Userland/Services/Taskbar/main.cpp b/Userland/Services/Taskbar/main
 diff --git a/Userland/Services/Taskbar/CMakeLists.txt b/Userland/Services/Taskbar/CMakeLists.txt
 --- a/Userland/Services/Taskbar/CMakeLists.txt
 +++ b/Userland/Services/Taskbar/CMakeLists.txt
-@@ -13,6 +13,7 @@
+@@ -13,8 +13,10 @@
      TaskbarFrame.cpp
      TaskbarWindow.cpp
      WindowList.cpp
 +    XdgMenu.cpp
++    XdgMenuFile.cpp
  )
  
  serenity_bin(Taskbar)
+-target_link_libraries(Taskbar PRIVATE LibCore LibGfx LibGUI LibDesktop LibConfig LibIPC LibMain LibURL)
++target_link_libraries(Taskbar PRIVATE LibCore LibGfx LibGUI LibDesktop LibConfig LibIPC LibMain LibURL LibXML)
+ serenity_install_headers(Services/Taskbar)
 diff --git a/Userland/Services/Taskbar/XdgMenu.h b/Userland/Services/Taskbar/XdgMenu.h
 new file mode 100644
 --- /dev/null
@@ -85,23 +89,28 @@ diff --git a/Userland/Services/Taskbar/XdgMenu.cpp b/Userland/Services/Taskbar/X
 new file mode 100644
 --- /dev/null
 +++ b/Userland/Services/Taskbar/XdgMenu.cpp
-@@ -0,0 +1,440 @@
+@@ -0,0 +1,525 @@
 +/*
 + * Copyright (c) 2026, Serenity Desktop Environment contributors
 + *
 + * SPDX-License-Identifier: BSD-2-Clause
 + */
 +
-+// The Taskbar's XDG menu: instead of the Serenity .af applications, read
-+// freedesktop .desktop entries from the XDG data dirs, group them by their main
-+// category and launch them through their Exec line. Enabled by
-+// WindowServer.ini [Taskbar] XDGMenu=true (default: the Serenity .af menu).
++// The Taskbar's XDG menu: instead of the Serenity .af applications, build the
++// system menu from the freedesktop menu file (${XDG_MENU_PREFIX}applications.menu)
++// and the .desktop entries it selects. Enabled by WindowServer.ini
++// [Taskbar] XDGMenu=true (default: the Serenity .af menu).
 +//
-+// Entries for the Serenity applications are generated from their .af files by
-+// scripts/generate-desktop-entries.sh (the session puts them in
-+// $XDG_DATA_DIRS/applications).
++// The menu file's <Include>/<Exclude> rules, merging, .directory entries and
++// layout hints are handled in XdgMenuFile.cpp; this file turns the resolved tree
++// into GUI menus and launches entries. Entries for the Serenity applications are
++// generated from their .af files by scripts/generate-desktop-entries.sh.
++//
++// With no menu file anywhere the old flat category menu is used as a fallback,
++// so XDGMenu=true never leaves the Taskbar without a system menu.
 +
 +#include "XdgMenu.h"
++#include "XdgMenuFile.h"
 +
 +#include <AK/Array.h>
 +#include <AK/Debug.h>
@@ -113,32 +122,26 @@ new file mode 100644
 +#include <AK/Try.h>
 +#include <AK/Vector.h>
 +#include <LibCore/ConfigFile.h>
-+#include <LibCore/DirIterator.h>
 +#include <LibCore/Process.h>
-+#include <LibCore/StandardPaths.h>
++#include <LibDesktop/Launcher.h>
 +#include <LibGfx/Bitmap.h>
 +#include <LibGUI/Action.h>
 +#include <LibGUI/FileIconProvider.h>
 +#include <LibGUI/Icon.h>
 +#include <LibGUI/Menu.h>
++#include <LibGUI/MessageBox.h>
 +#include <LibGUI/Process.h>
 +#include <LibGUI/Window.h>
++#include <LibURL/URL.h>
 +#include <stdlib.h>
++#include <string.h>
 +#include <unistd.h>
 +
 +namespace Taskbar {
 +
 +namespace {
 +
-+struct XdgApplication {
-+    ByteString desktop_id;
-+    ByteString name;
-+    ByteString exec;
-+    ByteString executable;
-+    ByteString icon;
-+    ByteString category;
-+    bool terminal { false };
-+};
++using namespace Xdg;
 +
 +ByteString state_directory()
 +{
@@ -151,87 +154,938 @@ new file mode 100644
 +    return ByteString { "/tmp/sde" };
 +}
 +
-+Vector<ByteString> data_directories()
++static Optional<bool> read_config_bool(Core::ConfigFile& config, StringView group, StringView key)
 +{
-+    Vector<ByteString> directories;
-+    if (auto const* data_home = getenv("XDG_DATA_HOME"); data_home && *data_home) {
-+        directories.append(ByteString { data_home });
-+    } else {
-+        directories.append(ByteString::formatted("{}/.local/share", Core::StandardPaths::home_directory()));
-+    }
-+
-+    if (auto const* data_dirs = getenv("XDG_DATA_DIRS"); data_dirs && *data_dirs) {
-+        ByteString data_dirs_value { data_dirs };
-+        for (auto directory : data_dirs_value.view().split_view(':')) {
-+            if (!directory.is_empty())
-+                directories.append(directory.to_byte_string());
-+        }
-+    } else {
-+        directories.append("/usr/local/share"sv);
-+        directories.append("/usr/share"sv);
-+    }
-+    return directories;
++    auto text = config.read_entry(group, key);
++    if (text.is_empty())
++        return {};
++    auto lower = text.trim_whitespace().to_lowercase();
++    if (lower == "true"sv || lower == "1"sv || lower == "yes"sv || lower == "on"sv)
++        return true;
++    if (lower == "false"sv || lower == "0"sv || lower == "no"sv || lower == "off"sv)
++        return false;
++    return {};
 +}
 +
-+bool list_contains(StringView list, StringView value)
++RefPtr<Gfx::Bitmap const> bitmap_for_icon_name(StringView icon)
 +{
-+    for (auto item : list.split_view(';')) {
++    if (icon.is_empty())
++        return nullptr;
++
++    ByteString icon_string { icon };
++    if (icon.starts_with('/') || icon.contains("://"sv) || icon.starts_with("resource:"sv)) {
++        auto bitmap = Gfx::Bitmap::load_from_uri(icon_string);
++        if (!bitmap.is_error())
++            return bitmap.release_value();
++        return nullptr;
++    }
++
++    Vector<ByteString> candidates;
++    candidates.append(ByteString::formatted("resource://icons/16x16/{}.png", icon));
++    for (auto const& prefix : { "applications-"sv, "preferences-"sv, "kf5-"sv, "gnome-"sv }) {
++        if (icon.starts_with(prefix))
++            candidates.append(ByteString::formatted("resource://icons/16x16/{}.png", icon.substring_view(prefix.length())));
++    }
++    for (auto const& uri : candidates) {
++        auto bitmap = Gfx::Bitmap::load_from_uri(uri);
++        if (!bitmap.is_error())
++            return bitmap.release_value();
++    }
++    return nullptr;
++}
++
++RefPtr<Gfx::Bitmap const> icon_from_system_menu(StringView name)
++{
++    auto config = Core::ConfigFile::open("resource://icons/SystemMenu.ini"sv);
++    if (config.is_error())
++        return nullptr;
++
++    auto& file = *config.value();
++    auto lower_name = ByteString { name }.to_lowercase();
++    lower_name = lower_name.replace("&"sv, ""sv, ReplaceMode::All);
++    for (auto const& key : file.keys("16x16"sv)) {
++        auto label = key.replace("&"sv, ""sv, ReplaceMode::All);
++        if (label.to_lowercase() != lower_name)
++            continue;
++        auto path = file.read_entry("16x16"sv, key);
++        if (path.is_empty())
++            return nullptr;
++        auto uri = path.starts_with("/res/"sv) ? ByteString::formatted("resource://{}", path.substring_view(5)) : path;
++        auto bitmap = Gfx::Bitmap::load_from_uri(uri);
++        if (!bitmap.is_error())
++            return bitmap.release_value();
++    }
++    return nullptr;
++}
++
++RefPtr<Gfx::Bitmap const> icon_for_menu(MenuNode const& node, ByteString const& caption)
++{
++    if (node.directory.has_value()) {
++        if (auto bitmap = bitmap_for_icon_name(node.directory->icon); bitmap)
++            return bitmap;
++    }
++
++    if (auto bitmap = icon_from_system_menu(caption.view()); bitmap)
++        return bitmap;
++
++    auto lower = caption.to_lowercase();
++    if (lower == "multimedia"sv || lower == "sound & video"sv || lower == "media"sv)
++        return bitmap_for_icon_name("multimedia"sv);
++    if (lower == "system"sv || lower == "other"sv || lower == "accessories"sv)
++        return bitmap_for_icon_name("utilities"sv);
++    if (lower == "education"sv || lower == "science"sv)
++        return bitmap_for_icon_name("development"sv);
++    return bitmap_for_icon_name(lower);
++}
++
++RefPtr<Gfx::Bitmap const> icon_for_entry(DesktopEntry const& entry)
++{
++    if (auto bitmap = bitmap_for_icon_name(entry.icon); bitmap)
++        return bitmap;
++
++    if (entry.executable.is_empty())
++        return nullptr;
++    auto executable = resolve_executable(entry.executable).value_or(entry.executable);
++    auto icon = GUI::FileIconProvider::icon_for_path(executable.view());
++    return icon.bitmap_for_size(16);
++}
++
++void launch_entry(DesktopEntry const& entry, GUI::Window& window)
++{
++    if (entry.is_link) {
++        URL::URL url(entry.url);
++        if (!Desktop::Launcher::open(url))
++            GUI::MessageBox::show_error(&window, ByteString::formatted("Could not open '{}'", entry.url));
++        return;
++    }
++
++    if (entry.terminal) {
++        Vector<ByteString> arguments;
++        arguments.append("-e"_string.to_byte_string());
++        arguments.append(strip_field_codes(entry.exec));
++        GUI::Process::spawn_or_show_error(&window, "/bin/Terminal"sv, arguments.span());
++        return;
++    }
++
++    auto arguments = split_exec(entry.exec);
++    if (arguments.is_empty())
++        return;
++    auto program = arguments.take_first();
++    auto resolved = resolve_executable(program);
++    if (!resolved.has_value())
++        return;
++    GUI::Process::spawn_or_show_error(&window, resolved.value().view(), arguments.span());
++}
++
++ByteString caption_for(MenuNode const& node)
++{
++    return (node.directory.has_value() && !node.directory->name.is_empty()) ? node.directory->name : node.name;
++}
++
++// GUI menu labels use '&' as the mnemonic marker; XDG names are literal text.
++ByteString gui_text(ByteString const& text)
++{
++    StringBuilder builder;
++    for (auto character : text) {
++        if (character == '&')
++            builder.append("&&"sv);
++        else
++            builder.append(character);
++    }
++    return builder.to_byte_string();
++}
++
++struct MenuPlan;
++
++struct PlannedThing {
++    enum class Type {
++        Entry,
++        Separator,
++        Submenu,
++    };
++
++    Type type { Type::Separator };
++    DesktopEntry entry;
++    OwnPtr<MenuPlan> submenu;
++    MenuNode* node { nullptr };
++};
++
++struct MenuPlan {
++    ByteString caption;
++    Vector<PlannedThing> things;
++    Vector<ByteString> labels;
++    bool has_content { false };
++};
++
++struct ChildPlan {
++    ByteString name;
++    MenuNode* node { nullptr };
++    OwnPtr<MenuPlan> plan;
++};
++
++Layout const& effective_layout(MenuNode const& node, Optional<Layout> const& inherited_default)
++{
++    if (node.layout.has_value() && !node.layout->items.is_empty())
++        return node.layout.value();
++    if (node.default_layout.has_value()) {
++        if (!node.default_layout->items.is_empty())
++            return node.default_layout.value();
++    } else if (inherited_default.has_value() && !inherited_default->items.is_empty()) {
++        return inherited_default.value();
++    }
++
++    static auto builtin = [] {
++        Layout layout;
++        layout.items.append({ LayoutItem::Type::MergeMenus, {}, false });
++        layout.items.append({ LayoutItem::Type::MergeFiles, {}, false });
++        return layout;
++    }();
++    return builtin;
++}
++
++bool case_insensitive_less(ByteString const& a, ByteString const& b)
++{
++    return a.to_lowercase() < b.to_lowercase();
++}
++
++void build_plan(MenuNode& node, Optional<Layout> const& inherited_default, MenuPlan& plan)
++{
++    auto child_default = node.default_layout.has_value() ? node.default_layout : inherited_default;
++
++    Vector<ChildPlan> children;
++    for (auto& child : node.children) {
++        auto child_plan = make<MenuPlan>();
++        child_plan->caption = caption_for(*child);
++        build_plan(*child, child_default, *child_plan);
++        children.append({ child->name, child.ptr(), move(child_plan) });
++    }
++
++    Vector<DesktopEntry const*> entries;
++    for (auto& entry : node.entries)
++        entries.append(&entry);
++    quick_sort(entries, [](auto* a, auto* b) { return case_insensitive_less(a->name, b->name); });
++
++    HashTable<ByteString> used_entries;
++    HashTable<ByteString> used_children;
++    bool pending_separator = false;
++
++    auto flush_separator = [&] {
++        if (!pending_separator)
++            return;
++        plan.things.append({ PlannedThing::Type::Separator, {}, {}, nullptr });
++        plan.labels.append(ByteString { "---" });
++        pending_separator = false;
++    };
++
++    auto add_entry = [&](DesktopEntry const& entry) {
++        if (used_entries.contains(entry.id))
++            return;
++        flush_separator();
++        plan.things.append({ PlannedThing::Type::Entry, entry, {}, nullptr });
++        plan.labels.append(entry.name);
++        plan.has_content = true;
++        used_entries.set(entry.id);
++    };
++
++    auto add_child = [&](ChildPlan& child, bool show_empty) {
++        if (used_children.contains(child.name))
++            return;
++        if (!child.plan->has_content && !show_empty)
++            return;
++        flush_separator();
++        auto caption = child.plan->caption;
++        plan.things.append({ PlannedThing::Type::Submenu, {}, move(child.plan), child.node });
++        plan.labels.append(ByteString::formatted("[{}]", caption));
++        plan.has_content = true;
++        used_children.set(child.name);
++    };
++
++    auto const& layout = effective_layout(node, inherited_default);
++
++    for (auto const& item : layout.items) {
++        switch (item.type) {
++        case LayoutItem::Type::Entry: {
++            for (auto const* entry : entries) {
++                if (entry->id == item.value) {
++                    add_entry(*entry);
++                    break;
++                }
++            }
++            break;
++        }
++        case LayoutItem::Type::Menu: {
++            for (auto& child : children) {
++                if (child.name == item.value) {
++                    add_child(child, item.show_empty);
++                    break;
++                }
++            }
++            break;
++        }
++        case LayoutItem::Type::Separator:
++            if (!plan.things.is_empty())
++                pending_separator = true;
++            break;
++        case LayoutItem::Type::MergeMenus: {
++            Vector<ChildPlan*> remaining;
++            for (auto& child : children) {
++                if (!used_children.contains(child.name))
++                    remaining.append(&child);
++            }
++            quick_sort(remaining, [](auto* a, auto* b) { return case_insensitive_less(a->plan->caption, b->plan->caption); });
++            for (auto* child : remaining)
++                add_child(*child, layout.show_empty);
++            break;
++        }
++        case LayoutItem::Type::MergeFiles:
++            for (auto const* entry : entries) {
++                if (!used_entries.contains(entry->id))
++                    add_entry(*entry);
++            }
++            break;
++        case LayoutItem::Type::MergeAll: {
++            Vector<ChildPlan*> remaining_children;
++            for (auto& child : children) {
++                if (!used_children.contains(child.name))
++                    remaining_children.append(&child);
++            }
++            quick_sort(remaining_children, [](auto* a, auto* b) { return case_insensitive_less(a->plan->caption, b->plan->caption); });
++
++            Vector<DesktopEntry const*> remaining_entries;
++            for (auto const* entry : entries) {
++                if (!used_entries.contains(entry->id))
++                    remaining_entries.append(entry);
++            }
++
++            size_t child_index = 0;
++            size_t entry_index = 0;
++            while (child_index < remaining_children.size() || entry_index < remaining_entries.size()) {
++                bool take_child;
++                if (child_index >= remaining_children.size())
++                    take_child = false;
++                else if (entry_index >= remaining_entries.size())
++                    take_child = true;
++                else
++                    take_child = case_insensitive_less(remaining_children[child_index]->plan->caption, remaining_entries[entry_index]->name);
++                if (take_child)
++                    add_child(*remaining_children[child_index++], layout.show_empty);
++                else
++                    add_entry(*remaining_entries[entry_index++]);
++            }
++            break;
++        }
++        }
++    }
++
++    StringBuilder labels;
++    for (size_t i = 0; i < plan.labels.size(); ++i) {
++        if (i > 0)
++            labels.append(", "sv);
++        labels.append(plan.labels[i]);
++    }
++    dbgln("Taskbar: XDG menu '{}': {}", plan.caption, plan.labels.is_empty() ? "(empty)"sv : labels.string_view());
++}
++
++void render_plan(MenuPlan const& plan, GUI::Menu& menu, GUI::Window& window)
++{
++    for (auto const& thing : plan.things) {
++        switch (thing.type) {
++        case PlannedThing::Type::Separator:
++            menu.add_separator();
++            break;
++        case PlannedThing::Type::Entry: {
++            auto icon = icon_for_entry(thing.entry);
++            menu.add_action(GUI::Action::create(gui_text(thing.entry.name), icon, [entry = thing.entry, &window](auto&) {
++                launch_entry(entry, window);
++            }));
++            break;
++        }
++        case PlannedThing::Type::Submenu: {
++            auto submenu = menu.add_submenu(String::from_byte_string(gui_text(thing.submenu->caption)).release_value_but_fixme_should_propagate_errors());
++            render_plan(*thing.submenu, *submenu, window);
++            if (auto icon = icon_for_menu(*thing.node, thing.submenu->caption); icon)
++                submenu->set_icon(icon.ptr());
++            break;
++        }
++        }
++    }
++}
++
++ByteString menu_category_for(Vector<ByteString> const& categories)
++{
++    for (auto const& category : categories) {
++        if (category == "Development"sv)
++            return "D&evelopment"_string.to_byte_string();
++        if (category == "Game"sv || category == "Games"sv)
++            return "&Games"_string.to_byte_string();
++        if (category == "Graphics"sv || category == "Demos"sv || category == "Demo"sv)
++            return "Gra&phics"_string.to_byte_string();
++        if (category == "Network"sv)
++            return "&Internet"_string.to_byte_string();
++        if (category == "AudioVideo"sv || category == "Audio"sv || category == "Video"sv)
++            return "&Media"_string.to_byte_string();
++        if (category == "Office"sv)
++            return "&Office"_string.to_byte_string();
++        if (category == "Settings"sv)
++            return "Settings"_string.to_byte_string();
++        if (category == "System"sv || category == "Utility"sv)
++            return "&Utilities"_string.to_byte_string();
++    }
++    return "&Utilities"_string.to_byte_string();
++}
++
++void add_fallback_category_menu(GUI::Menu& system_menu, GUI::Window& window)
++{
++    auto entries = discover_entries();
++    HashMap<ByteString, Vector<DesktopEntry>> categories;
++    for (auto& entry : entries)
++        categories.ensure(menu_category_for(entry.categories)).append(move(entry));
++
++    static constexpr Array<StringView, 8> category_order {
++        "D&evelopment"sv,
++        "&Games"sv,
++        "Gra&phics"sv,
++        "&Internet"sv,
++        "&Media"sv,
++        "&Office"sv,
++        "Settings"sv,
++        "&Utilities"sv,
++    };
++
++    for (auto category : category_order) {
++        auto it = categories.find(category);
++        if (it == categories.end() || it->value.is_empty())
++            continue;
++
++        auto menu = system_menu.add_submenu(String::from_utf8(category).release_value_but_fixme_should_propagate_errors());
++        if (auto icon = icon_from_system_menu(category); icon)
++            menu->set_icon(icon.ptr());
++
++        auto& apps = it->value;
++        quick_sort(apps, [](auto const& a, auto const& b) { return case_insensitive_less(a.name, b.name); });
++        for (auto const& entry : apps) {
++            auto icon = icon_for_entry(entry);
++            menu->add_action(GUI::Action::create(entry.name, icon, [entry, &window](auto&) {
++                launch_entry(entry, window);
++            }));
++        }
++        dbgln("Taskbar: XDG fallback menu '{}': {} entries", category, apps.size());
++    }
++}
++
++}
++
++bool xdg_menu_enabled()
++{
++    // Layered like the compositor's config (Services/WindowServer/src/Config.cpp):
++    // the user's file first, then the SerenityOS defaults under the resource root.
++    // Keep the parsing in sync with that file so `sde-config` and the Taskbar
++    // cannot disagree about the value.
++    ByteString defaults_path;
++    if (auto const* root = getenv("SERENITY_RES_ROOT"); root && *root)
++        defaults_path = ByteString::formatted("{}/../etc/WindowServer.ini", root);
++    else
++        defaults_path = ByteString { "/etc/WindowServer.ini" };
++
++    auto const user_path = ByteString::formatted("{}/WindowServer.ini", state_directory());
++    for (auto const& path : { user_path, defaults_path }) {
++        auto config = Core::ConfigFile::open(path);
++        if (config.is_error())
++            continue;
++        if (auto value = read_config_bool(*config.value(), "Taskbar"sv, "XDGMenu"sv); value.has_value())
++            return value.value();
++    }
++    return false;
++}
++
++ErrorOr<void> add_xdg_apps_to_menu(GUI::Menu& system_menu, GUI::Window& window)
++{
++    auto loaded = TRY(load_menu());
++    if (!loaded) {
++        dbgln("Taskbar: no XDG menu file found; using the category fallback");
++        add_fallback_category_menu(system_menu, window);
++        return {};
++    }
++
++    auto plan = make<MenuPlan>();
++    plan->caption = caption_for(*loaded->root);
++    build_plan(*loaded->root, {}, *plan);
++    render_plan(*plan, system_menu, window);
++    return {};
++}
++
++}
+diff --git a/Userland/Services/Taskbar/XdgMenuFile.h b/Userland/Services/Taskbar/XdgMenuFile.h
+new file mode 100644
+--- /dev/null
++++ b/Userland/Services/Taskbar/XdgMenuFile.h
+@@ -0,0 +1,136 @@
++/*
++ * Copyright (c) 2026, Serenity Desktop Environment contributors
++ *
++ * SPDX-License-Identifier: BSD-2-Clause
++ */
++
++#pragma once
++
++#include <AK/ByteString.h>
++#include <AK/Error.h>
++#include <AK/HashMap.h>
++#include <AK/NonnullOwnPtr.h>
++#include <AK/Optional.h>
++#include <AK/OwnPtr.h>
++#include <AK/StringView.h>
++#include <AK/Vector.h>
++
++namespace Core {
++class ConfigFile;
++}
++
++namespace Taskbar::Xdg {
++
++// The parts of the freedesktop Desktop Entry and Menu specifications the
++// Taskbar's XDG menu needs. See docs/36-xdg-desktop-menu.md.
++
++struct DesktopEntry {
++    // The desktop-file id: the path below the app dir, with '/' replaced by
++    // '-' (and the ".desktop" suffix kept), as the menu spec defines it.
++    ByteString id;
++    ByteString path;
++    ByteString name;
++    ByteString comment;
++    ByteString icon;
++    ByteString exec;
++    ByteString executable;
++    ByteString url;
++    Vector<ByteString> categories;
++    bool terminal { false };
++    bool is_link { false };
++};
++
++struct Rule {
++    enum class Type {
++        Never,
++        All,
++        And,
++        Or,
++        Not,
++        Category,
++        Filename,
++    };
++
++    Type type { Type::Never };
++    ByteString value;
++    Vector<Rule> children;
++
++    bool matches(DesktopEntry const&) const;
++};
++
++struct Query {
++    bool exclude { false };
++    Vector<Rule> rules;
++};
++
++struct LayoutItem {
++    enum class Type {
++        Entry,
++        Menu,
++        Separator,
++        MergeMenus,
++        MergeFiles,
++        MergeAll,
++    };
++
++    Type type;
++    ByteString value;
++    bool show_empty { false };
++};
++
++struct Layout {
++    Vector<LayoutItem> items;
++    bool show_empty { false };
++};
++
++struct DirectoryInfo {
++    ByteString name;
++    ByteString comment;
++    ByteString icon;
++};
++
++struct MenuNode {
++    ByteString name;
++    Vector<ByteString> app_dirs;
++    Vector<ByteString> directory_dirs;
++    Vector<ByteString> directory_ids;
++    Vector<Query> queries;
++    struct Move {
++        Vector<ByteString> old_path;
++        Vector<ByteString> new_path;
++    };
++    Vector<Move> moves;
++    Vector<NonnullOwnPtr<MenuNode>> children;
++    Optional<Layout> layout;
++    Optional<Layout> default_layout;
++    Optional<DirectoryInfo> directory;
++    bool only_unallocated { false };
++    bool only_unallocated_set { false };
++    bool deleted { false };
++    bool deleted_set { false };
++
++    // Filled by the query phase; the entries shown directly in this menu.
++    Vector<DesktopEntry> entries;
++};
++
++struct LoadedMenu {
++    NonnullOwnPtr<MenuNode> root;
++    ByteString path;
++};
++
++// Locates and loads the session's menu file. A null result means no menu file
++// was found anywhere (the caller can then use its built-in fallback).
++ErrorOr<OwnPtr<LoadedMenu>> load_menu();
++
++// The desktop entry and Exec helpers, also used by the menu builder.
++Optional<DesktopEntry> read_desktop_entry(ByteString const& path, ByteString const& id);
++Vector<DesktopEntry> discover_entries();
++Optional<ByteString> resolve_executable(StringView program);
++Vector<ByteString> split_exec(StringView exec);
++ByteString strip_field_codes(StringView exec);
++
++// The desktop directory entries (.directory).
++Optional<DirectoryInfo> read_directory_entry(ByteString const& path);
++ByteString localized_value(Core::ConfigFile const&, StringView group, StringView key);
++
++}
+diff --git a/Userland/Services/Taskbar/XdgMenuFile.cpp b/Userland/Services/Taskbar/XdgMenuFile.cpp
+new file mode 100644
+--- /dev/null
++++ b/Userland/Services/Taskbar/XdgMenuFile.cpp
+@@ -0,0 +1,1170 @@
++/*
++ * Copyright (c) 2026, Serenity Desktop Environment contributors
++ *
++ * SPDX-License-Identifier: BSD-2-Clause
++ */
++
++// The freedesktop Menu specification (menu file loading, merging and queries)
++// and the Desktop Entry fields the Taskbar needs. The Taskbar's XdgMenu.cpp
++// turns the resulting tree into GUI menus; this file is deliberately free of
++// LibGUI so the rules can be tested through the Taskbar log and reused.
++//
++// The implementation follows the 1.1 specification:
++//  - ${XDG_MENU_PREFIX}applications.menu from $XDG_CONFIG_HOME/menus and
++//    $XDG_CONFIG_DIRS/menus (first file wins);
++//  - <DefaultAppDirs>/<AppDir>, <DefaultDirectoryDirs>/<DirectoryDir>;
++//  - <MergeFile> (path and parent), <MergeDir>, <DefaultMergeDirs>, <Move>;
++//  - <Include>/<Exclude> with <All>/<And>/<Or>/<Not>/<Category>/<Filename>;
++//  - <OnlyUnallocated>, <Deleted>;
++//  - <Directory> (.directory name/icon); layout hints are kept for the GUI.
++//
++// <LegacyDir> and <KDELegacyDirs> are not loaded: the legacy KDE/GNOME
++// hierarchies they refer to have not been installed by any supported host for
++// many years. The elements are ignored (and logged at debug level).
++
++#include "XdgMenuFile.h"
++
++#include <AK/Debug.h>
++#include <AK/HashTable.h>
++#include <AK/LexicalPath.h>
++#include <AK/QuickSort.h>
++#include <AK/StringBuilder.h>
++#include <LibCore/ConfigFile.h>
++#include <LibCore/DirIterator.h>
++#include <LibCore/File.h>
++#include <LibCore/Process.h>
++#include <LibCore/StandardPaths.h>
++#include <LibXML/DOM/Node.h>
++#include <LibXML/Parser/Parser.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sys/stat.h>
++#include <unistd.h>
++
++namespace Taskbar::Xdg {
++
++namespace {
++
++struct SearchPaths {
++    Vector<ByteString> menu_dirs;
++    Vector<ByteString> config_dirs;
++    Vector<ByteString> data_search_dirs;
++    ByteString config_home;
++    ByteString menu_prefix;
++    ByteString sde_menu_dir;
++};
++
++ByteString trim(StringView value)
++{
++    return value.trim_whitespace().to_byte_string();
++}
++
++Vector<ByteString> split_path_list(char const* value, StringView fallback)
++{
++    Vector<ByteString> paths;
++    auto text = value && *value ? StringView { value, strlen(value) } : fallback;
++    for (auto item : text.split_view(':')) {
++        if (!item.is_empty())
++            paths.append(item.to_byte_string());
++    }
++    return paths;
++}
++
++Vector<ByteString> split_semicolon_list(StringView value)
++{
++    Vector<ByteString> items;
++    for (auto item : value.split_view(';')) {
++        auto trimmed = item.trim_whitespace();
++        if (!trimmed.is_empty())
++            items.append(trimmed.to_byte_string());
++    }
++    return items;
++}
++
++Vector<ByteString> session_desktops()
++{
++    Vector<ByteString> desktops;
++    if (auto const* value = getenv("XDG_CURRENT_DESKTOP"); value && *value) {
++        for (auto item : StringView { value, strlen(value) }.split_view(':')) {
++            if (!item.is_empty())
++                desktops.append(item.to_byte_string());
++        }
++    }
++    if (desktops.is_empty()) {
++        desktops.append(ByteString { "SDE" });
++        desktops.append(ByteString { "Serenity" });
++    }
++    return desktops;
++}
++
++bool list_contains(Vector<ByteString> const& list, StringView value)
++{
++    for (auto const& item : list) {
 +        if (item == value)
 +            return true;
 +    }
 +    return false;
 +}
 +
-+// The freedesktop main category to the Serenity system menu's category label
-+// (the labels are the keys in Base/res/icons/SystemMenu.ini, so the existing
-+// category icons keep working).
-+ByteString menu_category_for(StringView categories)
++ByteString home_directory()
 +{
-+    for (auto category : categories.split_view(';')) {
-+        if (category == "Development"sv)
-+            return "D&evelopment"sv;
-+        if (category == "Game"sv)
-+            return "&Games"sv;
-+        if (category == "Graphics"sv)
-+            return "Gra&phics"sv;
-+        if (category == "Network"sv)
-+            return "&Internet"sv;
-+        if (category == "AudioVideo"sv || category == "Audio"sv || category == "Video"sv)
-+            return "&Media"sv;
-+        if (category == "Office"sv)
-+            return "&Office"sv;
-+        if (category == "Settings"sv)
-+            return "Settings"sv;
-+        if (category == "System"sv || category == "Utility"sv)
-+            return "&Utilities"sv;
-+    }
-+    return "&Utilities"sv;
++    if (auto const* home = getenv("HOME"); home && *home)
++        return ByteString { home };
++    return Core::StandardPaths::home_directory();
 +}
 +
-+// Drop the Exec field codes (%f %F %u %U %d %D %n %N %i %c %k %v %m; %% is a
-+// literal percent).
-+ByteString strip_field_codes(StringView exec)
++bool path_is_directory(StringView path);
++
++SearchPaths search_paths()
++{
++    SearchPaths paths;
++
++    if (auto const* config_home = getenv("XDG_CONFIG_HOME"); config_home && *config_home)
++        paths.config_home = config_home;
++    else
++        paths.config_home = ByteString::formatted("{}/.config", home_directory());
++
++    auto config_dirs = split_path_list(getenv("XDG_CONFIG_DIRS"), "/etc/xdg"sv);
++    paths.menu_dirs.append(ByteString::formatted("{}/menus", paths.config_home));
++    for (auto const& directory : config_dirs) {
++        paths.config_dirs.append(directory);
++        paths.menu_dirs.append(ByteString::formatted("{}/menus", directory));
++    }
++
++    if (auto const* data_home = getenv("XDG_DATA_HOME"); data_home && *data_home)
++        paths.data_search_dirs.append(data_home);
++    else
++        paths.data_search_dirs.append(ByteString::formatted("{}/.local/share", home_directory()));
++    for (auto const& directory : split_path_list(getenv("XDG_DATA_DIRS"), "/usr/local/share:/usr/share"sv))
++        paths.data_search_dirs.append(directory);
++
++    if (auto const* prefix = getenv("XDG_MENU_PREFIX"); prefix && *prefix)
++        paths.menu_prefix = prefix;
++    if (auto const* menu_dir = getenv("SDE_MENU_DIR"); menu_dir && *menu_dir) {
++        paths.sde_menu_dir = menu_dir;
++    } else if (auto const* res_root = getenv("SERENITY_RES_ROOT"); res_root && *res_root) {
++        // An installed session keeps the SDE's menu next to the resource tree:
++        // <prefix>/share/res -> <prefix>/share/sde/menus.
++        auto candidate = ByteString::formatted("{}/../sde/menus", res_root);
++        if (path_is_directory(candidate))
++            paths.sde_menu_dir = move(candidate);
++    }
++
++    return paths;
++}
++
++ByteString resolve_relative(ByteString const& menu_file, StringView path)
++{
++    if (path.starts_with('/'))
++        return LexicalPath::canonicalized_path(path.to_byte_string());
++    return LexicalPath::canonicalized_path(ByteString::formatted("{}/{}", LexicalPath::dirname(menu_file), path));
++}
++
++bool path_exists(StringView path)
++{
++    if (path.is_empty())
++        return false;
++    ByteString string { path };
++    return access(string.characters(), F_OK) == 0;
++}
++
++bool path_is_directory(StringView path)
++{
++    ByteString string { path };
++    struct stat stat_buffer;
++    return stat(string.characters(), &stat_buffer) == 0 && S_ISDIR(stat_buffer.st_mode);
++}
++
++bool is_element(XML::Node const& node, StringView name)
++{
++    return node.is_element() && node.as_element().name == name;
++}
++
++ByteString element_text(XML::Node const& node)
 +{
 +    StringBuilder builder;
-+    for (size_t i = 0; i < exec.length(); ++i) {
-+        auto character = exec[i];
-+        if (character != '%') {
-+            builder.append(character);
-+            continue;
-+        }
-+        if (i + 1 < exec.length() && exec[i + 1] == '%') {
-+            builder.append('%');
-+            ++i;
-+            continue;
-+        }
-+        if (i + 1 < exec.length())
-+            ++i;
++    for (auto const& child : node.as_element().children) {
++        if (child->is_text())
++            builder.append(child->as_text().builder.string_view());
 +    }
-+    return builder.to_byte_string();
++    return trim(builder.string_view());
 +}
 +
-+// Split an Exec line into argv, honouring quotes and backslash escapes and
-+// dropping the field codes.
++ByteString attribute(XML::Node const& node, StringView name, StringView fallback = {})
++{
++    auto it = node.as_element().attributes.find(name);
++    if (it == node.as_element().attributes.end())
++        return fallback.to_byte_string();
++    return it->value;
++}
++
++bool attribute_bool(XML::Node const& node, StringView name, bool fallback)
++{
++    auto value = attribute(node, name);
++    if (value.is_empty())
++        return fallback;
++    return value == "true" || value == "1" || value.equals_ignoring_ascii_case("yes"sv);
++}
++
++Vector<ByteString> locale_candidates()
++{
++    Vector<ByteString> candidates;
++    HashTable<ByteString> seen;
++
++    auto add_locale = [&](StringView locale) {
++        if (locale.is_empty() || locale == "C"sv || locale == "POSIX"sv)
++            return;
++
++        auto without_encoding = locale;
++        if (auto dot = without_encoding.find('.'); dot.has_value())
++            without_encoding = without_encoding.substring_view(0, dot.value());
++
++        Vector<StringView> variants;
++        variants.append(without_encoding);
++        if (auto at = without_encoding.find('@'); at.has_value()) {
++            variants.append(without_encoding.substring_view(0, at.value()));
++            auto base = without_encoding.substring_view(0, at.value());
++            if (auto underscore = base.find('_'); underscore.has_value())
++                variants.append(base.substring_view(0, underscore.value()));
++        } else if (auto underscore = without_encoding.find('_'); underscore.has_value()) {
++            variants.append(without_encoding.substring_view(0, underscore.value()));
++        }
++
++        for (auto variant : variants) {
++            auto candidate = variant.to_byte_string();
++            if (!seen.contains(candidate)) {
++                seen.set(candidate);
++                candidates.append(move(candidate));
++            }
++        }
++    };
++
++    if (auto const* language = getenv("LANGUAGE"); language && *language) {
++        for (auto item : StringView { language, strlen(language) }.split_view(':'))
++            add_locale(item);
++    }
++    if (auto const* lc_all = getenv("LC_ALL"); lc_all && *lc_all)
++        add_locale(StringView { lc_all, strlen(lc_all) });
++    if (auto const* lc_messages = getenv("LC_MESSAGES"); lc_messages && *lc_messages)
++        add_locale(StringView { lc_messages, strlen(lc_messages) });
++    if (auto const* lang = getenv("LANG"); lang && *lang)
++        add_locale(StringView { lang, strlen(lang) });
++
++    return candidates;
++}
++
++}
++
++ByteString localized_value(Core::ConfigFile const& config, StringView group, StringView key)
++{
++    for (auto const& locale : locale_candidates()) {
++        auto value = config.read_entry(group, ByteString::formatted("{}[{}]", key, locale));
++        if (!value.is_empty())
++            return value;
++    }
++    return config.read_entry(group, key);
++}
++
++bool Rule::matches(DesktopEntry const& entry) const
++{
++    switch (type) {
++    case Type::Never:
++        return false;
++    case Type::All:
++        return true;
++    case Type::Category:
++        for (auto const& category : entry.categories) {
++            if (category == value)
++                return true;
++        }
++        return false;
++    case Type::Filename:
++        return entry.id == value;
++    case Type::And:
++        for (auto const& child : children) {
++            if (!child.matches(entry))
++                return false;
++        }
++        return true;
++    case Type::Or:
++        for (auto const& child : children) {
++            if (child.matches(entry))
++                return true;
++        }
++        return false;
++    case Type::Not:
++        for (auto const& child : children) {
++            if (child.matches(entry))
++                return false;
++        }
++        return true;
++    }
++    VERIFY_NOT_REACHED();
++}
++
++Optional<ByteString> resolve_executable(StringView program)
++{
++    auto resolved = Core::Process::resolve_executable_path(program);
++    if (access(resolved.characters(), X_OK) == 0)
++        return resolved;
++    if (program.contains('/'))
++        return {};
++
++    if (auto const* path_env = getenv("PATH"); path_env && *path_env) {
++        ByteString path_value { path_env };
++        for (auto directory : path_value.view().split_view(':')) {
++            if (directory.is_empty())
++                continue;
++            auto candidate = ByteString::formatted("{}/{}", directory, program);
++            if (access(candidate.characters(), X_OK) == 0)
++                return candidate;
++        }
++    }
++    return {};
++}
++
 +Vector<ByteString> split_exec(StringView exec)
 +{
 +    Vector<ByteString> arguments;
@@ -279,27 +1133,27 @@ new file mode 100644
 +    return arguments;
 +}
 +
-+Optional<ByteString> resolve_executable(StringView program)
++ByteString strip_field_codes(StringView exec)
 +{
-+    auto resolved = Core::Process::resolve_executable_path(program);
-+    if (access(resolved.characters(), X_OK) == 0)
-+        return resolved;
-+    if (program.contains('/'))
-+        return {};
-+    if (auto const* path_env = getenv("PATH"); path_env && *path_env) {
-+        ByteString path_value { path_env };
-+        for (auto directory : path_value.view().split_view(':')) {
-+            if (directory.is_empty())
-+                continue;
-+            auto candidate = ByteString::formatted("{}/{}", directory, program);
-+            if (access(candidate.characters(), X_OK) == 0)
-+                return candidate;
++    StringBuilder builder;
++    for (size_t i = 0; i < exec.length(); ++i) {
++        auto character = exec[i];
++        if (character != '%') {
++            builder.append(character);
++            continue;
 +        }
++        if (i + 1 < exec.length() && exec[i + 1] == '%') {
++            builder.append('%');
++            ++i;
++            continue;
++        }
++        if (i + 1 < exec.length())
++            ++i;
 +    }
-+    return {};
++    return builder.to_byte_string();
 +}
 +
-+Optional<XdgApplication> read_desktop_file(ByteString const& path, ByteString desktop_id)
++Optional<DesktopEntry> read_desktop_entry(ByteString const& path, ByteString const& id)
 +{
 +    auto config = Core::ConfigFile::open(path);
 +    if (config.is_error())
@@ -307,222 +1161,773 @@ new file mode 100644
 +
 +    auto const& file = *config.value();
 +    ByteString const group = "Desktop Entry";
-+    if (file.read_entry(group, "Type", "Application") != "Application")
++
++    auto type = file.read_entry(group, "Type");
++    if (type != "Application" && type != "Link")
 +        return {};
 +    if (file.read_bool_entry(group, "NoDisplay", false) || file.read_bool_entry(group, "Hidden", false))
 +        return {};
 +
-+    auto only_show_in = file.read_entry(group, "OnlyShowIn");
-+    if (!only_show_in.is_empty()
-+        && !list_contains(only_show_in.view(), "SDE"sv)
-+        && !list_contains(only_show_in.view(), "Serenity"sv))
-+        return {};
-+    auto not_show_in = file.read_entry(group, "NotShowIn");
-+    if (list_contains(not_show_in.view(), "SDE"sv) || list_contains(not_show_in.view(), "Serenity"sv))
-+        return {};
++    auto only_show_in = split_semicolon_list(file.read_entry(group, "OnlyShowIn"));
++    if (!only_show_in.is_empty()) {
++        bool matches = false;
++        for (auto const& desktop : session_desktops()) {
++            if (list_contains(only_show_in, desktop.view())) {
++                matches = true;
++                break;
++            }
++        }
++        if (!matches)
++            return {};
++    }
++    auto not_show_in = split_semicolon_list(file.read_entry(group, "NotShowIn"));
++    for (auto const& desktop : session_desktops()) {
++        if (list_contains(not_show_in, desktop.view()))
++            return {};
++    }
 +
 +    auto try_exec = file.read_entry(group, "TryExec");
-+    if (!try_exec.is_empty()) {
-+        auto resolved = resolve_executable(try_exec.view());
-+        if (!resolved.has_value()) {
-+            dbgln("Taskbar: XDG skip '{}' (TryExec '{}' not found)", path, try_exec);
++    if (!try_exec.is_empty() && !resolve_executable(try_exec).has_value())
++        return {};
++
++    auto name = localized_value(file, group, "Name"sv);
++    if (name.is_empty())
++        return {};
++
++    DesktopEntry entry;
++    entry.id = id;
++    entry.path = path;
++    entry.name = move(name);
++    entry.comment = localized_value(file, group, "Comment"sv);
++    entry.icon = file.read_entry(group, "Icon");
++    entry.categories = split_semicolon_list(file.read_entry(group, "Categories"));
++    entry.terminal = file.read_bool_entry(group, "Terminal", false);
++    entry.is_link = type == "Link";
++
++    if (entry.is_link) {
++        entry.url = file.read_entry(group, "URL");
++        if (entry.url.is_empty())
 +            return {};
-+        }
++        return entry;
 +    }
 +
-+    auto name = file.read_entry(group, "Name");
-+    auto exec = file.read_entry(group, "Exec");
-+    if (name.is_empty() || exec.is_empty())
++    entry.exec = file.read_entry(group, "Exec");
++    if (entry.exec.is_empty())
 +        return {};
-+    auto arguments = split_exec(exec.view());
++    auto arguments = split_exec(entry.exec);
 +    if (arguments.is_empty())
 +        return {};
-+
-+    XdgApplication application;
-+    application.desktop_id = move(desktop_id);
-+    application.name = move(name);
-+    application.exec = move(exec);
-+    application.executable = arguments.take_first();
-+    application.icon = file.read_entry(group, "Icon");
-+    auto categories = file.read_entry(group, "Categories");
-+    application.category = menu_category_for(categories.view());
-+    application.terminal = file.read_bool_entry(group, "Terminal", false);
-+    return application;
++    entry.executable = arguments.take_first();
++    return entry;
 +}
 +
-+Vector<XdgApplication> discover_apps()
++Optional<DirectoryInfo> read_directory_entry(ByteString const& path)
 +{
-+    Vector<XdgApplication> applications;
-+    HashTable<ByteString> seen_desktop_ids;
++    auto config = Core::ConfigFile::open(path);
++    if (config.is_error())
++        return {};
 +
-+    for (auto const& directory : data_directories()) {
-+        auto applications_directory = ByteString::formatted("{}/applications", directory);
-+        Core::DirIterator iterator(applications_directory, Core::DirIterator::SkipDots);
-+        if (iterator.has_error()) {
-+            dbgln("Taskbar: XDG cannot read '{}'", applications_directory);
++    auto const& file = *config.value();
++    ByteString const group = "Desktop Entry";
++    auto name = localized_value(file, group, "Name"sv);
++    if (name.is_empty())
++        return {};
++
++    DirectoryInfo info;
++    info.name = move(name);
++    info.comment = localized_value(file, group, "Comment"sv);
++    info.icon = file.read_entry(group, "Icon");
++    return info;
++}
++
++namespace {
++
++Rule parse_rule(XML::Node const& element)
++{
++    Rule rule;
++    auto const& name = element.as_element().name;
++
++    if (name == "All"sv) {
++        rule.type = Rule::Type::All;
++    } else if (name == "Category"sv) {
++        rule.type = Rule::Type::Category;
++        rule.value = element_text(element);
++    } else if (name == "Filename"sv) {
++        rule.type = Rule::Type::Filename;
++        rule.value = element_text(element);
++    } else if (name == "And"sv || name == "Or"sv || name == "Not"sv) {
++        rule.type = name == "And"sv ? Rule::Type::And : (name == "Or"sv ? Rule::Type::Or : Rule::Type::Not);
++        for (auto const& child : element.as_element().children) {
++            if (child->is_element())
++                rule.children.append(parse_rule(*child));
++        }
++    } else {
++        rule.type = Rule::Type::Never;
++    }
++    return rule;
++}
++
++Layout parse_layout(XML::Node const& element, bool is_default)
++{
++    Layout layout;
++    if (is_default)
++        layout.show_empty = attribute_bool(element, "show_empty"sv, false);
++
++    for (auto const& child : element.as_element().children) {
++        if (!child->is_element())
 +            continue;
-+        }
-+        dbgln("Taskbar: XDG scanning '{}'", applications_directory);
-+        while (iterator.has_next()) {
-+            auto filename = iterator.next_path();
-+            if (!filename.ends_with(".desktop"sv))
-+                continue;
-+            auto desktop_id = filename.substring_view(0, filename.length() - ".desktop"sv.length()).to_byte_string();
-+            if (seen_desktop_ids.contains(desktop_id))
-+                continue;
-+            auto application = read_desktop_file(
-+                ByteString::formatted("{}/{}", applications_directory, filename), desktop_id);
-+            if (!application.has_value())
-+                continue;
-+            seen_desktop_ids.set(move(desktop_id));
-+            applications.append(application.release_value());
++        auto const& name = child->as_element().name;
++        if (name == "Filename"sv) {
++            layout.items.append({ LayoutItem::Type::Entry, element_text(*child), false });
++        } else if (name == "Menuname"sv) {
++            layout.items.append({ LayoutItem::Type::Menu, element_text(*child), attribute_bool(*child, "show_empty"sv, layout.show_empty) });
++        } else if (name == "Separator"sv) {
++            layout.items.append({ LayoutItem::Type::Separator, {}, false });
++        } else if (name == "Merge"sv) {
++            auto type = attribute(*child, "type"sv, "all"sv);
++            auto item_type = type == "menus"sv ? LayoutItem::Type::MergeMenus
++                : type == "files"sv           ? LayoutItem::Type::MergeFiles
++                                              : LayoutItem::Type::MergeAll;
++            layout.items.append({ item_type, {}, false });
 +        }
 +    }
-+
-+    quick_sort(applications, [](auto const& a, auto const& b) { return a.name < b.name; });
-+    return applications;
++    return layout;
 +}
 +
-+RefPtr<Gfx::Bitmap const> icon_for(XdgApplication const& application)
++Query parse_query(XML::Node const& element, bool exclude)
 +{
-+    if (!application.icon.is_empty()) {
-+        ByteString uri;
-+        if (application.icon.starts_with("/res/"sv))
-+            uri = ByteString::formatted("resource://{}", application.icon.substring_view(5));
-+        else if (application.icon.starts_with('/') || application.icon.contains("://"sv))
-+            uri = application.icon;
-+        else
-+            uri = ByteString::formatted("resource://icons/16x16/{}.png", application.icon);
-+        auto bitmap = Gfx::Bitmap::load_from_uri(uri);
-+        if (!bitmap.is_error())
-+            return bitmap.release_value();
++    Query query;
++    query.exclude = exclude;
++    for (auto const& child : element.as_element().children) {
++        if (child->is_element())
++            query.rules.append(parse_rule(*child));
 +    }
-+    // No usable Icon= (or a themed name SerenityOS does not ship): use the same
-+    // icon the Serenity menu derives from the executable.
-+    auto executable = resolve_executable(application.executable.view()).value_or(application.executable);
-+    auto icon = GUI::FileIconProvider::icon_for_path(executable.view());
-+    return icon.bitmap_for_size(16);
++    return query;
 +}
 +
-+void launch(XdgApplication const& application, GUI::Window& window)
++Vector<ByteString> split_menu_path(StringView path)
 +{
-+    if (application.terminal) {
-+        Vector<ByteString> arguments;
-+        arguments.append(ByteString { "-e" });
-+        arguments.append(strip_field_codes(application.exec.view()));
-+        GUI::Process::spawn_or_show_error(&window, "/bin/Terminal"sv, arguments.span());
-+        return;
++    Vector<ByteString> components;
++    for (auto component : path.split_view('/')) {
++        auto trimmed = component.trim_whitespace();
++        if (!trimmed.is_empty())
++            components.append(trimmed.to_byte_string());
++    }
++    return components;
++}
++
++void parse_moves(MenuNode& node, XML::Node const& element)
++{
++    Vector<ByteString> old_path;
++    for (auto const& child : element.as_element().children) {
++        if (!child->is_element())
++            continue;
++        auto const& name = child->as_element().name;
++        if (name == "Old"sv) {
++            old_path = split_menu_path(element_text(*child));
++        } else if (name == "New"sv && !old_path.is_empty()) {
++            auto new_path = split_menu_path(element_text(*child));
++            if (!new_path.is_empty())
++                node.moves.append({ move(old_path), move(new_path) });
++            old_path = {};
++        }
++    }
++}
++
++void append_root(MenuNode& target, MenuNode&& source)
++{
++    target.app_dirs.extend(move(source.app_dirs));
++    target.directory_dirs.extend(move(source.directory_dirs));
++    target.directory_ids.extend(move(source.directory_ids));
++    target.queries.extend(move(source.queries));
++    target.moves.extend(move(source.moves));
++    target.children.extend(move(source.children));
++    if (source.only_unallocated_set) {
++        target.only_unallocated = source.only_unallocated;
++        target.only_unallocated_set = true;
++    }
++    if (source.deleted_set) {
++        target.deleted = source.deleted;
++        target.deleted_set = true;
++    }
++    if (source.layout.has_value())
++        target.layout = move(source.layout);
++    if (source.default_layout.has_value())
++        target.default_layout = move(source.default_layout);
++}
++
++Optional<MenuNode> parse_menu_file(ByteString const& path, SearchPaths const& paths, HashTable<ByteString>& active, int depth);
++
++void append_default_app_dirs(MenuNode& node, SearchPaths const& paths)
++{
++    for (size_t i = paths.data_search_dirs.size(); i-- > 0;)
++        node.app_dirs.append(ByteString::formatted("{}/applications", paths.data_search_dirs[i]));
++}
++
++void append_default_directory_dirs(MenuNode& node, SearchPaths const& paths)
++{
++    for (size_t i = paths.data_search_dirs.size(); i-- > 0;)
++        node.directory_dirs.append(ByteString::formatted("{}/desktop-directories", paths.data_search_dirs[i]));
++}
++
++Optional<ByteString> find_parent_menu(ByteString const& menu_file, SearchPaths const& paths)
++{
++    auto directory = LexicalPath::canonicalized_path(LexicalPath::dirname(menu_file));
++    auto filename = LexicalPath::basename(menu_file);
++
++    size_t index = paths.menu_dirs.size();
++    for (size_t i = 0; i < paths.menu_dirs.size(); ++i) {
++        if (LexicalPath::canonicalized_path(paths.menu_dirs[i]) == directory) {
++            index = i;
++            break;
++        }
 +    }
 +
-+    auto arguments = split_exec(application.exec.view());
-+    if (arguments.is_empty())
-+        return;
-+    auto program = arguments.take_first();
-+    auto resolved = resolve_executable(program.view());
-+    if (!resolved.has_value())
-+        return;
-+    GUI::Process::spawn_or_show_error(&window, resolved.value().view(), arguments.span());
-+}
-+
-+}
-+
-+static Optional<bool> read_config_bool(Core::ConfigFile& config, StringView group, StringView key)
-+{
-+    auto text = config.read_entry(group, key);
-+    if (text.is_empty())
++    auto try_dirs = [&](size_t start) -> Optional<ByteString> {
++        for (size_t i = start; i < paths.menu_dirs.size(); ++i) {
++            auto candidate = ByteString::formatted("{}/{}", paths.menu_dirs[i], filename);
++            if (path_exists(candidate))
++                return candidate;
++        }
 +        return {};
-+    auto lower = text.trim_whitespace().to_lowercase();
-+    if (lower == "true"sv || lower == "1"sv || lower == "yes"sv || lower == "on"sv)
++    };
++
++    if (index < paths.menu_dirs.size())
++        return try_dirs(index + 1);
++    // Not in the standard search path (e.g. SDE's own fallback menu): allow a
++    // parent merge from the first standard menu dir.
++    return try_dirs(0);
++}
++
++void merge_file(MenuNode& node, ByteString const& path, SearchPaths const& paths, HashTable<ByteString>& active, int depth)
++{
++    if (!path_exists(path))
++        return;
++    auto merged = parse_menu_file(path, paths, active, depth + 1);
++    if (!merged.has_value())
++        return;
++    dbgln("Taskbar: XDG menu merged '{}'", path);
++    append_root(node, merged.release_value());
++}
++
++void merge_directory(MenuNode& node, ByteString const& menu_file, ByteString const& directory, SearchPaths const& paths, HashTable<ByteString>& active, int depth)
++{
++    auto resolved = resolve_relative(menu_file, directory);
++    if (!path_is_directory(resolved))
++        return;
++
++    Vector<ByteString> files;
++    Core::DirIterator iterator(resolved, Core::DirIterator::SkipDots);
++    if (iterator.has_error())
++        return;
++    while (iterator.has_next()) {
++        auto name = iterator.next_path();
++        if (name.ends_with(".menu"sv))
++            files.append(ByteString::formatted("{}/{}", resolved, name));
++    }
++    quick_sort(files);
++    for (auto const& file : files)
++        merge_file(node, file, paths, active, depth);
++}
++
++void default_merge_dirs(MenuNode& node, ByteString const& menu_file, SearchPaths const& paths, HashTable<ByteString>& active, int depth)
++{
++    auto stem = LexicalPath::basename(menu_file, LexicalPath::StripExtension::Yes);
++    // The default merge directory of the prefixed main menu stays
++    // "applications-merged"; only other menu files derive it from their name.
++    if (!paths.menu_prefix.is_empty() && stem.starts_with(paths.menu_prefix))
++        stem = stem.substring_view(paths.menu_prefix.length()).to_byte_string();
++    auto merge_name = ByteString::formatted("{}-merged", stem);
++
++    // The spec searches $XDG_CONFIG_DIRS; the config home is an extra
++    // user-level merge directory (it wins because it is merged last).
++    Vector<ByteString> directories;
++    for (size_t i = paths.config_dirs.size(); i-- > 0;)
++        directories.append(ByteString::formatted("{}/menus/{}", paths.config_dirs[i], merge_name));
++    directories.append(ByteString::formatted("{}/menus/{}", paths.config_home, merge_name));
++
++    for (auto const& directory : directories) {
++        if (path_is_directory(directory))
++            merge_directory(node, menu_file, directory, paths, active, depth);
++    }
++}
++
++MenuNode parse_menu_element(XML::Node const& element, ByteString const& menu_file, SearchPaths const& paths, HashTable<ByteString>& active, int depth)
++{
++    MenuNode node;
++
++    for (auto const& child : element.as_element().children) {
++        if (!child->is_element())
++            continue;
++        auto const& name = child->as_element().name;
++
++        if (name == "Name"sv) {
++            node.name = element_text(*child);
++            if (node.name.contains('/'))
++                node.name = {};
++        } else if (name == "Menu"sv) {
++            node.children.append(make<MenuNode>(parse_menu_element(*child, menu_file, paths, active, depth)));
++        } else if (name == "AppDir"sv) {
++            node.app_dirs.append(resolve_relative(menu_file, element_text(*child)));
++        } else if (name == "DirectoryDir"sv) {
++            node.directory_dirs.append(resolve_relative(menu_file, element_text(*child)));
++        } else if (name == "DefaultAppDirs"sv) {
++            append_default_app_dirs(node, paths);
++        } else if (name == "DefaultDirectoryDirs"sv) {
++            append_default_directory_dirs(node, paths);
++        } else if (name == "Directory"sv) {
++            auto id = element_text(*child);
++            if (!id.is_empty())
++                node.directory_ids.append(move(id));
++        } else if (name == "Include"sv || name == "Exclude"sv) {
++            node.queries.append(parse_query(*child, name == "Exclude"sv));
++        } else if (name == "OnlyUnallocated"sv) {
++            node.only_unallocated = true;
++            node.only_unallocated_set = true;
++        } else if (name == "NotOnlyUnallocated"sv) {
++            node.only_unallocated = false;
++            node.only_unallocated_set = true;
++        } else if (name == "Deleted"sv) {
++            node.deleted = true;
++            node.deleted_set = true;
++        } else if (name == "NotDeleted"sv) {
++            node.deleted = false;
++            node.deleted_set = true;
++        } else if (name == "MergeFile"sv) {
++            auto type = attribute(*child, "type"sv, "path"sv);
++            if (type == "parent"sv) {
++                auto parent = find_parent_menu(menu_file, paths);
++                if (parent.has_value())
++                    merge_file(node, parent.value(), paths, active, depth);
++            } else {
++                auto path = resolve_relative(menu_file, element_text(*child));
++                merge_file(node, path, paths, active, depth);
++            }
++        } else if (name == "MergeDir"sv) {
++            merge_directory(node, menu_file, element_text(*child), paths, active, depth);
++        } else if (name == "DefaultMergeDirs"sv) {
++            default_merge_dirs(node, menu_file, paths, active, depth);
++        } else if (name == "Layout"sv) {
++            node.layout = parse_layout(*child, false);
++        } else if (name == "DefaultLayout"sv) {
++            node.default_layout = parse_layout(*child, true);
++        } else if (name == "Move"sv) {
++            parse_moves(node, *child);
++        } else if (name == "LegacyDir"sv || name == "KDELegacyDirs"sv) {
++            dbgln("Taskbar: XDG menu ignores legacy hierarchy '{}'", element_text(*child));
++        }
++    }
++
++    if (node.name.is_empty())
++        node.name = ByteString { "Applications" };
++    return node;
++}
++
++Optional<MenuNode> parse_menu_file(ByteString const& path, SearchPaths const& paths, HashTable<ByteString>& active, int depth)
++{
++    if (depth > 32)
++        return {};
++    auto canonical = LexicalPath::canonicalized_path(path);
++    if (active.contains(canonical))
++        return {};
++
++    auto file = Core::File::open(path, Core::File::OpenMode::Read);
++    if (file.is_error()) {
++        warnln("Taskbar: cannot read XDG menu file '{}': {}", path, file.error());
++        return {};
++    }
++    auto contents = file.value()->read_until_eof();
++    if (contents.is_error()) {
++        warnln("Taskbar: cannot read XDG menu file '{}'", path);
++        return {};
++    }
++
++    XML::Parser::Options options;
++    options.treat_errors_as_fatal = true;
++    options.resolve_external_resource = [](XML::SystemID const&, Optional<XML::PublicID> const&) -> ErrorOr<Variant<ByteString, Vector<XML::MarkupDeclaration>>> {
++        // Menu files only use the DTD for documentation; never fetch it.
++        return ByteString {};
++    };
++
++    XML::Parser parser(contents.value(), move(options));
++    auto document = parser.parse();
++    if (document.is_error()) {
++        warnln("Taskbar: invalid XDG menu file '{}'", path);
++        return {};
++    }
++
++    auto const& root = document.value().root();
++    if (!is_element(root, "Menu"sv)) {
++        warnln("Taskbar: '{}' is not a menu file (root element is not <Menu>)", path);
++        return {};
++    }
++
++    active.set(canonical);
++    auto menu = parse_menu_element(root, path, paths, active, depth);
++    active.remove(canonical);
++    return menu;
++}
++
++void append_content(MenuNode& target, MenuNode&& source)
++{
++    target.app_dirs.extend(move(source.app_dirs));
++    target.directory_dirs.extend(move(source.directory_dirs));
++    target.directory_ids.extend(move(source.directory_ids));
++    target.queries.extend(move(source.queries));
++    target.moves.extend(move(source.moves));
++    target.children.extend(move(source.children));
++    if (source.only_unallocated_set) {
++        target.only_unallocated = source.only_unallocated;
++        target.only_unallocated_set = true;
++    }
++    if (source.deleted_set) {
++        target.deleted = source.deleted;
++        target.deleted_set = true;
++    }
++    if (source.layout.has_value())
++        target.layout = move(source.layout);
++    if (source.default_layout.has_value())
++        target.default_layout = move(source.default_layout);
++}
++
++void consolidate(MenuNode& menu)
++{
++    HashMap<ByteString, size_t> last_index;
++    for (size_t i = 0; i < menu.children.size(); ++i)
++        last_index.set(menu.children[i]->name, i);
++
++    Vector<NonnullOwnPtr<MenuNode>> consolidated;
++    for (size_t i = 0; i < menu.children.size(); ++i) {
++        auto const& name = menu.children[i]->name;
++        if (last_index.get(name).value() != i)
++            continue;
++
++        auto merged = make<MenuNode>();
++        merged->name = name;
++        for (auto const& child : menu.children) {
++            if (child->name == name)
++                append_content(*merged, move(*child));
++        }
++        consolidated.append(move(merged));
++    }
++    menu.children = move(consolidated);
++
++    for (auto& child : menu.children)
++        consolidate(*child);
++}
++
++MenuNode* find_menu(MenuNode& menu, Vector<ByteString> const& path)
++{
++    MenuNode* current = &menu;
++    for (auto const& component : path) {
++        MenuNode* found = nullptr;
++        for (auto& child : current->children) {
++            if (child->name == component) {
++                found = child.ptr();
++                break;
++            }
++        }
++        if (!found)
++            return nullptr;
++        current = found;
++    }
++    return current;
++}
++
++MenuNode* find_parent(MenuNode& menu, Vector<ByteString> const& path, size_t& index)
++{
++    if (path.is_empty())
++        return nullptr;
++    auto parent_path = path;
++    parent_path.take_last();
++    auto* parent = find_menu(menu, parent_path);
++    if (!parent)
++        return nullptr;
++    for (size_t i = 0; i < parent->children.size(); ++i) {
++        if (parent->children[i]->name == path.last()) {
++            index = i;
++            return parent;
++        }
++    }
++    return nullptr;
++}
++
++MenuNode& ensure_menu(MenuNode& root, Vector<ByteString> const& path)
++{
++    MenuNode* current = &root;
++    for (auto const& component : path) {
++        MenuNode* found = nullptr;
++        for (auto& child : current->children) {
++            if (child->name == component) {
++                found = child.ptr();
++                break;
++            }
++        }
++        if (!found) {
++            auto created = make<MenuNode>();
++            created->name = component;
++            current->children.append(move(created));
++            found = current->children.last().ptr();
++        }
++        current = found;
++    }
++    return *current;
++}
++
++bool contains_node(MenuNode const& menu, MenuNode const* target)
++{
++    if (&menu == target)
 +        return true;
-+    if (lower == "false"sv || lower == "0"sv || lower == "no"sv || lower == "off"sv)
-+        return false;
-+    return {};
-+}
-+
-+bool xdg_menu_enabled()
-+{
-+    // Layered like the compositor's config (Services/WindowServer/src/Config.cpp):
-+    // the user's file first, then the SerenityOS defaults under the resource root.
-+    // Keep the parsing in sync with that file so `sde-config` and the Taskbar
-+    // cannot disagree about the value.
-+    ByteString defaults_path;
-+    if (auto const* root = getenv("SERENITY_RES_ROOT"); root && *root)
-+        defaults_path = ByteString::formatted("{}/../etc/WindowServer.ini", root);
-+    else
-+        defaults_path = ByteString { "/etc/WindowServer.ini" };
-+
-+    auto const user_path = ByteString::formatted("{}/WindowServer.ini", state_directory());
-+    for (auto const& path : { user_path, defaults_path }) {
-+        auto config = Core::ConfigFile::open(path);
-+        if (config.is_error())
-+            continue;
-+        if (auto value = read_config_bool(*config.value(), "Taskbar"sv, "XDGMenu"sv); value.has_value())
-+            return value.value();
++    for (auto const& child : menu.children) {
++        if (contains_node(*child, target))
++            return true;
 +    }
 +    return false;
 +}
 +
-+ErrorOr<void> add_xdg_apps_to_menu(GUI::Menu& system_menu, GUI::Window& window)
++void apply_move(MenuNode& menu, MenuNode::Move const& move_operation)
 +{
-+    auto applications = discover_apps();
-+    dbgln("Taskbar: XDG menu discovered {} apps", applications.size());
-+    for (size_t i = 0; i < applications.size() && i < 8; ++i)
-+        dbgln("Taskbar: XDG app '{}' ({})", applications[i].name, applications[i].executable);
-+    if (applications.is_empty())
-+        return {};
++    if (move_operation.old_path.is_empty() || move_operation.new_path.is_empty())
++        return;
++    if (move_operation.old_path == move_operation.new_path)
++        return;
 +
-+    static constexpr Array<StringView, 8> category_order {
-+        "D&evelopment"sv,
-+        "&Games"sv,
-+        "Gra&phics"sv,
-+        "&Internet"sv,
-+        "&Media"sv,
-+        "&Office"sv,
-+        "Settings"sv,
-+        "&Utilities"sv,
-+    };
++    size_t source_index = 0;
++    auto* source_parent = find_parent(menu, move_operation.old_path, source_index);
++    if (!source_parent)
++        return;
 +
-+    auto category_icons = Core::ConfigFile::open("resource://icons/SystemMenu.ini"sv);
-+    HashMap<ByteString, NonnullRefPtr<GUI::Menu>> category_menus;
-+    for (auto category : category_order) {
-+        bool present = false;
-+        for (auto const& application : applications) {
-+            if (application.category == category) {
-+                present = true;
++    auto* source_node = source_parent->children[source_index].ptr();
++    if (auto* destination = find_menu(menu, move_operation.new_path)) {
++        // Moving a menu into one of its descendants would destroy the subtree.
++        if (contains_node(*source_node, destination)) {
++            warnln("Taskbar: XDG menu ignoring move of '{}' into itself", source_node->name);
++            return;
++        }
++        auto owned = source_parent->children.take(source_index);
++        append_content(*destination, AK::move(*owned));
++        return;
++    }
++
++    auto destination_parent_path = move_operation.new_path;
++    auto new_name = destination_parent_path.take_last();
++    auto& destination_parent = ensure_menu(menu, destination_parent_path);
++    auto source = source_parent->children.take(source_index);
++    source->name = new_name;
++    destination_parent.children.append(move(source));
++}
++
++void apply_moves(MenuNode& menu)
++{
++    for (auto& child : menu.children)
++        apply_moves(*child);
++    for (auto const& move_operation : menu.moves)
++        apply_move(menu, move_operation);
++    menu.moves.clear();
++}
++
++void prune_deleted(MenuNode& menu)
++{
++    for (size_t i = menu.children.size(); i-- > 0;) {
++        if (menu.children[i]->deleted) {
++            menu.children.remove(i);
++            continue;
++        }
++        prune_deleted(*menu.children[i]);
++    }
++}
++
++void resolve_directories(MenuNode& menu, Vector<ByteString> const& inherited_directories)
++{
++    auto directories = inherited_directories;
++    directories.extend(menu.directory_dirs);
++
++    if (!menu.directory_ids.is_empty()) {
++        bool resolved = false;
++        for (size_t id_index = menu.directory_ids.size(); id_index-- > 0 && !resolved;) {
++            for (size_t dir_index = directories.size(); dir_index-- > 0;) {
++                auto path = ByteString::formatted("{}/{}", directories[dir_index], menu.directory_ids[id_index]);
++                if (!path_exists(path))
++                    continue;
++                if (auto info = read_directory_entry(path); info.has_value()) {
++                    menu.directory = move(info);
++                    resolved = true;
++                    break;
++                }
++            }
++        }
++    }
++
++    for (auto& child : menu.children)
++        resolve_directories(*child, directories);
++}
++
++void scan_app_dir_recursive(ByteString const& current, ByteString const& prefix, Vector<DesktopEntry>& entries, int depth)
++{
++    if (depth > 8)
++        return;
++    Core::DirIterator iterator(current, Core::DirIterator::SkipDots);
++    if (iterator.has_error())
++        return;
++    while (iterator.has_next()) {
++        auto name = iterator.next_path();
++        if (name.starts_with('.'))
++            continue;
++        auto path = ByteString::formatted("{}/{}", current, name);
++        struct stat stat_buffer;
++        if (stat(path.characters(), &stat_buffer) != 0)
++            continue;
++        if (S_ISDIR(stat_buffer.st_mode)) {
++            scan_app_dir_recursive(path, ByteString::formatted("{}{}-", prefix, name), entries, depth + 1);
++        } else if (name.ends_with(".desktop"sv)) {
++            auto id = ByteString::formatted("{}{}", prefix, name);
++            if (auto entry = read_desktop_entry(path, id); entry.has_value())
++                entries.append(entry.release_value());
++        }
++    }
++}
++
++Vector<DesktopEntry> scan_app_dir(ByteString const& directory)
++{
++    Vector<DesktopEntry> entries;
++    scan_app_dir_recursive(directory, {}, entries, 0);
++    return entries;
++}
++
++void load_entries(MenuNode& menu, Vector<ByteString> const& inherited_app_dirs, HashMap<ByteString, Vector<DesktopEntry>>& cache, HashTable<ByteString>& allocated, int pass)
++{
++    auto app_dirs = inherited_app_dirs;
++    app_dirs.extend(menu.app_dirs);
++
++    HashMap<ByteString, DesktopEntry> pool;
++    for (auto const& directory : app_dirs) {
++        auto it = cache.find(directory);
++        if (it == cache.end()) {
++            auto entries = path_is_directory(directory) ? scan_app_dir(directory) : Vector<DesktopEntry> {};
++            cache.set(directory, move(entries));
++            it = cache.find(directory);
++        }
++        for (auto const& entry : it->value)
++            pool.set(entry.id, entry);
++    }
++
++    bool is_this_pass = (pass == 1 && !menu.only_unallocated) || (pass == 2 && menu.only_unallocated);
++    if (is_this_pass) {
++        HashTable<ByteString> included;
++        for (auto const& query : menu.queries) {
++            if (!query.exclude) {
++                for (auto const& [id, entry] : pool) {
++                    if (menu.only_unallocated && allocated.contains(id))
++                        continue;
++                    bool matches = false;
++                    for (auto const& rule : query.rules) {
++                        if (rule.matches(entry)) {
++                            matches = true;
++                            break;
++                        }
++                    }
++                    if (matches) {
++                        included.set(id);
++                        allocated.set(id);
++                    }
++                }
++            } else {
++                Vector<ByteString> to_remove;
++                for (auto const& id : included) {
++                    auto entry = pool.get(id);
++                    if (!entry.has_value())
++                        continue;
++                    for (auto const& rule : query.rules) {
++                        if (rule.matches(entry.value())) {
++                            to_remove.append(id);
++                            break;
++                        }
++                    }
++                }
++                for (auto const& id : to_remove)
++                    included.remove(id);
++            }
++        }
++
++        menu.entries.clear();
++        for (auto const& id : included) {
++            if (auto entry = pool.get(id); entry.has_value())
++                menu.entries.append(entry.value());
++        }
++    }
++
++    for (auto& child : menu.children)
++        load_entries(*child, app_dirs, cache, allocated, pass);
++}
++
++}
++
++Vector<DesktopEntry> discover_entries()
++{
++    auto paths = search_paths();
++    HashTable<ByteString> seen;
++    Vector<DesktopEntry> entries;
++    for (auto const& directory : paths.data_search_dirs) {
++        for (auto& entry : scan_app_dir(directory)) {
++            if (seen.contains(entry.id))
++                continue;
++            seen.set(entry.id);
++            entries.append(move(entry));
++        }
++    }
++    return entries;
++}
++
++ErrorOr<OwnPtr<LoadedMenu>> load_menu()
++{
++    auto paths = search_paths();
++
++    Optional<ByteString> menu_file;
++    Vector<ByteString> names;
++    names.append(ByteString::formatted("{}applications.menu", paths.menu_prefix));
++    if (!paths.menu_prefix.is_empty())
++        names.append(ByteString { "applications.menu" });
++    for (auto const& directory : paths.menu_dirs) {
++        for (auto const& name : names) {
++            auto candidate = ByteString::formatted("{}/{}", directory, name);
++            if (path_exists(candidate)) {
++                menu_file = candidate;
 +                break;
 +            }
 +        }
-+        if (!present)
-+            continue;
-+
-+        auto menu = system_menu.add_submenu(TRY(String::from_utf8(category)));
-+        if (!category_icons.is_error()) {
-+            auto icon_path = category_icons.value()->read_entry("16x16", category);
-+            if (!icon_path.is_empty()) {
-+                auto icon_uri = icon_path.starts_with("/res/"sv)
-+                    ? ByteString::formatted("resource://{}", icon_path.substring_view(5))
-+                    : icon_path;
-+                auto icon = Gfx::Bitmap::load_from_uri(icon_uri);
-+                if (!icon.is_error())
-+                    menu->set_icon(icon.release_value());
-+            }
-+        }
-+        category_menus.set(category.to_byte_string(), menu);
++        if (menu_file.has_value())
++            break;
 +    }
-+
-+    for (auto const& application : applications) {
-+        auto menu = category_menus.find(application.category);
-+        if (menu == category_menus.end())
-+            continue;
-+        auto icon = icon_for(application);
-+        auto action = GUI::Action::create(application.name, icon, [application, &window](auto&) {
-+            launch(application, window);
-+        });
-+        menu->value->add_action(action);
++    if (!menu_file.has_value() && !paths.sde_menu_dir.is_empty()) {
++        auto candidate = ByteString::formatted("{}/applications.menu", paths.sde_menu_dir);
++        if (path_exists(candidate))
++            menu_file = candidate;
 +    }
++    if (!menu_file.has_value())
++        return OwnPtr<LoadedMenu> {};
 +
-+    dbgln("Taskbar: XDG menu added {} apps in {} categories", applications.size(), category_menus.size());
-+    return {};
++    HashTable<ByteString> active;
++    auto parsed = parse_menu_file(menu_file.value(), paths, active, 0);
++    if (!parsed.has_value())
++        return Error::from_string_literal("could not parse the XDG menu file");
++
++    auto root = make<MenuNode>(parsed.release_value());
++    consolidate(*root);
++    apply_moves(*root);
++    consolidate(*root);
++    prune_deleted(*root);
++    if (root->deleted)
++        return OwnPtr<LoadedMenu> {};
++    resolve_directories(*root, {});
++
++    HashMap<ByteString, Vector<DesktopEntry>> cache;
++    HashTable<ByteString> allocated;
++    load_entries(*root, {}, cache, allocated, 1);
++    load_entries(*root, {}, cache, allocated, 2);
++
++    auto loaded = adopt_own(*new LoadedMenu { move(root), menu_file.release_value() });
++    dbgln("Taskbar: using XDG menu file '{}'", loaded->path);
++    return loaded;
 +}
 +
 +}

@@ -58,12 +58,14 @@ session_state_dir() {
 
 # XDG data: generate .desktop entries for the Serenity apps so the Taskbar's XDG
 # menu (WindowServer.ini [Taskbar] XDGMenu) and host application menus can see
-# them. The generated tree is prepended to XDG_DATA_DIRS.
+# them. The generated tree is prepended to XDG_DATA_DIRS. SDE_MENU_DIR is the
+# SDE's own fallback menu file, used when the host has no applications.menu.
 SDE_XDG_DATA="$(session_state_dir)/xdg-data"
 if [[ "${SDE_XDG_DATA_UPDATE:-1}" == "1" ]]; then
     "${SDE_ROOT}/scripts/generate-desktop-entries.sh" --output "$SDE_XDG_DATA" >/dev/null 2>&1 || true
 fi
 export XDG_DATA_DIRS="$SDE_XDG_DATA${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+export SDE_MENU_DIR="${SDE_MENU_DIR:-$SDE_ROOT/Base/xdg/menus}"
 
 # Assign a session variable from the file only when the environment did not set it.
 apply_session_setting() {

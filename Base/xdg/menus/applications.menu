@@ -1,0 +1,106 @@
+<!DOCTYPE Menu PUBLIC "-//freedesktop//DTD Menu 1.0//EN"
+ "http://www.freedesktop.org/standards/menu-spec/menu-1.0.dtd">
+
+<!-- SDE's default application menu. A user or system XDG menu file in
+     $XDG_CONFIG_HOME/menus or $XDG_CONFIG_DIRS/menus takes precedence; this file
+     is the fallback when the host has no ${XDG_MENU_PREFIX}applications.menu.
+     It follows the freedesktop Menu specification. -->
+<Menu>
+    <Name>Applications</Name>
+
+    <DefaultAppDirs/>
+    <DefaultDirectoryDirs/>
+    <DefaultMergeDirs/>
+    <DirectoryDir>../desktop-directories</DirectoryDir>
+
+    <Menu>
+        <Name>Development</Name>
+        <Directory>sde-development.directory</Directory>
+        <Include>
+            <Category>Development</Category>
+        </Include>
+    </Menu>
+
+    <Menu>
+        <Name>Education</Name>
+        <Directory>sde-education.directory</Directory>
+        <Include>
+            <Category>Education</Category>
+        </Include>
+    </Menu>
+
+    <Menu>
+        <Name>Games</Name>
+        <Directory>sde-games.directory</Directory>
+        <Include>
+            <Category>Game</Category>
+        </Include>
+    </Menu>
+
+    <Menu>
+        <Name>Graphics</Name>
+        <Directory>sde-graphics.directory</Directory>
+        <Include>
+            <Category>Graphics</Category>
+        </Include>
+    </Menu>
+
+    <Menu>
+        <Name>Internet</Name>
+        <Directory>sde-internet.directory</Directory>
+        <Include>
+            <Category>Network</Category>
+        </Include>
+    </Menu>
+
+    <Menu>
+        <Name>Multimedia</Name>
+        <Directory>sde-multimedia.directory</Directory>
+        <Include>
+            <Category>AudioVideo</Category>
+        </Include>
+    </Menu>
+
+    <Menu>
+        <Name>Office</Name>
+        <Directory>sde-office.directory</Directory>
+        <Include>
+            <Category>Office</Category>
+        </Include>
+    </Menu>
+
+    <Menu>
+        <Name>Settings</Name>
+        <Directory>sde-settings.directory</Directory>
+        <Include>
+            <Category>Settings</Category>
+        </Include>
+    </Menu>
+
+    <Menu>
+        <Name>System</Name>
+        <Directory>sde-system.directory</Directory>
+        <Include>
+            <Category>System</Category>
+        </Include>
+    </Menu>
+
+    <Menu>
+        <Name>Utilities</Name>
+        <Directory>sde-utilities.directory</Directory>
+        <Include>
+            <Category>Utility</Category>
+        </Include>
+    </Menu>
+
+    <!-- Everything not selected by a category above. OnlyUnallocated keeps
+         applications that already appear in a category menu out of this one. -->
+    <Menu>
+        <Name>Other</Name>
+        <Directory>sde-other.directory</Directory>
+        <OnlyUnallocated/>
+        <Include>
+            <All/>
+        </Include>
+    </Menu>
+</Menu>

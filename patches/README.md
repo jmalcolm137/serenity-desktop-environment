@@ -31,7 +31,7 @@ rebased tip.
 | [`0005`](0005-taskbar-window-grouping.patch) Taskbar window grouping, and its LibGUI/IPC half (app id, `taskbar_group_windows`) | SDE | SDE | The IPC change only has a sender in the SDE's compositor. SerenityOS's own WindowServer would need a matching change and has no app-id concept to send, so it is not sensible in isolation as it stands. | Would need a SerenityOS WindowServer change first |
 | [`0006`](0006-taskbar-lock-menu.patch) Taskbar: a Lock item, first in the system menu | SDE | SDE | SDE behaviour: the entry locks through `SDE_LOCK_CMD`, which the SDE session exports (and which selects `sde-lock` or a third-party locker). | n/a |
 | [`0008`](0008-sde-lagom-targets.patch) The SDE's Lagom targets (the Taskbar, the app suite) | SDE | SDE | SDE build integration: which SerenityOS programs the desktop builds on Lagom. | n/a |
-| [`0009`](0009-taskbar-xdg-menu.patch) Taskbar: the XDG system menu built from `.desktop` entries | SDE | SDE | SDE behaviour: the freedesktop data dirs and `.desktop` entries are a host-desktop concept; the menu is selected by `[Taskbar] XDGMenu` and the entries come from the SDE's generator. See [`../docs/36-xdg-desktop-menu.md`](../docs/36-xdg-desktop-menu.md). | n/a |
+| [`0009`](0009-taskbar-xdg-menu.patch) Taskbar: the XDG system menu (the full freedesktop Menu specification) | SDE | SDE | SDE behaviour: the freedesktop menu data dirs, menu file, `.directory` entries and `.desktop` entries are a host-desktop concept; the menu is selected by `[Taskbar] XDGMenu` and the entries come from the SDE's generator. See [`../docs/36-xdg-desktop-menu.md`](../docs/36-xdg-desktop-menu.md). | n/a |
 
 `libgui-wayland`'s former `0035` (an empty stub left behind when its targets moved
 into `0008`) is removed too.

@@ -151,6 +151,12 @@ done
 "$SDE_ROOT/scripts/generate-desktop-entries.sh" \
     --source "$SERENITY/Base/res/apps" --output "$SHARE" >/dev/null 2>&1 || true
 
+# The SDE's default freedesktop menu file and its .directory entries. The
+# Taskbar prefers a host ${XDG_MENU_PREFIX}applications.menu and falls back here.
+mkdir -p "$SHARE/sde/menus" "$SHARE/sde/desktop-directories"
+cp -a "$SDE_ROOT/Base/xdg/menus/." "$SHARE/sde/menus/"
+cp -a "$SDE_ROOT/Base/xdg/desktop-directories/." "$SHARE/sde/desktop-directories/"
+
 cat > "$BIN/sde-session" <<'LAUNCHER'
 #!/bin/sh
 # SDE session launcher (installed). It derives the prefix from its own path, so a
@@ -191,6 +197,7 @@ export SDE_LOCK_CMD="${SDE_LOCK_CMD:-$prefix/bin/sde-lock}"
 export SDE_SKELETON_DIR="$prefix/share/skeleton"
 export SERENITY_RES_ROOT="$prefix/share/res"
 export XDG_DATA_DIRS="$prefix/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+export SDE_MENU_DIR="$prefix/share/sde/menus"
 export LD_LIBRARY_PATH="$prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 exec "$prefix/share/sde/scripts/start-sde-session.sh" "$@"
 LAUNCHER

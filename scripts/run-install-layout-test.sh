@@ -100,6 +100,12 @@ check "the Serenity apps' .desktop entries are installed" \
     "[[ -f '$PREFIX/share/applications/Calculator.desktop' && -f '$PREFIX/share/applications/2048.desktop' ]]"
 check "the installed launcher puts its data dir on XDG_DATA_DIRS" \
     "grep -qF 'XDG_DATA_DIRS=\"\$prefix/share:' '$LAUNCHER'"
+check "the SDE's default XDG menu is installed" \
+    "[[ -f '$PREFIX/share/sde/menus/applications.menu' ]]"
+check "the SDE's menu .directory entries are installed" \
+    "[[ -f '$PREFIX/share/sde/desktop-directories/sde-games.directory' ]]"
+check "the installed launcher points at the SDE menu" \
+    "grep -qF 'SDE_MENU_DIR=\"\$prefix/share/sde/menus\"' '$LAUNCHER'"
 
 echo "=== a headless session from the installed launcher ==="
 setsid env -u WAYLAND_DISPLAY -u DISPLAY \
