@@ -121,6 +121,42 @@ for app in "${SETTINGS_APPS[@]}" "${EXTRA_APPS[@]}"; do
     before="$after"
 done
 
+echo "=== Phase C: settings app icons exist ==="
+# Desktop::AppFile::icon() looks for resource://icons/{16,32}/<name>.png, where
+# <name> is app-<kebab-executable> (libgui-wayland patch 0010). Most settings
+# apps are <Thing>Settings while their icons are named after the thing, so
+# 0010 maps them to the real icon. Keep this table in sync with that patch.
+declare -A SETTINGS_ICON=(
+    [BrowserSettings]=app-browser
+    [CalendarSettings]=app-calendar
+    [CertificateSettings]=certificate
+    [ClockSettings]=app-analog-clock
+    [DisplaySettings]=app-display-settings
+    [GamesSettings]=games
+    [KeyboardSettings]=app-keyboard-settings
+    [MailSettings]=app-mail
+    [MapsSettings]=app-maps
+    [MouseSettings]=app-mouse
+    [NetworkSettings]=network
+    [TerminalSettings]=app-terminal
+    [UsersSettings]=app-user-settings
+)
+for app in "${SETTINGS_APPS[@]}"; do
+    icon="${SETTINGS_ICON[$app]:-}"
+    if [[ -z "$icon" ]]; then
+        note_fail "$app has no icon mapping in run-settings-test.sh"
+        continue
+    fi
+    for size in 16 32; do
+        path="$SERENITY/Base/res/icons/${size}x${size}/${icon}.png"
+        if [[ -f "$path" ]]; then
+            echo "  ok: $app -> ${icon}.png ($size)"
+        else
+            note_fail "$app: missing $path"
+        fi
+    done
+done
+
 if [[ "$LAUNCH_ONLY" -eq 0 ]]; then
     echo "=== Phase B: the settings each dialog manages apply/persist ==="
     # Each focused test proves a settings backend end-to-end (config applied at
