@@ -35,6 +35,7 @@
 //   [Log]        Level                 name      (error|warn|info|debug; R6/N8)
 //   [Compositor] XWayland              bool      (run X11 clients via Xwayland; default true)
 //   [Taskbar]    GroupWindows          bool      (group a Taskbar button per app id; default false)
+//                XDGMenu               bool      (XDG .desktop menu instead of the Serenity .af menu; default false)
 //   [Keybindings] <Action>              combo(s)  (e.g. Ctrl+Alt+Left; see Action)
 //
 // Invalid values are rejected (the previous value is kept) and reported through
@@ -111,6 +112,12 @@ struct Taskbar {
     // matching SerenityOS's Taskbar (one button per window); a Plasma-style
     // opt-in. Pushed to the Taskbar over the WindowManagerServer protocol.
     bool group_windows { false };
+
+    // Build the system menu from freedesktop .desktop entries in
+    // $XDG_DATA_DIRS/applications instead of the SerenityOS .af files. Off by
+    // default, keeping the Serenity-style categories; the Taskbar reads the same
+    // layered config file, so this key is validated and printed here.
+    bool xdg_menu { false };
 };
 
 // [Accessibility] - assistive input and presentation (docs/29-accessibility.md).

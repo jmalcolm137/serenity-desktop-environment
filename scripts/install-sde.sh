@@ -141,10 +141,15 @@ fi
 for script in \
     start-sde-session.sh sde-session.sh sde-shell.sh sde-service-supervisor.sh \
     sde-applets.sh sde-supervise-applet.sh sde-power.sh sde-seat.sh sde-sleep.sh sde-accessibility.sh \
-    sde-user-dirs.sh \
+    sde-user-dirs.sh generate-desktop-entries.sh \
     seed-serenity-home.sh sde-polkit-agent.py; do
     install -m 0755 "$SDE_ROOT/scripts/$script" "$SCRIPTS/$script"
 done
+
+# The .desktop entries for the Serenity apps: the Taskbar's XDG menu and host
+# application menus read $XDG_DATA_DIRS/applications.
+"$SDE_ROOT/scripts/generate-desktop-entries.sh" \
+    --source "$SERENITY/Base/res/apps" --output "$SHARE" >/dev/null 2>&1 || true
 
 cat > "$BIN/sde-session" <<'LAUNCHER'
 #!/bin/sh
@@ -185,6 +190,7 @@ export SDE_PORTAL_CHOOSER="$prefix/bin/ScreenCastChooser"
 export SDE_LOCK_CMD="${SDE_LOCK_CMD:-$prefix/bin/sde-lock}"
 export SDE_SKELETON_DIR="$prefix/share/skeleton"
 export SERENITY_RES_ROOT="$prefix/share/res"
+export XDG_DATA_DIRS="$prefix/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 export LD_LIBRARY_PATH="$prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 exec "$prefix/share/sde/scripts/start-sde-session.sh" "$@"
 LAUNCHER

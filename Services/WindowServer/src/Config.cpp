@@ -273,6 +273,9 @@ void load()
     if (auto value = read_bool(user, defaults, "Taskbar"sv, "GroupWindows"sv); value.has_value())
         g_taskbar.group_windows = value.value();
 
+    if (auto value = read_bool(user, defaults, "Taskbar"sv, "XDGMenu"sv); value.has_value())
+        g_taskbar.xdg_menu = value.value();
+
     if (auto value = read_bool(user, defaults, "Accessibility"sv, "StickyKeys"sv); value.has_value())
         g_accessibility.sticky_keys = value.value();
 
@@ -379,8 +382,9 @@ void load()
         g_tiling.edge_threshold, g_tiling.drag_to_edge ? "on" : "off",
         g_focus.follows_mouse ? "on" : "off", g_effects.window_geometry ? "on" : "off",
         g_effects.show_geometry, g_effects.tile_window, g_output.default_scale);
-    dbgln("WindowServer: config: xwayland {}, taskbar group-windows {}, sticky keys {}, high contrast {}",
+    dbgln("WindowServer: config: xwayland {}, taskbar group-windows {}, XDG menu {}, sticky keys {}, high contrast {}",
         g_compositor.xwayland ? "on" : "off", g_taskbar.group_windows ? "on" : "off",
+        g_taskbar.xdg_menu ? "on" : "off",
         g_accessibility.sticky_keys ? "on" : "off", g_accessibility.high_contrast ? "on" : "off");
 }
 

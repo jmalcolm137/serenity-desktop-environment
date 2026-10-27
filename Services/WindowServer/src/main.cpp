@@ -621,6 +621,9 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
             outln("[Keybindings]");
             for (size_t i = 0; i < Config::action_names().size(); ++i)
                 outln("{}={}", Config::action_names()[i], Config::binding_text(static_cast<Config::Action>(i)));
+            outln("[Taskbar]");
+            outln("GroupWindows={}", Config::taskbar().group_windows);
+            outln("XDGMenu={}", Config::taskbar().xdg_menu);
             outln("[Log]");
             outln("Level={}", Config::log().level.is_empty() ? "error"sv : Config::log().level.view());
         }

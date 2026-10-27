@@ -12,8 +12,9 @@
 # Uses stub commands, so it needs no compositor or display.
 set -euo pipefail
 
-# The session updater must not create directories in the developer home.
+# The session XDG updaters must not write to the developer home/config.
 export SDE_USER_DIRS_UPDATE=0
+export SDE_XDG_DATA_UPDATE=0
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SDE="$SDE_ROOT/scripts/sde-session.sh"

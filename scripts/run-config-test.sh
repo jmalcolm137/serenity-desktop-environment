@@ -40,6 +40,8 @@ check "Renderer=auto" "$defaults"
 check "Level=error" "$defaults"
 check "SwitchWorkspaceRight=Ctrl+Alt+Right" "$defaults"
 check "Lock=Super+L" "$defaults"
+check "GroupWindows=false" "$defaults"
+check "XDGMenu=false" "$defaults"
 
 echo "=== (B) set / get ==="
 sde_config set Focus FollowsMouse true >/dev/null
@@ -51,6 +53,14 @@ else
     fail=1
 fi
 check "EdgeThreshold=120" "$(sde_config list)"
+sde_config set Taskbar XDGMenu true >/dev/null
+if [ "$(sde_config get Taskbar XDGMenu)" = "true" ]; then
+    echo "  ok: get Taskbar XDGMenu=true"
+else
+    echo "  FAIL: get Taskbar XDGMenu (got '$(sde_config get Taskbar XDGMenu)')"
+    fail=1
+fi
+sde_config set Taskbar XDGMenu false >/dev/null
 sde_config set Keybindings SwitchWorkspaceRight Ctrl+Alt+Page_Down >/dev/null
 if [ "$(sde_config get Keybindings SwitchWorkspaceRight)" = "Ctrl+Alt+Page_Down" ]; then
     echo "  ok: rebind SwitchWorkspaceRight=Ctrl+Alt+Page_Down"
@@ -76,6 +86,15 @@ else
     check "Rows='99' invalid (expected 1-16)" "$(cat "$RUNTIME/invalid.log")"
 fi
 sde_config set Workspaces Rows 2 >/dev/null  # back to a valid grid
+sde_config set Taskbar XDGMenu bogus >/dev/null
+if sde_config validate >"$RUNTIME/invalid-xdgmenu.log" 2>&1; then
+    echo "  FAIL: invalid Taskbar XDGMenu accepted"
+    fail=1
+else
+    echo "  ok: invalid Taskbar XDGMenu rejected"
+    check "XDGMenu='bogus' invalid (expected true/false)" "$(cat "$RUNTIME/invalid-xdgmenu.log")"
+fi
+sde_config set Taskbar XDGMenu false >/dev/null
 sde_config set Keybindings SwitchWorkspaceRight Ctrl+Alt+Bogus >/dev/null
 if sde_config validate >"$RUNTIME/invalid-kb.log" 2>&1; then
     echo "  FAIL: invalid keybinding accepted"

@@ -1,0 +1,528 @@
+diff --git a/Userland/Services/Taskbar/main.cpp b/Userland/Services/Taskbar/main.cpp
+--- a/Userland/Services/Taskbar/main.cpp
++++ b/Userland/Services/Taskbar/main.cpp
+@@ -11,6 +11,7 @@
+ #include <AK/Debug.h>
+ #include <AK/QuickSort.h>
+ #include <AK/Try.h>
++#include "XdgMenu.h"
+ #include <LibConfig/Client.h>
+ #include <LibCore/ConfigFile.h>
+ #include <LibCore/EventLoop.h>
+@@ -137,7 +138,6 @@
+ 
+ ErrorOr<NonnullRefPtr<GUI::Menu>> build_system_menu(GUI::Window& window)
+ {
+-    Vector<ByteString> const sorted_app_categories = TRY(discover_apps_and_categories());
+     auto system_menu = GUI::Menu::construct("\xE2\x9A\xA1"_string); // HIGH VOLTAGE SIGN
+ 
+     system_menu->add_action(GUI::Action::create("&About SDE", TRY(Gfx::Bitmap::load_from_uri("resource://icons/16x16/ladyball.png"sv)), [&](auto&) {
+@@ -145,6 +145,13 @@
+     }));
+ 
+     system_menu->add_separator();
++
++    if (Taskbar::xdg_menu_enabled()) {
++        dbgln("Taskbar: using XDG menu");
++        TRY(Taskbar::add_xdg_apps_to_menu(*system_menu, window));
++    } else {
++        dbgln("Taskbar: using Serenity menu");
++        Vector<ByteString> const sorted_app_categories = TRY(discover_apps_and_categories());
+ 
+     // First we construct all the necessary app category submenus.
+     auto category_icons = TRY(Core::ConfigFile::open("resource://icons/SystemMenu.ini"sv));
+@@ -200,6 +207,7 @@
+             app->spawn_with_escalation_or_show_error(window);
+         }));
+         ++app_identifier;
++    }
+     }
+ 
+     system_menu->add_separator();
+diff --git a/Userland/Services/Taskbar/CMakeLists.txt b/Userland/Services/Taskbar/CMakeLists.txt
+--- a/Userland/Services/Taskbar/CMakeLists.txt
++++ b/Userland/Services/Taskbar/CMakeLists.txt
+@@ -13,6 +13,7 @@
+     TaskbarFrame.cpp
+     TaskbarWindow.cpp
+     WindowList.cpp
++    XdgMenu.cpp
+ )
+ 
+ serenity_bin(Taskbar)
+diff --git a/Userland/Services/Taskbar/XdgMenu.h b/Userland/Services/Taskbar/XdgMenu.h
+new file mode 100644
+--- /dev/null
++++ b/Userland/Services/Taskbar/XdgMenu.h
+@@ -0,0 +1,26 @@
++/*
++ * Copyright (c) 2026, Serenity Desktop Environment contributors
++ *
++ * SPDX-License-Identifier: BSD-2-Clause
++ */
++
++#pragma once
++
++#include <AK/ByteString.h>
++#include <AK/Error.h>
++
++namespace GUI {
++class Menu;
++class Window;
++}
++
++namespace Taskbar {
++
++// The start menu style, from WindowServer.ini [Taskbar] XDGMenu.
++bool xdg_menu_enabled();
++
++// Add the applications discovered from $XDG_DATA_DIRS/applications/*.desktop as
++// category submenus of `system_menu`.
++ErrorOr<void> add_xdg_apps_to_menu(GUI::Menu& system_menu, GUI::Window& window);
++
++}
+diff --git a/Userland/Services/Taskbar/XdgMenu.cpp b/Userland/Services/Taskbar/XdgMenu.cpp
+new file mode 100644
+--- /dev/null
++++ b/Userland/Services/Taskbar/XdgMenu.cpp
+@@ -0,0 +1,440 @@
++/*
++ * Copyright (c) 2026, Serenity Desktop Environment contributors
++ *
++ * SPDX-License-Identifier: BSD-2-Clause
++ */
++
++// The Taskbar's XDG menu: instead of the Serenity .af applications, read
++// freedesktop .desktop entries from the XDG data dirs, group them by their main
++// category and launch them through their Exec line. Enabled by
++// WindowServer.ini [Taskbar] XDGMenu=true (default: the Serenity .af menu).
++//
++// Entries for the Serenity applications are generated from their .af files by
++// scripts/generate-desktop-entries.sh (the session puts them in
++// $XDG_DATA_DIRS/applications).
++
++#include "XdgMenu.h"
++
++#include <AK/Array.h>
++#include <AK/Debug.h>
++#include <AK/HashTable.h>
++#include <AK/Optional.h>
++#include <AK/QuickSort.h>
++#include <AK/StringBuilder.h>
++#include <AK/StringView.h>
++#include <AK/Try.h>
++#include <AK/Vector.h>
++#include <LibCore/ConfigFile.h>
++#include <LibCore/DirIterator.h>
++#include <LibCore/Process.h>
++#include <LibCore/StandardPaths.h>
++#include <LibGfx/Bitmap.h>
++#include <LibGUI/Action.h>
++#include <LibGUI/FileIconProvider.h>
++#include <LibGUI/Icon.h>
++#include <LibGUI/Menu.h>
++#include <LibGUI/Process.h>
++#include <LibGUI/Window.h>
++#include <stdlib.h>
++#include <unistd.h>
++
++namespace Taskbar {
++
++namespace {
++
++struct XdgApplication {
++    ByteString desktop_id;
++    ByteString name;
++    ByteString exec;
++    ByteString executable;
++    ByteString icon;
++    ByteString category;
++    bool terminal { false };
++};
++
++ByteString state_directory()
++{
++    if (auto const* dir = getenv("SDE_STATE_DIR"); dir && *dir)
++        return ByteString { dir };
++    if (auto const* config = getenv("XDG_CONFIG_HOME"); config && *config)
++        return ByteString::formatted("{}/sde", config);
++    if (auto const* home = getenv("HOME"); home && *home)
++        return ByteString::formatted("{}/.config/sde", home);
++    return ByteString { "/tmp/sde" };
++}
++
++Vector<ByteString> data_directories()
++{
++    Vector<ByteString> directories;
++    if (auto const* data_home = getenv("XDG_DATA_HOME"); data_home && *data_home) {
++        directories.append(ByteString { data_home });
++    } else {
++        directories.append(ByteString::formatted("{}/.local/share", Core::StandardPaths::home_directory()));
++    }
++
++    if (auto const* data_dirs = getenv("XDG_DATA_DIRS"); data_dirs && *data_dirs) {
++        ByteString data_dirs_value { data_dirs };
++        for (auto directory : data_dirs_value.view().split_view(':')) {
++            if (!directory.is_empty())
++                directories.append(directory.to_byte_string());
++        }
++    } else {
++        directories.append("/usr/local/share"sv);
++        directories.append("/usr/share"sv);
++    }
++    return directories;
++}
++
++bool list_contains(StringView list, StringView value)
++{
++    for (auto item : list.split_view(';')) {
++        if (item == value)
++            return true;
++    }
++    return false;
++}
++
++// The freedesktop main category to the Serenity system menu's category label
++// (the labels are the keys in Base/res/icons/SystemMenu.ini, so the existing
++// category icons keep working).
++ByteString menu_category_for(StringView categories)
++{
++    for (auto category : categories.split_view(';')) {
++        if (category == "Development"sv)
++            return "D&evelopment"sv;
++        if (category == "Game"sv)
++            return "&Games"sv;
++        if (category == "Graphics"sv)
++            return "Gra&phics"sv;
++        if (category == "Network"sv)
++            return "&Internet"sv;
++        if (category == "AudioVideo"sv || category == "Audio"sv || category == "Video"sv)
++            return "&Media"sv;
++        if (category == "Office"sv)
++            return "&Office"sv;
++        if (category == "Settings"sv)
++            return "Settings"sv;
++        if (category == "System"sv || category == "Utility"sv)
++            return "&Utilities"sv;
++    }
++    return "&Utilities"sv;
++}
++
++// Drop the Exec field codes (%f %F %u %U %d %D %n %N %i %c %k %v %m; %% is a
++// literal percent).
++ByteString strip_field_codes(StringView exec)
++{
++    StringBuilder builder;
++    for (size_t i = 0; i < exec.length(); ++i) {
++        auto character = exec[i];
++        if (character != '%') {
++            builder.append(character);
++            continue;
++        }
++        if (i + 1 < exec.length() && exec[i + 1] == '%') {
++            builder.append('%');
++            ++i;
++            continue;
++        }
++        if (i + 1 < exec.length())
++            ++i;
++    }
++    return builder.to_byte_string();
++}
++
++// Split an Exec line into argv, honouring quotes and backslash escapes and
++// dropping the field codes.
++Vector<ByteString> split_exec(StringView exec)
++{
++    Vector<ByteString> arguments;
++    StringBuilder current;
++    bool in_single_quotes = false;
++    bool in_double_quotes = false;
++    bool escaped = false;
++
++    for (size_t i = 0; i < exec.length(); ++i) {
++        auto character = exec[i];
++        if (escaped) {
++            current.append(character);
++            escaped = false;
++            continue;
++        }
++        if (character == '\\' && !in_single_quotes) {
++            escaped = true;
++            continue;
++        }
++        if (character == '\'' && !in_double_quotes) {
++            in_single_quotes = !in_single_quotes;
++            continue;
++        }
++        if (character == '"' && !in_single_quotes) {
++            in_double_quotes = !in_double_quotes;
++            continue;
++        }
++        if ((character == ' ' || character == '\t') && !in_single_quotes && !in_double_quotes) {
++            if (!current.is_empty()) {
++                arguments.append(current.to_byte_string());
++                current.clear();
++            }
++            continue;
++        }
++        if (character == '%' && i + 1 < exec.length()) {
++            if (exec[i + 1] == '%')
++                current.append('%');
++            ++i;
++            continue;
++        }
++        current.append(character);
++    }
++    if (!current.is_empty())
++        arguments.append(current.to_byte_string());
++    return arguments;
++}
++
++Optional<ByteString> resolve_executable(StringView program)
++{
++    auto resolved = Core::Process::resolve_executable_path(program);
++    if (access(resolved.characters(), X_OK) == 0)
++        return resolved;
++    if (program.contains('/'))
++        return {};
++    if (auto const* path_env = getenv("PATH"); path_env && *path_env) {
++        ByteString path_value { path_env };
++        for (auto directory : path_value.view().split_view(':')) {
++            if (directory.is_empty())
++                continue;
++            auto candidate = ByteString::formatted("{}/{}", directory, program);
++            if (access(candidate.characters(), X_OK) == 0)
++                return candidate;
++        }
++    }
++    return {};
++}
++
++Optional<XdgApplication> read_desktop_file(ByteString const& path, ByteString desktop_id)
++{
++    auto config = Core::ConfigFile::open(path);
++    if (config.is_error())
++        return {};
++
++    auto const& file = *config.value();
++    ByteString const group = "Desktop Entry";
++    if (file.read_entry(group, "Type", "Application") != "Application")
++        return {};
++    if (file.read_bool_entry(group, "NoDisplay", false) || file.read_bool_entry(group, "Hidden", false))
++        return {};
++
++    auto only_show_in = file.read_entry(group, "OnlyShowIn");
++    if (!only_show_in.is_empty()
++        && !list_contains(only_show_in.view(), "SDE"sv)
++        && !list_contains(only_show_in.view(), "Serenity"sv))
++        return {};
++    auto not_show_in = file.read_entry(group, "NotShowIn");
++    if (list_contains(not_show_in.view(), "SDE"sv) || list_contains(not_show_in.view(), "Serenity"sv))
++        return {};
++
++    auto try_exec = file.read_entry(group, "TryExec");
++    if (!try_exec.is_empty()) {
++        auto resolved = resolve_executable(try_exec.view());
++        if (!resolved.has_value()) {
++            dbgln("Taskbar: XDG skip '{}' (TryExec '{}' not found)", path, try_exec);
++            return {};
++        }
++    }
++
++    auto name = file.read_entry(group, "Name");
++    auto exec = file.read_entry(group, "Exec");
++    if (name.is_empty() || exec.is_empty())
++        return {};
++    auto arguments = split_exec(exec.view());
++    if (arguments.is_empty())
++        return {};
++
++    XdgApplication application;
++    application.desktop_id = move(desktop_id);
++    application.name = move(name);
++    application.exec = move(exec);
++    application.executable = arguments.take_first();
++    application.icon = file.read_entry(group, "Icon");
++    auto categories = file.read_entry(group, "Categories");
++    application.category = menu_category_for(categories.view());
++    application.terminal = file.read_bool_entry(group, "Terminal", false);
++    return application;
++}
++
++Vector<XdgApplication> discover_apps()
++{
++    Vector<XdgApplication> applications;
++    HashTable<ByteString> seen_desktop_ids;
++
++    for (auto const& directory : data_directories()) {
++        auto applications_directory = ByteString::formatted("{}/applications", directory);
++        Core::DirIterator iterator(applications_directory, Core::DirIterator::SkipDots);
++        if (iterator.has_error()) {
++            dbgln("Taskbar: XDG cannot read '{}'", applications_directory);
++            continue;
++        }
++        dbgln("Taskbar: XDG scanning '{}'", applications_directory);
++        while (iterator.has_next()) {
++            auto filename = iterator.next_path();
++            if (!filename.ends_with(".desktop"sv))
++                continue;
++            auto desktop_id = filename.substring_view(0, filename.length() - ".desktop"sv.length()).to_byte_string();
++            if (seen_desktop_ids.contains(desktop_id))
++                continue;
++            auto application = read_desktop_file(
++                ByteString::formatted("{}/{}", applications_directory, filename), desktop_id);
++            if (!application.has_value())
++                continue;
++            seen_desktop_ids.set(move(desktop_id));
++            applications.append(application.release_value());
++        }
++    }
++
++    quick_sort(applications, [](auto const& a, auto const& b) { return a.name < b.name; });
++    return applications;
++}
++
++RefPtr<Gfx::Bitmap const> icon_for(XdgApplication const& application)
++{
++    if (!application.icon.is_empty()) {
++        ByteString uri;
++        if (application.icon.starts_with("/res/"sv))
++            uri = ByteString::formatted("resource://{}", application.icon.substring_view(5));
++        else if (application.icon.starts_with('/') || application.icon.contains("://"sv))
++            uri = application.icon;
++        else
++            uri = ByteString::formatted("resource://icons/16x16/{}.png", application.icon);
++        auto bitmap = Gfx::Bitmap::load_from_uri(uri);
++        if (!bitmap.is_error())
++            return bitmap.release_value();
++    }
++    // No usable Icon= (or a themed name SerenityOS does not ship): use the same
++    // icon the Serenity menu derives from the executable.
++    auto executable = resolve_executable(application.executable.view()).value_or(application.executable);
++    auto icon = GUI::FileIconProvider::icon_for_path(executable.view());
++    return icon.bitmap_for_size(16);
++}
++
++void launch(XdgApplication const& application, GUI::Window& window)
++{
++    if (application.terminal) {
++        Vector<ByteString> arguments;
++        arguments.append(ByteString { "-e" });
++        arguments.append(strip_field_codes(application.exec.view()));
++        GUI::Process::spawn_or_show_error(&window, "/bin/Terminal"sv, arguments.span());
++        return;
++    }
++
++    auto arguments = split_exec(application.exec.view());
++    if (arguments.is_empty())
++        return;
++    auto program = arguments.take_first();
++    auto resolved = resolve_executable(program.view());
++    if (!resolved.has_value())
++        return;
++    GUI::Process::spawn_or_show_error(&window, resolved.value().view(), arguments.span());
++}
++
++}
++
++static Optional<bool> read_config_bool(Core::ConfigFile& config, StringView group, StringView key)
++{
++    auto text = config.read_entry(group, key);
++    if (text.is_empty())
++        return {};
++    auto lower = text.trim_whitespace().to_lowercase();
++    if (lower == "true"sv || lower == "1"sv || lower == "yes"sv || lower == "on"sv)
++        return true;
++    if (lower == "false"sv || lower == "0"sv || lower == "no"sv || lower == "off"sv)
++        return false;
++    return {};
++}
++
++bool xdg_menu_enabled()
++{
++    // Layered like the compositor's config (Services/WindowServer/src/Config.cpp):
++    // the user's file first, then the SerenityOS defaults under the resource root.
++    // Keep the parsing in sync with that file so `sde-config` and the Taskbar
++    // cannot disagree about the value.
++    ByteString defaults_path;
++    if (auto const* root = getenv("SERENITY_RES_ROOT"); root && *root)
++        defaults_path = ByteString::formatted("{}/../etc/WindowServer.ini", root);
++    else
++        defaults_path = ByteString { "/etc/WindowServer.ini" };
++
++    auto const user_path = ByteString::formatted("{}/WindowServer.ini", state_directory());
++    for (auto const& path : { user_path, defaults_path }) {
++        auto config = Core::ConfigFile::open(path);
++        if (config.is_error())
++            continue;
++        if (auto value = read_config_bool(*config.value(), "Taskbar"sv, "XDGMenu"sv); value.has_value())
++            return value.value();
++    }
++    return false;
++}
++
++ErrorOr<void> add_xdg_apps_to_menu(GUI::Menu& system_menu, GUI::Window& window)
++{
++    auto applications = discover_apps();
++    dbgln("Taskbar: XDG menu discovered {} apps", applications.size());
++    for (size_t i = 0; i < applications.size() && i < 8; ++i)
++        dbgln("Taskbar: XDG app '{}' ({})", applications[i].name, applications[i].executable);
++    if (applications.is_empty())
++        return {};
++
++    static constexpr Array<StringView, 8> category_order {
++        "D&evelopment"sv,
++        "&Games"sv,
++        "Gra&phics"sv,
++        "&Internet"sv,
++        "&Media"sv,
++        "&Office"sv,
++        "Settings"sv,
++        "&Utilities"sv,
++    };
++
++    auto category_icons = Core::ConfigFile::open("resource://icons/SystemMenu.ini"sv);
++    HashMap<ByteString, NonnullRefPtr<GUI::Menu>> category_menus;
++    for (auto category : category_order) {
++        bool present = false;
++        for (auto const& application : applications) {
++            if (application.category == category) {
++                present = true;
++                break;
++            }
++        }
++        if (!present)
++            continue;
++
++        auto menu = system_menu.add_submenu(TRY(String::from_utf8(category)));
++        if (!category_icons.is_error()) {
++            auto icon_path = category_icons.value()->read_entry("16x16", category);
++            if (!icon_path.is_empty()) {
++                auto icon_uri = icon_path.starts_with("/res/"sv)
++                    ? ByteString::formatted("resource://{}", icon_path.substring_view(5))
++                    : icon_path;
++                auto icon = Gfx::Bitmap::load_from_uri(icon_uri);
++                if (!icon.is_error())
++                    menu->set_icon(icon.release_value());
++            }
++        }
++        category_menus.set(category.to_byte_string(), menu);
++    }
++
++    for (auto const& application : applications) {
++        auto menu = category_menus.find(application.category);
++        if (menu == category_menus.end())
++            continue;
++        auto icon = icon_for(application);
++        auto action = GUI::Action::create(application.name, icon, [application, &window](auto&) {
++            launch(application, window);
++        });
++        menu->value->add_action(action);
++    }
++
++    dbgln("Taskbar: XDG menu added {} apps in {} categories", applications.size(), category_menus.size());
++    return {};
++}
++
++}

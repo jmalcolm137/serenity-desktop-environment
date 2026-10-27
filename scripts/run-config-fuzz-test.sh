@@ -40,7 +40,7 @@ sections = ["Workspaces", "Tiling", "Focus", "Effects", "Output", "Input",
 keys = ["Rows", "Columns", "EdgeThreshold", "DragToEdge", "FollowsMouse",
         "WindowGeometry", "DefaultScale", "Renderer", "Layouts", "Model",
         "RepeatDelay", "RepeatRate", "StickyKeys", "HighContrast", "XWayland",
-        "GroupWindows", "Level", "Path", "Name", "Order", "Acceleration",
+        "GroupWindows", "XDGMenu", "Level", "Path", "Name", "Order", "Acceleration",
         "ScrollStepSize", "DoubleClickSpeed", "NaturalScroll", "TapToClick",
         "LeftHanded", "ButtonsSwitched", "Nonexistent"]
 

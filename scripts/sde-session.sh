@@ -55,6 +55,16 @@ session_state_dir() {
     else printf '%s' /tmp/sde
     fi
 }
+
+# XDG data: generate .desktop entries for the Serenity apps so the Taskbar's XDG
+# menu (WindowServer.ini [Taskbar] XDGMenu) and host application menus can see
+# them. The generated tree is prepended to XDG_DATA_DIRS.
+SDE_XDG_DATA="$(session_state_dir)/xdg-data"
+if [[ "${SDE_XDG_DATA_UPDATE:-1}" == "1" ]]; then
+    "${SDE_ROOT}/scripts/generate-desktop-entries.sh" --output "$SDE_XDG_DATA" >/dev/null 2>&1 || true
+fi
+export XDG_DATA_DIRS="$SDE_XDG_DATA${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+
 # Assign a session variable from the file only when the environment did not set it.
 apply_session_setting() {
     local var="$1" value="$2"
@@ -223,7 +233,7 @@ push_dbus_activation_env() {
     local cmd="${SDE_DBUS_ENV_CMD:-dbus-update-activation-environment}"
     # Only pass variables that are actually set (an unset name makes
     # dbus-update-activation-environment fail).
-    local vars="XDG_SESSION_TYPE XDG_SESSION_CLASS XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION WAYLAND_DISPLAY XDG_SEAT"
+    local vars="XDG_SESSION_TYPE XDG_SESSION_CLASS XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION WAYLAND_DISPLAY XDG_SEAT XDG_DATA_DIRS"
     [ -n "${XDG_VTNR:-}" ] && vars="$vars XDG_VTNR"
     [ -n "${XDG_SESSION_ID:-}" ] && vars="$vars XDG_SESSION_ID"
     # D-Bus-activated SDE services (the notification daemon) must find the

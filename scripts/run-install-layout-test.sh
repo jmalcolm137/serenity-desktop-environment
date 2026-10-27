@@ -94,6 +94,12 @@ check "the portal D-Bus activation file is installed" \
     "grep -qF 'Exec=/usr/lib/sde/bin/xdg-desktop-portal-serenity' '$ROOT/usr/share/dbus-1/services/org.freedesktop.impl.portal.desktop.serenity.service'"
 check "the launcher exports the file chooser portal dialog" \
     "grep -qF 'SDE_PORTAL_FILE_CHOOSER=\"\$prefix/bin/FileChooserDialog\"' '$LAUNCHER'"
+check "the XDG menu generator is installed" \
+    "[[ -x '$PREFIX/share/sde/scripts/generate-desktop-entries.sh' ]]"
+check "the Serenity apps' .desktop entries are installed" \
+    "[[ -f '$PREFIX/share/applications/Calculator.desktop' && -f '$PREFIX/share/applications/2048.desktop' ]]"
+check "the installed launcher puts its data dir on XDG_DATA_DIRS" \
+    "grep -qF 'XDG_DATA_DIRS=\"\$prefix/share:' '$LAUNCHER'"
 
 echo "=== a headless session from the installed launcher ==="
 setsid env -u WAYLAND_DISPLAY -u DISPLAY \
