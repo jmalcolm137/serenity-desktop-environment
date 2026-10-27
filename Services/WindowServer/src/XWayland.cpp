@@ -308,8 +308,7 @@ static void x11_surface_destroy(wl_listener* listener, void*)
     forget_frame_press(server, *toplevel);
     if (toplevel->wm_id != 0)
         WindowManager::emit_window_removed(*toplevel);
-    if (toplevel->frame_buffer)
-        toplevel->frame_buffer = nullptr; // destroyed with the scene tree
+    toplevel->frame_buffers = {}; // destroyed with the scene tree
     if (toplevel->scene_tree) {
         wlr_scene_node_destroy(&toplevel->scene_tree->node);
         toplevel->scene_tree = nullptr;

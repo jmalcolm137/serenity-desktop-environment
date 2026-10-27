@@ -306,6 +306,16 @@ not grow it** beyond `SDE_PERF_RSS_GROWTH_KB` (default 4 MB). Measured growth: 0
 - **Compositor chrome is cached.** Window frames, the cursor highlight, the
   switcher's overlay and the stack-switch overlay are `ChromeNode`s: a scene
   buffer re-rendered only when it changes, not per frame.
+- **Server-side frames keep only their decoration.** A window frame is painted
+  once, then split into titlebar/border strip buffers; the content area is a
+  solid scene rect. A maximised 1280×800 window no longer keeps a 16 MiB ARGB
+  frame bitmap alive at scale 2.
+- **The wallpaper is on demand.** The compositor does not push the image when a
+  client binds `serenity_window_manager`; `get_wallpaper()` reads the persisted
+  raw state when a client actually needs it. Only the desktop and Display
+  Settings pay for the image, instead of every applet and terminal carrying a
+  private copy (3 MiB each for the default 1024×768 wallpaper, 16 MiB each for
+  2560×1600).
 - **A per-frame early-out for the desktop background.** `update_desktop_background()`
   rebuilds the background bitmap only when the output size or the wallpaper
   changes.

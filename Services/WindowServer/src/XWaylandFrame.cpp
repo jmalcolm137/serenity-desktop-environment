@@ -46,8 +46,7 @@ void x11_update_frame(X11Toplevel& toplevel)
         toplevel.frame_left = toplevel.frame_top = toplevel.frame_right = toplevel.frame_bottom = 0;
         toplevel.frame_size = { content_width, content_height };
         toplevel.button_rects.clear_with_capacity();
-        if (toplevel.frame_buffer)
-            wlr_scene_node_set_enabled(&toplevel.frame_buffer->node, false);
+        frame_buffers_set_visible(toplevel.frame_buffers, false);
         if (toplevel.scene)
             wlr_scene_node_set_position(&toplevel.scene->buffer->node, 0, 0);
         return;
@@ -66,6 +65,8 @@ void x11_update_frame(X11Toplevel& toplevel)
     toplevel.frame_bottom = frame_size.height() - content_height - toplevel.frame_top;
     toplevel.frame_size = frame_size;
 
+    // Transient canvas for exact theme painting; only the decoration strips
+    // created below are retained by the scene.
     auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, frame_size, output_scale()).release_value_but_fixme_should_propagate_errors();
     Gfx::Painter painter(*bitmap);
     painter.fill_rect(Gfx::IntRect { { }, frame_size }, g_palette->window());
@@ -109,21 +110,13 @@ void x11_update_frame(X11Toplevel& toplevel)
         }
     }
 
-    auto* buffer = bitmap_buffer_create(move(bitmap));
-    if (!toplevel.frame_buffer) {
-        toplevel.frame_buffer = wlr_scene_buffer_create(toplevel.scene_tree, buffer);
-        wlr_scene_node_set_position(&toplevel.frame_buffer->node, 0, 0);
-    } else {
-        wlr_scene_buffer_set_buffer(toplevel.frame_buffer, buffer);
-    }
-    wlr_scene_buffer_set_dest_size(toplevel.frame_buffer, frame_size.width(), frame_size.height());
+    // Keep only the titlebar/border strips; the content area is a scene rect.
     // The scene tree is the *frame* origin (as for xdg toplevels): the frame is
     // drawn at (0,0) and the client content is inset by the frame, so a window
     // that asks to be at (0,0) shows its titlebar on-screen.
-    wlr_scene_node_set_position(&toplevel.frame_buffer->node, 0, 0);
-    wlr_scene_node_set_enabled(&toplevel.frame_buffer->node, true);
-    use_nearest_filter(&toplevel.frame_buffer->node);
-    wlr_buffer_drop(buffer);
+    frame_buffers_update(toplevel.frame_buffers, toplevel.scene_tree, *bitmap,
+        frame_size, toplevel.frame_left, toplevel.frame_top, toplevel.frame_right, toplevel.frame_bottom,
+        g_palette->window());
     if (toplevel.scene)
         wlr_scene_node_set_position(&toplevel.scene->buffer->node, toplevel.frame_left, toplevel.frame_top);
     dbgln("WindowServer: X11 frame '{}' {}x{} (content {}x{})", title, frame_size.width(), frame_size.height(), content_width, content_height);

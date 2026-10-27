@@ -89,6 +89,7 @@ struct wlr_scene_buffer;
 struct wlr_scene_layer_surface_v1;
 struct wlr_scene_output_layout;
 struct wlr_scene_node;
+struct wlr_scene_rect;
 struct wlr_scene_surface;
 struct wlr_scene_tree;
 struct wlr_seat;
@@ -191,12 +192,24 @@ struct FrameCache {
     ByteString title;
 };
 
+// Server-side decoration nodes. The content area is a solid scene rect and the
+// painted theme is kept in four small strip buffers (top/titlebar, bottom,
+// left, right), never a full-window bitmap.
+struct FrameBuffers {
+    wlr_scene_tree* tree { nullptr };
+    wlr_scene_rect* background { nullptr };
+    wlr_scene_buffer* top { nullptr };
+    wlr_scene_buffer* bottom { nullptr };
+    wlr_scene_buffer* left { nullptr };
+    wlr_scene_buffer* right { nullptr };
+};
+
 struct Toplevel {
     Server* server { nullptr };
     wlr_xdg_toplevel* xdg_toplevel { nullptr };
     wlr_scene_tree* scene_tree { nullptr };
     wlr_scene_tree* content_tree { nullptr };
-    wlr_scene_buffer* frame_buffer { nullptr };
+    FrameBuffers frame_buffers;
     // The client's scene buffer, for direct-scanout telemetry (wlroots emits
     // output_sample on the buffer, not on the output).
     wlr_scene_buffer* content_buffer { nullptr };
@@ -444,7 +457,7 @@ struct X11Toplevel {
     wlr_xwayland_surface* xsurface { nullptr };
     wlr_scene_tree* scene_tree { nullptr };
     wlr_scene_surface* scene { nullptr };
-    wlr_scene_buffer* frame_buffer { nullptr };
+    FrameBuffers frame_buffers;
     bool mapped { false };
     bool override_redirect { false };
     // Server-side decoration frame (X11 clients that don't draw their own).

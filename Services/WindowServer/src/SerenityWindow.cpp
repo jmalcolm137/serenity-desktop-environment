@@ -456,15 +456,9 @@ static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t
     // (the workspace grid and the input-setting bounds); hand it to the shim so it
     // answers those requests without reading our config file. See docs/24.
     serenity_window_manager_send_host_settings(resource, host_settings_blob().characters());
-    // Only when there is one: a client with no wallpaper keeps none.
-    if (g_wallpaper) {
-        int wallpaper = bitmap_fd(g_wallpaper);
-        if (wallpaper >= 0) {
-            serenity_window_manager_send_wallpaper(resource, g_wallpaper->width(), g_wallpaper->height(),
-                g_wallpaper->pitch(), static_cast<uint32_t>(g_wallpaper->format()), wallpaper);
-            ::close(wallpaper);
-        }
-    }
+    // The wallpaper is *not* pushed here. Most clients never use it, and copying
+    // the image into every process costs a full wallpaper-sized bitmap each. The
+    // shim reads the persisted wallpaper state on demand (get_wallpaper()).
     serenity_window_manager_send_host_config(resource,
         static_cast<uint32_t>(Config::workspaces().rows), static_cast<uint32_t>(Config::workspaces().columns),
         wl_fixed_from_double(Config::input_ranges().accel_min), wl_fixed_from_double(Config::input_ranges().accel_max),

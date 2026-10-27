@@ -171,6 +171,74 @@ void update_button_pressed(Server& server, FrameHit const& hit)
     }
 }
 
+static void set_scene_rect_color(wlr_scene_rect* rect, Gfx::Color color)
+{
+    float const alpha = color.alpha() / 255.0f;
+    float const rgba[4] = {
+        color.red() / 255.0f * alpha,
+        color.green() / 255.0f * alpha,
+        color.blue() / 255.0f * alpha,
+        alpha,
+    };
+    wlr_scene_rect_set_color(rect, rgba);
+}
+
+void frame_buffers_set_visible(FrameBuffers& buffers, bool visible)
+{
+    if (buffers.tree)
+        wlr_scene_node_set_enabled(&buffers.tree->node, visible);
+}
+
+void frame_buffers_update(FrameBuffers& buffers, wlr_scene_tree* parent, Gfx::Bitmap const& painted_frame,
+    Gfx::IntSize frame_size, int frame_left, int frame_top, int frame_right, int frame_bottom, Gfx::Color background)
+{
+    if (frame_size.is_empty())
+        return;
+
+    if (!buffers.tree) {
+        buffers.tree = wlr_scene_tree_create(parent);
+        wlr_scene_node_lower_to_bottom(&buffers.tree->node);
+    }
+    wlr_scene_node_set_enabled(&buffers.tree->node, true);
+
+    if (!buffers.background) {
+        float const transparent[4] = { 0, 0, 0, 0 };
+        buffers.background = wlr_scene_rect_create(buffers.tree, frame_size.width(), frame_size.height(), transparent);
+    }
+    wlr_scene_rect_set_size(buffers.background, frame_size.width(), frame_size.height());
+    set_scene_rect_color(buffers.background, background);
+    wlr_scene_node_set_position(&buffers.background->node, 0, 0);
+
+    auto update_strip = [&](wlr_scene_buffer*& node, Gfx::IntRect rect, int x, int y) {
+        if (!node)
+            node = wlr_scene_buffer_create(buffers.tree, nullptr);
+        if (rect.is_empty()) {
+            wlr_scene_node_set_enabled(&node->node, false);
+            return;
+        }
+        auto cropped = painted_frame.cropped(rect);
+        if (cropped.is_error()) {
+            wlr_scene_node_set_enabled(&node->node, false);
+            return;
+        }
+        auto* buffer = bitmap_buffer_create(cropped.release_value());
+        wlr_scene_buffer_set_buffer(node, buffer);
+        wlr_buffer_drop(buffer);
+        wlr_scene_node_set_position(&node->node, x, y);
+        wlr_scene_buffer_set_dest_size(node, rect.width(), rect.height());
+        use_nearest_filter(&node->node);
+        wlr_scene_node_set_enabled(&node->node, true);
+    };
+
+    int const content_height = max(0, frame_size.height() - frame_top - frame_bottom);
+    update_strip(buffers.top, { 0, 0, frame_size.width(), frame_top }, 0, 0);
+    update_strip(buffers.bottom, { 0, frame_size.height() - frame_bottom, frame_size.width(), frame_bottom },
+        0, frame_size.height() - frame_bottom);
+    update_strip(buffers.left, { 0, frame_top, frame_left, content_height }, 0, frame_top);
+    update_strip(buffers.right, { frame_size.width() - frame_right, frame_top, frame_right, content_height },
+        frame_size.width() - frame_right, frame_top);
+}
+
 void toplevel_update_frame(Toplevel& toplevel)
 {
     if (!g_palette)
@@ -196,8 +264,7 @@ void toplevel_update_frame(Toplevel& toplevel)
         toplevel.frame_size = { content_width, content_height };
         toplevel.button_rects.clear_with_capacity();
         toplevel.frame_cache.clear();
-        if (toplevel.frame_buffer)
-            wlr_scene_node_set_enabled(&toplevel.frame_buffer->node, false);
+        frame_buffers_set_visible(toplevel.frame_buffers, false);
         wlr_scene_node_set_position(&toplevel.content_tree->node, 0, 0);
         wlr_scene_node_set_enabled(&toplevel.content_tree->node, true);
         return;
@@ -212,15 +279,13 @@ void toplevel_update_frame(Toplevel& toplevel)
         toplevel.frame_size = { content_width, content_height };
         toplevel.button_rects.clear_with_capacity();
         toplevel.frame_cache.clear();
-        if (toplevel.frame_buffer)
-            wlr_scene_node_set_enabled(&toplevel.frame_buffer->node, false);
+        frame_buffers_set_visible(toplevel.frame_buffers, false);
         wlr_scene_node_set_position(&toplevel.content_tree->node, 0, 0);
         wlr_scene_node_set_enabled(&toplevel.content_tree->node, true);
         return;
     }
     // The frame is visible again after leaving fullscreen.
-    if (toplevel.frame_buffer)
-        wlr_scene_node_set_enabled(&toplevel.frame_buffer->node, true);
+    frame_buffers_set_visible(toplevel.frame_buffers, true);
 
     auto& theme = g_palette->window_theme();
     // A rolled-up window keeps only its frame: the content is hidden and the
@@ -261,7 +326,9 @@ void toplevel_update_frame(Toplevel& toplevel)
         && frame_cache->title == title_view)
         return;
 
-    // Render the frame at the output scale so it stays crisp on HiDPI panels.
+    // Paint into a transient full-frame canvas so the theme's coordinates stay
+    // exact. Only the decoration strips below are retained; the canvas is freed
+    // when this function returns.
     auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, frame_size, output_scale()).release_value_but_fixme_should_propagate_errors();
     Gfx::Painter painter(*bitmap);
     painter.fill_rect(Gfx::IntRect { { }, frame_size }, g_palette->window());
@@ -322,18 +389,11 @@ void toplevel_update_frame(Toplevel& toplevel)
         }
     }
 
-    auto* buffer = bitmap_buffer_create(move(bitmap));
-    if (!toplevel.frame_buffer) {
-        toplevel.frame_buffer = wlr_scene_buffer_create(toplevel.scene_tree, buffer);
-        wlr_scene_node_lower_to_bottom(&toplevel.frame_buffer->node);
-        wlr_scene_node_set_position(&toplevel.frame_buffer->node, 0, 0);
-    } else {
-        wlr_scene_buffer_set_buffer(toplevel.frame_buffer, buffer);
-    }
-    // The frame bitmap is physical; present it at the logical frame size.
-    wlr_scene_buffer_set_dest_size(toplevel.frame_buffer, frame_size.width(), frame_size.height());
-    use_nearest_filter(&toplevel.frame_buffer->node);
-    wlr_buffer_drop(buffer);
+    // Retain only the decoration strips. The content area is a solid scene rect,
+    // so a maximised window no longer keeps a full-window ARGB bitmap alive.
+    frame_buffers_update(toplevel.frame_buffers, toplevel.scene_tree, *bitmap,
+        frame_size, toplevel.frame_left, toplevel.frame_top, toplevel.frame_right, toplevel.frame_bottom,
+        g_palette->window());
 
     // Remember what produced these pixels so identical commits skip the render.
     toplevel.frame_cache = FrameCache {

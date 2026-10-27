@@ -25,6 +25,13 @@ struct FrameHit {
     Gfx::IntPoint local;
 };
 
+// Split a fully painted server-side frame into decoration-only strip buffers.
+// The content area becomes a solid scene rect, so a window only retains the
+// titlebar/border pixels instead of a full-window bitmap.
+void frame_buffers_update(FrameBuffers& buffers, wlr_scene_tree* parent, Gfx::Bitmap const& painted_frame,
+    Gfx::IntSize frame_size, int frame_left, int frame_top, int frame_right, int frame_bottom, Gfx::Color background);
+void frame_buffers_set_visible(FrameBuffers& buffers, bool visible);
+
 FrameHit hit_test_frame(Server& server, double x, double y);
 char const* resize_cursor_name(uint32_t edges);
 void update_button_hover(Server& server, FrameHit const& hit);

@@ -302,8 +302,8 @@ static void toplevel_destroy(wl_listener* listener, void*)
     if (server.window_menu.open && server.window_menu.toplevel == toplevel)
         close_window_menu(server);
     // `scene_tree` is our own wrapper around the xdg surface's content tree (so
-    // the frame buffer can share a node with the content). wlroots only tears
-    // down the content tree it created, so without this the frame buffer keeps
+    // the frame's decoration nodes can share a node with the content). wlroots
+    // only tears down the content tree it created, so without this the frame keeps
     // rendering after the client is gone and the window appears to freeze on
     // screen. Destroying the wrapper also destroys the content child, which
     // detaches wlroots' listener before the xdg_surface itself goes away.
