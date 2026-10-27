@@ -10,7 +10,7 @@
 #
 # This runs a private headless session with a wallpaper, the Taskbar and (when
 # built) the desktop. It asserts:
-#   * the client has no wallpaper-sized anonymous mapping;
+#   * the Taskbar has no wallpaper-sized anonymous mapping;
 #   * the compositor did not push "host wallpaper";
 #   * FileManager still reads it on demand (the compositor sees set_wallpaper).
 set -euo pipefail
@@ -69,7 +69,7 @@ if [[ ! -S "$XDG_RUNTIME_DIR/$SOCK" ]]; then
     exit 1
 fi
 
-# Let the test window bind and map, but inspect before its 6 s self-quit.
+# Let the Taskbar and desktop bind and map.
 sleep 2
 CLIENT_PID=""
 for p in $(pgrep -x "Taskbar" 2>/dev/null || true); do
@@ -83,8 +83,8 @@ check "the wallpaper state was persisted" "[[ -s '$R/wallpaper.raw' ]]"
 check "no client received a pushed wallpaper" "! grep -q 'LibWM: host wallpaper' '$R/comp.log'"
 if [[ -n "$CLIENT_PID" ]]; then
     # A wallpaper copy is an anonymous mapping of (roughly) width*height*4 bytes.
-    # The 320x240 test window is far below this; any resident anonymous mapping
-    # this large is the regressed eager copy.
+    # The Taskbar is a thin panel; any resident anonymous mapping this large is
+    # the regressed eager copy.
     BIG="$(awk '/^[0-9a-f]+-[0-9a-f]+ /{addr=$0} /^Rss:/{if($2 >= 3000) print $2" kB "addr}' "/proc/$CLIENT_PID/smaps" 2>/dev/null | head -1)"
     check "the test client has no wallpaper-sized copy" "[[ -z '$BIG' ]]"
     if [[ -n "$BIG" ]]; then echo "    unexpected mapping: $BIG"; fi
