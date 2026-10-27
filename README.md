@@ -10,6 +10,8 @@ The rough-goal of SerenityOS is "a marriage between the aesthetic of late-1990s 
 SerenityOS does an excellent job of capturing that aesthetic. We believe "the power-user accessibility of late-2000s *nix" is best expressed by modern Linux with its broad hardware compatibility, vast software catalog, and container ecosystem.
 The goal of SDE is to faithfully recreate the SerenityOS UX on Linux.
 
+The SDE desktop consumes only 150 MB of RAM with Taskbar and applets running.
+
 The stack is split across a small family of repositories:
 
 | Repository | Role |
