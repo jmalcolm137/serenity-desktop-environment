@@ -58,9 +58,11 @@
 #include <LibMain/Main.h>
 
 #include <ctime>
+#include <errno.h>
 #include <execinfo.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -752,6 +754,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     // (the session supervisor sets it), so nested/headless runs are unaffected.
     RefPtr<Core::Timer> heartbeat_timer;
     RefPtr<Core::Timer> perf_timer;
+    int heartbeat_fd = -1;
     if (auto const* heartbeat = getenv("SDE_HEARTBEAT_FILE"); heartbeat && *heartbeat) {
         ByteString heartbeat_path { heartbeat };
         // A repeating timer runs on the event loop, so a late callback means the
@@ -760,24 +763,45 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
         // how late and how many frames ago, so the next wedge is diagnosable from
         // the log rather than inferred from the supervisor's side.
         static time_t last_beat;
-        auto beat = [heartbeat_path] {
+        // Keep the file open and overwrite it in place. Opening it with truncation
+        // every second freed and reallocated its tmpfs page; under memory pressure
+        // that allocation can block for seconds, which makes the loop miss the very
+        // deadline the file exists to prove (measured: 3927 ms on a loaded host).
+        heartbeat_fd = ::open(heartbeat_path.characters(), O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
+        size_t heartbeat_size = 0;
+        if (heartbeat_fd < 0)
+            dbgln("WindowServer: could not open the heartbeat file '{}': {}", heartbeat_path, strerror(errno));
+        auto beat = [&heartbeat_fd, &heartbeat_size, heartbeat_path] {
             auto const now = ::time(nullptr);
             if (last_beat != 0 && now - last_beat > 2) {
                 dbgln("WindowServer: WARNING: event loop stalled for {}s (the session watchdog restarts at 10s)",
                     static_cast<long>(now - last_beat));
             }
             last_beat = now;
-            // The heartbeat is a synchronous file write on the loop it certifies, so
-            // if writing it stalls — I/O contention on a nearly-full filesystem is
-            // the obvious way — the compositor goes stale *because of* the thing
-            // meant to show it is alive, and the supervisor's only evidence is
-            // "heartbeat stale". Time it, and say so when it is materially slow.
+            // The heartbeat is a synchronous write on the loop it certifies, so
+            // time it and say so when it is materially slow.
             auto const started = monotonic_time_msec();
-            auto file = Core::File::open(heartbeat_path, Core::File::OpenMode::Write);
-            if (file.is_error())
-                return;
-            auto text = ByteString::number(static_cast<long>(now));
-            (void)file.value()->write_until_depleted(text.bytes());
+            char text[32];
+            auto const length = static_cast<size_t>(snprintf(text, sizeof(text), "%ld", static_cast<long>(now)));
+            bool wrote = false;
+            if (heartbeat_fd >= 0) {
+                auto const written = ::pwrite(heartbeat_fd, text, length, 0);
+                if (written == static_cast<ssize_t>(length)) {
+                    // The value's width changes rarely (epoch seconds); truncate
+                    // only then, so the page stays allocated between beats.
+                    if (heartbeat_size != length) {
+                        (void)::ftruncate(heartbeat_fd, static_cast<off_t>(length));
+                        heartbeat_size = length;
+                    }
+                    wrote = true;
+                }
+            }
+            if (!wrote) {
+                auto file = Core::File::open(heartbeat_path, Core::File::OpenMode::Write);
+                if (file.is_error())
+                    return;
+                (void)file.value()->write_until_depleted(StringView { text, length }.bytes());
+            }
             auto const elapsed_ms = monotonic_time_msec() - started;
             if (elapsed_ms > 500)
                 dbgln("WindowServer: WARNING: writing the liveness heartbeat took {}ms", elapsed_ms);
@@ -826,6 +850,10 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     if (heartbeat_timer) {
         heartbeat_timer->stop();
         heartbeat_timer = nullptr;
+    }
+    if (heartbeat_fd >= 0) {
+        ::close(heartbeat_fd);
+        heartbeat_fd = -1;
     }
     if (perf_timer) {
         perf_timer->stop();

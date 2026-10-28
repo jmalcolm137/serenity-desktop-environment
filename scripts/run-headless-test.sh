@@ -73,6 +73,11 @@ SOCK="sde-headless-$$"
 # No WAYLAND_DISPLAY/DISPLAY so wlr_backend_autocreate uses the requested backend.
 # SDE_WM_PORTAL_PATH keeps the WindowManagerServer socket out of /tmp/portal/wm,
 # so the test cannot disturb a live session.
+# R6/N4: the compositor writes a liveness heartbeat for the session watchdog.
+# Seed a long value from a "previous session": the in-place writer must replace it
+# with a plain epoch, not leave trailing digits behind.
+printf '%064d' 0 > "$RUNTIME/heartbeat"
+
 sde_test_compositor --startup "$BUILD/bin/TextEditor" SDE_WM_PORTAL_PATH="$RUNTIME/wm" SDE_HEARTBEAT_FILE="$RUNTIME/heartbeat"
 env WAYLAND_DISPLAY="$SOCK" timeout 4 "$TOOLS_BUILD/layer-shell-test" > "$RUNTIME/layer.log" 2>&1 || true
 env WAYLAND_DISPLAY="$SOCK" timeout 4 "$TOOLS_BUILD/native-app-test" > "$RUNTIME/native.log" 2>&1 || true
@@ -134,8 +139,10 @@ check "layer surface namespace='sde-test-panel'"
 check "toplevel mapped title='SDE Native Test'"
 check "toplevel mapped title='Untitled[*] - Text Editor'"
 
-# R6/N4: the liveness heartbeat must be present and recent (within 5s).
-if [ "${HEARTBEAT_VALUE:-0}" -ge "$((HEARTBEAT_NOW - 5))" ] 2>/dev/null; then
+# R6/N4: the liveness heartbeat must be present, plain digits (no stale tail from
+# an earlier, longer value), and recent (within 5s).
+if [[ "${HEARTBEAT_VALUE:-}" =~ ^[0-9]+$ ]] \
+    && [ "$((10#${HEARTBEAT_VALUE}))" -ge "$((HEARTBEAT_NOW - 5))" ]; then
     echo "  ok: compositor heartbeat is live (${HEARTBEAT_VALUE}s)"
 else
     echo "  MISSING: compositor heartbeat (got '${HEARTBEAT_VALUE}', now ${HEARTBEAT_NOW})"

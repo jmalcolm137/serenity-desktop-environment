@@ -752,6 +752,19 @@ The corresponding upstream changes are the `libgui-wayland` patches
   Both now search `${SDE_LAGOM_BUILD_DIR}/lib` as well, and `syntax` is part of
   the Lagom library list. Regression: `scripts/run-split-framework-test.sh`.
 
+- **The session watchdog restarted the compositor during host memory pressure.**
+  The *cause* was external: a 4.5 GiB LibWeb build and the CI suite in Docker
+  exhausted RAM, the kernel reported `page allocation failure` in the live
+  `WindowServer`, the Vulkan renderer failed to allocate staging buffers, and the
+  compositor's heartbeat went stale for 10 s; the supervisor restarted it (no
+  coredump). The heartbeat writer had its own contribution: it opened the file
+  with truncation every second, freeing and reallocating its tmpfs page, and a
+  beat took **3927 ms** under that pressure. It now keeps the file descriptor open
+  and overwrites the value in place, truncating only when its width changes, so a
+  beat performs no allocation. The watchdog still restarts a compositor whose
+  loop is genuinely blocked. Regression: `scripts/run-headless-test.sh` seeds a
+  stale, longer heartbeat and requires a plain, recent value.
+
 - **DisplaySettings would not launch after the accessibility rebuild.** The
   application suite was built before LibIPC's `ConnectionBase` layout changed, so
   `DisplaySettings` crashed on its first synchronous request
