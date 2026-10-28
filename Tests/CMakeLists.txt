@@ -161,6 +161,9 @@ add_sde_unit_test(polkit-dialog-output-test SOURCE PolkitDialogOutputTest.cpp)
 # connection.
 add_sde_test(clipboard-large-copy-test SOURCE ClipboardLargeCopyTest.cpp)
 
+# Text-change accessibility notifications must not copy the whole document.
+add_sde_test(accessibility-text-change-test SOURCE AccessibilityTextChangeTest.cpp)
+
 # Types into a text box before and after the only keyboard is unplugged and a
 # new one plugged in: LibWM must re-acquire wl_keyboard when the capability returns.
 add_sde_test(libwm-keyboard-replug-test SOURCE KeyboardReplugTest.cpp)
