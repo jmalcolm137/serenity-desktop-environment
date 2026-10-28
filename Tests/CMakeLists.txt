@@ -149,6 +149,10 @@ add_sde_test(texteditor-repaint-test SOURCE TextEditorRepaintTest.cpp LIBS ${LAG
 add_sde_test(filemodel-thumbnail-test SOURCE FileSystemModelThumbnailTest.cpp
     LIBS ${LAGOM_gfx} ${LAGOM_imagedecoderclient})
 
+# A large LibIPC message must not pump the event loop while its write is
+# waiting for socket buffer space.
+add_sde_test(libipc-write-test SOURCE LibIPCWriteTest.cpp LIBS ${LAGOM_ipc})
+
 # Types into a text box before and after the only keyboard is unplugged and a
 # new one plugged in: LibWM must re-acquire wl_keyboard when the capability returns.
 add_sde_test(libwm-keyboard-replug-test SOURCE KeyboardReplugTest.cpp)
