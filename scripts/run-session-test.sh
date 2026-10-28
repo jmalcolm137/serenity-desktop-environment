@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Headless session test (R4.2, docs/11-r4-implementation-plan.md):
 #   (A) XDG Autostart entries run (and Hidden=true is skipped);
-#   (B) the supervisor restarts a failing compositor, then gives up;
+#   (B) the supervisor restarts a failing compositor, then gives up; (B2) an
+#       external SIGKILL is reported, not blamed on the watchdog;
 #   (C) power actions route through the portable path (mocked here);
 #   (D-G) idle-to-lock, /bin power helpers, SIGTERM/SIGHUP, capability probe;
 #   (H) the watchdog restarts a wedged compositor (stale heartbeat), (H2) also
@@ -91,6 +92,45 @@ cat "$RUNTIME/session-b.log"
 check "restart 1/2" "$RUNTIME/session-b.log"
 check "restart 2/2" "$RUNTIME/session-b.log"
 check "giving up" "$RUNTIME/session-b.log"
+
+echo "== (B2) an external SIGKILL is reported, not blamed on the watchdog =="
+cat > "$RUNTIME/external-kill" <<EOF
+#!/bin/sh
+echo \$\$ > "$RUNTIME/external.pid"
+sleep 30
+EOF
+chmod +x "$RUNTIME/external-kill"
+env SDE_SESSION_COMPOSITOR="$RUNTIME/external-kill" \
+    SDE_SESSION_AUTOSTART=0 \
+    SDE_SESSION_MAX_RESTARTS=2 \
+    SDE_SESSION_RESTART_DELAY=0 \
+    "$SDE" > "$RUNTIME/session-b2.log" 2>&1 &
+SUP_B2=$!
+for _ in $(seq 1 100); do
+    [ -s "$RUNTIME/external.pid" ] && break
+    sleep 0.1
+done
+EXT_PID="$(cat "$RUNTIME/external.pid" 2>/dev/null || true)"
+if [[ -n "$EXT_PID" ]]; then
+    kill -KILL "$EXT_PID" 2>/dev/null || true
+else
+    echo "  FAIL: the stub compositor did not record its pid"
+    fail=1
+fi
+for _ in $(seq 1 50); do
+    grep -q "restart 1/2" "$RUNTIME/session-b2.log" 2>/dev/null && break
+    sleep 0.1
+done
+kill -TERM "$SUP_B2" 2>/dev/null || true
+wait "$SUP_B2" 2>/dev/null || true
+cat "$RUNTIME/session-b2.log"
+check "external process" "$RUNTIME/session-b2.log"
+if grep -q "heartbeat stale" "$RUNTIME/session-b2.log"; then
+    echo "  FAIL: an external kill was attributed to the watchdog"
+    fail=1
+else
+    echo "  ok: an external kill is not attributed to the watchdog"
+fi
 
 echo "== (C) power routes through the portable path (mock) =="
 cat > "$RUNTIME/power-mock" <<'EOF'

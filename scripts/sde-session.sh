@@ -358,7 +358,7 @@ watch_compositor_hang() {
         fi
         if [ "$unchanged" -ge "$WATCHDOG_SECONDS" ]; then
             echo "SDE session: compositor heartbeat stale (unchanged for ${unchanged}s, last ${beat}); restarting" >&2
-            : > "$WATCHDOG_MARK"
+            printf 'heartbeat stale for %ss (last %s)\n' "$unchanged" "$beat" > "$WATCHDOG_MARK"
             kill -TERM "$pid" 2>/dev/null || true
             sleep 2
             kill -KILL "$pid" 2>/dev/null || true
@@ -562,10 +562,19 @@ while :; do
         continue
     fi
     # The watchdog stopped it: a restart, even if the compositor managed a clean
-    # (status 0) shutdown on the way out.
+    # (status 0) shutdown on the way out. The mark carries the reason, so a
+    # restart is explained even if the watchdog's own stderr line was lost to log
+    # rotation or a full disk.
     if [ -e "$WATCHDOG_MARK" ]; then
+        echo "SDE session: watchdog stopped the compositor: $(cat "$WATCHDOG_MARK" 2>/dev/null)" >&2
         rm -f "$WATCHDOG_MARK"
         [ "$status" -eq 0 ] && status=1
+    elif [ "$status" -eq 137 ]; then
+        # Only the watchdog sends SIGKILL internally, and it always writes the
+        # mark first. An unmarked 137 came from outside the session (a user's
+        # kill, a supervisor tool, the kernel). Say so instead of implying the
+        # compositor was wedged.
+        echo "SDE session: WARNING: compositor was SIGKILLed by an external process (no watchdog mark)" >&2
     fi
     if [ "$status" -eq 0 ]; then
         echo "SDE session: compositor exited; stopping"
