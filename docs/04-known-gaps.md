@@ -692,6 +692,16 @@ The corresponding upstream changes are the `libgui-wayland` patches
 
 ## Recently resolved (kept so we don't re-chase them)
 
+- **Terminal exited after copying a large selection.** The clipboard client
+  fetched the data synchronously from inside the clipboard-changed callback.
+  LibWM then tried to read its own Wayland selection through a data-source round
+  trip, timed out after 2 s and returned an empty buffer; the clipboard
+  connection could be lost, and the default `ConnectionToServer::die()` called
+  `exit(0)`. LibWM now serves its own stored offers directly, the clipboard
+  connection no longer exits the application, and the Terminal only reads the
+  clipboard when Paste is actually used. Regression:
+  `scripts/run-clipboard-large-copy-test.sh`.
+
 - **PolicyKit rejected the correct password.** Two bugs stacked up. The agent
   parsed `sde-auth-dialog`'s two-line output as password + remember flag, but
   when "Do not ask again this session" was unchecked it sent the literal `"0"`
