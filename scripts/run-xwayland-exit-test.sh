@@ -125,7 +125,15 @@ env -u WAYLAND_DISPLAY DISPLAY="$DISP" \
     timeout 20 xmessage -name xserver-gone -geometry 120x60+40+40 "x" >/dev/null 2>&1 &
 C2=$!
 for _ in $(seq 1 40); do grep -q "X11 window mapped 'xserver-gone'" "$R/comp.log" && break; sleep 0.1; done
-XPID="$(pgrep -f "Xwayland $DISP " | head -1 || true)"
+# Find the server, not the instant it was started: under load Xwayland can
+# restart between the map and this lookup, and a single pgrep then sees no
+# process (the window has mapped, but the new server is not in /proc yet).
+XPID=""
+for _ in $(seq 1 50); do
+    XPID="$(pgrep -f "Xwayland $DISP " | head -1 || true)"
+    [[ -n "$XPID" ]] && break
+    sleep 0.1
+done
 if [[ -n "$XPID" ]] && grep -q "X11 window mapped 'xserver-gone'" "$R/comp.log"; then
     kill -KILL "$XPID" 2>/dev/null || true
     sleep 1
