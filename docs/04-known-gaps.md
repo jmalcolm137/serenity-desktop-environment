@@ -647,7 +647,7 @@ The ordering is rough: memory and latency first, then coverage and features.
 |---|---|---|
 | LibGUI backing stores | No memory-pressure handling for client backing stores; a client keeps its full-size buffers while idle. | Client PSS dominates the session budget once the compositor is trimmed; a pressure notification or a smaller idle store would cut the largest per-client cost. |
 | LibCore `Process` | Host gaps in process spawning/inspection (beyond the SDE's `LibSerenitySystem` shim). | Session services, app launching and the Taskbar's app list all sit on these APIs; upstream coverage reduces the shim's surface. |
-| LibIPC large messages | Large messages are copied through the single shared-memory path; no chunking. | Image/clipboard/wallpaper transfers cross this boundary; fewer copies helps latency and peak memory. |
+| LibIPC large messages | A large message is copied through one buffer and written in pieces; there is no shared-memory/chunked path. | Image/clipboard/wallpaper transfers cross this boundary; fewer copies helps latency and peak memory. |
 | LibVT | Coverage gaps in the terminal widget (selection, scrollback edge cases, host-facing behaviour). | Terminal is the default app; its bugs show up directly in the session. |
 | LibAudio / PulseAudio | LibAudio is coupled to PulseAudio even for clients that only need a small protocol client. | The Audio applet already uses a protocol-only client; upstream decoupling would remove a similar tax from other audio clients. |
 | Taskbar menu | The app menu is built eagerly, so the Taskbar carries a heap it may never show. | The Taskbar is resident for the whole session; lazy menu construction is a direct per-session saving. |
@@ -655,7 +655,7 @@ The ordering is rough: memory and latency first, then coverage and features.
 | LibGfx text | No complex-text shaping; text measurement and drawing are per-glyph. | Menus, terminals and editors all pay it; shaping would also improve non-Latin coverage. |
 | LibWeb / Browser | The browser engine is large and still the most expensive optional client. | Browser is expected to work, but it is not on the session's critical path; upstream progress is preferable to another SDE-specific build. |
 
-Two of the client-side items above are now addressed:
+Three of the items above are now addressed:
 
 - **`FileSystemModel` thumbnails** now issue decode requests from the UI event
   loop and only scale the decoded bitmap on the shared background thread. The
@@ -668,11 +668,18 @@ Two of the client-side items above are now addressed:
   the undo stack's modified state actually changes. Regression:
   `scripts/run-texteditor-repaint-test.sh` (records the real paint rects under a
   headless compositor).
+- **LibIPC large-message writes** no longer pump the event loop. A would-block
+  write now waits for the socket to become writable, and an EMSGSIZE write is
+  retried with a smaller chunk, so a large message can take several writes
+  without running unrelated callbacks. Regression:
+  `scripts/run-libipc-write-test.sh`.
 
 The corresponding upstream changes are the `libgui-wayland` patches
-`0077-libgui-filesystemmodel-async-thumbnails` and
-`0078-libgui-texteditor-partial-repaint` (in
-`Userland/Libraries/LibGUI/FileSystemModel.cpp` and `TextEditor.cpp`).
+`0077-libgui-filesystemmodel-async-thumbnails`,
+`0078-libgui-texteditor-partial-repaint` and
+`0079-libipc-no-event-loop-reentry` (in
+`Userland/Libraries/LibGUI/FileSystemModel.cpp`, `TextEditor.cpp`, and
+`LibIPC/Message.cpp` / `LibCore/Socket.cpp`).
 
 ## R1: Compositor bring-up (done)
 
