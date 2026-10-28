@@ -636,6 +636,44 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   sampled frame events (`SDE_TRACE_FRAMES`, at most one per second); unthrottled
   per-frame tracing remains open.
 
+## Upstream follow-ups
+
+These are SerenityOS-side improvements that would help SDE, but are not SDE
+requirements. Each is a candidate for an upstream change (or a small
+libgui-wayland port patch) rather than something to carry as an SDE workaround.
+The ordering is rough: memory and latency first, then coverage and features.
+
+| Area | Gap | Why it matters to SDE |
+|---|---|---|
+| LibGUI backing stores | No memory-pressure handling for client backing stores; a client keeps its full-size buffers while idle. | Client PSS dominates the session budget once the compositor is trimmed; a pressure notification or a smaller idle store would cut the largest per-client cost. |
+| LibCore `Process` | Host gaps in process spawning/inspection (beyond the SDE's `LibSerenitySystem` shim). | Session services, app launching and the Taskbar's app list all sit on these APIs; upstream coverage reduces the shim's surface. |
+| LibIPC large messages | Large messages are copied through the single shared-memory path; no chunking. | Image/clipboard/wallpaper transfers cross this boundary; fewer copies helps latency and peak memory. |
+| LibVT | Coverage gaps in the terminal widget (selection, scrollback edge cases, host-facing behaviour). | Terminal is the default app; its bugs show up directly in the session. |
+| LibAudio / PulseAudio | LibAudio is coupled to PulseAudio even for clients that only need a small protocol client. | The Audio applet already uses a protocol-only client; upstream decoupling would remove a similar tax from other audio clients. |
+| Taskbar menu | The app menu is built eagerly, so the Taskbar carries a heap it may never show. | The Taskbar is resident for the whole session; lazy menu construction is a direct per-session saving. |
+| FileManager redraws | Directory views still repaint more than the changed rows; thumbnail completion triggers a broad update. | The desktop (FileManager `-d`) and every directory window are long-lived clients. |
+| LibGfx text | No complex-text shaping; text measurement and drawing are per-glyph. | Menus, terminals and editors all pay it; shaping would also improve non-Latin coverage. |
+| LibWeb / Browser | The browser engine is large and still the most expensive optional client. | Browser is expected to work, but it is not on the session's critical path; upstream progress is preferable to another SDE-specific build. |
+
+Two of the client-side items above are now addressed:
+
+- **`FileSystemModel` thumbnails** now issue decode requests from the UI event
+  loop and only scale the decoded bitmap on the shared background thread. The
+  old code awaited the decode inside that thread, so a thumbnail occupied the
+  one global background action thread for the whole decode. In-flight requests
+  are keyed by path, so a second icon query joins the decode instead of starting
+  another one. Regression: `scripts/run-filemodel-thumbnail-test.sh`.
+- **`TextEditor` repaints** now damage only the lines covered by the old and new
+  selection instead of the whole widget, and `on_modified_change` only fires when
+  the undo stack's modified state actually changes. Regression:
+  `scripts/run-texteditor-repaint-test.sh` (records the real paint rects under a
+  headless compositor).
+
+The corresponding upstream changes are the `libgui-wayland` patches
+`0077-libgui-filesystemmodel-async-thumbnails` and
+`0078-libgui-texteditor-partial-repaint` (in
+`Userland/Libraries/LibGUI/FileSystemModel.cpp` and `TextEditor.cpp`).
+
 ## R1: Compositor bring-up (done)
 
 - **Real-hardware leg: exercised.** The DRM/KMS + libinput path
@@ -947,10 +985,11 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   fallback) and, when SDE runs, by the `Services/ImageDecoder/` session service. This fixes
   the `FileSystemModel`/wallpaper thumbnails (`connect: No such file or
   directory`) and lets **ImageViewer** decode images. The in-process host decodes
-  **inline on its own thread**: `ImageDecoder`'s upstream job runs on
-  `Threading::BackgroundAction`, the single process-global thread that
-  `FileSystemModel`'s thumbnail renderer already occupies, so sharing it deadlocked
-  thumbnails; a separate process does not. See `06-service-layering.md` §4.
+  **inline on its own thread**; a separate process does not. `FileSystemModel`
+  now requests decodes on the UI event loop and uses
+  `Threading::BackgroundAction` only for the CPU-side scaling, so a thumbnail no
+  longer occupies the single process-global background thread for the whole
+  decode. See `06-service-layering.md` §4 and the upstream follow-ups above.
 - **Out-of-process web engine**: `WebContent` + `RequestServer` are built by
   `libgui-wayland` and spawned on demand by `LibWM` (a socketpair handed over via
   `SOCKET_TAKEOVER`); `SQLServer` is hosted with a listening socket handed over
