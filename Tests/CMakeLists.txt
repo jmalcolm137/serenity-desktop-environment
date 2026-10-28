@@ -140,6 +140,15 @@ add_sde_test(libvt-hyperlink-test SOURCE VtHyperlinkTest.cpp LIBS ${LAGOM_vt})
 # (uniform, folded and wrapped) without scanning every line.
 add_sde_test(texteditor-hittest-test SOURCE TextEditorHitTest.cpp LIBS ${LAGOM_syntax})
 
+# TextEditor selection changes must damage only the affected lines, and the
+# modified callback must fire only on modified-state transitions.
+add_sde_test(texteditor-repaint-test SOURCE TextEditorRepaintTest.cpp LIBS ${LAGOM_syntax})
+
+# FileSystemModel thumbnails decode through the UI event loop and in-flight
+# requests are deduplicated.
+add_sde_test(filemodel-thumbnail-test SOURCE FileSystemModelThumbnailTest.cpp
+    LIBS ${LAGOM_gfx} ${LAGOM_imagedecoderclient})
+
 # Types into a text box before and after the only keyboard is unplugged and a
 # new one plugged in: LibWM must re-acquire wl_keyboard when the capability returns.
 add_sde_test(libwm-keyboard-replug-test SOURCE KeyboardReplugTest.cpp)
