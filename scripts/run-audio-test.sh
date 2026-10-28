@@ -57,6 +57,12 @@ for candidate in "${PIPEWIRE_RUNTIME_DIR:-}" "/run/user/$(id -u)" "${XDG_RUNTIME
 done
 
 sde_test_compositor --startup "$APP_BIN/Piano & $APP_BIN/SoundPlayer & $APPLET" SDE_STATE_DIR="$RUNTIME" SDE_APP_BIN_DIR="$APP_BIN" SDE_SESSION_DIR="$SESSION_DIR" PIPEWIRE_RUNTIME_DIR="${PW_RUNTIME:-$RUNTIME}"
+# The startup clients race the compositor's socket: the test used to signal it as
+# soon as the socket existed, so a slower client (Piano) had not mapped yet and
+# the run failed intermittently. Wait for the workload instead of a fixed delay.
+sde_test_wait_log "$RUNTIME/comp.log" "toplevel mapped title='Piano" 200 || true
+sde_test_wait_log "$RUNTIME/comp.log" "toplevel mapped title='Sound Player'" 200 || true
+sde_test_wait_log "$RUNTIME/comp.log" "layer surface namespace='serenity-applet:Audio'" 200 || true
 kill -TERM -- "-$COMP_PID" 2>/dev/null || kill "$COMP_PID" 2>/dev/null || true
 wait "$COMP_PID" 2>/dev/null || true
 
