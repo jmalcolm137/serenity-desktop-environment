@@ -692,12 +692,22 @@ The corresponding upstream changes are the `libgui-wayland` patches
 
 ## Recently resolved (kept so we don't re-chase them)
 
-- **Pasting a large document froze the TextEditor UI.** Every text change rebuilt
-  the AT-SPI snapshot (including the whole editor text) and sent that text in the
-  `TextChanged` signal. Snapshot path lookup now skips text, the event is a small
-  notification, and the accessibility client queries the Text interface when it
-  needs the contents. Regression:
-  `scripts/run-accessibility-text-change-test.sh`.
+- **Pasting a large document froze the TextEditor UI.** Two causes. Every text
+  change rebuilt the AT-SPI snapshot (including the whole editor text) and sent
+  that text in the `TextChanged` signal; snapshot path lookup now skips text and
+  the event is a small notification. `TextDocument::insert_at()` also inserted
+  one code point at a time and notified the editor after every character, so a
+  large paste was quadratic; insertion now batches the document change and
+  defers per-line reflow. Regressions:
+  `scripts/run-accessibility-text-change-test.sh` and
+  `scripts/run-texteditor-large-paste-test.sh`.
+
+- **Discarding a modified document crashed the compositor.** Destroying the
+  TextEditor window left its “Unsaved Changes” dialogs' `transient_parent`
+  pointing at freed memory. The next pointer motion hit-tested a surviving
+  dialog, walked the modal chain, and dereferenced it. `toplevel_destroy` now
+  clears surviving children's `transient_parent` and any active grab before the
+  toplevel is freed. Regression: `scripts/run-transient-parent-test.sh`.
 
 - **Terminal exited after copying a large selection.** The clipboard client
   fetched the data synchronously from inside the clipboard-changed callback.
