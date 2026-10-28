@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # ci-tier: full
+# ci-timeout: 1800
 # Run the pinned WLCS compositor conformance suite against SDE's WindowServer.
 #
 # The integration module starts a private headless WindowServer, so this never

@@ -18,6 +18,11 @@
 # run nightly and on demand. The tier split follows *measured* durations: run
 # `--tier all` and read the summary.
 #
+# A test that has to build an external project first can raise its own limit
+# with a second header marker (the global --timeout remains the default):
+#
+#     # ci-timeout: 1800
+#
 # Usage:
 #   scripts/run-all-tests.sh [--tier fast|full|all] [--only <glob>] [--skip <glob>]
 #                            [--timeout <seconds>] [--log-dir <dir>] [--list]
@@ -71,6 +76,16 @@ tier_of() {
     local marker
     marker="$(grep -m1 -E '^# ci-tier:' "$1" 2>/dev/null | sed 's/^# ci-tier:[[:space:]]*//' || true)"
     echo "${marker:-fast}"
+}
+
+timeout_of() {
+    local marker
+    marker="$(grep -m1 -E '^# ci-timeout:' "$1" 2>/dev/null | sed 's/^# ci-timeout:[[:space:]]*//' || true)"
+    if [[ "$marker" =~ ^[0-9]+$ ]]; then
+        echo "$marker"
+    else
+        echo "$TIMEOUT"
+    fi
 }
 
 matches_any() { # $1 = name, rest = globs
@@ -206,7 +221,7 @@ started_at="$(date +%s)"
 passed=0; failed=0; skipped=0; timed_out=0
 results=()
 
-echo "=== SDE test suite: tier '$TIER', ${#selected[@]} test(s), ${TIMEOUT}s each ==="
+echo "=== SDE test suite: tier '$TIER', ${#selected[@]} test(s), ${TIMEOUT}s default per test ==="
 echo
 
 for name in "${selected[@]}"; do
@@ -243,7 +258,7 @@ for name in "${selected[@]}"; do
     export SDE_HEARTBEAT_FILE="$RUN_DIR/heartbeat-$name"
 
     begin="$(date +%s)"
-    if timeout -k 10 "$TIMEOUT" bash "$SDE_ROOT/scripts/$name" > "$log" 2>&1; then
+    if timeout -k 10 "$(timeout_of "$SDE_ROOT/scripts/$name")" bash "$SDE_ROOT/scripts/$name" > "$log" 2>&1; then
         status="PASS"
     else
         rc=$?
