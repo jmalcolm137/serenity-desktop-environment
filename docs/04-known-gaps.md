@@ -692,6 +692,19 @@ The corresponding upstream changes are the `libgui-wayland` patches
 
 ## Recently resolved (kept so we don't re-chase them)
 
+- **PolicyKit rejected the correct password.** Two bugs stacked up. The agent
+  parsed `sde-auth-dialog`'s two-line output as password + remember flag, but
+  when "Do not ask again this session" was unchecked it sent the literal `"0"`
+  (the flag) as the password. It now parses the flag separately and only treats
+  the preceding line as the password. Separately, polkit 128's
+  socket-activated helper rejects correct `pam_unix` passwords on this host; the
+  agent now prefers the traditional setuid helper when
+  `/usr/lib/polkit-1/polkit-agent-helper-1` has the setuid bit, and falls back to
+  the socket otherwise. The system needs the one-time
+  `chmod u+s /usr/lib/polkit-1/polkit-agent-helper-1`. Regression:
+  `scripts/run-polkit-dialog-output-test.sh` covers the unchecked flag,
+  diagnostics before the password, and malformed output.
+
 - **DisplaySettings would not launch after the accessibility rebuild.** The
   application suite was built before LibIPC's `ConnectionBase` layout changed, so
   `DisplaySettings` crashed on its first synchronous request

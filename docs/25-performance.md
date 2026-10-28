@@ -395,9 +395,12 @@ not grow it** beyond `SDE_PERF_RSS_GROWTH_KB` (default 4 MB). Measured growth: 0
   service over the same `dbus-1` transport as the portals (no GLib/GIO, no
   PyGObject). It registers on the system bus, serves
   `org.freedesktop.PolicyKit1.AuthenticationAgent`, and talks to the trusted
-  polkit helper over `/run/polkit/agent-helper.socket` (or the setuid helper's
-  pipes). Its idle PSS is ~1 MiB, against ~19 MiB for the Python agent it
-  replaces.
+  polkit helper, preferring the setuid helper's pipes when it is installed that
+  way and falling back to `/run/polkit/agent-helper.socket`. polkit 128's
+  socket-activated helper rejects correct passwords through `pam_unix` on this
+  host; the setuid helper is enabled with
+  `chmod u+s /usr/lib/polkit-1/polkit-agent-helper-1`. Its idle PSS is ~1 MiB,
+  against ~19 MiB for the Python agent it replaces.
 - **One applet supervisor.** The session starts every applet through one
   `sde-supervise-applet.sh` instead of one Bash wrapper per applet. Each applet's
   backoff is its own short-lived timer process, so one applet waiting to restart
