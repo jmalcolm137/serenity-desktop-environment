@@ -28,6 +28,7 @@ set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
+BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
 
 live_session_running() {
     local runtime="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
