@@ -274,6 +274,15 @@ static void toplevel_destroy(wl_listener* listener, void*)
         Trace::event("window"sv, ByteString::formatted("destroy wm_id={} title='{}'", toplevel->wm_id,
             toplevel->xdg_toplevel->title ? toplevel->xdg_toplevel->title : ""));
     SessionManager::on_toplevel_destroyed(*toplevel);
+    // A transient child may outlive its parent (a close dialog, for example).
+    // Clear the back-pointers before this Toplevel is freed: cursor hit-testing
+    // walks the modal chain through transient_parent and otherwise dereferences
+    // freed memory when the pointer moves over the surviving child.
+    for (auto& other : server.toplevels) {
+        if (other.ptr() != toplevel && other->transient_parent == toplevel)
+            other->transient_parent = nullptr;
+    }
+    forget_grab_window(server, *toplevel);
     wl_list_remove(&toplevel->map.link);
     wl_list_remove(&toplevel->unmap.link);
     wl_list_remove(&toplevel->commit.link);
