@@ -91,14 +91,22 @@ sleep 0.5
 env -u WAYLAND_DISPLAY WAYLAND_DISPLAY="$SOCK" "$NATIVE" --title "SDE Active B" --linger 12000 >/dev/null 2>&1 &
 B=$!
 wait_for_map "SDE Active B" || { echo "  FAIL: window B did not map"; fail=1; }
-sleep 0.5
+for _ in $(seq 1 50); do
+    grep -aqF "window 'SDE Active A' deactivated" "$R/comp.log" && break
+    sleep 0.1
+done
 check "window 'SDE Active A' deactivated" "mapping a second window deactivated the first"
 
 if [[ -n "$DISP" ]]; then
     env -u WAYLAND_DISPLAY DISPLAY="$DISP" timeout 15 xmessage -name active-x -geometry 200x90+40+40 "x" >/dev/null 2>&1 &
     X=$!
     for _ in $(seq 1 60); do grep -aqF "X11 window mapped 'active-x'" "$R/comp.log" && break; sleep 0.1; done
-    sleep 0.5
+    # Focus follows the map asynchronously; wait for the deactivation instead of
+    # sampling a fixed delay after the map, which loses under load.
+    for _ in $(seq 1 50); do
+        grep -aqF "window 'SDE Active B' deactivated" "$R/comp.log" && break
+        sleep 0.1
+    done
     check "window 'SDE Active B' deactivated" "focusing an X11 window deactivated the xdg window"
     kill "$X" 2>/dev/null || true
 else
