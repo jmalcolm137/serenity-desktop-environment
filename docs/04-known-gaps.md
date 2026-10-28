@@ -761,13 +761,30 @@ The corresponding upstream changes are the `libgui-wayland` patches
   with truncation every second, freeing and reallocating its tmpfs page, and a
   beat took **3927 ms** under that pressure. It now keeps the file descriptor open
   and overwrites the value in place, truncating only when its width changes, so a
-  beat performs no allocation. The watchdog still restarts a compositor whose
-  loop is genuinely blocked. Regression: `scripts/run-headless-test.sh` seeds a
-  stale, longer heartbeat and requires a plain, recent value. A second restart
-  later that morning was a bare SIGKILL: no watchdog mark, no heartbeat warning,
-  no coredump and no kernel OOM entry, so no SDE path had asked it to stop. The
-  supervisor now logs the watchdog's reason from the mark file and calls an
-  unmarked 137 an external SIGKILL; `run-session-test.sh` phase B2 covers it.
+  beat performs no allocation. The watchdog is now two-stage: at the first
+  threshold it waits `watchdog_grace_seconds` (default 10) for the beat to resume,
+  and while `/proc/pressure/memory` or `MemAvailable` reports severe pressure it
+  waits a bounded `watchdog_pressure_grace_seconds` (default 30) more. A beat that
+  resumes in either window prevents the restart; a genuinely wedged compositor is
+  still restarted after the grace. The compositor's own warning no longer claims a
+  fixed restart time. Regressions: `scripts/run-headless-test.sh` seeds a stale,
+  longer heartbeat and requires a plain, recent value; `run-session-test.sh`
+  phases H4 (recovery inside the grace) and H5 (pressure postpones, but does not
+  cancel, the restart) cover the new stages. A second restart later that morning
+  was a bare SIGKILL: no watchdog mark, no heartbeat warning, no coredump and no
+  kernel OOM entry, so no SDE path had asked it to stop. The supervisor now logs
+  the watchdog's reason from the mark file and calls an unmarked 137 an external
+  SIGKILL; `run-session-test.sh` phase B2 covers it.
+
+- **A container could not tell whether the host had a live session.** The suite's
+  live-session guard looked at its own `/run/user/<uid>`, which a container does
+  not share, so a container run could drive the host session's state (and did,
+  during the CI work that preceded the memory-pressure restart). The driver now
+  also refuses inside a container unless the caller mounts the host runtime
+  (`SDE_HOST_RUNTIME_DIR`), names its heartbeat
+  (`SDE_HOST_HEARTBEAT_FILE`), or asserts `SDE_NO_LIVE_SESSION=1` (CI does).
+  `--check-guard` exposes the decision, and
+  `scripts/run-suite-guard-test.sh` covers every case.
 
 - **DisplaySettings would not launch after the accessibility rebuild.** The
   application suite was built before LibIPC's `ConnectionBase` layout changed, so

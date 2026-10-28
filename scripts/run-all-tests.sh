@@ -33,6 +33,8 @@
 #   --timeout <seconds>   per-test timeout (default: 300)
 #   --log-dir <dir>       keep each test's output there (default: a temp dir)
 #   --list                print the selection with its tiers and exit
+#   --check-guard         report whether a live session is visible (see below)
+#                         and exit 0 if running is safe, 3 if not
 #
 # Exit status is non-zero if any test failed or timed out.
 #
@@ -50,6 +52,7 @@ TIER="fast"
 TIMEOUT="$DEFAULT_TIMEOUT"
 LOG_DIR=""
 LIST_ONLY=0
+CHECK_GUARD=0
 ONLY=()
 SKIP=()
 
@@ -61,6 +64,7 @@ while [[ $# -gt 0 ]]; do
         --timeout) TIMEOUT="${2:?--timeout needs a value}"; shift 2 ;;
         --log-dir) LOG_DIR="${2:?--log-dir needs a path}"; shift 2 ;;
         --list) LIST_ONLY=1; shift ;;
+        --check-guard) CHECK_GUARD=1; shift ;;
         -h|--help) sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -127,12 +131,8 @@ if [[ "$LIST_ONLY" -eq 1 ]]; then
     exit 0
 fi
 
-keep_logs=1
-if [[ -z "$LOG_DIR" ]]; then
-    LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sde-all-tests.XXXXXX")"
-    keep_logs=0
-fi
-mkdir -p "$LOG_DIR"
+# Log and runtime directories are created after the live-session guard below:
+# --check-guard must not leave anything behind.
 
 # Runtime state goes on a *short* path, separate from the logs.
 #
@@ -141,8 +141,9 @@ mkdir -p "$LOG_DIR"
 # directory under it made ".../portal/audiomanager" 122 bytes and every connect to it
 # failed with EINVAL ("Could not obtain a sockaddr_un"), which the Audio applet then
 # reported as a fatal error. Logs belong with the logs; sockets do not.
-RUN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sde-suite-run.XXXXXX")"
-chmod 700 "$RUN_DIR"
+#
+# Created after the live-session guard below: --check-guard must not leave a
+# runtime directory behind.
 
 # --- refusing to run against a live session ---------------------------------
 #
@@ -156,19 +157,41 @@ chmod 700 "$RUN_DIR"
 # wedged and restart it — taking the session, and everything running in it, down.
 # That is exactly how three local runs of this suite killed the session it was
 # running inside. So: refuse, unless told explicitly.
-live_session_running() {
-    local runtime="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-    # The session's compositor socket.
+# Does a runtime directory hold a live session? The compositor socket, or a
+# liveness file written in the last minute.
+sde_runtime_has_session() {
+    local runtime="$1" heartbeat now modified
     [[ -S "$runtime/${SDE_SESSION_DISPLAY:-sde}" ]] && return 0
-    # Or a liveness file written seconds ago. The name carries the session display
-    # (sde-heartbeat-<display>), so look for any of them, not just the oldest.
-    local heartbeat now modified
     now="$(date +%s)"
     for heartbeat in "$runtime"/sde-heartbeat*; do
         [[ -e "$heartbeat" ]] || continue
         modified="$(stat -c %Y "$heartbeat" 2>/dev/null || echo 0)"
         (( now - modified < 60 )) && return 0
     done
+    return 1
+}
+
+live_session_running() {
+    # An explicit assertion, for a caller that knows better than the probing.
+    [[ "${SDE_LIVE_SESSION:-0}" == 1 ]] && return 0
+    sde_runtime_has_session "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" && return 0
+    # A container does not inherit the host's /run. The caller can mount it
+    # read-only and point here, or name the host's heartbeat directly.
+    if [[ -n "${SDE_HOST_RUNTIME_DIR:-}" ]]; then
+        sde_runtime_has_session "$SDE_HOST_RUNTIME_DIR" && return 0
+    fi
+    if [[ -n "${SDE_HOST_HEARTBEAT_FILE:-}" && -e "$SDE_HOST_HEARTBEAT_FILE" ]]; then
+        local modified
+        modified="$(stat -c %Y "$SDE_HOST_HEARTBEAT_FILE" 2>/dev/null || echo 0)"
+        (( $(date +%s) - modified < 60 )) && return 0
+    fi
+    return 1
+}
+
+in_container() {
+    # SDE_CONTAINER is the test seam; the marker files cover Docker and Podman.
+    [[ "${SDE_CONTAINER:-0}" == 1 ]] && return 0
+    [[ -e /.dockerenv || -e /run/.containerenv ]] && return 0
     return 1
 }
 
@@ -180,6 +203,37 @@ if live_session_running && [[ "${SDE_ALLOW_LIVE_SESSION:-0}" != 1 ]]; then
     echo "  own risk: SDE_ALLOW_LIVE_SESSION=1 scripts/run-all-tests.sh ..." >&2
     exit 3
 fi
+
+# A container cannot see the host's /run, so the check above cannot prove the host
+# is idle. Refuse unless the caller makes that explicit: mount the host runtime
+# read-only (SDE_HOST_RUNTIME_DIR), name its heartbeat
+# (SDE_HOST_HEARTBEAT_FILE), or assert SDE_NO_LIVE_SESSION=1. CI runs in a
+# container with no host session and sets the last one.
+if [[ "${SDE_ALLOW_LIVE_SESSION:-0}" != 1 ]] && in_container \
+    && [[ -z "${SDE_HOST_RUNTIME_DIR:-}" && -z "${SDE_HOST_HEARTBEAT_FILE:-}" \
+        && "${SDE_NO_LIVE_SESSION:-0}" != 1 ]]; then
+    echo "refusing to run: this is a container and the host's SDE session is not visible." >&2
+    echo "  A container does not share the host's /run, so the live-session guard" >&2
+    echo "  cannot see a session that is running outside it. Mount the host runtime" >&2
+    echo "  read-only and set SDE_HOST_RUNTIME_DIR=/run/user/<uid>, or set" >&2
+    echo "  SDE_NO_LIVE_SESSION=1 when the host has no SDE session (CI does)." >&2
+    exit 3
+fi
+
+if [[ "$CHECK_GUARD" -eq 1 ]]; then
+    echo "guard: no live SDE session is visible; running is allowed"
+    exit 0
+fi
+
+RUN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sde-suite-run.XXXXXX")"
+chmod 700 "$RUN_DIR"
+
+keep_logs=1
+if [[ -z "$LOG_DIR" ]]; then
+    LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sde-all-tests.XXXXXX")"
+    keep_logs=0
+fi
+mkdir -p "$LOG_DIR"
 
 # A private runtime directory for the whole run. In a container the one inherited
 # from the runner may not exist or may not be writable, and then *every* test's

@@ -7,6 +7,8 @@
 #   (D-G) idle-to-lock, /bin power helpers, SIGTERM/SIGHUP, capability probe;
 #   (H) the watchdog restarts a wedged compositor (stale heartbeat), (H2) also
 #       one that shuts down cleanly (status 0) on the watchdog's SIGTERM;
+#       (H4) a beat that resumes inside the grace is not restarted; (H5) memory
+#       pressure postpones the restart but does not cancel it;
 #   (I) repeated failure drops to safe mode instead of ending the session;
 #   (J) manual safe mode starts minimal and skips autostart;
 #   (K) session.conf supplies policy and the environment overrides it (R6).
@@ -278,6 +280,8 @@ chmod +x "$RUNTIME/hang-comp"
 env SDE_SESSION_COMPOSITOR="$RUNTIME/hang-comp" \
     SDE_SESSION_HEARTBEAT_FILE="$RUNTIME/hb" \
     SDE_SESSION_WATCHDOG_SECONDS=2 \
+    SDE_SESSION_WATCHDOG_GRACE_SECONDS=0 \
+    SDE_SESSION_WATCHDOG_PRESSURE_GRACE_SECONDS=0 \
     SDE_SESSION_MAX_RESTARTS=5 \
     SDE_SESSION_AUTOSTART=0 \
     SDE_SESSION_RESTART_DELAY=0 \
@@ -310,6 +314,8 @@ chmod +x "$RUNTIME/clean-comp"
 env SDE_SESSION_COMPOSITOR="$RUNTIME/clean-comp" \
     SDE_SESSION_HEARTBEAT_FILE="$RUNTIME/hb2" \
     SDE_SESSION_WATCHDOG_SECONDS=2 \
+    SDE_SESSION_WATCHDOG_GRACE_SECONDS=0 \
+    SDE_SESSION_WATCHDOG_PRESSURE_GRACE_SECONDS=0 \
     SDE_SESSION_MAX_RESTARTS=5 \
     SDE_SESSION_AUTOSTART=0 \
     SDE_SESSION_RESTART_DELAY=0 \
@@ -323,6 +329,90 @@ kill -TERM "$SUP_H2" 2>/dev/null || true
 wait "$SUP_H2" 2>/dev/null || true
 cat "$RUNTIME/session-h2.log"
 check "restart 1/5" "$RUNTIME/session-h2.log"
+
+echo "== (H4) a beat that resumes inside the grace period is not a wedge =="
+cat > "$RUNTIME/recover-comp" <<EOF
+#!/bin/sh
+# Stall for four seconds, then resume beating: the first threshold is crossed,
+# but the compositor is healthy and must not be restarted.
+echo 0 > "$RUNTIME/hb4"
+sleep 4
+i=1
+while :; do
+    echo "\$i" > "$RUNTIME/hb4"
+    i=\$((i + 1))
+    sleep 1
+done
+EOF
+chmod +x "$RUNTIME/recover-comp"
+env SDE_SESSION_COMPOSITOR="$RUNTIME/recover-comp" \
+    SDE_SESSION_HEARTBEAT_FILE="$RUNTIME/hb4" \
+    SDE_SESSION_WATCHDOG_SECONDS=2 \
+    SDE_SESSION_WATCHDOG_GRACE_SECONDS=4 \
+    SDE_SESSION_WATCHDOG_PRESSURE_GRACE_SECONDS=0 \
+    SDE_SESSION_MAX_RESTARTS=2 \
+    SDE_SESSION_AUTOSTART=0 \
+    SDE_SESSION_RESTART_DELAY=0 \
+    "$SDE" > "$RUNTIME/session-h4.log" 2>&1 &
+SUP_H4=$!
+for _ in $(seq 1 60); do
+    grep -q "waiting 4s for recovery" "$RUNTIME/session-h4.log" 2>/dev/null && break
+    sleep 0.1
+done
+# The stub resumes at t=4; give the watchdog several samples after that.
+sleep 5
+cat "$RUNTIME/session-h4.log"
+check "waiting 4s for recovery" "$RUNTIME/session-h4.log"
+if grep -q "restart 1/2" "$RUNTIME/session-h4.log"; then
+    echo "  FAIL: a beat that resumed inside the grace period was restarted"
+    fail=1
+else
+    echo "  ok: a beat that resumed inside the grace period was not restarted"
+fi
+kill -TERM "$SUP_H4" 2>/dev/null || true
+wait "$SUP_H4" 2>/dev/null || true
+
+echo "== (H5) memory pressure postpones a restart =="
+cat > "$RUNTIME/hang5-comp" <<EOF
+#!/bin/sh
+echo "\$(date +%s)" > "$RUNTIME/hb5"
+sleep 30
+EOF
+chmod +x "$RUNTIME/hang5-comp"
+printf 'some avg10=95.00 avg60=95.00 avg300=95.00 total=0\n' > "$RUNTIME/pressure"
+printf 'MemTotal: 1000 kB\nMemAvailable: 10 kB\n' > "$RUNTIME/meminfo"
+env SDE_SESSION_COMPOSITOR="$RUNTIME/hang5-comp" \
+    SDE_SESSION_HEARTBEAT_FILE="$RUNTIME/hb5" \
+    SDE_SESSION_WATCHDOG_SECONDS=2 \
+    SDE_SESSION_WATCHDOG_GRACE_SECONDS=0 \
+    SDE_SESSION_WATCHDOG_PRESSURE_GRACE_SECONDS=4 \
+    SDE_SESSION_PRESSURE_FILE="$RUNTIME/pressure" \
+    SDE_SESSION_MEMINFO_FILE="$RUNTIME/meminfo" \
+    SDE_SESSION_MAX_RESTARTS=2 \
+    SDE_SESSION_AUTOSTART=0 \
+    SDE_SESSION_RESTART_DELAY=0 \
+    "$SDE" > "$RUNTIME/session-h5.log" 2>&1 &
+SUP_H5=$!
+for _ in $(seq 1 80); do
+    grep -q "host is under memory pressure" "$RUNTIME/session-h5.log" 2>/dev/null && break
+    sleep 0.1
+done
+if grep -q "restart 1/2" "$RUNTIME/session-h5.log"; then
+    echo "  FAIL: the compositor was restarted before the pressure grace expired"
+    fail=1
+else
+    echo "  ok: the restart waited for the memory-pressure grace"
+fi
+# The deferral is bounded: it must still restart once the grace expires.
+for _ in $(seq 1 100); do
+    grep -q "restart 1/2" "$RUNTIME/session-h5.log" 2>/dev/null && break
+    sleep 0.1
+done
+cat "$RUNTIME/session-h5.log"
+check "host is under memory pressure" "$RUNTIME/session-h5.log"
+check "restart 1/2" "$RUNTIME/session-h5.log"
+kill -TERM "$SUP_H5" 2>/dev/null || true
+wait "$SUP_H5" 2>/dev/null || true
 
 echo "== (H3) a wall-clock jump does not look like a wedge =="
 cat > "$RUNTIME/jump-comp" <<EOF

@@ -97,7 +97,7 @@ jobs:
               # "SystemMonitor not built", "TextEditor: No such file or directory".
               run: scripts/build-full-sde.sh --with-apps
             - name: Fast tier
-              run: scripts/run-all-tests.sh --tier fast --timeout 300 --log-dir "$GITHUB_WORKSPACE/ci-logs"
+              run: SDE_NO_LIVE_SESSION=1 scripts/run-all-tests.sh --tier fast --timeout 300 --log-dir "$GITHUB_WORKSPACE/ci-logs"
             - name: Upload test logs
               if: failure()
               uses: actions/upload-artifact@v7
@@ -120,7 +120,7 @@ jobs:
             - name: Build the SDE, applications included
               run: scripts/build-full-sde.sh --with-apps
             - name: Full suite
-              run: scripts/run-all-tests.sh --tier full --timeout 600 --log-dir "$GITHUB_WORKSPACE/ci-logs"
+              run: SDE_NO_LIVE_SESSION=1 scripts/run-all-tests.sh --tier full --timeout 600 --log-dir "$GITHUB_WORKSPACE/ci-logs"
             - name: Upload test logs
               if: failure()
               uses: actions/upload-artifact@v7

@@ -774,7 +774,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
         auto beat = [&heartbeat_fd, &heartbeat_size, heartbeat_path] {
             auto const now = ::time(nullptr);
             if (last_beat != 0 && now - last_beat > 2) {
-                dbgln("WindowServer: WARNING: event loop stalled for {}s (the session watchdog restarts at 10s)",
+                dbgln("WindowServer: WARNING: event loop stalled for {}s (the session watchdog restarts only after a stale-heartbeat grace period)",
                     static_cast<long>(now - last_beat));
             }
             last_beat = now;

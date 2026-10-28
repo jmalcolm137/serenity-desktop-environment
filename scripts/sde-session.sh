@@ -21,7 +21,11 @@
 #   SDE_SESSION_AUTOSTART     0 to skip autostart (default 1)
 #   SDE_SESSION_RESTORE       0 to skip restoring the previous session's apps (default 1)
 #   SDE_SESSION_RESTORE_FILE  the compositor-written list of running apps (default below)
-#   SDE_SESSION_WATCHDOG_SECONDS  heartbeat staleness before restarting (default 10; 0 disables)
+#   SDE_SESSION_WATCHDOG_SECONDS  heartbeat staleness before the first grace (default 10; 0 disables)
+#   SDE_SESSION_WATCHDOG_GRACE_SECONDS  seconds to wait for a stalled heartbeat to recover (default 10)
+#   SDE_SESSION_WATCHDOG_PRESSURE_GRACE_SECONDS  extra seconds to wait while memory pressure is severe (default 30)
+#   SDE_SESSION_PRESSURE_FILE     memory-pressure source (default /proc/pressure/memory)
+#   SDE_SESSION_MEMINFO_FILE      memory-availability source (default /proc/meminfo)
 #   SDE_SESSION_HEARTBEAT_FILE    liveness file the compositor writes (default below)
 #   SDE_SESSION_COMPOSITOR_SAFE   compositor command for safe mode (minimal session)
 #   SDE_SESSION_SAFE_MODE         1 to start in safe mode (default 0)
@@ -89,6 +93,8 @@ if [ -r "$SESSION_CONF" ]; then
             max_restarts) apply_session_setting SDE_SESSION_MAX_RESTARTS "$value" ;;
             restart_delay) apply_session_setting SDE_SESSION_RESTART_DELAY "$value" ;;
             watchdog_seconds) apply_session_setting SDE_SESSION_WATCHDOG_SECONDS "$value" ;;
+            watchdog_grace_seconds) apply_session_setting SDE_SESSION_WATCHDOG_GRACE_SECONDS "$value" ;;
+            watchdog_pressure_grace_seconds) apply_session_setting SDE_SESSION_WATCHDOG_PRESSURE_GRACE_SECONDS "$value" ;;
             safe_mode) apply_session_setting SDE_SESSION_SAFE_MODE "$value" ;;
             autostart) apply_session_setting SDE_SESSION_AUTOSTART "$value" ;;
             restore) apply_session_setting SDE_SESSION_RESTORE "$value" ;;
@@ -159,6 +165,20 @@ fi
 # safe mode is a minimal session used when the compositor keeps failing, so a bad
 # applet/autostart entry cannot wedge the login loop.
 WATCHDOG_SECONDS="${SDE_SESSION_WATCHDOG_SECONDS:-10}"
+# A heartbeat that stops is not proof of a wedge: a scheduler or I/O stall can
+# delay the beat for seconds while the compositor is otherwise healthy. Wait out a
+# grace period first, and while the system is under severe memory pressure wait a
+# bounded extra period — restarting into a memory storm loses the session's client
+# data and makes the pressure worse.
+WATCHDOG_GRACE_SECONDS="${SDE_SESSION_WATCHDOG_GRACE_SECONDS:-10}"
+WATCHDOG_PRESSURE_GRACE_SECONDS="${SDE_SESSION_WATCHDOG_PRESSURE_GRACE_SECONDS:-30}"
+PRESSURE_FILE="${SDE_SESSION_PRESSURE_FILE:-/proc/pressure/memory}"
+MEMINFO_FILE="${SDE_SESSION_MEMINFO_FILE:-/proc/meminfo}"
+# Severe = PSI some avg10 at/above this percentage, or available memory below this
+# percentage of total. Both are deliberately conservative: they only postpone a
+# restart, never cancel one outright.
+PRESSURE_PERCENT=50
+AVAILABLE_PERCENT=5
 SAFE_MODE="${SDE_SESSION_SAFE_MODE:-0}"
 SAFE_COMPOSITOR="${SDE_SESSION_COMPOSITOR_SAFE:-}"
 # Per session, not per machine. The whole session inherits this path, so a global
@@ -326,9 +346,34 @@ wait_for_socket() {
     return 1
 }
 
+# Is the machine under severe memory pressure? Used only to postpone a restart,
+# never to cancel one. Both sources are optional so the supervisor still works on
+# a kernel without PSI (/proc/pressure) and in tests.
+memory_pressure_severe() {
+    local avg10="" mem total="" avail="" pct
+    if [ -r "$PRESSURE_FILE" ]; then
+        avg10="$(awk '/^some / { for (i = 1; i <= NF; i++) if ($i ~ /^avg10=/) { sub(/^avg10=/, "", $i); print $i; exit } }' "$PRESSURE_FILE" 2>/dev/null)"
+    fi
+    if [ -n "$avg10" ] && awk -v value="$avg10" -v limit="$PRESSURE_PERCENT" 'BEGIN { exit !(value >= limit) }'; then
+        return 0
+    fi
+    if [ -r "$MEMINFO_FILE" ]; then
+        mem="$(awk '/^MemTotal:/ { total = $2 } /^MemAvailable:/ { avail = $2 } END { print total, avail }' "$MEMINFO_FILE" 2>/dev/null)"
+        read -r total avail <<<"$mem"
+        if [ -n "${total:-}" ] && [ -n "${avail:-}" ] && [ "$total" -gt 0 ]; then
+            pct=$((avail * 100 / total))
+            [ "$pct" -lt "$AVAILABLE_PERCENT" ] && return 0
+        fi
+    fi
+    return 1
+}
+
 # A liveness watchdog (R6/N4): if the compositor's heartbeat file goes stale its
-# event loop is blocked, so terminate it and let the main loop restart it. Runs in
-# the background so the foreground `wait` keeps the fast SIGTERM path.
+# event loop is blocked. It does not kill it at the first threshold: a scheduler
+# or I/O stall can delay a beat for seconds, and a restart loses every client's
+# data. Wait one grace period for the beat to resume, and while the host is under
+# severe memory pressure wait a bounded extra period, then restart. Runs in the
+# background so the foreground `wait` keeps the fast SIGTERM path.
 #
 # Compare whether the heartbeat *changes* rather than subtracting its wall-clock
 # value from `date +%s`. A fresh login can coincide with an NTP correction or a
@@ -339,11 +384,15 @@ wait_for_socket() {
 # suspend both processes resume and the next beat clears the counter.
 watch_compositor_hang() {
     local pid="$1" beat last_beat="" unchanged=0
+    local announced=0 grace_deadline=0 pressure_deadline=0
     while kill -0 "$pid" 2>/dev/null; do
         sleep 1
         [ -e "$HEARTBEAT_FILE" ] || {
             last_beat=""
             unchanged=0
+            announced=0
+            grace_deadline=0
+            pressure_deadline=0
             continue
         }
         beat="$(cat "$HEARTBEAT_FILE" 2>/dev/null || echo 0)"
@@ -355,15 +404,41 @@ watch_compositor_hang() {
         else
             last_beat="$beat"
             unchanged=0
+            announced=0
+            grace_deadline=0
+            pressure_deadline=0
         fi
-        if [ "$unchanged" -ge "$WATCHDOG_SECONDS" ]; then
-            echo "SDE session: compositor heartbeat stale (unchanged for ${unchanged}s, last ${beat}); restarting" >&2
-            printf 'heartbeat stale for %ss (last %s)\n' "$unchanged" "$beat" > "$WATCHDOG_MARK"
-            kill -TERM "$pid" 2>/dev/null || true
-            sleep 2
-            kill -KILL "$pid" 2>/dev/null || true
-            return
+        if [ "$unchanged" -lt "$WATCHDOG_SECONDS" ]; then
+            continue
         fi
+        # Stage one: announce and give the beat a chance to resume.
+        if [ "$announced" -eq 0 ]; then
+            announced=1
+            grace_deadline=$((SECONDS + WATCHDOG_GRACE_SECONDS))
+            if [ "$WATCHDOG_GRACE_SECONDS" -gt 0 ]; then
+                echo "SDE session: compositor heartbeat stale (unchanged for ${unchanged}s, last ${beat}); waiting ${WATCHDOG_GRACE_SECONDS}s for recovery" >&2
+            fi
+            continue
+        fi
+        if [ "$SECONDS" -lt "$grace_deadline" ]; then
+            continue
+        fi
+        # Stage two: if the host is thrashing, restarting now would make it worse.
+        # Postpone once, bounded; if the beat recovers meanwhile the counters reset.
+        if [ "$pressure_deadline" -eq 0 ] && memory_pressure_severe; then
+            pressure_deadline=$((SECONDS + WATCHDOG_PRESSURE_GRACE_SECONDS))
+            echo "SDE session: heartbeat still stale and the host is under memory pressure; waiting up to ${WATCHDOG_PRESSURE_GRACE_SECONDS}s before restarting" >&2
+            continue
+        fi
+        if [ "$pressure_deadline" -ne 0 ] && [ "$SECONDS" -lt "$pressure_deadline" ]; then
+            continue
+        fi
+        echo "SDE session: compositor heartbeat stale (unchanged for ${unchanged}s, last ${beat}); restarting" >&2
+        printf 'heartbeat stale for %ss (last %s)\n' "$unchanged" "$beat" > "$WATCHDOG_MARK"
+        kill -TERM "$pid" 2>/dev/null || true
+        sleep 2
+        kill -KILL "$pid" 2>/dev/null || true
+        return
     done
 }
 
