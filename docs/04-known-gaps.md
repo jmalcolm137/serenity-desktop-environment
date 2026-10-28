@@ -692,6 +692,13 @@ The corresponding upstream changes are the `libgui-wayland` patches
 
 ## Recently resolved (kept so we don't re-chase them)
 
+- **Pasting a large document froze the TextEditor UI.** Every text change rebuilt
+  the AT-SPI snapshot (including the whole editor text) and sent that text in the
+  `TextChanged` signal. Snapshot path lookup now skips text, the event is a small
+  notification, and the accessibility client queries the Text interface when it
+  needs the contents. Regression:
+  `scripts/run-accessibility-text-change-test.sh`.
+
 - **Terminal exited after copying a large selection.** The clipboard client
   fetched the data synchronously from inside the clipboard-changed callback.
   LibWM then tried to read its own Wayland selection through a data-source round
