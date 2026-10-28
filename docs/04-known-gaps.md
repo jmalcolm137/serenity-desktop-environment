@@ -763,7 +763,11 @@ The corresponding upstream changes are the `libgui-wayland` patches
   and overwrites the value in place, truncating only when its width changes, so a
   beat performs no allocation. The watchdog still restarts a compositor whose
   loop is genuinely blocked. Regression: `scripts/run-headless-test.sh` seeds a
-  stale, longer heartbeat and requires a plain, recent value.
+  stale, longer heartbeat and requires a plain, recent value. A second restart
+  later that morning was a bare SIGKILL: no watchdog mark, no heartbeat warning,
+  no coredump and no kernel OOM entry, so no SDE path had asked it to stop. The
+  supervisor now logs the watchdog's reason from the mark file and calls an
+  unmarked 137 an external SIGKILL; `run-session-test.sh` phase B2 covers it.
 
 - **DisplaySettings would not launch after the accessibility rebuild.** The
   application suite was built before LibIPC's `ConnectionBase` layout changed, so
