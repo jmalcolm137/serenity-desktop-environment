@@ -144,6 +144,13 @@ add_sde_test(texteditor-hittest-test SOURCE TextEditorHitTest.cpp LIBS ${LAGOM_s
 # modified callback must fire only on modified-state transitions.
 add_sde_test(texteditor-repaint-test SOURCE TextEditorRepaintTest.cpp LIBS ${LAGOM_syntax})
 
+# A large paste must be a single batched edit, not one notification per code point.
+add_sde_test(texteditor-large-paste-test SOURCE TextEditorLargePasteTest.cpp LIBS ${LAGOM_syntax})
+
+# A transient child outliving its parent must not leave a dangling modal-chain
+# pointer that the next pointer motion dereferences.
+add_sde_test(transient-parent-test SOURCE TransientParentTest.cpp)
+
 # FileSystemModel thumbnails decode through the UI event loop and in-flight
 # requests are deduplicated.
 add_sde_test(filemodel-thumbnail-test SOURCE FileSystemModelThumbnailTest.cpp
