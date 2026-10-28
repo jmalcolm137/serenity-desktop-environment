@@ -732,6 +732,26 @@ The corresponding upstream changes are the `libgui-wayland` patches
   `scripts/run-polkit-dialog-output-test.sh` covers the unchecked flag,
   diagnostics before the password, and malformed output.
 
+- **The Taskbar dumped core when the session ended.** At process exit the main
+  thread's thread-local event-loop data is destroyed before static objects. A
+  static IPC connection destroyed afterwards (LibDesktop's LaunchServer
+  connection) asked the event loop to disable its socket notifier; a late
+  `EventLoop::current()` had already created the inert teardown loop with fresh
+  thread data, which did not know that notifier, and `unregister_notifier`'s
+  VERIFY aborted. It now treats a notifier registered with destroyed thread data
+  as already unregistered. Patch
+  `0084-libcore-tolerate-teardown-unregister`; regression:
+  `scripts/run-shutdown-test.sh` (its phase A logs the client's teardown).
+
+- **A split framework install could not configure.** With
+  `SDE_PREBUILT_FRAMEWORK=ON` the runtime libraries are installed in
+  `<prefix>/lib` and the generated headers in `<prefix>/framework`.
+  `Tools/CMakeLists.txt` looked for `libwindowserver.so` only under
+  `${SERENITY_BUILD_DIR}/lib`, and the test targets did not know about
+  `lagom-syntax` at all, so `run-split-framework-test.sh` failed at configure.
+  Both now search `${SDE_LAGOM_BUILD_DIR}/lib` as well, and `syntax` is part of
+  the Lagom library list. Regression: `scripts/run-split-framework-test.sh`.
+
 - **DisplaySettings would not launch after the accessibility rebuild.** The
   application suite was built before LibIPC's `ConnectionBase` layout changed, so
   `DisplaySettings` crashed on its first synchronous request
