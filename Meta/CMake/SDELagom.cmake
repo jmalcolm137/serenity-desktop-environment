@@ -83,7 +83,7 @@ set(LIBGUI_WAYLAND_SRC "${SDE_LIBGUI_WAYLAND_ROOT}")
 set(SDE_LAGOM_LIBRARIES
     ak audio compress config core corebasic coreminimal crypto desktop filesystem
     gemini gfx gui http imagedecoderclient ipc js keyboard launch locale main riff
-    sql textcodec threading tls unicode url vt web websocket webview)
+    sql syntax textcodec threading tls unicode url vt web websocket webview)
 set(SDE_LAGOM_FILES)
 foreach(_lib IN LISTS SDE_LAGOM_LIBRARIES)
     if (_lib STREQUAL "main")

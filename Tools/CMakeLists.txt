@@ -188,7 +188,7 @@ endif()
 # IPC, so host (GTK/Qt/X11) apps and Serenity apps share one banner stack. The
 # unmodified SerenityOS NotificationServer draws the banners; this service only
 # translates the protocol and tracks ids/expiry.
-find_library(SDE_WINDOWSERVER NAMES windowserver PATHS "${SERENITY_BUILD_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
+find_library(SDE_WINDOWSERVER NAMES windowserver PATHS "${SDE_LAGOM_BUILD_DIR}/lib" "${SERENITY_BUILD_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
 sde_portal_tool(sde-notifications
     SOURCES sde-notifications/main.cpp portal/dbus.cpp
     LAGOM ${PORTAL_LAGOM} gfx gui ipc url desktop
