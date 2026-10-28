@@ -39,6 +39,7 @@
 #include <LibMain/Main.h>
 
 #include "dbus.h"
+#include "dialog_output.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -46,6 +47,7 @@
 #include <pwd.h>
 #include <signal.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -79,6 +81,17 @@ ByteString environment_or(StringView name, StringView fallback)
     if (auto value = Core::Environment::get(name); value.has_value() && !value->is_empty())
         return value->to_byte_string();
     return fallback.to_byte_string();
+}
+
+bool is_setuid_helper(StringView path)
+{
+    auto path_string = path.to_byte_string();
+    struct stat status { };
+    if (stat(path_string.characters(), &status) != 0)
+        return false;
+    if (!S_ISREG(status.st_mode) || status.st_uid != 0 || (status.st_mode & S_ISUID) == 0)
+        return false;
+    return access(path_string.characters(), X_OK) == 0;
 }
 
 // g_strescape() output (used by the helper) escapes control characters and
@@ -330,6 +343,16 @@ private:
     bool start_helper()
     {
         close_helper();
+
+        auto helper = environment_or("SDE_POLKIT_HELPER_BIN"sv, default_helper_binary);
+
+        // Prefer the traditional setuid helper when it is installed that way.
+        // polkit 128's socket-activated helper has a peer-credential/pam_unix
+        // regression that rejects correct passwords; the direct setuid helper
+        // takes the stable path. Systems without the setuid bit keep using the
+        // socket.
+        if (is_setuid_helper(helper))
+            return spawn_helper();
 
         auto socket_path = environment_or("SDE_POLKIT_HELPER_SOCKET"sv, default_helper_socket);
         if (access(socket_path.characters(), F_OK) == 0) {
@@ -611,35 +634,19 @@ private:
             return;
         }
 
-        // The dialog writes the password, then the remember flag. LibWM
-        // diagnostics may precede both on stdout, so take the tail.
-        Vector<StringView> lines;
-        size_t start = 0;
-        for (;;) {
-            auto newline = output.find('\n', start);
-            if (!newline.has_value()) {
-                if (start < output.length())
-                    lines.append(output.substring_view(start));
-                break;
-            }
-            lines.append(output.substring_view(start, *newline - start));
-            start = *newline + 1;
-        }
-
-        if (lines.is_empty()) {
+        auto parsed = SDE::parse_dialog_output(output);
+        if (!parsed.has_value()) {
             complete(false);
             return;
         }
 
-        bool remember = lines.size() >= 2 && lines.last() == "1"sv;
-        auto password = remember ? lines[lines.size() - 2] : lines.last();
-        auto copy = ByteBuffer::copy(password.bytes());
+        auto copy = ByteBuffer::copy(parsed->password.bytes());
         if (copy.is_error()) {
             complete(false);
             return;
         }
         m_last_password = copy.release_value();
-        m_remember = remember;
+        m_remember = parsed->remember;
         m_used_cached_password = false;
         send_response(m_last_password->bytes());
     }

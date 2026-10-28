@@ -153,6 +153,10 @@ add_sde_test(filemodel-thumbnail-test SOURCE FileSystemModelThumbnailTest.cpp
 # waiting for socket buffer space.
 add_sde_test(libipc-write-test SOURCE LibIPCWriteTest.cpp LIBS ${LAGOM_ipc})
 
+# The polkit agent must keep the password separate from the remember flag in
+# sde-auth-dialog's output.
+add_sde_unit_test(polkit-dialog-output-test SOURCE PolkitDialogOutputTest.cpp)
+
 # Types into a text box before and after the only keyboard is unplugged and a
 # new one plugged in: LibWM must re-acquire wl_keyboard when the capability returns.
 add_sde_test(libwm-keyboard-replug-test SOURCE KeyboardReplugTest.cpp)
