@@ -20,6 +20,16 @@ if [ "${1:-}" != "--inner" ]; then
         echo "==> screencast DMA-BUF test SKIPPED"
         exit 0
     fi
+    # A desktop shell's WAYLAND_DISPLAY is usually the host compositor (KWin, Mutter,
+    # ...), which has none of SDE's capture protocols, so the test could only fail
+    # there. Run it against an SDE session only: SDE's compositor is the one that
+    # advertises serenity_window_manager.
+    if command -v wayland-info >/dev/null 2>&1 \
+        && ! wayland-info 2>/dev/null | grep -q "'serenity_window_manager'"; then
+        echo "note: WAYLAND_DISPLAY=$WAYLAND_DISPLAY is not an SDE session; skipping (point it at one, e.g. WAYLAND_DISPLAY=sde)"
+        echo "==> screencast DMA-BUF test SKIPPED"
+        exit 0
+    fi
     if [[ "$WAYLAND_DISPLAY" != /* ]]; then
         SDE_DMABUF_WAYLAND="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$WAYLAND_DISPLAY"
     else
