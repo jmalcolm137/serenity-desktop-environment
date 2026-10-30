@@ -270,6 +270,7 @@ ByteString settings_ssid(DBusMessageIter* iter)
 struct SavedConnection {
     ByteString ssid;
     bool wireless { false };
+    bool autoconnect { true };
 };
 
 // Reads a settings a{sa{sv}} reply, returning the SSID and whether it is an
@@ -297,6 +298,9 @@ Optional<SavedConnection> parse_connection_settings(DBusMessage* reply)
             result.wireless = true;
             if (dbus_message_iter_get_arg_type(&entry) == DBUS_TYPE_ARRAY)
                 dict_entry(&entry, "ssid", [&](DBusMessageIter* variant) { result.ssid = variant_bytes(variant); });
+        } else if (section && strcmp(section, "connection") == 0 && dbus_message_iter_get_arg_type(&entry) == DBUS_TYPE_ARRAY) {
+            // Absent means the default, which is true.
+            dict_entry(&entry, "autoconnect", [&](DBusMessageIter* variant) { result.autoconnect = variant_bool(variant, true); });
         }
         dbus_message_iter_next(&dict);
     }
@@ -305,6 +309,131 @@ Optional<SavedConnection> parse_connection_settings(DBusMessage* reply)
     return result;
 }
 
+// Copies the remaining arguments at `from`'s level to `to`, whatever their types.
+void copy_arguments(DBusMessageIter* from, DBusMessageIter* to)
+{
+    for (int type; (type = dbus_message_iter_get_arg_type(from)) != DBUS_TYPE_INVALID; dbus_message_iter_next(from)) {
+        if (dbus_type_is_basic(type)) {
+            DBusBasicValue value;
+            dbus_message_iter_get_basic(from, &value);
+            dbus_message_iter_append_basic(to, type, &value);
+            continue;
+        }
+        DBusMessageIter from_inner, to_inner;
+        dbus_message_iter_recurse(from, &from_inner);
+        char* signature = nullptr;
+        char const* contained = nullptr;
+        if (type == DBUS_TYPE_VARIANT) {
+            signature = dbus_message_iter_get_signature(&from_inner);
+            contained = signature;
+        } else if (type == DBUS_TYPE_ARRAY) {
+            // "a{sv}" -> "{sv}": the element type, which an empty array still has.
+            signature = dbus_message_iter_get_signature(from);
+            contained = signature + 1;
+        }
+        dbus_message_iter_open_container(to, type, contained, &to_inner);
+        copy_arguments(&from_inner, &to_inner);
+        dbus_message_iter_close_container(to, &to_inner);
+        if (signature)
+            dbus_free(signature);
+    }
+}
+
+// Writes `settings` (a GetSettings reply's a{sa{sv}}) into `to` with
+// connection.autoconnect set to `autoconnect` and everything else unchanged.
+void append_settings_with_autoconnect(DBusMessageIter* settings, DBusMessageIter* to, bool autoconnect)
+{
+    DBusMessageIter out_settings;
+    dbus_message_iter_open_container(to, DBUS_TYPE_ARRAY, "{sa{sv}}", &out_settings);
+
+    auto append_autoconnect = [&](DBusMessageIter* properties) { append_bool_entry(properties, "autoconnect", autoconnect); };
+
+    bool wrote_connection = false;
+    DBusMessageIter sections;
+    dbus_message_iter_recurse(settings, &sections);
+    for (; dbus_message_iter_get_arg_type(&sections) == DBUS_TYPE_DICT_ENTRY; dbus_message_iter_next(&sections)) {
+        DBusMessageIter section, out_section;
+        dbus_message_iter_recurse(&sections, &section);
+        char const* name = nullptr;
+        dbus_message_iter_get_basic(&section, &name);
+        dbus_message_iter_next(&section);
+
+        dbus_message_iter_open_container(&out_settings, DBUS_TYPE_DICT_ENTRY, nullptr, &out_section);
+        dbus_message_iter_append_basic(&out_section, DBUS_TYPE_STRING, &name);
+        if (name && strcmp(name, "connection") == 0 && dbus_message_iter_get_arg_type(&section) == DBUS_TYPE_ARRAY) {
+            DBusMessageIter properties, out_properties;
+            dbus_message_iter_recurse(&section, &properties);
+            dbus_message_iter_open_container(&out_section, DBUS_TYPE_ARRAY, "{sv}", &out_properties);
+            for (; dbus_message_iter_get_arg_type(&properties) == DBUS_TYPE_DICT_ENTRY; dbus_message_iter_next(&properties)) {
+                DBusMessageIter property;
+                dbus_message_iter_recurse(&properties, &property);
+                char const* key = nullptr;
+                dbus_message_iter_get_basic(&property, &key);
+                if (key && strcmp(key, "autoconnect") == 0)
+                    continue;
+                DBusMessageIter one_property;
+                dbus_message_iter_recurse(&properties, &one_property);
+                DBusMessageIter out_property;
+                dbus_message_iter_open_container(&out_properties, DBUS_TYPE_DICT_ENTRY, nullptr, &out_property);
+                copy_arguments(&one_property, &out_property);
+                dbus_message_iter_close_container(&out_properties, &out_property);
+            }
+            append_autoconnect(&out_properties);
+            dbus_message_iter_close_container(&out_section, &out_properties);
+            wrote_connection = true;
+        } else {
+            copy_arguments(&section, &out_section);
+        }
+        dbus_message_iter_close_container(&out_settings, &out_section);
+    }
+
+    if (!wrote_connection) {
+        DBusMessageIter out_section, out_properties;
+        char const* name = "connection";
+        dbus_message_iter_open_container(&out_settings, DBUS_TYPE_DICT_ENTRY, nullptr, &out_section);
+        dbus_message_iter_append_basic(&out_section, DBUS_TYPE_STRING, &name);
+        dbus_message_iter_open_container(&out_section, DBUS_TYPE_ARRAY, "{sv}", &out_properties);
+        append_autoconnect(&out_properties);
+        dbus_message_iter_close_container(&out_section, &out_properties);
+        dbus_message_iter_close_container(&out_settings, &out_section);
+    }
+    dbus_message_iter_close_container(to, &out_settings);
+}
+
+}
+
+WifiSecurityInfo classify_wifi_security(unsigned flags, unsigned wpa_flags, unsigned rsn_flags)
+{
+    // NM80211ApSecurityFlags: the key-management bits.
+    constexpr unsigned key_mgmt_psk = 0x100;
+    constexpr unsigned key_mgmt_8021x = 0x200;
+    constexpr unsigned key_mgmt_sae = 0x400;
+    constexpr unsigned key_mgmt_owe = 0x800;
+    constexpr unsigned key_mgmt_eap_suite_b_192 = 0x2000;
+
+    unsigned const any = wpa_flags | rsn_flags;
+    bool const wpa1 = (wpa_flags & (key_mgmt_psk | key_mgmt_8021x)) != 0;
+    bool const wpa2 = (rsn_flags & (key_mgmt_psk | key_mgmt_8021x)) != 0;
+
+    if (any & (key_mgmt_8021x | key_mgmt_eap_suite_b_192)) {
+        if (rsn_flags & key_mgmt_eap_suite_b_192)
+            return { WifiSecurity::Enterprise, "WPA3 Enterprise"sv };
+        return { WifiSecurity::Enterprise, wpa2 ? "WPA2 Enterprise"sv : "WPA Enterprise"sv };
+    }
+    if (any & key_mgmt_psk) {
+        if (rsn_flags & key_mgmt_sae)
+            return { WifiSecurity::Personal, "WPA2/WPA3"sv };
+        if (wpa1 && wpa2)
+            return { WifiSecurity::Personal, "WPA/WPA2"sv };
+        return { WifiSecurity::Personal, wpa2 ? "WPA2"sv : "WPA"sv };
+    }
+    if (rsn_flags & key_mgmt_sae)
+        return { WifiSecurity::Wpa3Personal, "WPA3"sv };
+    if (rsn_flags & key_mgmt_owe)
+        return { WifiSecurity::EnhancedOpen, "Enhanced Open"sv };
+    if ((flags & ap_flag_privacy) && any == 0)
+        return { WifiSecurity::Wep, "WEP"sv };
+    return { WifiSecurity::Open, "Open"sv };
 }
 
 
@@ -335,7 +464,7 @@ struct NetworkManagerClient::Refresh : RefCounted<Refresh> {
     NetworkState state;
     Vector<Device> devices;
     Vector<ByteString> connection_paths;
-    Vector<ByteString> connection_ssids; // one per saved connection; empty if not Wi-Fi
+    Vector<Optional<SavedConnection>> connection_settings; // one per saved connection; empty if not Wi-Fi
 };
 
 namespace {
@@ -820,7 +949,6 @@ void NetworkManagerClient::connect_to(WifiNetwork const& network, Optional<ByteS
     char const* profile_id = network.ssid.characters();
     char const* type = "802-11-wireless";
     char const* mode = "infrastructure";
-    char const* key_mgmt = "wpa-psk";
 
     dbus_message_iter_init_append(message, &iter);
     dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY, "{sa{sv}}", &settings);
@@ -844,13 +972,54 @@ void NetworkManagerClient::connect_to(WifiNetwork const& network, Optional<ByteS
     open_section("802-11-wireless", connection_entry, inner);
     append_bytes_entry(&inner, "ssid", network.ssid);
     append_string_entry(&inner, "mode", mode);
+    // A network that is not in the scan (the hidden-network form) does not
+    // broadcast its name: NetworkManager has to probe for it, now and whenever
+    // it reconnects.
+    if (network.access_point_path.is_empty())
+        append_bool_entry(&inner, "hidden", true);
     close_section(connection_entry, inner);
 
-    if (psk.has_value() && !psk->is_empty()) {
+    // What NetworkManager needs depends on how the network is secured: WPA3-only
+    // networks reject a WPA-PSK handshake, and Enhanced Open needs no secret.
+    bool const has_secret = psk.has_value() && !psk->is_empty();
+    auto add_security = [&](char const* key_mgmt, auto&& extra) {
         open_section("802-11-wireless-security", security_entry, security);
         append_string_entry(&security, "key-mgmt", key_mgmt);
-        append_string_entry(&security, "psk", psk->characters());
+        extra();
         close_section(security_entry, security);
+    };
+    switch (network.security) {
+    case WifiSecurity::Personal:
+    case WifiSecurity::Wpa3Personal:
+        if (has_secret) {
+            add_security(network.security == WifiSecurity::Wpa3Personal ? "sae" : "wpa-psk", [&] {
+                append_string_entry(&security, "psk", psk->characters());
+            });
+        }
+        break;
+    case WifiSecurity::Wep:
+        if (has_secret) {
+            add_security("none", [&] {
+                append_string_entry(&security, "wep-key0", psk->characters());
+                // A key (10/26 hex digits or 5/13 characters), not a passphrase.
+                DBusMessageIter entry, variant;
+                char const* key = "wep-key-type";
+                dbus_uint32_t key_type = 1;
+                dbus_message_iter_open_container(&security, DBUS_TYPE_DICT_ENTRY, nullptr, &entry);
+                dbus_message_iter_append_basic(&entry, DBUS_TYPE_STRING, &key);
+                dbus_message_iter_open_container(&entry, DBUS_TYPE_VARIANT, "u", &variant);
+                dbus_message_iter_append_basic(&variant, DBUS_TYPE_UINT32, &key_type);
+                dbus_message_iter_close_container(&entry, &variant);
+                dbus_message_iter_close_container(&security, &entry);
+            });
+        }
+        break;
+    case WifiSecurity::EnhancedOpen:
+        add_security("owe", [] {});
+        break;
+    case WifiSecurity::Open:
+    case WifiSecurity::Enterprise:
+        break;
     }
 
     dbus_message_iter_close_container(&iter, &settings);
@@ -870,6 +1039,36 @@ void NetworkManagerClient::disconnect(WifiNetwork const& network)
     if (device_path.is_empty())
         return;
     action(new_call(device_path.characters(), device_iface, "Disconnect"));
+}
+
+void NetworkManagerClient::set_autoconnect(WifiNetwork const& network, bool autoconnect)
+{
+    if (!m_registered_with_bus || network.saved_connection_path.is_empty())
+        return;
+    // NetworkManager has no call that sets one property of a profile, so read the
+    // profile and write it back with only autoconnect changed. GetSettings leaves
+    // the secrets out, and an update without secrets keeps the stored ones, so the
+    // password survives.
+    auto path = network.saved_connection_path;
+    call(new_call(path.characters(), connection_iface, "GetSettings"), [this, path, autoconnect](DBusMessage* reply) {
+        DBusMessageIter settings;
+        if (!reply || !dbus_message_iter_init(reply, &settings) || dbus_message_iter_get_arg_type(&settings) != DBUS_TYPE_ARRAY) {
+            schedule_refresh();
+            return;
+        }
+        auto* update = new_call(path.characters(), connection_iface, "Update");
+        DBusMessageIter out;
+        dbus_message_iter_init_append(update, &out);
+        append_settings_with_autoconnect(&settings, &out, autoconnect);
+        action(update);
+    });
+}
+
+void NetworkManagerClient::forget(WifiNetwork const& network)
+{
+    if (!m_registered_with_bus || network.saved_connection_path.is_empty())
+        return;
+    action(new_call(network.saved_connection_path.characters(), connection_iface, "Delete"));
 }
 
 void NetworkManagerClient::request_scan()
@@ -990,7 +1189,10 @@ void NetworkManagerClient::refresh()
                                 dict_entry(&iter, "WpaFlags", [&](DBusMessageIter* v) { wpa = variant_u32(v); });
                                 dict_entry(&iter, "RsnFlags", [&](DBusMessageIter* v) { rsn = variant_u32(v); });
                             }
-                            network.secured = privacy || wpa != 0 || rsn != 0;
+                            auto security = classify_wifi_security(privacy ? ap_flag_privacy : 0, wpa, rsn);
+                            network.security = security.type;
+                            network.security_label = security.label;
+                            network.secured = security.type != WifiSecurity::Open && security.type != WifiSecurity::EnhancedOpen;
                             refresh->devices[i].networks[j] = move(network);
                         });
                     }
@@ -1004,11 +1206,11 @@ void NetworkManagerClient::refresh()
         if (!reply)
             return;
         refresh->connection_paths = parse_object_path_array(reply);
-        refresh->connection_ssids.resize(refresh->connection_paths.size());
+        refresh->connection_settings.resize(refresh->connection_paths.size());
         for (size_t k = 0; k < refresh->connection_paths.size(); ++k) {
             call_for_refresh(refresh, new_call(refresh->connection_paths[k].characters(), connection_iface, "GetSettings"), [refresh, k](DBusMessage* reply) {
                 if (auto connection = parse_connection_settings(reply); connection.has_value() && connection->wireless)
-                    refresh->connection_ssids[k] = connection->ssid;
+                    refresh->connection_settings[k] = connection.release_value();
             });
         }
     });
@@ -1026,10 +1228,14 @@ void NetworkManagerClient::finish_refresh(Refresh& refresh)
         state = refresh.state;
         state.available = true;
 
-        HashMap<ByteString, ByteString> saved_connections;
+        struct Saved {
+            ByteString path;
+            bool autoconnect { true };
+        };
+        HashMap<ByteString, Saved> saved_connections;
         for (size_t k = 0; k < refresh.connection_paths.size(); ++k) {
-            if (!refresh.connection_ssids[k].is_empty())
-                saved_connections.set(refresh.connection_ssids[k], refresh.connection_paths[k]);
+            if (auto const& saved = refresh.connection_settings[k]; saved.has_value())
+                saved_connections.set(saved->ssid, { refresh.connection_paths[k], saved->autoconnect });
         }
 
         for (auto& device : refresh.devices) {
@@ -1054,7 +1260,8 @@ void NetworkManagerClient::finish_refresh(Refresh& refresh)
                 }
                 if (auto saved = saved_connections.get(network.ssid); saved.has_value()) {
                     network.saved = true;
-                    network.saved_connection_path = saved.value();
+                    network.saved_connection_path = saved->path;
+                    network.autoconnect = saved->autoconnect;
                 }
 
                 // One row per SSID: the access point we are connected to, else the
@@ -1109,7 +1316,8 @@ void NetworkManagerClient::publish(NetworkState state, Vector<WifiNetwork> netwo
     for (size_t i = 0; !changed && i < networks.size(); ++i) {
         auto const& a = m_networks[i];
         auto const& b = networks[i];
-        changed = a.ssid != b.ssid || a.strength != b.strength || a.connected != b.connected || a.saved != b.saved || a.secured != b.secured;
+        changed = a.ssid != b.ssid || a.strength != b.strength || a.connected != b.connected || a.saved != b.saved
+            || a.secured != b.secured || a.security != b.security || a.autoconnect != b.autoconnect || a.frequency != b.frequency;
     }
 
     m_state = move(state);

@@ -148,11 +148,38 @@ Connected to MockNet
   whether or not a row uses them. The list grows to 8 rows and then scrolls; a
   search field appears above it when there are more than 8 networks.
 - **Opening a row**: clicking a row selects it and opens it in place, one row at
-  a time. An open row shows `Signal 82% · 2.4 GHz` and a **Connect** or
-  **Disconnect** button. A secured network without a saved profile, or one
-  NetworkManager's secret agent is asking about, shows a masked passphrase field
-  (with a reveal button) instead of the details; Enter connects, Escape cancels.
-  A refresh while typing keeps the field, its text and its focus.
+  a time. An open row shows `WPA2 · 2.4 GHz · 82% signal` and a **Connect** or
+  **Disconnect** button. A network that needs a password or WEP key and has no
+  saved profile, or one NetworkManager's secret agent is asking about, shows a
+  masked field (with a reveal button) instead of the details; Enter connects,
+  Escape cancels. A refresh while typing keeps the field, its text and its focus.
+  An 802.1X (Enterprise) network without a profile says to set it up in Network
+  Settings rather than offering a password field that could not work.
+- **Saved networks** get a third line in an open row:
+
+  ```
+  ((o  MockNet                          Connected  #
+       WPA2 · 2.4 GHz · 82% signal       [Disconnect]
+       [x] Connect automatically         [  Forget  ]
+  ```
+
+  **Connect automatically** is how to stop NetworkManager rejoining a network
+  without losing it: it sets the profile's `connection.autoconnect`, and the
+  profile and its password stay, so one click still connects. (NetworkManager has
+  no call that sets a single property, so the applet reads the profile with
+  `GetSettings` and writes it back with `Update`, changing only `autoconnect`.
+  `GetSettings` omits secrets, and NetworkManager keeps the stored ones when an
+  update carries none: `update_complete()` in `nm-settings-connection.c`.)
+  **Forget** deletes the profile, password included (`Settings.Connection.Delete`);
+  it asks once (**Confirm**) before doing it.
+- **Security**: the details name the security as the user knows it: `Open`,
+  `Enhanced Open`, `WEP`, `WPA`, `WPA2`, `WPA/WPA2`, `WPA2/WPA3`, `WPA3`, `WPA2
+  Enterprise`, `WPA3 Enterprise` (`classify_wifi_security()`, from the access
+  point's `Flags`, `WpaFlags` and `RsnFlags`). A new connection is set up to
+  match: `wpa-psk` for WPA/WPA2 (and transition networks), `sae` for WPA3-only
+  networks (which reject WPA-PSK), `owe` for Enhanced Open, a WEP key for WEP. A
+  network added through the hidden-network form is marked `hidden`, so
+  NetworkManager probes for it when it reconnects.
 - **Feedback**: the row and the header say `Connecting…` until NetworkManager
   connects. If it starts and then gives up, or never starts within 15 s, they
   say the attempt failed.
@@ -163,8 +190,11 @@ Connected to MockNet
   password fields with their labels in one column, then Cancel and Connect.
   **Network Settings…** opens `nm-connection-editor`, and is not shown (here or in
   the context menu) when it is not installed.
-- **Keyboard**: Escape closes an open row, then the hidden-network form, then the
-  popup. Closing the popup answers a pending secret-agent prompt as cancelled.
+- **Keyboard**: Up and Down select a network (Home and End jump to the ends),
+  Enter or Space opens the selected one, and on an open one does what its button
+  says. Tab reaches the row's controls. Escape closes an open row, then the
+  hidden-network form, then the popup. Closing the popup answers a pending
+  secret-agent prompt as cancelled.
 - The tray tooltip is suppressed while the popup is open, since the popup says
   more.
 
@@ -226,10 +256,15 @@ and kills itself. It runs in about 30 s and covers:
   never stalls (a 5 ms ticker runs throughout; the longest gap must stay under
   150 ms; the old synchronous client stalled for 2 to 3 s);
 - NetworkManager restarting, the bus restarting, the bus coming up late, and the
-  client being destroyed with calls in flight.
+  client being destroyed with calls in flight;
+- the security table (every type, from access point flags);
+- turning auto-connect off and on (the mock checks the profile came back whole
+  and without secrets) and forgetting a network;
+- joining a WPA3-only network with `sae`, and a hidden one marked `hidden`.
 
 The mock's fault injection (`--delay-ms`, `--hang-ap`, `--chatter-ms`) is what
-makes these cases deterministic. Pass case names (`slow`, `bus-restart`, ...) to
+makes these cases deterministic; `--extra-aps` adds one network of each remaining
+security type, for looking at the popup. Pass case names (`slow`, `bus-restart`, ...) to
 run a subset.
 
 ## 8. Known limitations
@@ -238,10 +273,8 @@ run a subset.
   this applet currently covers Wi-Fi (and wired is out of scope for a Wi-Fi applet).
 - **Connectivity is informational.** The `Connectivity`/captive-portal states are
   read but there is no "log in to this network" affordance yet.
-- **Security is summarised as a lock.** The list shows a lock for any secured
-  network; it does not yet distinguish WEP/WPA/WPA2/WPA3/SAE.
-- **The password is always sent as a WPA-PSK.** For enterprise (802.1X) networks
-  the agent path would need the full set of secrets.
+- **No 802.1X set-up.** Enterprise networks need an identity, an EAP method and
+  certificates; the popup sends the user to Network Settings for those, and
+  connects to them once a profile exists.
 - **The popup does not close on an outside click** (like the battery applet's): it
   closes on the applet click or Escape.
-- **No arrow-key navigation of the list** yet; rows are opened with the mouse.

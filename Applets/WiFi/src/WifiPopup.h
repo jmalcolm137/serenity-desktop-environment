@@ -46,6 +46,7 @@ class WifiRow final : public GUI::Widget {
 public:
     static constexpr int line_height = 26;
     static constexpr int actions_height = 34;
+    static constexpr int options_height = 30;
 
     virtual ~WifiRow() override = default;
 
@@ -56,12 +57,16 @@ public:
     ByteString password() const;
     void set_password(ByteString const&);
     void focus_password();
-    int height_for_state() const { return line_height + (m_open ? actions_height : 0); }
+    int height_for_state() const { return line_height + (m_open ? actions_height + (m_network.saved ? options_height : 0) : 0); }
+    void set_selected(bool);
+    bool is_selected() const { return m_selected; }
 
     Function<void()> on_toggle;
     Function<void()> on_action;
     Function<void()> on_cancel;
     Function<void(ByteString const&)> on_password_edited;
+    Function<void(bool)> on_autoconnect_changed;
+    Function<void()> on_forget;
 
 private:
     WifiRow();
@@ -69,11 +74,14 @@ private:
     virtual void paint_event(GUI::PaintEvent&) override;
     virtual void resize_event(GUI::ResizeEvent&) override;
     virtual void mousedown_event(GUI::MouseEvent&) override;
+    virtual void mouseup_event(GUI::MouseEvent&) override;
     virtual void mousemove_event(GUI::MouseEvent&) override;
     virtual void leave_event(Core::Event&) override;
     virtual void keydown_event(GUI::KeyEvent&) override;
 
     void layout_actions();
+    void update_controls();
+    void disarm_forget();
 
     WifiNetwork m_network;
     WifiRowStatus m_status { WifiRowStatus::None };
@@ -81,6 +89,12 @@ private:
     bool m_hovered { false };
     RefPtr<GUI::TextBox> m_password_box;
     RefPtr<GUI::Button> m_action_button;
+    RefPtr<GUI::CheckBox> m_autoconnect_box;
+    RefPtr<GUI::Button> m_forget_button;
+    RefPtr<Core::Timer> m_forget_disarm_timer;
+    bool m_forget_armed { false };
+    bool m_selected { false };
+    bool m_pressed { false };
     bool m_wants_password { false };
 };
 
@@ -140,6 +154,9 @@ private:
     bool wants_password(WifiNetwork const&) const;
     void toggle_row(ByteString const& ssid);
     void row_action(ByteString const& ssid);
+    void move_selection(int delta);
+    void update_selection();
+    WifiNetwork const* network_for(ByteString const& ssid) const;
     void start_attempt(ByteString const& ssid);
     void submit_password();
     void set_hidden_form_visible(bool);
@@ -163,6 +180,7 @@ private:
 
     ByteString m_filter;
     ByteString m_open_ssid;
+    ByteString m_selected_ssid;
     Optional<Function<void(Optional<ByteString>)>> m_password_callback;
     ByteString m_password_ssid;
     ByteString m_password_draft;

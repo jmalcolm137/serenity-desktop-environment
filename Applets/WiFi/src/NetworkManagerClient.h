@@ -16,6 +16,27 @@
 
 #include <dbus/dbus.h>
 
+// How a network is secured, from its access point's flags. This decides what
+// the user is asked for and how the connection is set up.
+enum class WifiSecurity {
+    Open,        // no encryption
+    EnhancedOpen, // OWE: encrypted, but no password
+    Wep,         // WEP (obsolete; a key)
+    Personal,    // WPA/WPA2 personal (a passphrase), possibly also WPA3
+    Wpa3Personal, // WPA3 (SAE) only
+    Enterprise,  // 802.1X: certificates and an identity, set up elsewhere
+};
+
+struct WifiSecurityInfo {
+    WifiSecurity type { WifiSecurity::Open };
+    // As the user knows it: "WPA2", "WPA2/WPA3", "WPA3 Enterprise", "Open", ...
+    StringView label;
+};
+
+// From an access point's Flags, WpaFlags and RsnFlags (NM80211ApFlags and
+// NM80211ApSecurityFlags).
+WifiSecurityInfo classify_wifi_security(unsigned flags, unsigned wpa_flags, unsigned rsn_flags);
+
 // One visible Wi-Fi network (one SSID, the strongest access point for it),
 // mirroring what plasma-nm shows in its list.
 struct WifiNetwork {
@@ -25,9 +46,17 @@ struct WifiNetwork {
     int strength { 0 };
     int frequency { 0 };
     bool secured { false };
+    WifiSecurity security { WifiSecurity::Open };
+    StringView security_label { "Open"sv };
     bool connected { false };
     bool saved { false };
     ByteString saved_connection_path;
+    // The saved profile's connection.autoconnect: whether NetworkManager joins
+    // this network by itself when it is in range.
+    bool autoconnect { true };
+
+    // Joining it needs something typed in (a passphrase or a WEP key).
+    bool needs_password() const { return security == WifiSecurity::Personal || security == WifiSecurity::Wpa3Personal || security == WifiSecurity::Wep; }
 };
 
 struct NetworkState {
@@ -77,6 +106,11 @@ public:
     void set_wireless_enabled(bool);
     void connect_to(WifiNetwork const& network, Optional<ByteString> psk);
     void disconnect(WifiNetwork const& network);
+    // Whether NetworkManager may join a saved network by itself. The profile and
+    // its password stay, so the user can still connect with a click.
+    void set_autoconnect(WifiNetwork const& network, bool);
+    // Delete the saved profile, password and all.
+    void forget(WifiNetwork const& network);
     void request_scan();
 
     // Re-read everything from NetworkManager and (if it changed) notify. Returns

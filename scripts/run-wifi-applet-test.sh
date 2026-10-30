@@ -10,6 +10,8 @@
 #   * the applet reads the mock's networks and the active connection;
 #   * it maps as the "serenity-applet:WiFi" layer surface;
 #   * a passphrase typed into the popup reaches NetworkManager, intact;
+#   * unticking "Connect automatically" on a saved network turns its
+#     autoconnect off, keeping its password;
 #   * the Taskbar's applet area places Wi-Fi immediately to the left of Battery.
 set -euo pipefail
 
@@ -99,6 +101,7 @@ done
 APPLET_X="$(sed -nE "s/.*'WiFi' [0-9]+x[0-9]+\+([0-9]+),.*/\1/p" <<<"$LAYOUT")"
 APPLET_Y="$(sed -nE "s/.*'WiFi' [0-9]+x[0-9]+\+[0-9]+,([0-9]+).*/\1/p" <<<"$LAYOUT")"
 VI_PID=""
+OPEN_AFTER_ENTER=""
 if [[ -n "$APPLET_X" && -n "$APPLET_Y" ]]; then
     # The first virtual device opens the popup and stays connected: a keyboard
     # that appears after the popup took the focus is a different case from the
@@ -127,6 +130,35 @@ if [[ -n "$APPLET_X" && -n "$APPLET_Y" ]]; then
             --key 18 press --key 18 release --sleep 50 --key 20 press --key 20 release --sleep 50 \
             --key 28 press --key 28 release --sleep 600 --linger 600 >/dev/null 2>&1 || true
     fi
+    # Enter in the passphrase field connects and closes the row. (The popup's
+    # list keys once took the same Enter and opened the row again.)
+    sleep 0.5
+    OPEN_AFTER_ENTER="$(grep -oE "layout row 'OpenGuest' [0-9]+x[0-9]+" "$RUNTIME/comp.log" | tail -1 || true)"
+
+    # Open the saved MockNet and untick "Connect automatically": NetworkManager
+    # must get the profile back with autoconnect off.
+    row_of() { grep -oE "layout row '$1' [0-9]+x[0-9]+\+[0-9]+,[0-9]+" "$RUNTIME/comp.log" | tail -1 || true; }
+    ROW="$(row_of MockNet)"
+    ROW_X="$(sed -nE 's/.*\+([0-9]+),([0-9]+)$/\1/p' <<<"$ROW")"
+    ROW_Y="$(sed -nE 's/.*\+([0-9]+),([0-9]+)$/\2/p' <<<"$ROW")"
+    if [[ -n "$ROW_X" && -n "$ROW_Y" ]]; then
+        WAYLAND_DISPLAY="$SOCK" "$VI" --extent 1280 720 \
+            --move $((ROW_X + 60)) $((ROW_Y + 12)) --sleep 400 --button 0x110 press --sleep 150 --button 0x110 release \
+            --sleep 1200 --linger 300 >/dev/null 2>&1 || true
+        # The open row is taller and the popup may have moved: read it again.
+        for _ in $(seq 1 30); do
+            ROW="$(row_of MockNet)"
+            [[ "$ROW" =~ \ [0-9]+x90\+ ]] && break
+            sleep 0.1
+        done
+        ROW_X="$(sed -nE 's/.*\+([0-9]+),([0-9]+)$/\1/p' <<<"$ROW")"
+        ROW_Y="$(sed -nE 's/.*\+([0-9]+),([0-9]+)$/\2/p' <<<"$ROW")"
+        # The check box sits on the row's third line, at the text column.
+        WAYLAND_DISPLAY="$SOCK" "$VI" --extent 1280 720 \
+            --move $((ROW_X + 40)) $((ROW_Y + 26 + 34 + 13)) --sleep 400 --button 0x110 press --sleep 150 --button 0x110 release \
+            --sleep 1200 --linger 300 >/dev/null 2>&1 || true
+    fi
+
     kill "$VI_PID" 2>/dev/null || true
     wait "$VI_PID" 2>/dev/null || true
 fi
@@ -157,6 +189,17 @@ check "layer surface namespace='serenity-applet:WiFi' layer=top"
 # on_demand layer surface, through the applet, to AddAndActivateConnection.
 check "mock-networkmanager: org.freedesktop.NetworkManager.AddAndActivateConnection" "$RUNTIME/mock.log"
 check "mock-networkmanager: add psk=secret" "$RUNTIME/mock.log"
+
+if [[ "$OPEN_AFTER_ENTER" == *"x26" ]]; then
+    echo "  ok: Enter in the passphrase field connected and closed the row"
+else
+    echo "  MISSING: the row closed after Enter ($OPEN_AFTER_ENTER)"
+    fail=1
+fi
+
+# Unticking "Connect automatically" on the saved MockNet sent its whole profile
+# back with autoconnect off and without secrets, so the password is kept.
+check "mock-networkmanager: update id=MockNet ssid=MockNet autoconnect=false secrets=no" "$RUNTIME/mock.log"
 
 # The applet area must place Wi-Fi immediately to the left of Battery.
 LAYOUT="$(grep -oE "'Battery' [0-9]+x[0-9]+\+[0-9]+,[0-9]+; 'WiFi' [0-9]+x[0-9]+\+[0-9]+,[0-9]+" "$RUNTIME/comp.log" | tail -1)"

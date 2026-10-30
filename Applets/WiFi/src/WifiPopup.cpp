@@ -176,21 +176,25 @@ void WifiRow::set_network(WifiNetwork const& network, WifiRowStatus status)
 {
     m_network = network;
     m_status = status;
-    if (m_action_button)
-        m_action_button->set_text(m_network.connected ? "Disconnect"_string : "Connect"_string);
+    update_controls();
+    update();
+}
+
+void WifiRow::set_selected(bool selected)
+{
+    if (m_selected == selected)
+        return;
+    m_selected = selected;
     update();
 }
 
 void WifiRow::set_open(bool open, bool wants_password)
 {
-    if (m_open == open && m_wants_password == wants_password) {
-        if (m_action_button)
-            m_action_button->set_text(m_network.connected ? "Disconnect"_string : "Connect"_string);
-        return;
-    }
+    bool const opened = open && !m_open;
     m_open = open;
     m_wants_password = wants_password;
-    set_fixed_height(height_for_state());
+    if (!m_open || opened)
+        disarm_forget();
 
     if (m_open && !m_action_button) {
         m_action_button = add<GUI::Button>();
@@ -200,10 +204,6 @@ void WifiRow::set_open(bool open, bool wants_password)
                 on_action();
         };
     }
-    if (m_action_button) {
-        m_action_button->set_text(m_network.connected ? "Disconnect"_string : "Connect"_string);
-        m_action_button->set_visible(m_open);
-    }
 
     if (m_open && m_wants_password && !m_password_box) {
         // A PasswordBox masks what is typed; a TextBox marked secret only stops
@@ -211,7 +211,6 @@ void WifiRow::set_open(bool open, bool wants_password)
         auto& password_box = add<GUI::PasswordBox>();
         password_box.set_show_reveal_button(true);
         m_password_box = password_box;
-        m_password_box->set_placeholder("Password"_string);
         m_password_box->on_return_pressed = [this] {
             if (on_action)
                 on_action();
@@ -225,11 +224,67 @@ void WifiRow::set_open(bool open, bool wants_password)
                 on_password_edited(m_password_box->text());
         };
     }
-    if (m_password_box)
-        m_password_box->set_visible(m_open && m_wants_password);
 
-    layout_actions();
+    if (m_open && m_network.saved && !m_autoconnect_box) {
+        m_autoconnect_box = add<GUI::CheckBox>("Connect automatically"_string);
+        m_autoconnect_box->set_focus_policy(GUI::FocusPolicy::TabFocus);
+        m_autoconnect_box->set_tooltip("Join this network by itself whenever it is in range"_string);
+        m_autoconnect_box->on_checked = [this](bool checked) {
+            if (on_autoconnect_changed)
+                on_autoconnect_changed(checked);
+        };
+        m_forget_button = add<GUI::Button>("Forget"_string);
+        m_forget_button->set_focus_policy(GUI::FocusPolicy::TabFocus);
+        m_forget_button->on_click = [this](auto) {
+            // Forgetting loses the password, so it takes a second click.
+            if (!m_forget_armed) {
+                m_forget_armed = true;
+                m_forget_button->set_text("Confirm"_string);
+                m_forget_button->set_tooltip("Click again to delete the saved password and settings"_string);
+                m_forget_disarm_timer = Core::Timer::create_single_shot(4000, [this] { disarm_forget(); });
+                m_forget_disarm_timer->start();
+                return;
+            }
+            disarm_forget();
+            if (on_forget)
+                on_forget();
+        };
+    }
+
+    update_controls();
     update();
+}
+
+void WifiRow::disarm_forget()
+{
+    m_forget_armed = false;
+    m_forget_disarm_timer = nullptr;
+    if (m_forget_button) {
+        m_forget_button->set_text("Forget"_string);
+        m_forget_button->set_tooltip("Delete the saved password and settings for this network"_string);
+    }
+}
+
+void WifiRow::update_controls()
+{
+    set_fixed_height(height_for_state());
+    bool const can_act = m_network.connected || m_network.saved || m_network.security != WifiSecurity::Enterprise;
+    if (m_action_button) {
+        m_action_button->set_text(m_network.connected ? "Disconnect"_string : "Connect"_string);
+        m_action_button->set_visible(m_open && can_act);
+    }
+    if (m_password_box) {
+        m_password_box->set_visible(m_open && m_wants_password);
+        m_password_box->set_placeholder(m_network.security == WifiSecurity::Wep ? "WEP key"_string : "Password"_string);
+    }
+    bool const show_options = m_open && m_network.saved;
+    if (m_autoconnect_box) {
+        m_autoconnect_box->set_visible(show_options);
+        m_autoconnect_box->set_checked(m_network.autoconnect, GUI::AllowCallback::No);
+    }
+    if (m_forget_button)
+        m_forget_button->set_visible(show_options);
+    layout_actions();
 }
 
 ByteString WifiRow::password() const
@@ -259,6 +314,11 @@ void WifiRow::layout_actions()
         m_action_button->set_relative_rect({ button_x, y, action_button_width, control_height });
     if (m_password_box)
         m_password_box->set_relative_rect({ text_x, y, max(40, button_x - spacing - text_x), control_height });
+    int const options_y = line_height + actions_height + 1;
+    if (m_forget_button)
+        m_forget_button->set_relative_rect({ button_x, options_y, action_button_width, control_height });
+    if (m_autoconnect_box)
+        m_autoconnect_box->set_relative_rect({ text_x, options_y, max(40, button_x - spacing - text_x), control_height });
 }
 
 void WifiRow::paint_event(GUI::PaintEvent& event)
@@ -271,6 +331,8 @@ void WifiRow::paint_event(GUI::PaintEvent& event)
     auto background = palette().base();
     if (m_open)
         background = background.mixed_with(palette().selection(), 0.16f);
+    else if (m_selected)
+        background = background.mixed_with(palette().selection(), 0.12f);
     else if (m_hovered)
         background = background.mixed_with(palette().selection(), 0.08f);
     painter.fill_rect(rect(), background);
@@ -327,11 +389,21 @@ void WifiRow::paint_event(GUI::PaintEvent& event)
     // Line two (open rows): details, unless the passphrase field takes the room.
     if (m_open && !m_wants_password) {
         StringBuilder details;
-        details.appendff("Signal {}%", m_network.strength);
-        if (auto band = band_name(m_network.frequency); !band.is_empty())
-            details.appendff(" · {}", band);
-        int const button_x = width() - row_padding - action_button_width;
-        painter.draw_text(Gfx::IntRect { text_x, line_height + 1, button_x - spacing - text_x, control_height }, details.string_view(),
+        bool const unsupported = !m_network.saved && !m_network.connected && m_network.security == WifiSecurity::Enterprise;
+        if (unsupported) {
+            // 802.1X needs an identity and certificates, which this popup does not
+            // ask for: say where to set it up instead of failing to connect.
+            details.appendff("{} · set up in Network Settings", m_network.security_label);
+        } else {
+            // Most important first, so a narrow row elides the signal, which the
+            // row's icon already shows.
+            details.append(m_network.security_label);
+            if (auto band = band_name(m_network.frequency); !band.is_empty())
+                details.appendff(" · {}", band);
+            details.appendff(" · {}% signal", m_network.strength);
+        }
+        int const right = unsupported ? width() - row_padding : width() - row_padding - action_button_width - spacing;
+        painter.draw_text(Gfx::IntRect { text_x, line_height + 1, right - text_x, control_height }, details.string_view(),
             font, Gfx::TextAlignment::CenterLeft, quiet, Gfx::TextElision::Right);
     }
 }
@@ -345,7 +417,18 @@ void WifiRow::resize_event(GUI::ResizeEvent& event)
 void WifiRow::mousedown_event(GUI::MouseEvent& event)
 {
     // Only the row's first line toggles it; its controls take their own clicks.
-    if (event.button() == GUI::MouseButton::Primary && event.y() < line_height && on_toggle)
+    m_pressed = event.button() == GUI::MouseButton::Primary && event.y() >= 0 && event.y() < line_height;
+}
+
+void WifiRow::mouseup_event(GUI::MouseEvent& event)
+{
+    // Toggle on release, like a button. Opening a row resizes the popup, which
+    // means mapping its surface again; done on the press, the release went to the
+    // old surface, LibGUI never saw the button come up, and kept sending every
+    // later click to this row.
+    bool const pressed = exchange(m_pressed, false);
+    if (pressed && event.button() == GUI::MouseButton::Primary && event.y() >= 0 && event.y() < line_height
+        && event.x() >= 0 && event.x() < width() && on_toggle)
         on_toggle();
 }
 
@@ -405,6 +488,10 @@ Gfx::IntSize WifiPopup::preferred_size() const
 
 void WifiPopup::build_chrome()
 {
+    // The popup itself takes the keyboard (for the list keys), so it has to be
+    // focusable: otherwise LibGUI hands focus to whichever inner widget it finds
+    // first each time one is added, and that widget swallows the arrow keys.
+    set_focus_policy(GUI::FocusPolicy::StrongFocus);
     set_frame_style(Gfx::FrameStyle::Window);
     set_fill_with_background_color(true);
     set_layout<GUI::VerticalBoxLayout>(GUI::Margins { margin }, spacing);
@@ -525,7 +612,7 @@ bool WifiPopup::wants_password(WifiNetwork const& network) const
         return false;
     // NetworkManager's secret agent asked, or a secured network we have no
     // profile (and so no passphrase) for.
-    return network.ssid == m_password_ssid || (network.secured && !network.saved);
+    return network.ssid == m_password_ssid || (network.needs_password() && !network.saved);
 }
 
 void WifiPopup::update_attempt()
@@ -654,6 +741,20 @@ void WifiPopup::rebuild()
                 schedule_rebuild();
             };
             row.on_password_edited = [this](ByteString const& text) { m_password_draft = text; };
+            row.on_autoconnect_changed = [this, ssid](bool autoconnect) {
+                if (auto const* network = network_for(ssid); network && m_client)
+                    m_client->set_autoconnect(*network, autoconnect);
+            };
+            row.on_forget = [this, ssid] {
+                if (auto const* network = network_for(ssid); network && m_client) {
+                    dbgln("WifiApplet: forget ssid='{}'", ssid);
+                    m_client->forget(*network);
+                }
+                if (m_failed_ssid == ssid)
+                    m_failed_ssid = {};
+                m_open_ssid = {};
+                schedule_rebuild();
+            };
             m_rows.append(row);
         }
     }
@@ -673,7 +774,7 @@ void WifiPopup::rebuild()
             row.set_password(m_password_draft);
             if (!was_open)
                 row.focus_password();
-            open_extra = WifiRow::actions_height;
+            open_extra = row.height_for_state() - WifiRow::line_height;
         }
         list_content += WifiRow::line_height;
     }
@@ -695,6 +796,28 @@ void WifiPopup::rebuild()
     int visible = min(list_content, max_visible_rows * WifiRow::line_height) + open_extra;
     m_scroll->set_fixed_height(visible + 2 * list_frame);
     m_list->set_min_height(list_content + open_extra);
+
+    // The keyboard goes back to the list when what had it is gone from view: a
+    // closed row's field is hidden, not destroyed, and would keep taking the
+    // keys. A field or button that is still showing keeps it (Tab put it there).
+    auto shown_on_screen = [](GUI::Widget const* widget) {
+        for (; widget; widget = widget->parent_widget()) {
+            if (!widget->is_visible())
+                return false;
+        }
+        return true;
+    };
+    if (auto* focused = window() ? window()->focused_widget() : nullptr; !focused || !shown_on_screen(focused))
+        set_focus(true);
+
+    // A selected network that has gone keeps no selection behind.
+    bool selection_listed = false;
+    for (auto const& network : shown)
+        selection_listed |= network.ssid == m_selected_ssid;
+    if (!selection_listed)
+        m_selected_ssid = {};
+    for (auto& row : m_rows)
+        row->set_selected(row->ssid() == m_selected_ssid);
 
     if (on_preferred_size_changed)
         on_preferred_size_changed();
@@ -735,6 +858,7 @@ void WifiPopup::schedule_rebuild()
 
 void WifiPopup::toggle_row(ByteString const& ssid)
 {
+    m_selected_ssid = ssid;
     if (m_open_ssid == ssid) {
         if (m_password_ssid == ssid)
             cancel_password();
@@ -769,6 +893,10 @@ void WifiPopup::row_action(ByteString const& ssid)
         schedule_rebuild();
         return;
     }
+
+    // An 802.1X network has to be set up with its identity and certificates.
+    if (network->security == WifiSecurity::Enterprise && !network->saved)
+        return;
 
     if (wants_password(*network)) {
         if (m_password_draft.is_empty()) {
@@ -863,6 +991,9 @@ void WifiPopup::connect_hidden()
     WifiNetwork network;
     network.ssid = ssid;
     network.secured = !m_hidden_password->text().is_empty();
+    // A hidden network is not in the scan, so its security is not known: with a
+    // password, WPA-PSK (which WPA2/WPA3 transition networks also accept).
+    network.security = network.secured ? WifiSecurity::Personal : WifiSecurity::Open;
     network.device_path = m_client->state().wifi_device_path;
     m_client->connect_to(network, network.secured ? Optional<ByteString> { m_hidden_password->text() } : Optional<ByteString> {});
     start_attempt(ssid);
@@ -893,6 +1024,7 @@ void WifiPopup::restore_focus()
 
 void WifiPopup::popup_shown()
 {
+    m_selected_ssid = {};
     m_failed_ssid = {};
     rebuild();
 }
@@ -908,8 +1040,85 @@ void WifiPopup::popup_hidden()
         set_hidden_form_visible(false);
 }
 
+WifiNetwork const* WifiPopup::network_for(ByteString const& ssid) const
+{
+    if (!m_client)
+        return nullptr;
+    for (auto const& network : m_client->networks()) {
+        if (network.ssid == ssid)
+            return &network;
+    }
+    return nullptr;
+}
+
+void WifiPopup::update_selection()
+{
+    for (auto& row : m_rows) {
+        bool selected = row->ssid() == m_selected_ssid;
+        row->set_selected(selected);
+        if (selected && m_scroll)
+            m_scroll->scroll_into_view(row->relative_rect(), false, true);
+    }
+}
+
+void WifiPopup::move_selection(int delta)
+{
+    if (m_rows.is_empty())
+        return;
+    Optional<size_t> current;
+    for (size_t i = 0; i < m_rows.size(); ++i) {
+        if (m_rows[i]->ssid() == m_selected_ssid)
+            current = i;
+    }
+    size_t next = 0;
+    if (!current.has_value())
+        next = delta > 0 ? 0 : m_rows.size() - 1;
+    else
+        next = static_cast<size_t>(clamp(static_cast<int>(*current) + delta, 0, static_cast<int>(m_rows.size()) - 1));
+    m_selected_ssid = m_rows[next]->ssid();
+    update_selection();
+}
+
 void WifiPopup::keydown_event(GUI::KeyEvent& event)
 {
+    // The list from the keyboard: Up and Down select a network, Enter or Space
+    // opens it, and on an open one, does what its button says. Not while a text
+    // field has the keyboard: it has already acted on Enter (a passphrase field
+    // connects) without consuming the key, and the key arriving here as well
+    // would reopen the row it just closed.
+    auto const* focused = window() ? window()->focused_widget() : nullptr;
+    bool const typing = focused && is<GUI::TextEditor>(*focused);
+    if (!typing && (!m_hidden_form || !m_hidden_form->is_visible())) {
+        switch (event.key()) {
+        case Key_Up:
+        case Key_Down:
+            move_selection(event.key() == Key_Up ? -1 : 1);
+            event.accept();
+            return;
+        case Key_Home:
+        case Key_End:
+            if (!m_rows.is_empty()) {
+                m_selected_ssid = m_rows[event.key() == Key_Home ? 0 : m_rows.size() - 1]->ssid();
+                update_selection();
+            }
+            event.accept();
+            return;
+        case Key_Return:
+        case Key_Space:
+            if (!m_selected_ssid.is_empty()) {
+                if (m_open_ssid != m_selected_ssid)
+                    toggle_row(m_selected_ssid);
+                else if (auto const* network = network_for(m_selected_ssid); network && !wants_password(*network))
+                    row_action(m_selected_ssid);
+                event.accept();
+                return;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
     if (event.key() == Key_Escape) {
         if (!m_open_ssid.is_empty()) {
             if (!m_password_ssid.is_empty())

@@ -236,6 +236,8 @@ void test_reads_networkmanager()
     expect(client->state().wifi_device_path == "/org/freedesktop/NetworkManager/Devices/1"sv, "the Wi-Fi device is known");
     expect(client->state().wireless_enabled && !client->state().connecting, "wireless on, not connecting");
     expect(environment.mock_calls("AgentManager.Register"sv) == 1, "registered as a secret agent once");
+    expect(mocknet.has_value() && mocknet->security == WifiSecurity::Personal && mocknet->security_label == "WPA2"sv, "MockNet is WPA2 personal");
+    expect(mocknet.has_value() && mocknet->autoconnect, "MockNet's profile connects automatically");
 }
 
 void test_slow_networkmanager_does_not_block()
@@ -394,6 +396,91 @@ void test_bus_not_up_yet()
     expect(pump.until([&] { return shows_mock_networks(*client); }, 8000), "it connects once the bus and NetworkManager are up");
 }
 
+void test_security_classification()
+{
+    outln("=== security types, from the access point's flags ===");
+    constexpr unsigned privacy = 0x1, psk = 0x100, eap = 0x200, sae = 0x400, owe = 0x800, suite_b = 0x2000, ccmp = 0x8, tkip = 0x4;
+    struct Case {
+        unsigned flags, wpa, rsn;
+        WifiSecurity type;
+        StringView label;
+    };
+    Case const cases[] = {
+        { 0, 0, 0, WifiSecurity::Open, "Open"sv },
+        { privacy, 0, 0, WifiSecurity::Wep, "WEP"sv },
+        { privacy, psk | tkip, 0, WifiSecurity::Personal, "WPA"sv },
+        { privacy, 0, psk | ccmp, WifiSecurity::Personal, "WPA2"sv },
+        { privacy, psk | tkip, psk | ccmp, WifiSecurity::Personal, "WPA/WPA2"sv },
+        { privacy, 0, psk | sae | ccmp, WifiSecurity::Personal, "WPA2/WPA3"sv },
+        { privacy, 0, sae | ccmp, WifiSecurity::Wpa3Personal, "WPA3"sv },
+        { privacy, 0, owe | ccmp, WifiSecurity::EnhancedOpen, "Enhanced Open"sv },
+        { privacy, 0, eap | ccmp, WifiSecurity::Enterprise, "WPA2 Enterprise"sv },
+        { privacy, eap | tkip, 0, WifiSecurity::Enterprise, "WPA Enterprise"sv },
+        { privacy, 0, suite_b | ccmp, WifiSecurity::Enterprise, "WPA3 Enterprise"sv },
+    };
+    for (auto const& test_case : cases) {
+        auto info = classify_wifi_security(test_case.flags, test_case.wpa, test_case.rsn);
+        expect(info.type == test_case.type && info.label == test_case.label,
+            ByteString::formatted("flags={:#x} wpa={:#x} rsn={:#x} -> {} (got {})", test_case.flags, test_case.wpa, test_case.rsn, test_case.label, info.label));
+    }
+}
+
+void test_autoconnect_and_forget()
+{
+    outln("=== stop joining a network automatically, then forget it ===");
+    Environment environment;
+    Pump pump;
+    auto client = make_client(pump);
+    if (!pump.until([&] { return shows_mock_networks(*client); }, 3000)) {
+        expect(false, "initial refresh");
+        return;
+    }
+
+    client->set_autoconnect(*network_named(*client, "MockNet"sv), false);
+    expect(pump.until([&] { auto n = network_named(*client, "MockNet"sv); return n.has_value() && !n->autoconnect; }, 3000), "MockNet no longer connects automatically");
+    // The whole profile went back to NetworkManager, without its secrets (which
+    // it therefore keeps).
+    expect(environment.mock_calls("update id=MockNet ssid=MockNet autoconnect=false secrets=no"sv) == 1, "the update kept the profile and left the stored password alone");
+    auto mocknet = network_named(*client, "MockNet"sv);
+    expect(mocknet.has_value() && mocknet->saved && mocknet->connected, "it is still saved, and still connected");
+
+    client->set_autoconnect(*network_named(*client, "MockNet"sv), true);
+    expect(pump.until([&] { auto n = network_named(*client, "MockNet"sv); return n.has_value() && n->autoconnect; }, 3000), "and connects automatically again when asked");
+    expect(environment.mock_calls("autoconnect=true secrets=no"sv) == 1, "NetworkManager got the change back");
+
+    client->forget(*network_named(*client, "MockNet"sv));
+    expect(pump.until([&] { auto n = network_named(*client, "MockNet"sv); return n.has_value() && !n->saved; }, 3000), "Forget: MockNet is no longer saved");
+    expect(environment.mock_calls("delete /org/freedesktop/NetworkManager/Settings/1"sv) == 1, "its profile was deleted");
+    expect(pump.longest_stall_ms < stall_budget_ms, ByteString::formatted("the event loop kept running (longest stall {}ms)", pump.longest_stall_ms));
+}
+
+void test_joining_by_security()
+{
+    outln("=== new networks are set up for how they are secured ===");
+    Environment environment;
+    Pump pump;
+    auto client = make_client(pump);
+    if (!pump.until([&] { return shows_mock_networks(*client); }, 3000)) {
+        expect(false, "initial refresh");
+        return;
+    }
+    client->request_scan();
+    pump.until([&] { return has_network(*client, "ScanFound"sv); }, 3000);
+    auto wpa3 = network_named(*client, "ScanFound"sv);
+    expect(wpa3.has_value() && wpa3->security == WifiSecurity::Wpa3Personal && wpa3->needs_password(), "ScanFound is WPA3-only and needs a password");
+    if (wpa3.has_value()) {
+        client->connect_to(*wpa3, ByteString { "sae-pass" });
+        expect(pump.until([&] { return environment.mock_calls("add ssid=ScanFound key-mgmt=sae hidden=false"sv) == 1; }, 3000), "a WPA3-only network is joined with SAE, not WPA-PSK");
+    }
+
+    WifiNetwork hidden;
+    hidden.ssid = "Secret";
+    hidden.security = WifiSecurity::Personal;
+    hidden.secured = true;
+    client->connect_to(hidden, ByteString { "hidden-pass" });
+    expect(pump.until([&] { return environment.mock_calls("add ssid=Secret key-mgmt=wpa-psk hidden=true"sv) == 1; }, 3000), "a hidden network's profile is marked hidden, so NetworkManager probes for it");
+}
+
 void test_destroyed_with_calls_in_flight()
 {
     outln("=== the client is destroyed with calls in flight ===");
@@ -442,6 +529,9 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
         { "bus-restart"sv, test_bus_restart },
         { "bus-late"sv, test_bus_not_up_yet },
         { "destroyed"sv, test_destroyed_with_calls_in_flight },
+        { "security"sv, test_security_classification },
+        { "autoconnect"sv, test_autoconnect_and_forget },
+        { "joining"sv, test_joining_by_security },
     };
     // Any further arguments pick cases by name.
     for (auto const& test_case : cases) {
