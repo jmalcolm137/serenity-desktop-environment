@@ -10,6 +10,7 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$SDE_ROOT/scripts/lib/test-env.sh"
 WRAPPER="$SDE_ROOT/scripts/sde-shell.sh"
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-shell-restart.XXXXXX")"
 chmod 700 "$RUNTIME"

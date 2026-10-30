@@ -83,10 +83,17 @@ def test_name(path):
     return os.path.basename(path)[len('run-'):-len('-test.sh')]
 
 
+# Every test sources the shared environment right after SDE_ROOT. It is not part
+# of what this tool recognises or replaces: it is taken out before matching and
+# put back after SDE_ROOT in the migrated script.
+TEST_ENV_LINE = '. "$SDE_ROOT/scripts/lib/test-env.sh"\n'
+
+
 def migrate(path):
     src = open(path).read()
     if 'scripts/lib/testlib.sh' in src:
         return None, 'already migrated'
+    src = src.replace(TEST_ENV_LINE, '', 1)
 
     roots, start = ROOTS.search(src), START.search(src)
     runtime = RUNTIME_HEAD.search(src)
@@ -129,6 +136,7 @@ def migrate(path):
 
     out = src[:roots.start()]
     out += ('SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"\n'
+            + TEST_ENV_LINE +
             '. "$SDE_ROOT/scripts/lib/testlib.sh"\n'
             f'sde_test_init {test_name(path)}\n'
             'sde_test_export_roots\n')

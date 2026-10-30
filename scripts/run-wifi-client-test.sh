@@ -8,6 +8,7 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$SDE_ROOT/scripts/lib/test-env.sh"
 MOCK="$SDE_ROOT/build/tools/mock-networkmanager"
 
 "$SDE_ROOT/scripts/build-tests.sh" libwm-wifi-client-test >/dev/null

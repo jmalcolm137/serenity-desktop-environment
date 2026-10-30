@@ -17,6 +17,7 @@ export SDE_USER_DIRS_UPDATE=0
 export SDE_XDG_DATA_UPDATE=0
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$SDE_ROOT/scripts/lib/test-env.sh"
 LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
 SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
 BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"

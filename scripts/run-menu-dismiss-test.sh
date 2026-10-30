@@ -14,6 +14,7 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$SDE_ROOT/scripts/lib/test-env.sh"
 . "$SDE_ROOT/scripts/lib/testlib.sh"
 sde_test_init menu-dismiss
 sde_test_export_roots

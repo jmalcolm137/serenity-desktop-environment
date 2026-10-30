@@ -6,6 +6,7 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$SDE_ROOT/scripts/lib/test-env.sh"
 
 "$SDE_ROOT/scripts/build-tests.sh" libwm-config-rules-test >/dev/null
 exec "$SDE_ROOT/build/test/libwm-config-rules-test"

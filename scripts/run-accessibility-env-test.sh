@@ -8,6 +8,7 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$SDE_ROOT/scripts/lib/test-env.sh"
 HELPER="$SDE_ROOT/scripts/sde-accessibility.sh"
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-accessibility-env.XXXXXX")"
 chmod 700 "$RUNTIME"

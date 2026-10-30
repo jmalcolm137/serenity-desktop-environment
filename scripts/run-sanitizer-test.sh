@@ -13,6 +13,7 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$SDE_ROOT/scripts/lib/test-env.sh"
 SANITIZE="${SDE_SANITIZE:-address}"
 SAN_BUILD="${SDE_SANITIZE_BUILD_DIR:-$SDE_ROOT/build-$SANITIZE}"
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-sanitizer.XXXXXX")"

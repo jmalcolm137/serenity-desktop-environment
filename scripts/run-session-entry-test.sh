@@ -6,6 +6,7 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$SDE_ROOT/scripts/lib/test-env.sh"
 INSTALL="$SDE_ROOT/scripts/install-session.sh"
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-sessionentry.XXXXXX")"

@@ -10,6 +10,7 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$SDE_ROOT/scripts/lib/test-env.sh"
 # Help reads /usr/share/man directly; verifying an installed tree means mounting
 # the staged manuals there. That needs a private mount namespace. Docker's default
 # seccomp policy denies unshare(), so the CI container cannot run this check even

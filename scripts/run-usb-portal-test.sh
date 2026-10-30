@@ -13,6 +13,7 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$SDE_ROOT/scripts/lib/test-env.sh"
 PORTAL="$SDE_ROOT/build/tools/xdg-desktop-portal-serenity"
 
 "$SDE_ROOT/scripts/build-tools.sh" >/dev/null

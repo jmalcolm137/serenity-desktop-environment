@@ -10,6 +10,7 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$SDE_ROOT/scripts/lib/test-env.sh"
 DRIVER="$SDE_ROOT/scripts/run-all-tests.sh"
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-guard.XXXXXX")"
 chmod 700 "$RUNTIME"

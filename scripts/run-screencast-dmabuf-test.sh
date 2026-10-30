@@ -13,6 +13,7 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$SDE_ROOT/scripts/lib/test-env.sh"
 
 if [ "${1:-}" != "--inner" ]; then
     if [[ -z "${WAYLAND_DISPLAY:-}" ]]; then

@@ -8,6 +8,7 @@
 # the failures. This is that code, once:
 #
 #   SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+#   . "$SDE_ROOT/scripts/lib/test-env.sh"   # the runner's environment, run by hand too
 #   . "$SDE_ROOT/scripts/lib/testlib.sh"
 #   sde_test_init virtual-touch
 #   sde_test_build WindowServer

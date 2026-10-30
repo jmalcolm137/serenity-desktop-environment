@@ -263,6 +263,10 @@ export SDE_BACKENDS="${SDE_BACKENDS:-headless}"
 : "${LIBGUI_WAYLAND_ROOT:=$SDE_ROOT/../libgui-wayland}"
 export SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$LIBGUI_WAYLAND_ROOT/serenity/Base/res}"
 
+# The tests source scripts/lib/test-env.sh, which applies these same defaults when
+# a test is run by hand. Here they are already set (per test, below), so say so.
+export SDE_TEST_ENV=runner
+
 # Nothing a test starts may reach the live session's files, sockets or services.
 # The session exports these to everything it runs — including the shell this driver
 # is launched from — so drop them and give the tests their own.

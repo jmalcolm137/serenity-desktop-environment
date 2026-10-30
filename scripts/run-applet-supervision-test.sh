@@ -7,6 +7,7 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$SDE_ROOT/scripts/lib/test-env.sh"
 SUPERVISOR="$SDE_ROOT/scripts/sde-supervise-applet.sh"
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-supervise.XXXXXX")"

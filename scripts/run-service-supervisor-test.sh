@@ -8,6 +8,7 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$SDE_ROOT/scripts/lib/test-env.sh"
 SUPERVISOR="$SDE_ROOT/scripts/sde-service-supervisor.sh"
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-service-supervisor.XXXXXX")"
 chmod 700 "$RUNTIME"

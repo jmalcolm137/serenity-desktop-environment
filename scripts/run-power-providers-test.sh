@@ -5,6 +5,7 @@
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$SDE_ROOT/scripts/lib/test-env.sh"
 POWER="$SDE_ROOT/scripts/sde-power.sh"
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-power.XXXXXX")"

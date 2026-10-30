@@ -10,6 +10,7 @@ export SDE_USER_DIRS_UPDATE=0
 export SDE_XDG_DATA_UPDATE=0
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$SDE_ROOT/scripts/lib/test-env.sh"
 SDE="$SDE_ROOT/scripts/sde-session.sh"
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-env.XXXXXX")"
