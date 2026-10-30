@@ -51,6 +51,30 @@ install_if_executable() {
     fi
 }
 
+# Replacing a file in place fails with ETXTBSY when the target is a running
+# executable, and rewriting a mapped shared library corrupts clients that are
+# still using it. Copy beside the target and rename over it instead: the old
+# inode stays alive for running processes, new starts pick up the new file.
+replace_file() {
+    local source="$1" destination="$2"
+    local temporary="${destination%/*}/.${destination##*/}.new"
+    cp -a "$source" "$temporary"
+    mv -f "$temporary" "$destination"
+}
+
+copy_tree_replacing_files() {
+    local source="$1" destination="$2"
+    install -d "$destination"
+    for entry in "$source"/*; do
+        [[ -e "$entry" || -L "$entry" ]] || continue
+        if [[ -d "$entry" ]]; then
+            copy_tree_replacing_files "$entry" "$destination/${entry##*/}"
+        else
+            replace_file "$entry" "$destination/${entry##*/}"
+        fi
+    done
+}
+
 echo "==> installing to $DEST"
 # The SDE's own programs. The test clients are deliberately not installed.
 install_if_executable "$SDE_ROOT/build/WindowServer/WindowServer"
@@ -116,10 +140,13 @@ fi
 # tree.
 if [[ "$WITHOUT_FRAMEWORK" -eq 0 ]]; then
     if [[ -d "$BUILD/bin" ]]; then
-        cp -a "$BUILD/bin/." "$BIN/"
+        copy_tree_replacing_files "$BUILD/bin" "$BIN"
     fi
     if [[ -d "$BUILD/lib" ]]; then
-        cp -a "$BUILD/lib/"*.so* "$LIB/"
+        for library in "$BUILD/lib/"*.so*; do
+            [[ -e "$library" || -L "$library" ]] || continue
+            replace_file "$library" "$LIB/${library##*/}"
+        done
     fi
 
     # Resources and the skeleton user config. Installed trees flatten Base/res and

@@ -32,13 +32,37 @@ done
 DEST="${DESTDIR}${PREFIX}"
 install -d "$DEST/bin" "$DEST/lib" "$DEST/share/res" "$DEST/share/skeleton" "$DEST/framework"
 
+# Replacing a file in place fails with ETXTBSY when the target is a running
+# executable, and rewriting a mapped shared library corrupts clients that still
+# have it mapped. Copy beside the target and rename over it instead.
+replace_file() {
+    local source="$1" destination="$2"
+    local temporary="${destination%/*}/.${destination##*/}.new"
+    cp -a "$source" "$temporary"
+    mv -f "$temporary" "$destination"
+}
+
+copy_tree_replacing_files() {
+    local source="$1" destination="$2"
+    install -d "$destination"
+    for entry in "$source"/*; do
+        [[ -e "$entry" || -L "$entry" ]] || continue
+        if [[ -d "$entry" ]]; then
+            copy_tree_replacing_files "$entry" "$destination/${entry##*/}"
+        else
+            replace_file "$entry" "$destination/${entry##*/}"
+        fi
+    done
+}
 echo "==> installing the framework to $DEST"
 if [[ -d "$BUILD/lib" ]]; then
-    cp -a "$BUILD/lib/"*.so* "$DEST/lib/"
-    [[ -f "$BUILD/lib/liblagom-main.a" ]] && cp -a "$BUILD/lib/liblagom-main.a" "$DEST/lib/"
+    for library in "$BUILD/lib/"*.so* "$BUILD/lib/liblagom-main.a"; do
+        [[ -e "$library" || -L "$library" ]] || continue
+        replace_file "$library" "$DEST/lib/${library##*/}"
+    done
 fi
 if [[ -d "$BUILD/bin" ]]; then
-    cp -a "$BUILD/bin/." "$DEST/bin/"
+    copy_tree_replacing_files "$BUILD/bin" "$DEST/bin"
 fi
 if [[ -d "$SERENITY/Base/res" ]]; then
     cp -a "$SERENITY/Base/res/." "$DEST/share/res/"
