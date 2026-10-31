@@ -332,12 +332,17 @@ cat "$RUNTIME/session-h2.log"
 check "restart 1/5" "$RUNTIME/session-h2.log"
 
 echo "== (H4) a beat that resumes inside the grace period is not a wedge =="
+rm -f "$RUNTIME/resume4"
 cat > "$RUNTIME/recover-comp" <<EOF
 #!/bin/sh
-# Stall for four seconds, then resume beating: the first threshold is crossed,
-# but the compositor is healthy and must not be restarted.
+# Stall until the test releases it, then resume beating. The first threshold is
+# crossed while it is stalled, but the beat resumes inside the grace period: the
+# compositor is healthy and must not be restarted. A control file makes the
+# timing deterministic on a loaded runner.
 echo 0 > "$RUNTIME/hb4"
-sleep 4
+while [ ! -e "$RUNTIME/resume4" ]; do
+    sleep 0.1
+done
 i=1
 while :; do
     echo "\$i" > "$RUNTIME/hb4"
@@ -356,12 +361,14 @@ env SDE_SESSION_COMPOSITOR="$RUNTIME/recover-comp" \
     SDE_SESSION_RESTART_DELAY=0 \
     "$SDE" > "$RUNTIME/session-h4.log" 2>&1 &
 SUP_H4=$!
-for _ in $(seq 1 60); do
+for _ in $(seq 1 100); do
     grep -q "waiting 4s for recovery" "$RUNTIME/session-h4.log" 2>/dev/null && break
     sleep 0.1
 done
-# The stub resumes at t=4; give the watchdog several samples after that.
-sleep 5
+# The announcement proves the threshold was crossed; release the stub now, well
+# inside the 4 s grace, and give the watchdog several samples after it resumes.
+touch "$RUNTIME/resume4"
+sleep 3
 cat "$RUNTIME/session-h4.log"
 check "waiting 4s for recovery" "$RUNTIME/session-h4.log"
 if grep -q "restart 1/2" "$RUNTIME/session-h4.log"; then

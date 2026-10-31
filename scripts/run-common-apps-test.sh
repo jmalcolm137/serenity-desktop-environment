@@ -43,10 +43,25 @@ DISPLAY_FILE="$RUNTIME/xwayland-display"
 COMP_LOG="$RUNTIME/comp.log"
 fail=0
 
+# Stop a client and its whole process group, bounded. A toolkit dialog that
+# ignores SIGTERM used to leave `wait` blocked forever (the full-suite timeout
+# after `yad` was `zenity`). The clients are started with setsid, so the group is
+# exactly theirs.
+stop_app() {
+    local pid="${1:-}"
+    [[ -n "$pid" ]] || return 0
+    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+    for _ in $(seq 1 20); do
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.1
+    done
+    kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+}
+
 cleanup() {
-    kill -TERM "${APP_PID:-}" 2>/dev/null || true
+    stop_app "${APP_PID:-}"
     kill -TERM "${COMP_PID:-}" 2>/dev/null || true
-    wait "${APP_PID:-}" 2>/dev/null || true
     wait "${COMP_PID:-}" 2>/dev/null || true
     rm -rf "$RUNTIME"
     rm -f "$XDG_RUNTIME_DIR/$SOCK" "$XDG_RUNTIME_DIR/$SOCK.lock" 2>/dev/null || true
@@ -124,7 +139,7 @@ run_x11() {
     [[ -n "$X11_DISPLAY" ]] || { echo "  SKIP: $name (Xwayland/DISPLAY unavailable)"; return 0; }
     require_client "$name" || return 0
 
-    env -u WAYLAND_DISPLAY DISPLAY="$X11_DISPLAY" "$@" > "$log" 2>&1 &
+    setsid env -u WAYLAND_DISPLAY DISPLAY="$X11_DISPLAY" "$@" > "$log" 2>&1 &
     APP_PID=$!
     if wait_for "$COMP_LOG" "X11 window mapped '${title}'" 80; then
         echo "  ok: $name mapped an X11 window ('$title')"
@@ -140,8 +155,7 @@ run_x11() {
         fail=1
     fi
     check_client_log "$name" "$log" || true
-    kill -TERM "$APP_PID" 2>/dev/null || true
-    wait "$APP_PID" 2>/dev/null || true
+    stop_app "$APP_PID"
     APP_PID=""
 }
 
@@ -150,7 +164,7 @@ run_wayland() {
     local log="$RUNTIME/$name.log"
     require_client "$name" || return 0
 
-    env -u DISPLAY WAYLAND_DISPLAY="$SOCK" GDK_BACKEND=wayland GSK_RENDERER=cairo "$@" > "$log" 2>&1 &
+    setsid env -u DISPLAY WAYLAND_DISPLAY="$SOCK" GDK_BACKEND=wayland GSK_RENDERER=cairo "$@" > "$log" 2>&1 &
     APP_PID=$!
     if wait_for "$COMP_LOG" "toplevel mapped title='${title}'" 80; then
         echo "  ok: $name mapped a Wayland toplevel ('$title')"
@@ -159,8 +173,7 @@ run_wayland() {
         fail=1
     fi
     check_client_log "$name" "$log" || true
-    kill -TERM "$APP_PID" 2>/dev/null || true
-    wait "$APP_PID" 2>/dev/null || true
+    stop_app "$APP_PID"
     APP_PID=""
 }
 
@@ -177,7 +190,7 @@ run_wayland_native() {
         return 0
     fi
 
-    env -u DISPLAY WAYLAND_DISPLAY="$SOCK" \
+    setsid env -u DISPLAY WAYLAND_DISPLAY="$SOCK" \
         SDE_STATE_DIR="$RUNTIME" SDE_SESSION_DIR="$RUNTIME/session" \
         SDE_SESSION_BIN_DIR="$RUNTIME/session-bin" SDE_APP_BIN_DIR="$BUILD/bin" \
         SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
@@ -191,29 +204,28 @@ run_wayland_native() {
         fail=1
     fi
     check_client_log "$name" "$log" || true
-    kill -TERM "$APP_PID" 2>/dev/null || true
-    wait "$APP_PID" 2>/dev/null || true
+    stop_app "$APP_PID"
     APP_PID=""
 }
 
 echo "=== X11 clients ==="
 # Xterm is included even though it cannot keep a PTY in the user namespace; the
 # compositor contract under test is that the X11 window is created and mapped.
-run_x11 xmessage common-xmessage timeout 8 xmessage -name common-xmessage 'hello'
-run_x11 xterm common-xterm timeout 8 xterm -title common-xterm -e sh -c 'sleep 6'
-run_x11 glxgears glxgears timeout 8 glxgears
+run_x11 xmessage common-xmessage timeout -k 2 8 xmessage -name common-xmessage 'hello'
+run_x11 xterm common-xterm timeout -k 2 8 xterm -title common-xterm -e sh -c 'sleep 6'
+run_x11 glxgears glxgears timeout -k 2 8 glxgears
 
 echo "=== Wayland clients ==="
-run_wayland foot common-foot timeout 8 foot -T common-foot sh -c 'sleep 6'
-run_wayland yad common-yad timeout 8 yad --title=common-yad --text=hello --timeout=5
-run_wayland zenity common-zenity timeout 10 zenity --info --title=common-zenity --text=hello
+run_wayland foot common-foot timeout -k 2 8 foot -T common-foot sh -c 'sleep 6'
+run_wayland yad common-yad timeout -k 2 8 yad --title=common-yad --text=hello --timeout=5
+run_wayland zenity common-zenity timeout -k 2 10 zenity --info --title=common-zenity --text=hello
 
 # Firefox is the heavyweight common client. Its first window can take several
 # seconds to appear, so give it a longer, bounded wait and a private profile.
 if require_client firefox; then
     mkdir -p "$RUNTIME/firefox-profile"
     firefox_log="$RUNTIME/firefox.log"
-    env -u DISPLAY WAYLAND_DISPLAY="$SOCK" GDK_BACKEND=wayland         MOZ_ENABLE_WAYLAND=1 timeout 20 firefox --no-sandbox --no-remote --new-instance         --profile "$RUNTIME/firefox-profile" about:blank > "$firefox_log" 2>&1 &
+    setsid env -u DISPLAY WAYLAND_DISPLAY="$SOCK" GDK_BACKEND=wayland         MOZ_ENABLE_WAYLAND=1 timeout -k 2 20 firefox --no-sandbox --no-remote --new-instance         --profile "$RUNTIME/firefox-profile" about:blank > "$firefox_log" 2>&1 &
     APP_PID=$!
     if wait_for "$COMP_LOG" "toplevel mapped title='Mozilla Firefox'" 180; then
         echo "  ok: firefox mapped a Wayland toplevel ('Mozilla Firefox')"
@@ -222,12 +234,11 @@ if require_client firefox; then
         fail=1
     fi
     check_client_log firefox "$firefox_log" || true
-    kill -TERM "$APP_PID" 2>/dev/null || true
-    wait "$APP_PID" 2>/dev/null || true
+    stop_app "$APP_PID"
     APP_PID=""
 fi
 
-run_wayland_native TextEditor 'Untitled[*] - Text Editor' timeout 8 "$BUILD/bin/TextEditor"
+run_wayland_native TextEditor 'Untitled[*] - Text Editor' timeout -k 2 8 "$BUILD/bin/TextEditor"
 
 # The compositor must still be alive after all clients have come and gone.
 if ! kill -0 "$COMP_PID" 2>/dev/null; then
