@@ -14,80 +14,37 @@ set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$SDE_ROOT/scripts/lib/test-env.sh"
-LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
-SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
-BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
-COMP="$SDE_ROOT/build/WindowServer/WindowServer"
+. "$SDE_ROOT/scripts/lib/testlib.sh"
+sde_test_init launch-animation
+sde_test_export_roots
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 "$SDE_ROOT/scripts/build-tools.sh" >/dev/null
 
-RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-launch.XXXXXX")"
-chmod 700 "$RUNTIME"
-COMP_PID=""
-cleanup() {
-    [[ -n "$COMP_PID" ]] && kill -TERM -- "-$COMP_PID" 2>/dev/null || true
-    for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"
-    rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true
-}
-trap cleanup EXIT
-
-fail=0
-check() {
-    local file="${2:-$RUNTIME/comp.log}"
-    if grep -qF "$1" "$file"; then echo "  ok: $1"; else echo "  MISSING: $1"; fail=1; fi
-}
-check_absent() {
-    local file="${2:-$RUNTIME/comp.log}"
-    if grep -qF "$1" "$file"; then echo "  UNEXPECTED: $1"; fail=1; else echo "  ok (absent): $1"; fi
-}
-
 # Run the compositor with a client launched "from" the rect 20,30 40x30.
 run_scene() {
-    local log="$1" animate="$2"
-    cat > "$RUNTIME/WindowServer.ini" <<EOF
+    local name="$1" animate="$2"
+    sde_test_case "$name"
+    cat > "$CASE_RUNTIME/WindowServer.ini" <<EOF
 [Effects]
 AnimateWindows=$animate
 EOF
-    local sock="sde-launch-$$-$RANDOM"
-    setsid env -u WAYLAND_DISPLAY -u DISPLAY \
-        WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
-        SDE_OUTPUT_SCALE=1 \
-        SDE_STATE_DIR="$RUNTIME" \
-        SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-        LD_LIBRARY_PATH="$BUILD/lib" \
-        "$COMP" -n "$sock" > "$log" 2>&1 &
-    COMP_PID=$!
-    for _ in $(seq 1 80); do
-        [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$sock" ]] && break
-        sleep 0.1
-    done
+    sde_test_case_compositor
     sleep 1
-
-    env WAYLAND_DISPLAY="$sock" "$SDE_ROOT/build/tools/native-app-test" \
+    env WAYLAND_DISPLAY="$CASE_SOCK" "$SDE_ROOT/build/tools/native-app-test" \
         --server-side-decorations --title "Launched" \
         --launch-origin 20 30 40 30 --linger 700 >/dev/null 2>&1 || true
     sleep 1
-
-    kill -TERM -- "-$COMP_PID" 2>/dev/null || true
-    kill -TERM "$COMP_PID" 2>/dev/null || true
-    wait "$COMP_PID" 2>/dev/null || true
-    COMP_PID=""
-    rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$sock"{,.lock}
+    sde_test_case_stop
 }
 
 echo "=== launch animation (AnimateWindows=true) ==="
-run_scene "$RUNTIME/anim.log" true
-grep "launch animation" "$RUNTIME/anim.log" || true
-check "launch animation 40x30+20,30 -> " "$RUNTIME/anim.log"
+run_scene animated true
+grep "launch animation" "$CASE_RUNTIME/comp.log" || true
+sde_test_check "$CASE_RUNTIME/comp.log" "launch animation 40x30\+20,30 -> " "the window animates from its launch rect"
 
 echo "=== launch animation disabled (AnimateWindows=false) ==="
-run_scene "$RUNTIME/noanim.log" false
-check_absent "launch animation" "$RUNTIME/noanim.log"
+run_scene still false
+sde_test_refute "$CASE_RUNTIME/comp.log" "launch animation" "no launch animation when AnimateWindows=false"
 
-if [[ "$fail" -ne 0 ]]; then
-    echo "--- compositor log (tail) ---"; tail -20 "$RUNTIME/anim.log"
-    echo "==> launch-animation test FAILED"
-    exit 1
-fi
-echo "==> launch-animation test PASSED"
+sde_test_finish "$CASE_RUNTIME/comp.log"

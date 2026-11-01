@@ -56,6 +56,18 @@ sde_test_init() {
     trap 'sde_test_cleanup; exit 130' INT TERM
 }
 
+# sde_test_private_runtime_dir: give this run its own XDG_RUNTIME_DIR, inside
+#   $RUNTIME. For a test whose compositor or clients use files there that a live
+#   session also uses (the font broker's sde-fonts, the Xwayland display file, a
+#   portal socket): written to the real one, they would reach that session. The
+#   library's socket waits and cleanup follow it. Call it after sde_test_init and
+#   before starting anything.
+sde_test_private_runtime_dir() {
+    export XDG_RUNTIME_DIR="$RUNTIME/xdg-runtime"
+    mkdir -p "$XDG_RUNTIME_DIR"
+    chmod 700 "$XDG_RUNTIME_DIR"
+}
+
 # The names the tests were written against. Kept as variables (not just
 # SDE_TEST_*) so a migrated test reads the same as an unmigrated one.
 sde_test_export_roots() {
@@ -211,11 +223,14 @@ sde_test_wait_log() {
 }
 
 # sde_test_client <command ...>: runs a client in the background (its environment
-#   is the caller's) and remembers it, so cleanup kills it whatever happens.
+#   is the caller's) and remembers it, so cleanup kills it whatever happens. Its
+#   PID is in SDE_TEST_CLIENT_PID afterwards. (Not printed: the caller usually
+#   redirects the client's output to a log, and the PID would land there, and
+#   capturing it with $(...) would run this in a subshell that forgets the client.)
 sde_test_client() {
     "$@" &
-    SDE_TEST_CLIENT_PIDS+=($!)
-    echo "${SDE_TEST_CLIENT_PIDS[-1]}"
+    SDE_TEST_CLIENT_PID=$!
+    SDE_TEST_CLIENT_PIDS+=("$SDE_TEST_CLIENT_PID")
 }
 
 # sde_test_kill <pid>: stop a client now, and stop tracking it.
@@ -278,6 +293,19 @@ sde_test_refute() {
         SDE_TEST_FAILURES=$((SDE_TEST_FAILURES + 1))
     else
         echo "  ok: $3"
+    fi
+}
+
+# sde_test_expect <description> <command ...>: the command succeeds (anything a
+#   grep cannot say: a process is alive, a count went up, a file is not empty).
+sde_test_expect() {
+    local description="$1"
+    shift
+    if "$@"; then
+        echo "  ok: $description"
+    else
+        echo "  FAIL: $description"
+        SDE_TEST_FAILURES=$((SDE_TEST_FAILURES + 1))
     fi
 }
 

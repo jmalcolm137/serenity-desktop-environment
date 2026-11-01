@@ -7,10 +7,9 @@ set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$SDE_ROOT/scripts/lib/test-env.sh"
-LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
-SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
-BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
-COMP="$SDE_ROOT/build/WindowServer/WindowServer"
+. "$SDE_ROOT/scripts/lib/testlib.sh"
+sde_test_init portal-ui
+sde_test_export_roots
 SHOT="$SDE_ROOT/build/tools/sde-screenshot"
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
@@ -22,29 +21,16 @@ if ! command -v convert >/dev/null 2>&1; then
     exit 0
 fi
 
-RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-portal-ui.XXXXXX")"
-chmod 700 "$RUNTIME"
-trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
-
-SOCK="sde-pui-$$"
-env -u WAYLAND_DISPLAY -u DISPLAY \
-    WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
-    SDE_STATE_DIR="$RUNTIME" \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
-    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-    LD_LIBRARY_PATH="$BUILD/lib" \
-    "$COMP" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
-COMP_PID=$!
-trap 'kill "$COMP_PID" 2>/dev/null || true; for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"' EXIT
-for _ in $(seq 1 80); do
-    [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SOCK" ]] && break
-    sleep 0.1
-done
+sde_test_compositor SDE_WM_PORTAL_PATH="$RUNTIME/wm"
 sleep 0.4
 
 convert -size 64x64 gradient:red-blue "$RUNTIME/gradient.png" 2>/dev/null || true
 
-fail=0
+fail_dialog() {
+    echo "  FAIL: $1"
+    SDE_TEST_FAILURES=$((SDE_TEST_FAILURES + 1))
+}
+
 check_dialog() {
     local name="$1"; shift
     local bin="$SDE_ROOT/build/$name/$name"
@@ -52,20 +38,17 @@ check_dialog() {
         echo "  note: $name not built; skipping"
         return
     fi
-    env WAYLAND_DISPLAY="$SOCK" SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-        LD_LIBRARY_PATH="$BUILD/lib" "$bin" "$@" > "$RUNTIME/$name.log" 2>&1 &
-    local pid=$!
+    sde_test_client env WAYLAND_DISPLAY="$SOCK" "$bin" "$@" > "$RUNTIME/$name.log" 2>&1
+    local pid=$SDE_TEST_CLIENT_PID
     sleep 2.5
     if ! kill -0 "$pid" 2>/dev/null; then
-        echo "  FAIL: $name exited early ($(head -1 "$RUNTIME/$name.log"))"
-        fail=1
+        fail_dialog "$name exited early ($(head -1 "$RUNTIME/$name.log"))"
         return
     fi
     local ppm="$RUNTIME/$name.ppm"
-    if ! WAYLAND_DISPLAY="$SOCK" LD_LIBRARY_PATH="$BUILD/lib" "$SHOT" "$ppm" >/dev/null 2>&1; then
-        echo "  FAIL: $name screenshot failed"
-        fail=1
-        kill "$pid" 2>/dev/null || true
+    if ! WAYLAND_DISPLAY="$SOCK" "$SHOT" "$ppm" >/dev/null 2>&1; then
+        fail_dialog "$name screenshot failed"
+        sde_test_kill "$pid"
         return
     fi
     local colors
@@ -81,11 +64,9 @@ check_dialog() {
     if [[ "${colors:-0}" -ge 4 ]]; then
         echo "  ok: $name rendered ($colors colours)"
     else
-        echo "  FAIL: $name looks blank ($colors colours)"
-        fail=1
+        fail_dialog "$name looks blank ($colors colours)"
     fi
-    kill "$pid" 2>/dev/null || true
-    wait "$pid" 2>/dev/null || true
+    sde_test_kill "$pid"
     sleep 0.3
 }
 
@@ -99,8 +80,4 @@ check_dialog ScreenshotOverlay -i "$RUNTIME/gradient.png"
 check_dialog ScreenCastChooser -t "Share your screen" "Entire screen" "Window: TextEditor"
 check_dialog FileChooserDialog -m open -t "Open File" -f "$SERENITY/Base/res"
 
-if [[ "$fail" -ne 0 ]]; then
-    echo "==> portal UI test FAILED"
-    exit 1
-fi
-echo "==> portal UI test PASSED"
+sde_test_finish

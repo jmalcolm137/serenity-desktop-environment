@@ -12,35 +12,14 @@ set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$SDE_ROOT/scripts/lib/test-env.sh"
-LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
-SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
-BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
-WLROOTS_SRC="${WLROOTS_SRC:-$SDE_ROOT/third_party/wlroots}"
-COMP="$SDE_ROOT/build/WindowServer/WindowServer"
+. "$SDE_ROOT/scripts/lib/testlib.sh"
+sde_test_init terminal-mouse
+sde_test_export_roots
 TERMINAL="$BUILD/bin/Terminal"
-TOOLS_BUILD="$SDE_ROOT/build/terminal-mouse-test"
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 "$SDE_ROOT/scripts/build.sh" Terminal >/dev/null
-
-mkdir -p "$TOOLS_BUILD"
-VP_XML="$WLROOTS_SRC/protocol/wlr-virtual-pointer-unstable-v1.xml"
-VK_XML="$WLROOTS_SRC/protocol/virtual-keyboard-unstable-v1.xml"
-wayland-scanner client-header "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-client-protocol.h"
-wayland-scanner private-code  "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c"
-wayland-scanner client-header "$VK_XML" "$TOOLS_BUILD/virtual-keyboard-unstable-v1-client-protocol.h"
-wayland-scanner private-code  "$VK_XML" "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c"
-cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/Tools/virtual-input-test.c" \
-    "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c" \
-    "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c" \
-    $(pkg-config --cflags --libs wayland-client xkbcommon) \
-    -o "$TOOLS_BUILD/virtual-input-test"
-
-RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-tmouse.XXXXXX")"
-chmod 700 "$RUNTIME"
-export SDE_STATE_DIR="$RUNTIME"
-trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
+VI="$(sde_test_vi)"
 
 # A mouse-reporting "app": enable press/release + any-motion + SGR, then capture
 # everything the terminal sends on stdin. (The Terminal only forwards a few env
@@ -53,26 +32,13 @@ exec cat > "$RUNTIME/mouse-out.bin"
 EOF
 chmod +x "$RUNTIME/mouse-echo.sh"
 
-SOCK="sde-tmouse-$$"
-env -u WAYLAND_DISPLAY -u DISPLAY \
-    WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
-    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-    LD_LIBRARY_PATH="$BUILD/lib" \
-    "$COMP" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
-COMP_PID=$!
-trap 'kill "$COMP_PID" 2>/dev/null || true; for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"' EXIT
-for _ in $(seq 1 80); do
-    [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SOCK" ]] && break
-    sleep 0.1
-done
+sde_test_compositor SDE_WM_PORTAL_PATH="$RUNTIME/wm"
 sleep 0.4
 
 MOUSE_OUT="$RUNTIME/mouse-out.bin"
-env WAYLAND_DISPLAY="$SOCK" SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-    LD_LIBRARY_PATH="$BUILD/lib" SHELL="$RUNTIME/mouse-echo.sh" \
-    "$TERMINAL" -e "$RUNTIME/mouse-echo.sh" > "$RUNTIME/terminal.log" 2>&1 &
-TERM_PID=$!
+sde_test_client env WAYLAND_DISPLAY="$SOCK" SHELL="$RUNTIME/mouse-echo.sh" \
+    "$TERMINAL" -e "$RUNTIME/mouse-echo.sh" > "$RUNTIME/terminal.log" 2>&1
+TERM_PID=$SDE_TEST_CLIENT_PID
 sleep 3
 if ! kill -0 "$TERM_PID" 2>/dev/null; then
     echo "FAIL: Terminal exited early ($(head -1 "$RUNTIME/terminal.log"))"
@@ -80,27 +46,15 @@ if ! kill -0 "$TERM_PID" 2>/dev/null; then
 fi
 
 # Move into the terminal, then scroll down (positive vertical axis).
-env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" --extent 1280 720 --move 300 300 >/dev/null 2>&1 || true
+env WAYLAND_DISPLAY="$SOCK" "$VI" --extent 1280 720 --move 300 300 >/dev/null 2>&1 || true
 sleep 0.5
-env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" --extent 1280 720 --axis 0 1 --axis 0 1 >/dev/null 2>&1 || true
+env WAYLAND_DISPLAY="$SOCK" "$VI" --extent 1280 720 --axis 0 1 --axis 0 1 >/dev/null 2>&1 || true
 sleep 1
-
-kill "$TERM_PID" 2>/dev/null || true
-wait "$TERM_PID" 2>/dev/null || true
+sde_test_kill "$TERM_PID"
 
 echo "=== bytes received by the app (od) ==="
 od -An -tx1 "$MOUSE_OUT" 2>/dev/null | head || true
 
-fail=0
-if [[ -s "$MOUSE_OUT" ]] && grep -aqE $'\033\[<6[45];' "$MOUSE_OUT"; then
-    echo "  ok: the terminal forwarded an SGR wheel event to the app"
-else
-    echo "  FAIL: no SGR mouse event reached the app"
-    fail=1
-fi
-
-if [[ "$fail" -ne 0 ]]; then
-    echo "==> terminal mouse test FAILED"
-    exit 1
-fi
-echo "==> terminal mouse test PASSED"
+echo "=== terminal mouse reporting ==="
+sde_test_check "$MOUSE_OUT" $'\033\\[<6[45];' "the terminal forwarded an SGR wheel event to the app"
+sde_test_finish

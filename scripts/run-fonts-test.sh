@@ -9,79 +9,45 @@ set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$SDE_ROOT/scripts/lib/test-env.sh"
-LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
-SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
-BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
-COMP="$SDE_ROOT/build/WindowServer/WindowServer"
+. "$SDE_ROOT/scripts/lib/testlib.sh"
+sde_test_init fonts
+sde_test_export_roots
+# The compositor reads the font broker's file from $XDG_RUNTIME_DIR/sde-fonts:
+# in the real one, this test would change a live session's fonts.
+sde_test_private_runtime_dir
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 
-fail=0
-check() {
-    if grep -qF "$1" <<<"$2"; then
-        echo "  ok: $1"
-    else
-        echo "  MISSING ($2): $1"
-        fail=1
-    fi
-}
-
 echo "=== (A) a scalable family makes zoom resolve ==="
-"$SDE_ROOT/scripts/run-font-parity-test.sh" >/dev/null && echo "  ok: font-parity (scalable zoom)" || { echo "  FAIL: font-parity"; fail=1; }
-
-RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-fonts.XXXXXX")"
-chmod 700 "$RUNTIME"
-trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
-
-start_compositor() {
-    local sock="$1"
-    env -u WAYLAND_DISPLAY -u DISPLAY \
-        WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
-        XDG_RUNTIME_DIR="$RUNTIME" \
-        SDE_STATE_DIR="$RUNTIME" \
-        SDE_WM_PORTAL_PATH="$RUNTIME/wm-$sock" \
-        SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-        LD_LIBRARY_PATH="$BUILD/lib" \
-        "$COMP" -n "$sock" > "$RUNTIME/comp-$sock.log" 2>&1 &
-    echo $!
-    for _ in $(seq 1 80); do
-        [[ -e "$RUNTIME/$sock" ]] && break
-        sleep 0.1
-    done
-    sleep 0.3
-}
+if "$SDE_ROOT/scripts/run-font-parity-test.sh" >/dev/null; then
+    echo "  ok: font-parity (scalable zoom)"
+else
+    echo "  FAIL: font-parity"
+    SDE_TEST_FAILURES=$((SDE_TEST_FAILURES + 1))
+fi
 
 echo "=== (B) the font broker applies live and persists ==="
-COMP_PID="$(start_compositor sde-font-a)"
-LOG="$RUNTIME/comp-sde-font-a.log"
-printf 'SerenitySans 12 400 0\nSerenitySans 12 400 0\nSerenitySans 12 400 0\n' > "$RUNTIME/sde-fonts"
-for _ in $(seq 1 40); do
-    grep -qF "applied system fonts (default 'SerenitySans 12 400 0')" "$LOG" 2>/dev/null && break
-    sleep 0.1
-done
-check "applied system fonts (default 'SerenitySans 12 400 0')" "$(cat "$LOG")"
-check "Default=SerenitySans 12 400 0" "$(cat "$RUNTIME/WindowServer.ini" 2>/dev/null)"
-check "WindowTitle=SerenitySans 12 400 0" "$(cat "$RUNTIME/WindowServer.ini" 2>/dev/null)"
-pkill -P "$COMP_PID" 2>/dev/null || true
-kill "$COMP_PID" 2>/dev/null || true
-wait "$COMP_PID" 2>/dev/null || true
+sde_test_case broker
+sde_test_case_compositor SDE_WM_PORTAL_PATH="$CASE_RUNTIME/wm"
+printf 'SerenitySans 12 400 0\nSerenitySans 12 400 0\nSerenitySans 12 400 0\n' > "$XDG_RUNTIME_DIR/sde-fonts"
+sde_test_wait_log "$CASE_RUNTIME/comp.log" "applied system fonts \(default 'SerenitySans 12 400 0'\)" 40 || true
+sde_test_check "$CASE_RUNTIME/comp.log" "applied system fonts \(default 'SerenitySans 12 400 0'\)" "the broker's fonts were applied live"
+sde_test_check "$CASE_RUNTIME/WindowServer.ini" "^Default=SerenitySans 12 400 0" "Default persisted to [Fonts]"
+sde_test_check "$CASE_RUNTIME/WindowServer.ini" "^WindowTitle=SerenitySans 12 400 0" "WindowTitle persisted to [Fonts]"
+sde_test_case_stop
+rm -f "$XDG_RUNTIME_DIR/sde-fonts"
 
 echo "=== (C) a persisted [Fonts] is applied at startup ==="
-cat > "$RUNTIME/WindowServer.ini" <<'EOF'
+sde_test_case persisted
+cat > "$CASE_RUNTIME/WindowServer.ini" <<'EOF'
 [Fonts]
 Default=SerenitySans 14 400 0
 FixedWidth=SerenitySans 14 400 0
 WindowTitle=SerenitySans 14 400 0
 EOF
-COMP_PID="$(start_compositor sde-font-b)"
-LOG="$RUNTIME/comp-sde-font-b.log"
-check "applied persisted system fonts (default 'SerenitySans 14 400 0')" "$(cat "$LOG")"
-pkill -P "$COMP_PID" 2>/dev/null || true
-kill "$COMP_PID" 2>/dev/null || true
-wait "$COMP_PID" 2>/dev/null || true
+sde_test_case_compositor SDE_WM_PORTAL_PATH="$CASE_RUNTIME/wm"
+sde_test_wait_log "$CASE_RUNTIME/comp.log" "applied persisted system fonts" 40 || true
+sde_test_check "$CASE_RUNTIME/comp.log" "applied persisted system fonts \(default 'SerenitySans 14 400 0'\)" "the persisted [Fonts] was applied at startup"
+sde_test_case_stop
 
-if [[ "$fail" -ne 0 ]]; then
-    echo "==> fonts test FAILED"
-    exit 1
-fi
-echo "==> fonts test PASSED"
+sde_test_finish
