@@ -223,9 +223,16 @@ run_wayland zenity common-zenity timeout -k 2 10 zenity --info --title=common-ze
 # Firefox is the heavyweight common client. Its first window can take several
 # seconds to appear, so give it a longer, bounded wait and a private profile.
 if require_client firefox; then
-    mkdir -p "$RUNTIME/firefox-profile"
+    mkdir -p "$RUNTIME/firefox-profile" "$RUNTIME/firefox-home" \
+        "$RUNTIME/firefox-config" "$RUNTIME/firefox-cache"
     firefox_log="$RUNTIME/firefox.log"
-    setsid env -u DISPLAY WAYLAND_DISPLAY="$SOCK" GDK_BACKEND=wayland \
+    # The CI container runs as root and its inherited HOME is owned by another
+    # uid; Firefox refuses to start in that combination. The toolkit test gives
+    # it a private root-owned HOME, and so does this one.
+    setsid env -u DISPLAY HOME="$RUNTIME/firefox-home" \
+        XDG_CONFIG_HOME="$RUNTIME/firefox-config" \
+        XDG_CACHE_HOME="$RUNTIME/firefox-cache" \
+        WAYLAND_DISPLAY="$SOCK" GDK_BACKEND=wayland \
         MOZ_ENABLE_WAYLAND=1 MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_RDD_SANDBOX=1 \
         MOZ_DISABLE_GMP_SANDBOX=1 MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1 \
         MOZ_CRASHREPORTER_DISABLE=1 \
