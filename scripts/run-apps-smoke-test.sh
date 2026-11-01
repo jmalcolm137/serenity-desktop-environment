@@ -13,11 +13,9 @@ set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$SDE_ROOT/scripts/lib/test-env.sh"
-LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
-SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
-BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
-COMP="$SDE_ROOT/build/WindowServer/WindowServer"
-SOCK="sde-apps-$$"
+. "$SDE_ROOT/scripts/lib/testlib.sh"
+sde_test_init apps-smoke
+sde_test_export_roots
 
 # Settings apps exercise the WindowServer protocol hardest (mouse/keyboard/display
 # get/set), so they surfaced the positional-id bug.
@@ -25,30 +23,10 @@ APPS=(MouseSettings KeyboardSettings DisplaySettings SystemMonitor FileManager T
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 
-RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-apps.XXXXXX")"
-chmod 700 "$RUNTIME"
-trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
+sde_test_compositor SDE_WM_PORTAL_PATH="$RUNTIME/wm"
 
-env -u WAYLAND_DISPLAY -u DISPLAY \
-    WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
-    SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-    LD_LIBRARY_PATH="$BUILD/lib" \
-    "$COMP" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
-COMP_PID=$!
-for _ in $(seq 1 80); do
-    [[ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$SOCK" ]] && break
-    sleep 0.1
-done
-# The compositor spawns each app itself (the apps are separate, not -s children),
-# so kill the compositor and any client it left behind.
-stop_compositor() {
-    kill -TERM "$COMP_PID" 2>/dev/null || true
-    wait "$COMP_PID" 2>/dev/null || true
-}
-trap 'stop_compositor; for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
-
-fail=0
+FAULTS='Failed to parse IPC message|SIGSEGV|Segmentation fault|ASSERTION FAILED|VERIFICATION FAILED|Runtime error'
+echo "=== each app maps a window without faulting ==="
 before="$(grep -c 'toplevel mapped' "$RUNTIME/comp.log" || true)"
 for app in "${APPS[@]}"; do
     if [[ ! -x "$BUILD/bin/$app" ]]; then
@@ -56,34 +34,18 @@ for app in "${APPS[@]}"; do
         continue
     fi
     log="$RUNTIME/$app.log"
-    env WAYLAND_DISPLAY="$SOCK" \
-        LD_LIBRARY_PATH="$BUILD/lib" \
-        SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-        SDE_APP_BIN_DIR="$BUILD/bin" \
+    env WAYLAND_DISPLAY="$SOCK" SDE_APP_BIN_DIR="$BUILD/bin" \
         timeout 5 "$BUILD/bin/$app" > "$log" 2>&1 || true
     after="$(grep -c 'toplevel mapped' "$RUNTIME/comp.log" || true)"
-    faults="$(grep -ciE 'Failed to parse IPC message|SIGSEGV|Segmentation fault|ASSERTION FAILED|VERIFICATION FAILED|Runtime error' "$log" || true)"
-    if [[ "$faults" -ne 0 ]]; then
-        echo "  FAIL: $app: $(grep -iE 'Failed to parse IPC message|SIGSEGV|ASSERTION FAILED|VERIFICATION FAILED|Runtime error' "$log" | head -1)"
+    if grep -qiE "$FAULTS" "$log"; then
+        echo "  FAIL: $app: $(grep -iE "$FAULTS" "$log" | head -1)"
         echo "      --- $app log ---"; tail -6 "$log" 2>/dev/null | sed 's/^/      /' || true
-        fail=1
-    elif [[ "$after" -le "$before" ]]; then
-        echo "  FAIL: $app did not map a window (log: $log)"
-        fail=1
+        SDE_TEST_FAILURES=$((SDE_TEST_FAILURES + 1))
     else
-        echo "  ok: $app"
+        sde_test_expect "$app" test "$after" -gt "$before"
     fi
     before="$after"
 done
 
-pkill -P "$COMP_PID" 2>/dev/null || true
-kill "$COMP_PID" 2>/dev/null || true
-wait "$COMP_PID" 2>/dev/null || true
-
-if [[ "$fail" -ne 0 ]]; then
-    echo "--- compositor log (tail) ---"
-    tail -20 "$RUNTIME/comp.log"
-    echo "==> apps smoke test FAILED"
-    exit 1
-fi
-echo "==> apps smoke test PASSED"
+sde_test_stop_compositor
+sde_test_finish

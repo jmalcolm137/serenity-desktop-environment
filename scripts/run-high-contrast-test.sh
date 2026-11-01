@@ -11,77 +11,57 @@ set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$SDE_ROOT/scripts/lib/test-env.sh"
-LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
-SERENITY="${SERENITY:-$LIBGUI_WAYLAND_ROOT/serenity}"
-BUILD="${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}"
-COMP="$SDE_ROOT/build/WindowServer/WindowServer"
+. "$SDE_ROOT/scripts/lib/testlib.sh"
+sde_test_init high-contrast
+sde_test_export_roots
+# The compositor publishes the applied theme in $XDG_RUNTIME_DIR/sde-theme, the
+# file a live session's clients follow.
+sde_test_private_runtime_dir
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 
 start_compositor() {
     local name="$1" high_contrast="$2"
-    local runtime
-    runtime="$(mktemp -d "${TMPDIR:-/tmp}/sde-contrast-$name.XXXXXX")"
-    chmod 700 "$runtime"
-    mkdir -p "$runtime/run"
+    sde_test_case "$name"
     {
         echo "[Accessibility]"
         echo "HighContrast=$high_contrast"
-    } > "$runtime/WindowServer.ini"
-    setsid env -u WAYLAND_DISPLAY -u DISPLAY \
-        WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 SDE_OUTPUT_SCALE=1 \
-        XDG_RUNTIME_DIR="$runtime/run" SDE_STATE_DIR="$runtime" SDE_XWAYLAND=0 \
-        SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-        LD_LIBRARY_PATH="$BUILD/lib" \
-        "$COMP" -n "sde-contrast-$name-$$" > "$runtime/comp.log" 2>&1 &
-    local pid=$!
-    for _ in $(seq 1 80); do
-        [[ -e "$runtime/run/sde-contrast-$name-$$" ]] && break
-        sleep 0.1
-    done
+    } > "$CASE_RUNTIME/WindowServer.ini"
+    rm -f "$XDG_RUNTIME_DIR/sde-theme"
+    sde_test_case_compositor SDE_XWAYLAND=0
     sleep 2
-    echo "$pid $runtime"
 }
 
-fail=0
-check() { if eval "$2"; then echo "  ok: $1"; else echo "  MISSING: $1"; fail=1; fi; }
+BROKER="$XDG_RUNTIME_DIR/sde-theme"
 
 # --- off: the mode is inert -------------------------------------------------
-read -r PID RUNTIME <<<"$(start_compositor off false)"
-OFF_LOG="$RUNTIME/comp.log"
-OFF_BROKER="$(cat "$RUNTIME/run/sde-theme" 2>/dev/null || true)"
-kill -TERM -- "-$PID" 2>/dev/null || true
-wait "$PID" 2>/dev/null || true
+start_compositor off false
+OFF_LOG="$CASE_RUNTIME/comp.log"
+OFF_BROKER="$(cat "$BROKER" 2>/dev/null || true)"
+sde_test_case_stop
 
 echo "=== high contrast off ==="
-check "the mode is off in the config log" "grep -q 'high contrast off' '$OFF_LOG'"
-check "the compositor did not force a theme" "! grep -q 'high contrast on' '$OFF_LOG'"
-check "the broker was not set to Contrast" "[[ '$OFF_BROKER' != *Contrast.ini* ]]"
+sde_test_check "$OFF_LOG" "high contrast off" "the mode is off in the config log"
+sde_test_refute "$OFF_LOG" "high contrast on" "the compositor did not force a theme"
+sde_test_expect "the broker was not set to Contrast" test "${OFF_BROKER/Contrast.ini/}" = "$OFF_BROKER"
 
 # --- on: forced, published, and not overridable ------------------------------
-read -r PID RUNTIME <<<"$(start_compositor on true)"
-ON_LOG="$RUNTIME/comp.log"
+start_compositor on true
+ON_LOG="$CASE_RUNTIME/comp.log"
 CONTRAST="$SERENITY/Base/res/themes/Contrast.ini"
-BROKER="$RUNTIME/run/sde-theme"
 
 echo "=== high contrast on ==="
 grep -aE "high contrast" "$ON_LOG" | head -4 || true
-check "the compositor forced the Contrast theme" "grep -q \"high contrast on; forced '$CONTRAST'\" '$ON_LOG'"
-check "the broker names the Contrast theme (clients follow)" "grep -q 'Contrast.ini' '$BROKER'"
+sde_test_check "$ON_LOG" "high contrast on; forced '$CONTRAST'" "the compositor forced the Contrast theme"
+sde_test_check "$BROKER" "Contrast\.ini" "the broker names the Contrast theme (clients follow)"
 
 # A theme change while the mode is on must not take effect, and the broker is put
 # back to what is actually applied.
 printf '%s\n' "$SERENITY/Base/res/themes/Dark.ini" > "$BROKER"
 sleep 1.5
-check "a theme change is ignored while the mode is on" "grep -q 'ignoring the theme broker' '$ON_LOG'"
-check "the broker is kept in agreement with the applied theme" "grep -q 'Contrast.ini' '$BROKER' && ! grep -q 'Dark.ini' '$BROKER'"
+sde_test_check "$ON_LOG" "ignoring the theme broker" "a theme change is ignored while the mode is on"
+sde_test_check "$BROKER" "Contrast\.ini" "the broker is put back to the applied theme"
+sde_test_refute "$BROKER" "Dark\.ini" "and no longer names the ignored one"
+sde_test_case_stop
 
-kill -TERM -- "-$PID" 2>/dev/null || true
-wait "$PID" 2>/dev/null || true
-
-if [[ "$fail" -ne 0 ]]; then
-    echo "--- high-contrast-on log (tail) ---"; tail -20 "$ON_LOG"
-    echo "==> high-contrast test FAILED"
-    exit 1
-fi
-echo "==> high-contrast test PASSED"
+sde_test_finish "$ON_LOG"
