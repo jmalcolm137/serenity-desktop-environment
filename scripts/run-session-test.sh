@@ -120,8 +120,8 @@ else
     echo "  FAIL: the stub compositor did not record its pid"
     fail=1
 fi
-for _ in $(seq 1 50); do
-    grep -q "restart 1/2" "$RUNTIME/session-b2.log" 2>/dev/null && break
+for _ in $(seq 1 200); do
+    grep -q "compositor was SIGKILLed by an external process" "$RUNTIME/session-b2.log" 2>/dev/null && break
     sleep 0.1
 done
 kill -TERM "$SUP_B2" 2>/dev/null || true
