@@ -56,12 +56,19 @@ START = re.compile(
     r'(?:\n)*'
     r'(?:sleep [0-9.]+ ?&? ?\n)?')
 
-CLEANUP_FN = re.compile(r'\ncleanup\(\) \{\n(?P<body>(?:[^}\n]*\n)*?)\}\n')
+# The body runs to the first line that is only "}": its lines may well contain
+# "}" themselves (${VAR:-default}), and a pattern that forbade them silently
+# failed to match, so the trap was dropped while the function was not converted.
+CLEANUP_FN = re.compile(r'\ncleanup\(\) \{\n(?P<body>(?:(?!\}\n).*\n)*?)\}\n')
 STOP_FN = re.compile(r'\n(?:stop_compositor|stop_comp|kill_compositor)\(\) \{\n(?:[^}\n]*\n)*?\}\n')
 
 # Lines the library now owns inside a cleanup body.
+# A kill or wait is the library's only when it is about the compositor: a line
+# that stops one of the test's own processes (a mock service, a private bus) is
+# the test's, and has to survive into the hook. (Matching on "kill " alone once
+# dropped those, leaving the processes running after every test.)
 LIBRARY_LINE = re.compile(
-    r'COMP_PID|\$\{CP\}|\bCP\b|RUNTIME|kill |pkill |wait |sleep |xdg_runtime_dir|XDG_RUNTIME_DIR')
+    r'COMP_PID|\$\{CP\}|\bCP\b|RUNTIME|xdg_runtime_dir|XDG_RUNTIME_DIR')
 
 # Only what the library always sets the same way. SDE_APP_BIN_DIR and SDE_STATE_DIR
 # are kept when a script sets them: a test may point them at its own
@@ -126,6 +133,8 @@ def migrate(path):
         return None, 'sets more than one trap (needs a hand migration)'
 
     cleanup = CLEANUP_FN.search(src)
+    if re.search(r'^\s*trap cleanup ', src, re.M) and not cleanup:
+        return None, 'trap calls a cleanup() this tool cannot read (needs a hand migration)'
     extra_body = ''
     if cleanup:
         keep = [line for line in cleanup.group('body').splitlines()

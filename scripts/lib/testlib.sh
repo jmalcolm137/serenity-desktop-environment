@@ -99,7 +99,9 @@ sde_test_compositor() {
             *) assignments+=("$1"); shift ;;
         esac
     done
-    env -u WAYLAND_DISPLAY -u DISPLAY \
+    # Its own process group (setsid), so stopping it stops everything it started:
+    # the -s shell and the applets or apps that shell launched.
+    setsid env -u WAYLAND_DISPLAY -u DISPLAY \
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
         SDE_OUTPUT_SCALE=1 \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SDE_TEST_SERENITY/Base/res}" \
@@ -151,7 +153,9 @@ sde_test_case_compositor() {
             *) assignments+=("$1"); shift ;;
         esac
     done
-    env -u WAYLAND_DISPLAY -u DISPLAY \
+    # Its own process group (setsid), so stopping it stops everything it started:
+    # the -s shell and the applets or apps that shell launched.
+    setsid env -u WAYLAND_DISPLAY -u DISPLAY \
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
         SDE_OUTPUT_SCALE=1 \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SDE_TEST_SERENITY/Base/res}" \
@@ -166,6 +170,13 @@ sde_test_case_compositor() {
         tail -20 "$CASE_RUNTIME/comp.log" >&2 2>/dev/null || true
         exit 1
     }
+}
+
+# sde_test_stop_compositor: stop the compositor and everything it started (its
+#   process group), and wait for it, so its log is complete before the test reads
+#   it. Safe to call twice; cleanup calls it too.
+sde_test_stop_compositor() {
+    sde_test_case_stop
 }
 
 # sde_test_case_stop: stop the running case's compositor (and its children).
