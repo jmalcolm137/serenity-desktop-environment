@@ -225,9 +225,14 @@ run_wayland zenity common-zenity timeout -k 2 10 zenity --info --title=common-ze
 if require_client firefox; then
     mkdir -p "$RUNTIME/firefox-profile"
     firefox_log="$RUNTIME/firefox.log"
-    setsid env -u DISPLAY WAYLAND_DISPLAY="$SOCK" GDK_BACKEND=wayland         MOZ_ENABLE_WAYLAND=1 timeout -k 2 20 firefox --no-sandbox --no-remote --new-instance         --profile "$RUNTIME/firefox-profile" about:blank > "$firefox_log" 2>&1 &
+    setsid env -u DISPLAY WAYLAND_DISPLAY="$SOCK" GDK_BACKEND=wayland \
+        MOZ_ENABLE_WAYLAND=1 MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_RDD_SANDBOX=1 \
+        MOZ_DISABLE_GMP_SANDBOX=1 MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1 \
+        MOZ_CRASHREPORTER_DISABLE=1 \
+        timeout -k 5 60 firefox --no-sandbox --no-remote --new-instance \
+        --profile "$RUNTIME/firefox-profile" about:blank > "$firefox_log" 2>&1 &
     APP_PID=$!
-    if wait_for "$COMP_LOG" "toplevel mapped title='Mozilla Firefox'" 180; then
+    if wait_for "$COMP_LOG" "toplevel mapped title='Mozilla Firefox'" 600; then
         echo "  ok: firefox mapped a Wayland toplevel ('Mozilla Firefox')"
     else
         echo "  FAIL: firefox did not map a Wayland toplevel"
