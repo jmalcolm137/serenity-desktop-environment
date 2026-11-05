@@ -109,7 +109,7 @@ FrameHit hit_test_frame(Server& server, double x, double y)
             return hit;
         }
 
-        constexpr int resize_border = 4;
+        constexpr int resize_border = 8;
         uint32_t edges = 0;
         if (hit.local.x() < resize_border)
             edges |= WLR_EDGE_LEFT;

@@ -566,8 +566,22 @@ void place_new_toplevel(Toplevel& toplevel)
         return;
 
     auto* geometry = &toplevel.xdg_toplevel->base->geometry;
-    int const width = max(1, geometry->width);
-    int const height = max(1, geometry->height);
+    int const requested_width = max(1, geometry->width);
+    int const requested_height = max(1, geometry->height);
+
+    // A window larger than the usable area would put its right/bottom resize
+    // borders off-screen, making the window impossible to resize by dragging.
+    // Fit the content and then clamp the frame position inside the area.
+    int const frame_left = toplevel.frame_left;
+    int const frame_top = toplevel.frame_top;
+    int const frame_right = toplevel.frame_right;
+    int const frame_bottom = toplevel.frame_bottom;
+    int const max_content_width = max(1, area.width() - frame_left - frame_right);
+    int const max_content_height = max(1, area.height() - frame_top - frame_bottom);
+    int const width = min(requested_width, max_content_width);
+    int const height = min(requested_height, max_content_height);
+    if (width != requested_width || height != requested_height)
+        wlr_xdg_toplevel_set_size(toplevel.xdg_toplevel, width, height);
 
     Gfx::IntPoint top_left;
     if (toplevel.transient_parent) {
@@ -585,6 +599,11 @@ void place_new_toplevel(Toplevel& toplevel)
         s_last_auto_position = top_left;
         s_has_auto_position = true;
     }
+
+    int const frame_width = width + frame_left + frame_right;
+    int const frame_height = height + frame_top + frame_bottom;
+    top_left.set_x(clamp(top_left.x(), area.left(), max(area.left(), area.right() - frame_width + 1)));
+    top_left.set_y(clamp(top_left.y(), area.top(), max(area.top(), area.bottom() - frame_height + 1)));
 
     // The scene node is the frame's top-left; the xdg geometry offset is the
     // content origin inside it. Convert what the rule placed (a frame position)
