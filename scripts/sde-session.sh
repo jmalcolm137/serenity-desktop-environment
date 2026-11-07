@@ -513,7 +513,7 @@ export SDE_APP_BIN_DIR="$APP_BIN"
 # WebContent and the SDE services spawn helpers by name (WebWorker,
 # ImageDecoder, ...). posix_spawnp searches PATH, not SDE_APP_BIN_DIR, so the
 # session app directory and the libexec helpers have to be on PATH too.
-export PATH="$APP_BIN:$SDE_ROOT/libexec:$SDE_ROOT/bin${PATH:+:$PATH}"
+export PATH="$APP_BIN:${SDE_SERVICE_BIN_DIR:-$SDE_ROOT/libexec}:${BUILD:-$SDE_ROOT/bin}${PATH:+:$PATH}"
 echo "SDE session: session app directory $APP_BIN"
 
 restarts=0
