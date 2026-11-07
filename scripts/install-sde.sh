@@ -160,6 +160,12 @@ if [[ "$WITHOUT_FRAMEWORK" -eq 0 ]]; then
     if [[ -d "$SERENITY/Base/home/anon/.config" ]]; then
         cp -a "$SERENITY/Base/home/anon/.config/." "$SHARE/skeleton/"
     fi
+    # Ship the default 3D models in the SDE resource tree. 3D File Viewer opens
+    # the teapot from here when it has no explicit path argument.
+    if [[ -d "$SERENITY/Base/home/anon/Documents/3D Models" ]]; then
+        install -d "$SHARE/res/3D Models"
+        cp -a "$SERENITY/Base/home/anon/Documents/3D Models/." "$SHARE/res/3D Models/"
+    fi
 else
     echo "note: --without-framework: the framework package owns bin/lib/share"
 fi
