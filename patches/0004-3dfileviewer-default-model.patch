@@ -1,19 +1,18 @@
 diff --git a/Userland/Applications/3DFileViewer/main.cpp b/Userland/Applications/3DFileViewer/main.cpp
-index 762eb7562e..162e5733f4 100644
+index 762eb7562e..9fc773dd46 100644
 --- a/Userland/Applications/3DFileViewer/main.cpp
 +++ b/Userland/Applications/3DFileViewer/main.cpp
-@@ -349,8 +349,14 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
+@@ -349,8 +349,13 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
      args_parser.add_positional_argument(filename, "3D model file to open", "path", Core::ArgsParser::Required::No);
      args_parser.parse(arguments);
  
 -    if (filename.is_empty())
 -        filename = "/home/anon/Documents/3D Models/teapot.obj"sv;
 +    if (filename.is_empty()) {
-+        // SDE: use the model installed in the SDE resource tree. The old
-+        // /home/anon path only existed on the live Serenity user.
-+        auto const* res_root = getenv("SERENITY_RES_ROOT");
++        // SDE: default to the per-user models directory.
++        auto const* home = getenv("HOME");
 +        static ByteString default_model_path;
-+        default_model_path = ByteString::formatted("{}/3D Models/teapot.obj", res_root && *res_root ? res_root : "/usr/lib/sde/share/res");
++        default_model_path = ByteString::formatted("{}/Documents/3DModels/teapot.obj", home && *home ? home : "/home/anon");
 +        filename = default_model_path.view();
 +    }
  
