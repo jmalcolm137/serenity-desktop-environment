@@ -166,6 +166,25 @@ if [[ "$WITHOUT_FRAMEWORK" -eq 0 ]]; then
         install -d "$SHARE/res/3D Models"
         cp -a "$SERENITY/Base/home/anon/Documents/3D Models/." "$SHARE/res/3D Models/"
     fi
+    # The base WindowServer asks for ResizeH/ResizeV/ResizeDTLBR/... while the
+    # SDE cursor themes ship the Xcursor names (resize-horizontal, ...). Alias
+    # them so window-edge resize cursors load instead of falling back to the
+    # arrow.
+    for theme in "$SHARE/res/cursor-themes"/*; do
+        [[ -d "$theme" ]] || continue
+        for pair in \
+            "ResizeH:resize-horizontal" \
+            "ResizeV:resize-vertical" \
+            "ResizeDTLBR:resize-diagonal-tlbr" \
+            "ResizeDBLTR:resize-diagonal-bltr" \
+            "ResizeColumn:resize-column" \
+            "ResizeRow:resize-row"; do
+            alias="${pair%%:*}"
+            target="${pair#*:}"
+            [[ -f "$theme/$target.png" ]] && ln -sf "$target.png" "$theme/$alias.png"
+            [[ -f "$theme/$target-2x.png" ]] && ln -sf "$target-2x.png" "$theme/$alias-2x.png"
+        done
+    done
 else
     echo "note: --without-framework: the framework package owns bin/lib/share"
 fi
