@@ -173,10 +173,28 @@ static void serenity_toplevel_set_menubar_inset(wl_client*, wl_resource* resourc
     toplevel_update_frame(*chrome->toplevel);
 }
 
+static void serenity_toplevel_set_always_on_top(wl_client*, wl_resource* resource, int32_t always_on_top)
+{
+    auto* chrome = static_cast<SerenityChrome*>(wl_resource_get_user_data(resource));
+    Toplevel* toplevel = chrome ? chrome->toplevel : nullptr;
+    if (!toplevel)
+        return;
+
+    toplevel->always_on_top = always_on_top != 0;
+    // Always-on-top windows stay above normal ones, including the window that
+    // just asked to be raised.
+    for (auto& candidate : toplevel->server->toplevels) {
+        if (candidate->always_on_top && !candidate->minimized)
+            wlr_scene_node_raise_to_top(&candidate->scene_tree->node);
+    }
+    dbgln("WindowServer: toplevel wm_id={} always-on-top={}", toplevel->wm_id, toplevel->always_on_top);
+}
+
 static struct serenity_toplevel_interface const s_serenity_toplevel_implementation = {
     .set_icon = serenity_toplevel_set_icon,
     .destroy = serenity_toplevel_request_destroy,
     .set_window_mode = serenity_toplevel_set_window_mode,
+    .set_always_on_top = serenity_toplevel_set_always_on_top,
     .set_launch_origin = serenity_toplevel_set_launch_origin,
     .set_menubar_inset = serenity_toplevel_set_menubar_inset,
 };
@@ -213,7 +231,7 @@ static void serenity_window_manager_get_toplevel(wl_client* client, wl_resource*
         dbgln("WindowServer: get_toplevel for an unknown surface; returning an inert handle");
     }
 
-    auto* chrome = wl_resource_create(client, &serenity_toplevel_interface, min(wl_resource_get_version(resource), 2u), id);
+    auto* chrome = wl_resource_create(client, &serenity_toplevel_interface, min(wl_resource_get_version(resource), 3u), id);
     if (!chrome) {
         wl_client_post_no_memory(client);
         return;
@@ -463,7 +481,7 @@ static void serenity_window_manager_request_capture(wl_client*, wl_resource* res
 static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t version, uint32_t id)
 {
     auto& server = *static_cast<Server*>(data);
-    auto* resource = wl_resource_create(client, &serenity_window_manager_interface, min(version, 2u), id);
+    auto* resource = wl_resource_create(client, &serenity_window_manager_interface, min(version, 3u), id);
     if (!resource) {
         wl_client_post_no_memory(client);
         return;
