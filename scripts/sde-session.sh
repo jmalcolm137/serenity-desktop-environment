@@ -466,7 +466,7 @@ echo "SDE session: power helpers in $SESSION_BIN (/bin shadow)"
 # resolve service and application binaries from SDE_APP_BIN_DIR, so it must hold
 # both: link the port's applications here and overlay the SDE services. See
 # docs/06-service-layering.md and docs/07-systemserver-roles.md (section 2.3).
-SESSION_SERVICES=(WebContent RequestServer SQLServer NotificationServer AudioServer)
+SESSION_SERVICES=(WebContent RequestServer SQLServer NotificationServer AudioServer WebWorker ImageDecoder MediaServer VideoDecoderServer)
 # A checkout keeps each service in build/<name>/<name>; an installed tree
 # flattens them into the prefix's bin directory (SDE_SERVICE_BIN_DIR).
 session_service_binary() {
@@ -510,6 +510,10 @@ for service in "${SESSION_SERVICES[@]}"; do
     fi
 done
 export SDE_APP_BIN_DIR="$APP_BIN"
+# WebContent and the SDE services spawn helpers by name (WebWorker,
+# ImageDecoder, ...). posix_spawnp searches PATH, not SDE_APP_BIN_DIR, so the
+# session app directory and the libexec helpers have to be on PATH too.
+export PATH="$APP_BIN:${SDE_SERVICE_BIN_DIR:-$SDE_ROOT/libexec}:${BUILD:-$SDE_ROOT/bin}${PATH:+:$PATH}"
 echo "SDE session: session app directory $APP_BIN"
 
 restarts=0

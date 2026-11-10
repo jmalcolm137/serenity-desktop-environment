@@ -1,0 +1,37 @@
+diff --git a/Userland/Applications/SpaceAnalyzer/TreeMapWidget.cpp b/Userland/Applications/SpaceAnalyzer/TreeMapWidget.cpp
+index 06bba0da2a..94ba560abd 100644
+--- a/Userland/Applications/SpaceAnalyzer/TreeMapWidget.cpp
++++ b/Userland/Applications/SpaceAnalyzer/TreeMapWidget.cpp
+@@ -371,20 +371,21 @@ void TreeMapWidget::recalculate_path_for_new_tree()
+ 
+ static ErrorOr<void> fill_mounts(Vector<MountInfo>& output)
+ {
+-    // Output info about currently mounted filesystems.
+-    auto file = TRY(Core::File::open("/sys/kernel/df"sv, Core::File::OpenMode::Read));
+-
++    // Linux port: /sys/kernel/df is SerenityOS-only. /proc/mounts is the
++    // standard list of mounted filesystems (source mount-point type options).
++    auto file = TRY(Core::File::open("/proc/mounts"sv, Core::File::OpenMode::Read));
+     auto content = TRY(file->read_until_eof());
+-    auto json = TRY(JsonValue::from_string(content));
+ 
+-    TRY(json.as_array().try_for_each([&output](JsonValue const& value) -> ErrorOr<void> {
+-        auto& filesystem_object = value.as_object();
++    auto text = StringView { content.bytes() };
++    for (auto line : text.lines()) {
++        auto fields = line.split_view(' ');
++        if (fields.size() < 2)
++            continue;
+         MountInfo mount_info;
+-        mount_info.mount_point = filesystem_object.get_byte_string("mount_point"sv).value_or({});
+-        mount_info.source = filesystem_object.get_byte_string("source"sv).value_or("none");
+-        TRY(output.try_append(mount_info));
+-        return {};
+-    }));
++        mount_info.source = ByteString { fields[0] };
++        mount_info.mount_point = ByteString { fields[1] };
++        TRY(output.try_append(move(mount_info)));
++    }
+ 
+     return {};
+ }

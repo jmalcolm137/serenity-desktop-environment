@@ -66,7 +66,7 @@ index 90cfa9f9..984312ea 100644
  }
  
  static ErrorOr<void> run_command(StringView command, bool keep_open)
-@@ -149,8 +123,22 @@ static ErrorOr<void> run_command(StringView command, bool keep_open)
+@@ -149,8 +123,27 @@ static ErrorOr<void> run_command(StringView command, bool keep_open)
          arguments.append("-c"sv);
          arguments.append(command);
      }
@@ -79,8 +79,13 @@ index 90cfa9f9..984312ea 100644
 +    host_environment.append(ByteString::formatted("TERM={}", "xterm"sv));
 +    host_environment.append(ByteString::formatted("COLORTERM={}", "truecolor"sv));
 +    host_environment.append(ByteString::formatted("PAGER={}", "more"sv));
-+    host_environment.append(ByteString::formatted("PATH={}", DEFAULT_PATH_SV));
-+    for (auto const* name : { "WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE", "DBUS_SESSION_BUS_ADDRESS", "LD_LIBRARY_PATH", "SERENITY_RES_ROOT", "HOME", "USER", "LOGNAME", "SHELL", "LANG" }) {
++    // The SDE host userland overlay lives in /usr/bin/gnu. Prepend it so the
++    // Terminal's shell agrees with the login-shell PATH.
++    ByteString terminal_path { "/usr/local/bin:/usr/bin/gnu:/usr/sbin:/usr/bin:/bin" };
++    if (auto const* value = getenv("PATH"); value && *value)
++        terminal_path = ByteString::formatted("/usr/bin/gnu:{}", value);
++    host_environment.append(ByteString::formatted("PATH={}", terminal_path));
++    for (auto const* name : { "WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE", "DBUS_SESSION_BUS_ADDRESS", "LD_LIBRARY_PATH", "SERENITY_RES_ROOT", "HOME", "USER", "LOGNAME", "SHELL", "ENV", "LANG" }) {
 +        if (auto const* value = getenv(name); value && *value)
 +            host_environment.append(ByteString::formatted("{}={}", name, value));
 +    }
