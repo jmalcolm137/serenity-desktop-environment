@@ -510,5 +510,5 @@ static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t
 
 void initialize_serenity_window(Server& server)
 {
-    wl_global_create(server.display, &serenity_window_manager_interface, 2, &server, serenity_window_manager_bind);
+    wl_global_create(server.display, &serenity_window_manager_interface, 3, &server, serenity_window_manager_bind);
 }
