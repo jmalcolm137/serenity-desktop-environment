@@ -194,9 +194,9 @@ static struct serenity_toplevel_interface const s_serenity_toplevel_implementati
     .set_icon = serenity_toplevel_set_icon,
     .destroy = serenity_toplevel_request_destroy,
     .set_window_mode = serenity_toplevel_set_window_mode,
-    .set_always_on_top = serenity_toplevel_set_always_on_top,
     .set_launch_origin = serenity_toplevel_set_launch_origin,
     .set_menubar_inset = serenity_toplevel_set_menubar_inset,
+    .set_always_on_top = serenity_toplevel_set_always_on_top,
 };
 
 static void serenity_window_manager_get_toplevel(wl_client* client, wl_resource* resource, uint32_t id, wl_resource* surface_resource)
