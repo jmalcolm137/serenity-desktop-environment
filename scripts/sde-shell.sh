@@ -4,8 +4,11 @@
 # The compositor's -s startup command cannot tell whether a program mapped a
 # window, so the wrapper has two jobs:
 #
-#   * Startup. A Taskbar that exits (or crashes) within the grace period did not
-#     launch successfully; start a Terminal so the session still has a usable UI
+#   * Startup. A Taskbar that exits within the grace period is retried the same
+#     way as a later exit. A startup exit is not proof that the Taskbar is
+#     broken: the Taskbar exits when its LaunchServer connection dies, and the
+#     service supervisor restarts LaunchServer. Only a Taskbar that cannot stay
+#     up at all falls back to a Terminal, so the session still has a usable UI
 #     rather than an empty screen with applets.
 #   * Steady state. A Taskbar that works and then exits is restarted with a
 #     bounded backoff. Before this, a later exit (for example, its LaunchServer
@@ -16,7 +19,7 @@
 #
 # Environment seams (for tests and embedding):
 #   SDE_SHELL_STARTUP_CHECKS  startup grace in 0.1 s ticks (default 50, i.e. 5 s)
-#   SDE_SHELL_MAX_RESTARTS    restarts after startup (default 5)
+#   SDE_SHELL_MAX_RESTARTS    restarts before the Terminal fallback (default 5)
 #   SDE_SHELL_RESTART_DELAY   base backoff in seconds (default 1; capped at 5)
 set -u
 
@@ -51,28 +54,36 @@ if [[ -z "$TASKBAR" || ! -x "$TASKBAR" ]]; then
     fallback_terminal
 fi
 
+# Wait out the startup grace. Return 1 if the Taskbar exits during it; the exit
+# status is left in startup_status.
+startup_grace() {
+    for _ in $(seq 1 "$STARTUP_CHECKS"); do
+        if ! kill -0 "$taskbar_pid" 2>/dev/null; then
+            wait "$taskbar_pid" 2>/dev/null
+            startup_status=$?
+            taskbar_pid=""
+            return 1
+        fi
+        sleep 0.1
+    done
+}
+
 start_taskbar
 
-# Give the Taskbar time to connect, map and survive startup. A process that exits
-# in this window did not launch successfully (the common failure is an early
-# connection or resource error, not a user action).
-for _ in $(seq 1 "$STARTUP_CHECKS"); do
-    if ! kill -0 "$taskbar_pid" 2>/dev/null; then
-        wait "$taskbar_pid" 2>/dev/null
-        taskbar_pid=""
-        echo "sde-shell: the Taskbar exited during startup; starting a fallback Terminal" >&2
-        fallback_terminal
-    fi
-    sleep 0.1
-done
-
-# It survived startup: this is the real shell. Keep it that way.
-echo "sde-shell: the Taskbar (pid $taskbar_pid) survived startup and is the shell" >&2
 restarts=0
 while :; do
-    wait "$taskbar_pid"
-    status=$?
-    taskbar_pid=""
+    if startup_grace; then
+        # It survived startup: this is the real shell. Wait for it to exit.
+        echo "sde-shell: the Taskbar (pid $taskbar_pid) survived startup and is the shell" >&2
+        wait "$taskbar_pid"
+        status=$?
+        taskbar_pid=""
+    else
+        # A startup exit may be transient (the LaunchServer it depends on is
+        # being restarted), so retry instead of abandoning the panel.
+        status=$startup_status
+        echo "sde-shell: the Taskbar exited during startup (status $status)" >&2
+    fi
     [[ "$stopping" -eq 1 ]] && exit 0
 
     restarts=$((restarts + 1))

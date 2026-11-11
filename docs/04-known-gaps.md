@@ -534,12 +534,14 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   (relaunching the user's windows after a compositor restart) is done; see the
   R4.2 note above.
 - **Shell supervision (R6/N4): done.** `scripts/sde-shell.sh` is the shell's
-  parent: a Taskbar that cannot survive startup falls back to a Terminal, and one
-  that exits later is restarted with a bounded backoff (then falls back to a
-  Terminal if it keeps failing). Before this, a later exit — for example the
-  Taskbar's LaunchServer connection dying — left the session with applets and no
-  panel until logout, because the supervisor's restart path only covers the
-  compositor. Covered by `scripts/run-shell-restart-test.sh`.
+  parent: a Taskbar that exits, whether during startup or later, is restarted
+  with a bounded backoff (and falls back to a Terminal if it keeps failing). A
+  startup exit is retried rather than treated as fatal, because the usual cause
+  is transient — the Taskbar exits when its LaunchServer connection dies, and
+  the service supervisor is restarting LaunchServer. Before this, a later exit —
+  for example the Taskbar's LaunchServer connection dying — left the session with
+  applets and no panel until logout, because the supervisor's restart path only
+  covers the compositor. Covered by `scripts/run-shell-restart-test.sh`.
 - **Session service supervision (R6/N4): done.** `scripts/sde-service-supervisor.sh`
   restarts the long-running services — LaunchServer, ImageDecoder and the portal
   backend — after a crash, with a bounded budget and backoff, and stops the child

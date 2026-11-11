@@ -242,8 +242,9 @@ The session's other processes are separate and have their own lifecycle:
   services, supervised with a restart budget (`sde-service-supervisor.sh`).
 * `WebContent`, `RequestServer`, `NotificationServer` and `AudioServer` are
   spawned on demand by the client-side framework, per connection.
-* The Taskbar is the shell; `sde-shell.sh` restarts it if it exits and falls
-  back to a Terminal if it cannot start.
+* The Taskbar is the shell; `sde-shell.sh` restarts it with a bounded budget if
+  it exits (including during startup) and falls back to a Terminal if it cannot
+  stay up.
 * The session supervisor (`sde-session.sh`) restarts the compositor on a fault
   or a wedged heartbeat, and drops to safe mode after the budget.
 

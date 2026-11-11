@@ -37,12 +37,24 @@ echo "$$" >> "${SDE_TEST_TASKBAR_LOG:?}"
 exit 1
 EOF
 
+# Fails the first start (the transient case: its LaunchServer was restarting),
+# then stays up.
+cat > "$RUNTIME/flaky-taskbar" <<'EOF'
+#!/bin/sh
+echo "$$" >> "${SDE_TEST_TASKBAR_LOG:?}"
+if [ ! -e "${SDE_TEST_FLAKY_MARKER:?}" ]; then
+    : > "$SDE_TEST_FLAKY_MARKER"
+    exit 1
+fi
+exec sleep 1000
+EOF
+
 cat > "$RUNTIME/terminal" <<'EOF'
 #!/bin/sh
 echo "started" >> "${SDE_TEST_TERMINAL_LOG:?}"
 exec sleep 1000
 EOF
-chmod +x "$RUNTIME/taskbar" "$RUNTIME/failing-taskbar" "$RUNTIME/terminal"
+chmod +x "$RUNTIME/taskbar" "$RUNTIME/failing-taskbar" "$RUNTIME/flaky-taskbar" "$RUNTIME/terminal"
 
 fail=0
 
@@ -120,6 +132,24 @@ check "the wrapper logged both restarts" \
     "grep -q 'restarting (2/2)' '$RUNTIME/wrapper-a.log'"
 check "the third exit fell back to a Terminal" \
     "grep -q 'starting a fallback Terminal' '$RUNTIME/wrapper-a.log' && [[ -s '$SDE_TEST_TERMINAL_LOG' ]]"
+
+echo "=== a Taskbar that fails its first start is retried, not abandoned ==="
+export SDE_TEST_TASKBAR_LOG="$RUNTIME/taskbar-d.log"
+export SDE_TEST_TERMINAL_LOG="$RUNTIME/terminal-d.log"
+export SDE_TEST_FLAKY_MARKER="$RUNTIME/flaky-once"
+run_wrapper "$RUNTIME/flaky-taskbar" "$RUNTIME/terminal" "$RUNTIME/wrapper-d.log" \
+    SDE_SHELL_STARTUP_CHECKS=2 SDE_SHELL_MAX_RESTARTS=2 SDE_SHELL_RESTART_DELAY=1
+wait_for_lines "$SDE_TEST_TASKBAR_LOG" 2
+for _ in $(seq 1 100); do
+    grep -q 'survived startup' "$RUNTIME/wrapper-d.log" 2>/dev/null && break
+    sleep 0.05
+done
+stop_wrapper
+check "the startup exit was retried" \
+    "grep -q 'the Taskbar exited during startup' '$RUNTIME/wrapper-d.log'"
+check "the retried Taskbar became the shell" \
+    "grep -q 'survived startup and is the shell' '$RUNTIME/wrapper-d.log'"
+check "no fallback Terminal was started" "[[ ! -s '$SDE_TEST_TERMINAL_LOG' ]]"
 
 echo "=== stopping the wrapper stops the Taskbar and does not restart it ==="
 export SDE_TEST_TASKBAR_LOG="$RUNTIME/taskbar-b.log"
