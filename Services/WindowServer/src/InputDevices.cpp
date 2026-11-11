@@ -213,6 +213,8 @@ static void pointer_destroy(wl_listener* listener, void*)
 {
     Pointer* pointer = nullptr;
     pointer = wl_container_of(listener, pointer, destroy);
+    auto* server = pointer->server;
+    auto* device = pointer->device;
     wl_list_remove(&pointer->swipe_begin.link);
     wl_list_remove(&pointer->swipe_update.link);
     wl_list_remove(&pointer->swipe_end.link);
@@ -222,7 +224,15 @@ static void pointer_destroy(wl_listener* listener, void*)
     wl_list_remove(&pointer->hold_begin.link);
     wl_list_remove(&pointer->hold_end.link);
     wl_list_remove(&pointer->destroy.link);
-    remove_owned(pointer->server->input.pointer_objects, pointer);
+    remove_owned(server->input.pointer_objects, pointer);
+
+    // pointer_devices exists only so input.ini settings can be re-applied. A
+    // removed device's libinput handle dies with it, so leaving the raw pointer
+    // in the list makes the next hotplug call libinput on freed memory (the
+    // DWT query is the first one that dereferences it).
+    server->input.pointer_devices.remove_first_matching([device](auto* candidate) {
+        return candidate == device;
+    });
 }
 
 // Switch devices: lid, tablet-mode, keypad-slide. The compositor forwards the
