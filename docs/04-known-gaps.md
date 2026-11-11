@@ -776,6 +776,21 @@ The corresponding upstream changes are the `libgui-wayland` patches
   the watchdog's reason from the mark file and calls an unmarked 137 an external
   SIGKILL; `run-session-test.sh` phase B2 covers it.
 
+- **The session watchdog restarted the compositor during CPU pressure.** A
+  `make -j8` Linux kernel build had been saturating the eight cores for about two
+  hours (load ~15, CPU PSI `some avg10` ~45–68 %). The session was locked and
+  `sde-lock` aborted (`SIGABRT`) in `wl_display_dispatch_queue`; two seconds
+  later the compositor's heartbeat stopped and the watchdog killed the
+  compositor after the 19 s grace (`exit 137`), then restarted it. The watchdog
+  only consulted memory pressure, so a scheduler-starved event loop looked like
+  a wedge. It now also consults `/proc/pressure/cpu` via
+  `SDE_SESSION_CPU_PRESSURE_FILE` and postpones a restart while `some avg10` is
+  at or above `SDE_SESSION_CPU_PRESSURE_PERCENT` (default 40), logging whether
+  memory, CPU, or both are responsible; a genuinely wedged compositor is still
+  restarted after the bounded grace. `run-session-test.sh` phase H6 covers it.
+  The `sde-lock` abort itself is a separate lock-client/protocol issue and is
+  not fixed by the watchdog change.
+
 - **A container could not tell whether the host had a live session.** The suite's
   live-session guard looked at its own `/run/user/<uid>`, which a container does
   not share, so a container run could drive the host session's state (and did,

@@ -8,7 +8,8 @@
 #   (H) the watchdog restarts a wedged compositor (stale heartbeat), (H2) also
 #       one that shuts down cleanly (status 0) on the watchdog's SIGTERM;
 #       (H4) a beat that resumes inside the grace is not restarted; (H5) memory
-#       pressure postpones the restart but does not cancel it;
+#       pressure postpones the restart but does not cancel it; (H6) CPU pressure
+#       does the same;
 #   (I) repeated failure drops to safe mode instead of ending the session;
 #   (J) manual safe mode starts minimal and skips autostart;
 #   (K) session.conf supplies policy and the environment overrides it (R6).
@@ -27,6 +28,14 @@ POWER="$SDE_ROOT/scripts/sde-power.sh"
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-session.XXXXXX")"
 chmod 700 "$RUNTIME"
 trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"' EXIT
+
+# Keep the watchdog deterministic on a loaded runner: cases that do not
+# deliberately exercise pressure get low-pressure sources, never the host's.
+printf 'some avg10=0.00 avg60=0.00 avg300=0.00 total=0\n' > "$RUNTIME/low-pressure"
+printf 'MemTotal: 1000 kB\nMemAvailable: 900 kB\n' > "$RUNTIME/meminfo-low"
+export SDE_SESSION_PRESSURE_FILE="$RUNTIME/low-pressure"
+export SDE_SESSION_CPU_PRESSURE_FILE="$RUNTIME/low-pressure"
+export SDE_SESSION_MEMINFO_FILE="$RUNTIME/meminfo-low"
 
 # Keep the session's /bin-shadow helpers inside the test runtime dir.
 export SDE_SESSION_BIN_DIR="$RUNTIME/sbin"
@@ -395,6 +404,7 @@ env SDE_SESSION_COMPOSITOR="$RUNTIME/hang5-comp" \
     SDE_SESSION_WATCHDOG_GRACE_SECONDS=0 \
     SDE_SESSION_WATCHDOG_PRESSURE_GRACE_SECONDS=4 \
     SDE_SESSION_PRESSURE_FILE="$RUNTIME/pressure" \
+    SDE_SESSION_CPU_PRESSURE_FILE="$RUNTIME/low-pressure" \
     SDE_SESSION_MEMINFO_FILE="$RUNTIME/meminfo" \
     SDE_SESSION_MAX_RESTARTS=2 \
     SDE_SESSION_AUTOSTART=0 \
@@ -421,6 +431,48 @@ check "host is under memory pressure" "$RUNTIME/session-h5.log"
 check "restart 1/2" "$RUNTIME/session-h5.log"
 kill -TERM "$SUP_H5" 2>/dev/null || true
 wait "$SUP_H5" 2>/dev/null || true
+
+echo "== (H6) CPU pressure postpones a restart =="
+cat > "$RUNTIME/hang6-comp" <<EOF
+#!/bin/sh
+echo "\$(date +%s)" > "$RUNTIME/hb6"
+sleep 30
+EOF
+chmod +x "$RUNTIME/hang6-comp"
+printf 'some avg10=95.00 avg60=95.00 avg300=95.00 total=0\n' > "$RUNTIME/cpu-pressure"
+env SDE_SESSION_COMPOSITOR="$RUNTIME/hang6-comp" \
+    SDE_SESSION_HEARTBEAT_FILE="$RUNTIME/hb6" \
+    SDE_SESSION_WATCHDOG_SECONDS=2 \
+    SDE_SESSION_WATCHDOG_GRACE_SECONDS=0 \
+    SDE_SESSION_WATCHDOG_PRESSURE_GRACE_SECONDS=4 \
+    SDE_SESSION_PRESSURE_FILE="$RUNTIME/low-pressure" \
+    SDE_SESSION_CPU_PRESSURE_FILE="$RUNTIME/cpu-pressure" \
+    SDE_SESSION_MEMINFO_FILE="$RUNTIME/meminfo-low" \
+    SDE_SESSION_MAX_RESTARTS=2 \
+    SDE_SESSION_AUTOSTART=0 \
+    SDE_SESSION_RESTART_DELAY=0 \
+    "$SDE" > "$RUNTIME/session-h6.log" 2>&1 &
+SUP_H6=$!
+for _ in $(seq 1 80); do
+    grep -q "host is under CPU pressure" "$RUNTIME/session-h6.log" 2>/dev/null && break
+    sleep 0.1
+done
+if grep -q "restart 1/2" "$RUNTIME/session-h6.log"; then
+    echo "  FAIL: the compositor was restarted before the CPU-pressure grace expired"
+    fail=1
+else
+    echo "  ok: the restart waited for the CPU-pressure grace"
+fi
+# The deferral is bounded: it must still restart once the grace expires.
+for _ in $(seq 1 100); do
+    grep -q "restart 1/2" "$RUNTIME/session-h6.log" 2>/dev/null && break
+    sleep 0.1
+done
+cat "$RUNTIME/session-h6.log"
+check "host is under CPU pressure" "$RUNTIME/session-h6.log"
+check "restart 1/2" "$RUNTIME/session-h6.log"
+kill -TERM "$SUP_H6" 2>/dev/null || true
+wait "$SUP_H6" 2>/dev/null || true
 
 echo "== (H3) a wall-clock jump does not look like a wedge =="
 cat > "$RUNTIME/jump-comp" <<EOF

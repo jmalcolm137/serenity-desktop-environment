@@ -23,8 +23,11 @@
 #   SDE_SESSION_RESTORE_FILE  the compositor-written list of running apps (default below)
 #   SDE_SESSION_WATCHDOG_SECONDS  heartbeat staleness before the first grace (default 10; 0 disables)
 #   SDE_SESSION_WATCHDOG_GRACE_SECONDS  seconds to wait for a stalled heartbeat to recover (default 10)
-#   SDE_SESSION_WATCHDOG_PRESSURE_GRACE_SECONDS  extra seconds to wait while memory pressure is severe (default 30)
+#   SDE_SESSION_WATCHDOG_PRESSURE_GRACE_SECONDS  extra seconds to wait while memory or CPU pressure is severe (default 30)
 #   SDE_SESSION_PRESSURE_FILE     memory-pressure source (default /proc/pressure/memory)
+#   SDE_SESSION_CPU_PRESSURE_FILE CPU-pressure source (default /proc/pressure/cpu)
+#   SDE_SESSION_PRESSURE_PERCENT  memory PSI avg10 threshold (default 50)
+#   SDE_SESSION_CPU_PRESSURE_PERCENT  CPU PSI avg10 threshold (default 40)
 #   SDE_SESSION_MEMINFO_FILE      memory-availability source (default /proc/meminfo)
 #   SDE_SESSION_HEARTBEAT_FILE    liveness file the compositor writes (default below)
 #   SDE_SESSION_COMPOSITOR_SAFE   compositor command for safe mode (minimal session)
@@ -167,17 +170,22 @@ fi
 WATCHDOG_SECONDS="${SDE_SESSION_WATCHDOG_SECONDS:-10}"
 # A heartbeat that stops is not proof of a wedge: a scheduler or I/O stall can
 # delay the beat for seconds while the compositor is otherwise healthy. Wait out a
-# grace period first, and while the system is under severe memory pressure wait a
-# bounded extra period — restarting into a memory storm loses the session's client
-# data and makes the pressure worse.
+# grace period first, and while the system is under severe memory or CPU pressure
+# wait a bounded extra period — restarting into a memory storm (or during a build
+# that is starving the compositor) loses the session's client data and makes the
+# pressure worse.
 WATCHDOG_GRACE_SECONDS="${SDE_SESSION_WATCHDOG_GRACE_SECONDS:-10}"
 WATCHDOG_PRESSURE_GRACE_SECONDS="${SDE_SESSION_WATCHDOG_PRESSURE_GRACE_SECONDS:-30}"
 PRESSURE_FILE="${SDE_SESSION_PRESSURE_FILE:-/proc/pressure/memory}"
+CPU_PRESSURE_FILE="${SDE_SESSION_CPU_PRESSURE_FILE:-/proc/pressure/cpu}"
 MEMINFO_FILE="${SDE_SESSION_MEMINFO_FILE:-/proc/meminfo}"
-# Severe = PSI some avg10 at/above this percentage, or available memory below this
-# percentage of total. Both are deliberately conservative: they only postpone a
-# restart, never cancel one outright.
-PRESSURE_PERCENT=50
+# Severe = PSI some avg10 at/above this percentage (memory or CPU), or available
+# memory below this percentage of total. Both are deliberately conservative: they
+# only postpone a restart, never cancel one outright. CPU pressure gets a lower
+# threshold: a compositor needs scheduling latency, not just free memory, and a
+# build can starve the heartbeat while memory pressure still reads zero.
+PRESSURE_PERCENT="${SDE_SESSION_PRESSURE_PERCENT:-50}"
+CPU_PRESSURE_PERCENT="${SDE_SESSION_CPU_PRESSURE_PERCENT:-40}"
 AVAILABLE_PERCENT=5
 SAFE_MODE="${SDE_SESSION_SAFE_MODE:-0}"
 SAFE_COMPOSITOR="${SDE_SESSION_COMPOSITOR_SAFE:-}"
@@ -368,12 +376,27 @@ memory_pressure_severe() {
     return 1
 }
 
+# Is the machine under severe CPU pressure? A build saturating every core can
+# delay the compositor's heartbeat long enough to look like a wedge; postponing
+# the restart gives the scheduler time to run the event loop again. Like the
+# memory check, this only postpones a restart, never cancels one.
+cpu_pressure_severe() {
+    local avg10=""
+    if [ -r "$CPU_PRESSURE_FILE" ]; then
+        avg10="$(awk '/^some / { for (i = 1; i <= NF; i++) if ($i ~ /^avg10=/) { sub(/^avg10=/, "", $i); print $i; exit } }' "$CPU_PRESSURE_FILE" 2>/dev/null)"
+    fi
+    if [ -n "$avg10" ] && awk -v value="$avg10" -v limit="$CPU_PRESSURE_PERCENT" 'BEGIN { exit !(value >= limit) }'; then
+        return 0
+    fi
+    return 1
+}
+
 # A liveness watchdog (R6/N4): if the compositor's heartbeat file goes stale its
 # event loop is blocked. It does not kill it at the first threshold: a scheduler
 # or I/O stall can delay a beat for seconds, and a restart loses every client's
 # data. Wait one grace period for the beat to resume, and while the host is under
-# severe memory pressure wait a bounded extra period, then restart. Runs in the
-# background so the foreground `wait` keeps the fast SIGTERM path.
+# severe memory or CPU pressure wait a bounded extra period, then restart. Runs
+# in the background so the foreground `wait` keeps the fast SIGTERM path.
 #
 # Compare whether the heartbeat *changes* rather than subtracting its wall-clock
 # value from `date +%s`. A fresh login can coincide with an NTP correction or a
@@ -384,7 +407,7 @@ memory_pressure_severe() {
 # suspend both processes resume and the next beat clears the counter.
 watch_compositor_hang() {
     local pid="$1" beat last_beat="" unchanged=0
-    local announced=0 grace_deadline=0 pressure_deadline=0
+    local announced=0 grace_deadline=0 pressure_deadline=0 pressure_reason=""
     while kill -0 "$pid" 2>/dev/null; do
         sleep 1
         [ -e "$HEARTBEAT_FILE" ] || {
@@ -423,12 +446,18 @@ watch_compositor_hang() {
         if [ "$SECONDS" -lt "$grace_deadline" ]; then
             continue
         fi
-        # Stage two: if the host is thrashing, restarting now would make it worse.
-        # Postpone once, bounded; if the beat recovers meanwhile the counters reset.
-        if [ "$pressure_deadline" -eq 0 ] && memory_pressure_severe; then
-            pressure_deadline=$((SECONDS + WATCHDOG_PRESSURE_GRACE_SECONDS))
-            echo "SDE session: heartbeat still stale and the host is under memory pressure; waiting up to ${WATCHDOG_PRESSURE_GRACE_SECONDS}s before restarting" >&2
-            continue
+        # Stage two: if the host is thrashing or CPU-starved, restarting now
+        # would make it worse. Postpone once, bounded; if the beat recovers
+        # meanwhile the counters reset.
+        if [ "$pressure_deadline" -eq 0 ]; then
+            pressure_reason=""
+            memory_pressure_severe && pressure_reason="memory pressure"
+            cpu_pressure_severe && pressure_reason="${pressure_reason:+$pressure_reason and }CPU pressure"
+            if [ -n "$pressure_reason" ]; then
+                pressure_deadline=$((SECONDS + WATCHDOG_PRESSURE_GRACE_SECONDS))
+                echo "SDE session: heartbeat still stale and the host is under ${pressure_reason}; waiting up to ${WATCHDOG_PRESSURE_GRACE_SECONDS}s before restarting" >&2
+                continue
+            fi
         fi
         if [ "$pressure_deadline" -ne 0 ] && [ "$SECONDS" -lt "$pressure_deadline" ]; then
             continue
