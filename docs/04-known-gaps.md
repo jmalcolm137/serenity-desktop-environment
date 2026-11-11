@@ -788,8 +788,11 @@ The corresponding upstream changes are the `libgui-wayland` patches
   at or above `SDE_SESSION_CPU_PRESSURE_PERCENT` (default 40), logging whether
   memory, CPU, or both are responsible; a genuinely wedged compositor is still
   restarted after the bounded grace. `run-session-test.sh` phase H6 covers it.
-  The `sde-lock` abort itself is a separate lock-client/protocol issue and is
-  not fixed by the watchdog change.
+  The `sde-lock` abort was a separate bug: its `wl_pointer` listener table ended
+  at `axis`, so wl_pointer v5+'s `frame` event (opcode 5) had a NULL listener and
+  libwayland aborted on any pointer event while locked. The locker now implements
+  the full pointer listener table, and `run-lock-test.sh` phase (D) moves the
+  virtual pointer while locked to keep the regression covered.
 
 - **A container could not tell whether the host had a live session.** The suite's
   live-session guard looked at its own `/run/user/<uid>`, which a container does
