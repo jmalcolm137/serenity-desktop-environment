@@ -162,6 +162,16 @@ public:
     static void pointer_motion(void* data, wl_pointer* pointer, uint32_t time, wl_fixed_t x, wl_fixed_t y);
     static void pointer_button(void* data, wl_pointer* pointer, uint32_t serial, uint32_t time, uint32_t button, uint32_t state);
     static void pointer_axis(void* data, wl_pointer* pointer, uint32_t time, uint32_t axis, wl_fixed_t value);
+    // wl_pointer v5+ sends frame/axis_source/axis_stop/axis_discrete, and later
+    // versions add value120/relative_direction/warp. libwayland aborts if any
+    // event opcode has a NULL listener, even for events the locker ignores.
+    static void pointer_frame(void* data, wl_pointer* pointer);
+    static void pointer_axis_source(void* data, wl_pointer* pointer, uint32_t axis_source);
+    static void pointer_axis_stop(void* data, wl_pointer* pointer, uint32_t time, uint32_t axis);
+    static void pointer_axis_discrete(void* data, wl_pointer* pointer, uint32_t axis, int32_t discrete);
+    static void pointer_axis_value120(void* data, wl_pointer* pointer, uint32_t axis, int32_t value120);
+    static void pointer_axis_relative_direction(void* data, wl_pointer* pointer, uint32_t axis, uint32_t direction);
+    static void pointer_warp(void* data, wl_pointer* pointer, wl_fixed_t x, wl_fixed_t y);
     static void lock_locked(void* data, ext_session_lock_v1* lock);
     static void lock_finished(void* data, ext_session_lock_v1* lock);
     static void lock_surface_configure(void* data, ext_session_lock_surface_v1* surface, uint32_t serial, uint32_t width, uint32_t height);
@@ -259,6 +269,13 @@ const wl_pointer_listener s_pointer_listener = {
     .motion = App::pointer_motion,
     .button = App::pointer_button,
     .axis = App::pointer_axis,
+    .frame = App::pointer_frame,
+    .axis_source = App::pointer_axis_source,
+    .axis_stop = App::pointer_axis_stop,
+    .axis_discrete = App::pointer_axis_discrete,
+    .axis_value120 = App::pointer_axis_value120,
+    .axis_relative_direction = App::pointer_axis_relative_direction,
+    .warp = App::pointer_warp,
 };
 
 const ext_session_lock_v1_listener s_lock_listener = {
@@ -501,6 +518,17 @@ void App::pointer_axis(void* data, wl_pointer* pointer, uint32_t time, uint32_t 
     (void)axis;
     (void)value;
 }
+
+// The locker only draws hover/click state from enter/leave/motion/button/axis.
+// These events still need listeners: libwayland aborts with "listener function
+// for opcode N ... is NULL" when a newer wl_pointer event arrives without one.
+void App::pointer_frame(void*, wl_pointer*) { }
+void App::pointer_axis_source(void*, wl_pointer*, uint32_t) { }
+void App::pointer_axis_stop(void*, wl_pointer*, uint32_t, uint32_t) { }
+void App::pointer_axis_discrete(void*, wl_pointer*, uint32_t, int32_t) { }
+void App::pointer_axis_value120(void*, wl_pointer*, uint32_t, int32_t) { }
+void App::pointer_axis_relative_direction(void*, wl_pointer*, uint32_t, uint32_t) { }
+void App::pointer_warp(void*, wl_pointer*, wl_fixed_t, wl_fixed_t) { }
 
 void App::lock_locked(void* data, ext_session_lock_v1* lock)
 {

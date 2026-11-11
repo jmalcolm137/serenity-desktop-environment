@@ -192,6 +192,20 @@ if [[ -x "$SDE_ROOT/build/tools/sde-lock" ]]; then
     # the virtual keyboard starts delivering a burst of keys.
     sleep 0.5
 
+    # A pointer event used to abort the native locker: wl_pointer v5+ sends
+    # 'frame' (opcode 5), and a listener table that stopped at 'axis' made
+    # libwayland abort with "listener function for opcode 5 ... is NULL". Move
+    # the virtual pointer while locked and require the locker to survive.
+    env WAYLAND_DISPLAY=lock-d "$TOOLS_BUILD/virtual-input-test" \
+        --move 200 200 --sleep 100 --move 220 220 --linger 300 > "$RUNTIME/pointer-d.log" 2>&1 || true
+    sleep 0.5
+    if kill -0 "$LOCK_D_PID" 2>/dev/null; then
+        echo "  ok: a pointer event did not abort the native locker"
+    else
+        echo "  MISSING: the native locker aborted on a pointer event"
+        fail=1
+    fi
+
     # PAM: type a wrong password and Enter. The client must report the failure and
     # stay locked ("login" is the default service; the password is deliberately
     # wrong, so no account is touched). evdev: w=17 r=19 o=24 n=49 g=34 Enter=28.
@@ -200,6 +214,7 @@ if [[ -x "$SDE_ROOT/build/tools/sde-lock" ]]; then
     # password attempt that never reached PAM would otherwise look like a hang.
     for attempt in 1 2; do
         env WAYLAND_DISPLAY=lock-d "$TOOLS_BUILD/virtual-input-test" \
+            --move 200 200 --sleep 100 --move 220 220 --sleep 400 \
             --key 17 press --key 17 release --key 19 press --key 19 release \
             --key 24 press --key 24 release --key 49 press --key 49 release \
             --key 34 press --key 34 release --key 28 press --key 28 release \
