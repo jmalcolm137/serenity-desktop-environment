@@ -47,7 +47,11 @@ install -d "$(dirname "$DESKTOP")"
 install_if_executable() {
     local source="$1" name="${2:-$(basename "$1")}"
     if [[ -x "$source" ]]; then
-        install -m 0755 "$source" "$BIN/$name"
+        # Replace beside the target and rename over it: the compositor and the
+        # session's apps are running from this prefix, and writing over a live
+        # executable fails with ETXTBSY.
+        replace_file "$source" "$BIN/$name"
+        chmod 0755 "$BIN/$name"
     fi
 }
 
