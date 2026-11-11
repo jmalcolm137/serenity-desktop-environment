@@ -1,8 +1,7 @@
 diff --git a/Userland/Applications/Terminal/CMakeLists.txt b/Userland/Applications/Terminal/CMakeLists.txt
-index f6884b73..28793d0b 100644
 --- a/Userland/Applications/Terminal/CMakeLists.txt
 +++ b/Userland/Applications/Terminal/CMakeLists.txt
-@@ -10,3 +10,11 @@ set(SOURCES
+@@ -10,3 +10,11 @@
  
  serenity_app(Terminal ICON app-terminal)
  target_link_libraries(Terminal PRIVATE LibConfig LibCore LibFileSystem LibDesktop LibGfx LibGUI LibVT LibMain LibURL)
@@ -15,7 +14,6 @@ index f6884b73..28793d0b 100644
 +    target_link_libraries(Terminal PRIVATE SerenitySystem)
 +endif()
 diff --git a/Userland/Applications/Terminal/main.cpp b/Userland/Applications/Terminal/main.cpp
-index 90cfa9f9..984312ea 100644
 --- a/Userland/Applications/Terminal/main.cpp
 +++ b/Userland/Applications/Terminal/main.cpp
 @@ -36,6 +36,7 @@
@@ -26,7 +24,7 @@ index 90cfa9f9..984312ea 100644
  #include <LibURL/URL.h>
  #include <LibVT/TerminalWidget.h>
  #include <pty.h>
-@@ -103,36 +104,9 @@ private:
+@@ -104,36 +105,9 @@
  
  static ErrorOr<void> utmp_update(StringView tty, pid_t pid, bool create)
  {
@@ -66,7 +64,7 @@ index 90cfa9f9..984312ea 100644
  }
  
  static ErrorOr<void> run_command(StringView command, bool keep_open)
-@@ -149,8 +123,27 @@ static ErrorOr<void> run_command(StringView command, bool keep_open)
+@@ -150,8 +124,22 @@
          arguments.append("-c"sv);
          arguments.append(command);
      }
@@ -79,13 +77,8 @@ index 90cfa9f9..984312ea 100644
 +    host_environment.append(ByteString::formatted("TERM={}", "xterm"sv));
 +    host_environment.append(ByteString::formatted("COLORTERM={}", "truecolor"sv));
 +    host_environment.append(ByteString::formatted("PAGER={}", "more"sv));
-+    // The SDE host userland overlay lives in /usr/bin/gnu. Prepend it so the
-+    // Terminal's shell agrees with the login-shell PATH.
-+    ByteString terminal_path { "/usr/local/bin:/usr/bin/gnu:/usr/sbin:/usr/bin:/bin" };
-+    if (auto const* value = getenv("PATH"); value && *value)
-+        terminal_path = ByteString::formatted("/usr/bin/gnu:{}", value);
-+    host_environment.append(ByteString::formatted("PATH={}", terminal_path));
-+    for (auto const* name : { "WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE", "DBUS_SESSION_BUS_ADDRESS", "LD_LIBRARY_PATH", "SERENITY_RES_ROOT", "HOME", "USER", "LOGNAME", "SHELL", "ENV", "LANG" }) {
++    host_environment.append(ByteString::formatted("PATH={}", DEFAULT_PATH_SV));
++    for (auto const* name : { "WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE", "DBUS_SESSION_BUS_ADDRESS", "LD_LIBRARY_PATH", "SERENITY_RES_ROOT", "HOME", "USER", "LOGNAME", "SHELL", "LANG" }) {
 +        if (auto const* value = getenv(name); value && *value)
 +            host_environment.append(ByteString::formatted("{}={}", name, value));
 +    }
@@ -96,16 +89,7 @@ index 90cfa9f9..984312ea 100644
      VERIFY_NOT_REACHED();
  }
  
-@@ -229,7 +217,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
-     TRY(Core::System::pledge("stdio tty rpath cpath wpath recvfd sendfd proc exec unix sigaction"));
- 
-     struct sigaction act;
--    act.sa_mask = 0;
-+    sigemptyset(&act.sa_mask);
-     // Do not trust that both function pointers overlap.
-     act.sa_sigaction = nullptr;
- 
-@@ -343,13 +331,11 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
+@@ -358,13 +346,11 @@
          return fg_pid != -1 && fg_pid != shell_pid;
      };
  
