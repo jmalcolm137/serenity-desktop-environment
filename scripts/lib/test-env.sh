@@ -28,6 +28,13 @@ export SDE_BACKENDS="${SDE_BACKENDS:-headless}"
 : "${LIBGUI_WAYLAND_ROOT:=$SDE_ROOT/../libgui-wayland}"
 export SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$LIBGUI_WAYLAND_ROOT/serenity/Base/res}"
 
+# LibWM's informational lines (presented frames, seat capabilities, portal
+# deferral, spawned services, ...) are off unless LIBWM_TRACE is set. A test that
+# greps them sets LIBWM_TRACE=1 on the client it reads, the way libgui-wayland's
+# own suites do; it is not exported here, so the dependency stays explicit and a
+# negative check (no pushed wallpaper) runs with tracing on rather than passing
+# vacuously.
+
 # Nothing a test starts may reach a live session's files, sockets or services.
 unset SDE_HEARTBEAT_FILE SDE_SESSION_LOG SDE_SESSION_DISPLAY SDE_WM_PORTAL_PATH \
       SDE_STATE_DIR SDE_SESSION_SHELL SDE_SESSION_IDLE_SECONDS \

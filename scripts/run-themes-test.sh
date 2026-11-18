@@ -34,8 +34,11 @@ start_compositor() {
     local startup="${2:-}"
     local -a startup_args=()
     [[ -n "$startup" ]] && startup_args=(-s "$startup")
+    # LIBWM_TRACE: the live-theme check reads LibWM's "system theme is" line, which
+    # is informational output and off by default.
     env -u WAYLAND_DISPLAY -u DISPLAY \
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
+        LIBWM_TRACE=1 \
         XDG_RUNTIME_DIR="$RUNTIME" \
         SDE_STATE_DIR="$RUNTIME" \
         SDE_WM_PORTAL_PATH="$RUNTIME/wm-$sock" \

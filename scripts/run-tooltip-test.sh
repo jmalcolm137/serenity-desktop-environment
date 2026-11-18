@@ -51,6 +51,7 @@ sde_test_compositor SDE_WM_PORTAL_PATH="$RUNTIME/wm"
 env WAYLAND_DISPLAY="$SOCK" \
     SDE_SESSION_DIR="$SESSION_DIR" \
     SDE_APP_BIN_DIR="$BUILD/bin" \
+    LIBWM_TRACE=1 \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     timeout 15 "$TEST" > "$RUNTIME/client.log" 2>&1 &

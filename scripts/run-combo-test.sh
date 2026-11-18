@@ -66,6 +66,7 @@ run_case() {
     env WAYLAND_DISPLAY="$SOCK" \
         XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
         SDE_SESSION_DIR="$SDE_SESSION_DIR" \
+        LIBWM_TRACE=1 \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
         LD_LIBRARY_PATH="$BUILD/lib" \
         timeout 15 "$TEST" "$x" "$y" > "$log" 2>&1 || true
@@ -130,6 +131,7 @@ sleep 1
 env WAYLAND_DISPLAY="$SOCK2" \
     XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
     SDE_SESSION_DIR="$SDE_SESSION_DIR" \
+    LIBWM_TRACE=1 \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     timeout 15 "$TEST" 200 100 reposition > "$RUNTIME2/app.log" 2>&1 || true

@@ -57,7 +57,9 @@ for candidate in "${PIPEWIRE_RUNTIME_DIR:-}" "/run/user/$(id -u)" "${XDG_RUNTIME
     fi
 done
 
-sde_test_compositor --startup "$APP_BIN/Piano & $APP_BIN/SoundPlayer & $APPLET" SDE_STATE_DIR="$RUNTIME" SDE_APP_BIN_DIR="$APP_BIN" SDE_SESSION_DIR="$SESSION_DIR" PIPEWIRE_RUNTIME_DIR="${PW_RUNTIME:-$RUNTIME}"
+# LIBWM_TRACE: the check below reads LibWM's "spawned AudioServer" line, which is
+# informational output and off by default.
+sde_test_compositor --startup "$APP_BIN/Piano & $APP_BIN/SoundPlayer & $APPLET" SDE_STATE_DIR="$RUNTIME" SDE_APP_BIN_DIR="$APP_BIN" SDE_SESSION_DIR="$SESSION_DIR" PIPEWIRE_RUNTIME_DIR="${PW_RUNTIME:-$RUNTIME}" LIBWM_TRACE=1
 # The startup clients race the compositor's socket: the test used to signal it as
 # soon as the socket existed, so a slower client (Piano) had not mapped yet and
 # the run failed intermittently. Wait for the workload instead of a fixed delay.

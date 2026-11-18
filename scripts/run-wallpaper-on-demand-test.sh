@@ -44,7 +44,10 @@ if [[ -x "$DESKTOP" ]]; then
     STARTUP="$STARTUP & $DESKTOP -d"
 fi
 
+# LIBWM_TRACE: the regression check below asserts that clients never see LibWM's
+# "host wallpaper" line, and that line is informational output, off by default.
 setsid env -u WAYLAND_DISPLAY -u DISPLAY \
+    LIBWM_TRACE=1 \
     XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
     WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 SDE_OUTPUT_SCALE=1 SDE_XWAYLAND=0 \
     SDE_STATE_DIR="$R" \

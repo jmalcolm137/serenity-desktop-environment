@@ -30,6 +30,7 @@ env -u WAYLAND_DISPLAY -u DISPLAY \
     SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
     SERENITY_RES_ROOT="$SERENITY/Base/res" \
     LD_LIBRARY_PATH="$BUILD_DIR/lib" \
+    LIBWM_TRACE=1 \
     LIBWM_DUMP="$FRAME_OUT" \
     "$COMP" -n "$SOCK" -s "$APP" > "$RUNTIME/session.log" 2>&1 &
 COMP_PID=$!

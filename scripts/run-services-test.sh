@@ -36,6 +36,9 @@ export SDE_SESSION_DIR="$SESSION_DIR"
 
 export SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}"
 export SDE_APP_BIN_DIR="${SDE_APP_BIN_DIR:-$BUILD/bin}"
+# LibWM's "deferring to the session service" line is informational and off by
+# default; the checks below read it (and its absence in case A).
+export LIBWM_TRACE=1
 export LD_LIBRARY_PATH="$BUILD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # Deliberately no compositor: make LibWM skip the window connection so the test
 # is fully self-contained. The launch/image portals do not need one.

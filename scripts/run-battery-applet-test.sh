@@ -171,6 +171,7 @@ sleep 0.5
 env WAYLAND_DISPLAY="$DPMS_SOCK" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
+    LIBWM_TRACE=1 \
     "$APPLET" --power-supply-root "$FIXTURE" > "$DPMS_APPLET_LOG" 2>&1 &
 dpms_applet_pid=$!
 sleep 2

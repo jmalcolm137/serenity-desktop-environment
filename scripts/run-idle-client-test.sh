@@ -29,6 +29,7 @@ sde_test_compositor SDE_STATE_DIR="$RUNTIME"
 
 # A plain Terminal, idle (an interactive shell with no output).
 env -u WAYLAND_DISPLAY WAYLAND_DISPLAY="$SOCK" XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
+    LIBWM_TRACE=1 \
     LD_LIBRARY_PATH="$BUILD/lib" SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     SDE_APP_BIN_DIR="$BUILD/bin" "$BUILD/bin/Terminal" > "$RUNTIME/term.log" 2>&1 &
 TERM_PID=$!

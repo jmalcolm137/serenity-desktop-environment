@@ -69,6 +69,7 @@ PROC_LOG="$RUNTIME/sysmon-proc.log"
 env WAYLAND_DISPLAY="$SOCK" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
+    LIBWM_TRACE=1 \
     timeout 25 "$SYSTEM_MONITOR" -t processes > "$PROC_LOG" 2>&1 &
 SYSMON_PID=$!
 sleep 3

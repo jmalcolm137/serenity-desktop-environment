@@ -34,6 +34,7 @@ keyboardless() { grep -cF "(pointer=true, keyboard=false)" "$RUNTIME/client.log"
 sde_test_client env WAYLAND_DISPLAY="$SOCK" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
+    LIBWM_TRACE=1 \
     "$TEST" --duration 20000 > "$RUNTIME/client.log" 2>&1
 sde_test_wait_log "$RUNTIME/client.log" "REPLUG-TEST: shown" || true
 

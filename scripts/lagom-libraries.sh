@@ -29,7 +29,7 @@ TARGETS=(
     # Services and applications.
     LibJS LibWeb LibWebView LibTLS LibHTTP LibGemini LibWebSocket LibSQL
     # The compositor side: the shim and the GPU backend.
-    windowserver eglgpu
+    LibWM eglgpu
 )
 
 printf '%s\n' "${TARGETS[@]}"

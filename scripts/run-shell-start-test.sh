@@ -70,7 +70,9 @@ if [[ "${PORTAL_OK:-0}" -eq 1 ]]; then
 else
     echo "  FAIL: no WM portal socket at $RUNTIME/portal/wm"; fail=1
 fi
-check "title='Taskbar'"
+# The Taskbar maps as a layer surface ("serenity-taskbar"), not as an xdg
+# toplevel with a title, so the layer-surface checks below are the assertion that
+# the shell came up (the old toplevel-title check was stale).
 check "layer surface namespace='serenity-taskbar'"
 check "layer surface namespace='serenity-desktop'"
 check "AppletManager: applet area size"

@@ -147,7 +147,7 @@ framework_is_newer_than_sde() {
         # soname symlinks to the real files ninja relinks.
         while IFS= read -r library; do
             [ -e "$library" ] && [ "$library" -nt "$binary" ] && return 0
-        done < <(ldd "$binary" 2>/dev/null | awk '$2 == "=>" && $3 ~ /\/lib(lagom-|windowserver)/ { print $3 }')
+        done < <(ldd "$binary" 2>/dev/null | awk '$2 == "=>" && $3 ~ /\/lib(lagom-|windowserver|wm)/ { print $3 }')
     done
     return 1
 }

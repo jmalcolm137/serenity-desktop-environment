@@ -17,12 +17,18 @@ foreach(_lib ak coreminimal corebasic core ipc url threading main)
     find_library(LAGOM_${_lib} NAMES lagom-${_lib} PATHS "${SERENITY_BUILD_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
 endforeach()
 
-# The shared launch-handler resolver and the (header-only) LaunchServerConnection
-# live in libgui-wayland; including the latter directly keeps this service free
-# of LibGUI (and of the WindowServer shim).
+# The shared launch-handler resolver and the protocol implementation
+# (LaunchServerConnection) live in libgui-wayland; the latter is compiled in here
+# rather than linked from LibWM. LibWM links LibGUI and installs the in-process
+# portals from a static initializer, which is exactly what a session service must
+# not do (the service would answer its own portal path and shadow the session's
+# services; see docs/06-service-layering.md).
 find_library(LAGOM_launch NAMES lagom-launch PATHS "${SERENITY_BUILD_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
 
-add_executable(LaunchServer src/main.cpp)
+add_executable(LaunchServer
+    src/main.cpp
+    "${LIBGUI_WAYLAND_SRC}/src/LaunchServerConnection.cpp"
+    "${LIBGUI_WAYLAND_SRC}/src/Environment.cpp")
 
 target_include_directories(LaunchServer PRIVATE
     "${SERENITY_SRC}"
@@ -30,9 +36,17 @@ target_include_directories(LaunchServer PRIVATE
     "${SERENITY_SRC}/Userland/Services"
     "${SERENITY_BUILD_DIR}"
     "${SERENITY_BUILD_DIR}/Userland/Services"
+    # LaunchServerConnection.h includes LaunchServerDefaultStub.h, which libgui-wayland
+    # generates into its LibWM binary directory at build time (it is no longer checked
+    # in beside the header).
+    "${SERENITY_BUILD_DIR}/libwm/stubs"
     "${LIBGUI_WAYLAND_SRC}/src")
 
 target_compile_options(LaunchServer PRIVATE -Wno-literal-suffix -fno-exceptions)
+
+# Environment.cpp's last-resort resource root. The session exports SERENITY_RES_ROOT
+# and this service resolves no resources, so the baked-in fallback stays empty.
+target_compile_definitions(LaunchServer PRIVATE "LIBWM_DEFAULT_RES=\"\"")
 
 target_link_directories(LaunchServer PRIVATE "${SERENITY_BUILD_DIR}/lib")
 target_link_libraries(LaunchServer PRIVATE
