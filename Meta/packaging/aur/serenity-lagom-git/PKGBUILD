@@ -24,7 +24,7 @@ makedepends=(
     libpulse zip unzip
 )
 source=(
-    "libgui-wayland::git+https://github.com/jmalcolm137/libgui-wayland.git#commit=81cdad223599c3a70b39ee5a5f27f0c29766239e"
+    "libgui-wayland::git+https://github.com/jmalcolm137/libgui-wayland.git#commit=2ca7eb1ce2be1aeff47f7445a6f31c17d655ba27"
     "serenity-desktop-environment::git+https://github.com/jmalcolm137/serenity-desktop-environment.git#tag=v0.1.0"
 )
 sha256sums=('SKIP' 'SKIP')
