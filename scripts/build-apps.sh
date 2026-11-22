@@ -15,7 +15,8 @@ SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Applications. SystemMonitor, Debugger and CrashReporter are Linux-native:
 # SystemMonitor reads /proc with a libunwind + libdw thread-stack backend,
 # Debugger drives ptrace directly, and CrashReporter reads a Linux ELF core dump
-# (libgui-wayland patches 0050-0053).
+# (patches 0013, 0023 and 0024, on libgui-wayland's LibCore, LibDebug and
+# LibCoredump ports).
 APPS=(
     Calculator PDFViewer
     3DFileViewer Tubes About AnalogClock Assistant Browser BrowserSettings

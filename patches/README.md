@@ -8,8 +8,8 @@ SerenityOS on its own, regardless of how the SDE uses it?**
 | Where | What belongs there |
 |---|---|
 | [`jmalcolm137/serenity`](https://github.com/jmalcolm137/serenity), branch `fixes` | Fixes that make sense for SerenityOS in isolation. Each is an ordinary commit on top of the pinned upstream revision and a candidate for an upstream PR. `libgui-wayland/scripts/fetch-serenity.sh` fetches this branch as the base checkout, so both repositories consume these fixes unmodified. |
-| `libgui-wayland/patches/` | Changes the port needs to run SerenityOS's userland on a Linux host (the port's own decision). |
-| `patches/` (here) | Changes that only exist because of the SDE: SDE behaviour, SDE libraries, SDE build integration. |
+| `libgui-wayland/patches/` | Changes SerenityOS's libraries need to run on a Linux host, shared by every desktop built on the port. |
+| `patches/` (here) | Changes to the programs the SDE builds and ships (the Taskbar, Terminal and the applications, including their Linux ports), and changes that only exist because of the SDE: SDE behaviour, SDE libraries, SDE build integration. Applied after `libgui-wayland`'s series. |
 
 A change that only makes sense because of the SDE does not go into the fork, even
 if it is small and harmless there. Moving to a newer upstream is a `git rebase` of
@@ -32,6 +32,33 @@ rebased tip.
 | [`0006`](0006-taskbar-lock-menu.patch) Taskbar: a Lock item, first in the system menu | SDE | SDE | SDE behaviour: the entry locks through `SDE_LOCK_CMD`, which the SDE session exports (and which selects `sde-lock` or a third-party locker). | n/a |
 | [`0008`](0008-sde-lagom-targets.patch) The SDE's Lagom targets (the Taskbar, the app suite) | SDE | SDE | SDE build integration: which SerenityOS programs the desktop builds on Lagom. | n/a |
 | [`0009`](0009-taskbar-xdg-menu.patch) Taskbar: the XDG system menu (the full freedesktop Menu specification) | SDE | SDE | SDE behaviour: the freedesktop menu data dirs, menu file, `.directory` entries and `.desktop` entries are a host-desktop concept; the menu is selected by `[Taskbar] XDGMenu` and the entries come from the SDE's generator. See [`../docs/36-xdg-desktop-menu.md`](../docs/36-xdg-desktop-menu.md). | n/a |
+
+The application patches below came from `libgui-wayland`'s series (its number in
+brackets) when the port stopped building the applications: they belong with the
+desktop that builds and tests them. Their library halves stayed in the port.
+
+| Patch | Application |
+|---|---|
+| [`0010`](0010-app-host-fixes.patch) (`0005`) | Maps, Presenter: host build fixes |
+| [`0011`](0011-filemanager-launch-paths.patch) (`0012`) | FileManager: launch host binaries for `/bin/X` |
+| [`0012`](0012-displaysettings-resource-root.patch) (`0018`) | DisplaySettings: resources under the host resource root |
+| [`0013`](0013-systemmonitor-linux.patch) (`0025`) | SystemMonitor: `/proc`, libunwind and elfutils instead of SerenityOS kernel files |
+| [`0014`](0014-mousesettings-host-build.patch) (`0028`) | MouseSettings: host build |
+| [`0015`](0015-keyboardsettings-xkb.patch) (`0029`) | KeyboardSettings: XKB layouts |
+| [`0016`](0016-displaysettings-effects-config.patch) (`0030`) | DisplaySettings: effects from the SDE session's `WindowServer.ini` |
+| [`0017`](0017-mousesettings-cursor-themes.patch) (`0031`) | MouseSettings: host cursor themes |
+| [`0018`](0018-hackstudio-host-registers.patch) (`0037`) | HackStudio: host register layout |
+| [`0019`](0019-catdog-linux-process-list.patch) (`0038`) | CatDog: the Linux process list |
+| [`0020`](0020-displaysettings-fractional-scale.patch) (`0042`) | DisplaySettings: fractional output scales |
+| [`0021`](0021-browsersettings-optional-filter-list.patch) (`0046`) | BrowserSettings: an optional content-filter list |
+| [`0022`](0022-networksettings-linux-adapters.patch) (`0047`) | NetworkSettings: Linux network adapters |
+| [`0023`](0023-debugger-host-registers.patch) (`0050`) | Debugger: host register layout |
+| [`0024`](0024-crashreporter-host-coredump.patch) (`0053`) | CrashReporter: native ELF core dumps |
+| [`0025`](0025-serenityde-branding.patch) (`0054`) | About dialog: SerenityDE branding |
+| [`0026`](0026-terminal-reset-signals-for-shell.patch) (`0059`) | Terminal: reset inherited signal dispositions for the shell |
+| [`0027`](0027-displaysettings-theme-selection.patch) (`0062`) | DisplaySettings: select the running theme |
+| [`0028`](0028-displaysettings-linux-drm-modes.patch) (`0070`) | DisplaySettings: DRM connector modes |
+| [`0029`](0029-filemanager-desktop-skip-wallpaper.patch) (`0076`) | FileManager: the desktop leaves the wallpaper to the compositor |
 
 `libgui-wayland`'s former `0035` (an empty stub left behind when its targets moved
 into `0008`) is removed too.
