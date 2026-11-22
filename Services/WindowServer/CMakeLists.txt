@@ -144,48 +144,55 @@ add_custom_command(
 )
 
 add_executable(WindowServer
+    # Core compositor, model, config, focus and instrumentation.
     src/main.cpp
-    src/Animations.cpp
-    src/Appearance.cpp
-    src/Capture.cpp
-    src/AppletManager.cpp
-    src/AppletLayout.cpp
     src/Compositor.cpp
     src/Config.cpp
     src/ConfigRules.cpp
-    src/CursorHighlight.cpp
-    src/DragAndDrop.cpp
     src/Focus.cpp
-    src/Frame.cpp
-    src/Idle.cpp
-    src/InputCapture.cpp
-    src/InputDevices.cpp
-    src/InputMethod.cpp
     src/Interop.cpp
-    src/Keyboard.cpp
-    src/LayerShell.cpp
-    src/Output.cpp
-    src/OutputManagement.cpp
-    src/Overlays.cpp
     src/Performance.cpp
-    src/Pointer.cpp
     src/Resources.cpp
-    src/SerenityWindow.cpp
-    src/SessionLock.cpp
-    src/SessionManager.cpp
-    src/Tablet.cpp
     src/Trace.cpp
-    src/VirtualInput.cpp
     src/WlcsControl.cpp
-    src/Wallpaper.cpp
-    src/WindowManager.cpp
-    src/WindowMenu.cpp
-    src/WindowRules.cpp
-    src/WindowSwitcher.cpp
-    src/XWayland.cpp
-    src/XWaylandFrame.cpp
-    src/XdgShell.cpp
-    src/XdgToplevelDrag.cpp
+    # Input (pointer, keyboard, tablet, IME, DnD, EIS capture, virtual input).
+    src/input/DragAndDrop.cpp
+    src/input/InputCapture.cpp
+    src/input/InputDevices.cpp
+    src/input/InputMethod.cpp
+    src/input/Keyboard.cpp
+    src/input/Pointer.cpp
+    src/input/Tablet.cpp
+    src/input/VirtualInput.cpp
+    # Shell protocols and window management (XDG, XWayland, layer-shell, WMS).
+    src/shell/LayerShell.cpp
+    src/shell/SerenityWindow.cpp
+    src/shell/WindowManager.cpp
+    src/shell/WindowRules.cpp
+    src/shell/XWayland.cpp
+    src/shell/XdgShell.cpp
+    src/shell/XdgToplevelDrag.cpp
+    # Window chrome, overlays, themes, wallpaper and animations.
+    src/chrome/Animations.cpp
+    src/chrome/Appearance.cpp
+    src/chrome/CursorHighlight.cpp
+    src/chrome/Frame.cpp
+    src/chrome/Overlays.cpp
+    src/chrome/Wallpaper.cpp
+    src/chrome/WindowMenu.cpp
+    src/chrome/WindowSwitcher.cpp
+    src/chrome/XWaylandFrame.cpp
+    # Output layout, modes and screen capture.
+    src/output/Capture.cpp
+    src/output/Output.cpp
+    src/output/OutputManagement.cpp
+    # Session lifecycle, lock, idle and taskbar applets.
+    src/session/AppletLayout.cpp
+    src/session/AppletManager.cpp
+    src/session/Idle.cpp
+    src/session/SessionLock.cpp
+    src/session/SessionManager.cpp
+    # Generated Wayland protocol glue.
     "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-window-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-input-capture-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/serenity-virtual-input-protocol.c"
@@ -196,6 +203,12 @@ add_executable(WindowServer
     "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-toplevel-drag-v1-protocol.c")
 
 target_include_directories(WindowServer PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/input"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/shell"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/chrome"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/output"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/session"
     ${WLROOTS_INCLUDE_DIRS}
     ${WAYLAND_SERVER_INCLUDE_DIRS}
     ${XKBCOMMON_INCLUDE_DIRS}

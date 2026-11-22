@@ -186,8 +186,10 @@ add_custom_target(sde-tests DEPENDS ${SDE_TEST_TARGETS})
 # LibGUI would pull in its static initialisers (the font database wants a
 # resource root) for a test that has nothing to do with a GUI.
 add_sde_unit_test(libwm-window-rules-test SOURCE WindowRulesTest.cpp
-    EXTRA_SOURCES "${CMAKE_SOURCE_DIR}/Services/WindowServer/src/WindowRules.cpp")
-target_include_directories(libwm-window-rules-test PRIVATE "${CMAKE_SOURCE_DIR}/Services/WindowServer/src")
+    EXTRA_SOURCES "${CMAKE_SOURCE_DIR}/Services/WindowServer/src/shell/WindowRules.cpp")
+target_include_directories(libwm-window-rules-test PRIVATE
+    "${CMAKE_SOURCE_DIR}/Services/WindowServer/src"
+    "${CMAKE_SOURCE_DIR}/Services/WindowServer/src/shell")
 
 # The config validation rules (ConfigRules.h): keybinding combos, output scales,
 # booleans and the input ranges. The loader calls exactly these, so the schema in
@@ -200,8 +202,10 @@ target_include_directories(libwm-config-rules-test PRIVATE "${CMAKE_SOURCE_DIR}/
 # The Taskbar's applet area layout (AppletLayout.h): the configured order and the
 # rectangle each applet gets. Pure, so the layout is checked without a Taskbar.
 add_sde_unit_test(libwm-applet-layout-test SOURCE AppletLayoutTest.cpp
-    EXTRA_SOURCES "${CMAKE_SOURCE_DIR}/Services/WindowServer/src/AppletLayout.cpp")
-target_include_directories(libwm-applet-layout-test PRIVATE "${CMAKE_SOURCE_DIR}/Services/WindowServer/src")
+    EXTRA_SOURCES "${CMAKE_SOURCE_DIR}/Services/WindowServer/src/session/AppletLayout.cpp")
+target_include_directories(libwm-applet-layout-test PRIVATE
+    "${CMAKE_SOURCE_DIR}/Services/WindowServer/src"
+    "${CMAKE_SOURCE_DIR}/Services/WindowServer/src/session")
 
 # WifiApplet's NetworkManager client (NetworkManagerClient.h), against
 # Tools/mock-networkmanager on a private bus: actions, a slow, stuck, busy or
