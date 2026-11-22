@@ -225,6 +225,7 @@ target_include_directories(WindowServer PRIVATE
 
 target_compile_options(WindowServer PRIVATE -Wno-literal-suffix -fno-exceptions)
 target_compile_definitions(WindowServer PRIVATE WLR_USE_UNSTABLE)
+target_link_options(WindowServer PRIVATE "LINKER:--as-needed")
 
 if (DEFINED WLROOTS_PROTOCOL_INCLUDE_DIR)
     target_include_directories(WindowServer PRIVATE "${WLROOTS_PROTOCOL_INCLUDE_DIR}")

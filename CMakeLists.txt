@@ -32,6 +32,11 @@ if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
 
+# Trim unused code/data sections from SDE binaries to reduce binary size and
+# resident page count.
+add_compile_options(-ffunction-sections -fdata-sections)
+add_link_options("LINKER:--gc-sections")
+
 # R6 sanitizers: build the SDE's own targets with ASan/UBSan in a separate tree
 # (scripts/build-sanitized.sh). The Lagom framework stays uninstrumented; it is a
 # separate build, and the sanitizer still intercepts its allocations and reports
