@@ -189,7 +189,7 @@ void frame_buffers_set_visible(FrameBuffers& buffers, bool visible)
         wlr_scene_node_set_enabled(&buffers.tree->node, visible);
 }
 
-void frame_buffers_update(FrameBuffers& buffers, wlr_scene_tree* parent, Gfx::Bitmap const& painted_frame,
+static void frame_buffers_update(FrameBuffers& buffers, wlr_scene_tree* parent, Gfx::Bitmap const& painted_frame,
     Gfx::IntSize frame_size, int frame_left, int frame_top, int frame_right, int frame_bottom, Gfx::Color background)
 {
     if (frame_size.is_empty())
@@ -237,6 +237,68 @@ void frame_buffers_update(FrameBuffers& buffers, wlr_scene_tree* parent, Gfx::Bi
     update_strip(buffers.left, { 0, frame_top, frame_left, content_height }, 0, frame_top);
     update_strip(buffers.right, { frame_size.width() - frame_right, frame_top, frame_right, content_height },
         frame_size.width() - frame_right, frame_top);
+}
+
+FramePaintResult paint_and_update_frame_buffers(
+    FrameBuffers& buffers, wlr_scene_tree* parent, FramePaintParams const& params)
+{
+    FramePaintResult result;
+    if (!g_palette || params.frame_size.is_empty())
+        return result;
+
+    auto& theme = g_palette->window_theme();
+    static auto const blank_icon = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { 16, 16 }).release_value_but_fixme_should_propagate_errors();
+    Gfx::Bitmap const& icon = params.icon ? *params.icon : *blank_icon;
+
+    auto buttons = theme.layout_buttons(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, params.content_rect, *g_palette, 3, false);
+    result.titlebar_icon_rect = theme.titlebar_icon_rect(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, params.content_rect, *g_palette);
+    Gfx::IntRect leftmost_button = buttons.is_empty() ? Gfx::IntRect { } : buttons.last();
+
+    auto state = params.active ? Gfx::WindowTheme::WindowState::Active : Gfx::WindowTheme::WindowState::Inactive;
+    if (params.highlighted)
+        state = Gfx::WindowTheme::WindowState::Highlighted;
+
+    auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, params.frame_size, output_scale()).release_value_but_fixme_should_propagate_errors();
+    Gfx::Painter painter(*bitmap);
+    painter.fill_rect(Gfx::IntRect { { }, params.frame_size }, g_palette->window());
+    theme.paint_normal_frame(painter, state, Gfx::WindowTheme::WindowMode::Other, params.content_rect, params.title, icon, *g_palette, leftmost_button, 0, false);
+
+    float icon_opacity = params.active ? 1.0f : (g_palette->window_title_button_inactive_alpha() / 255.0f);
+    for (size_t index = 0; index < buttons.size(); ++index) {
+        auto button_rect = buttons[index];
+        result.button_rects.append(button_rect);
+        bool pressed = params.pressed_button == static_cast<int>(index);
+        bool hovered = params.hovered_button == static_cast<int>(index);
+        if (!g_palette->title_buttons_icon_only())
+            Gfx::StylePainter::paint_button(painter, button_rect, *g_palette, Gfx::ButtonStyle::Normal, pressed, hovered);
+        RefPtr<Gfx::Bitmap> button_icon;
+        if (index == 0)
+            button_icon = g_frame_icons.close;
+        else if (index == 1)
+            button_icon = params.maximized ? g_frame_icons.restore : g_frame_icons.maximize;
+        else if (index == 2)
+            button_icon = g_frame_icons.minimize;
+        if (button_icon) {
+            auto icon_location = button_rect.center().translated(-(button_icon->width() / 2), -(button_icon->height() / 2));
+            if (pressed)
+                icon_location.translate_by(1, 1);
+            painter.blit(icon_location, *button_icon, button_icon->rect(), icon_opacity);
+        }
+    }
+
+    if (params.dump_path && *params.dump_path) {
+        if (auto encoded = Gfx::PNGWriter::encode(*bitmap); !encoded.is_error()) {
+            if (auto file = Core::File::open(StringView { params.dump_path, strlen(params.dump_path) }, Core::File::OpenMode::Write); !file.is_error()) {
+                if (auto write_result = file.value()->write_until_depleted(encoded.value()); write_result.is_error())
+                    warnln("WindowServer: could not write the frame dump: {}", write_result.error());
+            }
+        }
+    }
+
+    frame_buffers_update(buffers, parent, *bitmap,
+        params.frame_size, params.frame_left, params.frame_top, params.frame_right, params.frame_bottom,
+        g_palette->window());
+    return result;
 }
 
 void toplevel_update_frame(Toplevel& toplevel)
@@ -332,74 +394,34 @@ void toplevel_update_frame(Toplevel& toplevel)
         && frame_cache->title == title_view)
         return;
 
-    // Paint into a transient full-frame canvas so the theme's coordinates stay
-    // exact. Only the decoration strips below are retained; the canvas is freed
-    // when this function returns.
-    auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, frame_size, output_scale()).release_value_but_fixme_should_propagate_errors();
-    Gfx::Painter painter(*bitmap);
-    painter.fill_rect(Gfx::IntRect { { }, frame_size }, g_palette->window());
-
     // Titlebar icon: the window's icon (set_icon), scaled to 16x16, else blank.
-    static auto const blank_icon = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { 16, 16 }).release_value_but_fixme_should_propagate_errors();
     RefPtr<Gfx::Bitmap> scaled_icon;
     if (toplevel.icon && toplevel.icon->width() > 0 && toplevel.icon->height() > 0) {
         if (auto scaled = toplevel.icon->scaled(16.0f / toplevel.icon->width(), 16.0f / toplevel.icon->height()); !scaled.is_error())
             scaled_icon = scaled.release_value();
     }
-    Gfx::Bitmap const& icon = scaled_icon ? *scaled_icon : *blank_icon;
-    auto buttons = theme.layout_buttons(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette, 3, false);
-    toplevel.titlebar_icon_rect = theme.titlebar_icon_rect(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette);
-    Gfx::IntRect leftmost_button = buttons.is_empty() ? Gfx::IntRect { } : buttons.last();
-    auto state = toplevel.frame_active ? Gfx::WindowTheme::WindowState::Active : Gfx::WindowTheme::WindowState::Inactive;
-    // While the Alt+Tab switcher is open, draw the selected window in the theme's
-    // highlighted state (SerenityOS WindowManager::set_highlight_window).
-    if (highlighted)
-        state = Gfx::WindowTheme::WindowState::Highlighted;
-    theme.paint_normal_frame(painter, state, Gfx::WindowTheme::WindowMode::Other, content_rect, title_view, icon, *g_palette, leftmost_button, 0, false);
 
-    toplevel.button_rects.clear_with_capacity();
-    float icon_opacity = toplevel.frame_active ? 1.0f : (g_palette->window_title_button_inactive_alpha() / 255.0f);
-    for (size_t index = 0; index < buttons.size(); ++index) {
-        // layout_buttons() returns rects in frame coordinates, which is also what
-        // the frame bitmap and cursor hit-testing use.
-        auto button_rect = buttons[index];
-        toplevel.button_rects.append(button_rect);
-        bool pressed = toplevel.pressed_button == static_cast<int>(index);
-        bool hovered = toplevel.hovered_button == static_cast<int>(index);
-        if (!g_palette->title_buttons_icon_only())
-            Gfx::StylePainter::paint_button(painter, button_rect, *g_palette, Gfx::ButtonStyle::Normal, pressed, hovered);
-        RefPtr<Gfx::Bitmap> button_icon;
-        if (index == 0)
-            button_icon = g_frame_icons.close;
-        else if (index == 1)
-            button_icon = toplevel.maximized ? g_frame_icons.restore : g_frame_icons.maximize;
-        else if (index == 2)
-            button_icon = g_frame_icons.minimize;
-        if (button_icon) {
-            auto icon_location = button_rect.center().translated(-(button_icon->width() / 2), -(button_icon->height() / 2));
-            if (pressed)
-                icon_location.translate_by(1, 1);
-            painter.blit(icon_location, *button_icon, button_icon->rect(), icon_opacity);
-        }
-    }
+    auto painted = paint_and_update_frame_buffers(toplevel.frame_buffers, toplevel.scene_tree, {
+        .content_rect = content_rect,
+        .frame_size = frame_size,
+        .frame_left = toplevel.frame_left,
+        .frame_top = toplevel.frame_top,
+        .frame_right = toplevel.frame_right,
+        .frame_bottom = toplevel.frame_bottom,
+        .title = title_view,
+        .icon = scaled_icon.ptr(),
+        .active = toplevel.frame_active,
+        .highlighted = highlighted,
+        .maximized = toplevel.maximized,
+        .hovered_button = toplevel.hovered_button,
+        .pressed_button = toplevel.pressed_button,
+        .dump_path = getenv("WINDOWSERVER_DUMP_FRAME"),
+    });
+    toplevel.titlebar_icon_rect = painted.titlebar_icon_rect;
+    toplevel.button_rects = move(painted.button_rects);
 
     wlr_scene_node_set_position(&toplevel.content_tree->node, toplevel.frame_left, toplevel.frame_top + menubar_inset);
     wlr_scene_node_set_enabled(&toplevel.content_tree->node, !toplevel.rolled_up);
-
-    if (auto const* dump_path = getenv("WINDOWSERVER_DUMP_FRAME"); dump_path && *dump_path) {
-        if (auto encoded = Gfx::PNGWriter::encode(*bitmap); !encoded.is_error()) {
-            if (auto file = Core::File::open(StringView { dump_path, strlen(dump_path) }, Core::File::OpenMode::Write); !file.is_error()) {
-                if (auto write_result = file.value()->write_until_depleted(encoded.value()); write_result.is_error())
-                    warnln("WindowServer: could not write the frame dump: {}", write_result.error());
-            }
-        }
-    }
-
-    // Retain only the decoration strips. The content area is a solid scene rect,
-    // so a maximised window no longer keeps a full-window ARGB bitmap alive.
-    frame_buffers_update(toplevel.frame_buffers, toplevel.scene_tree, *bitmap,
-        frame_size, toplevel.frame_left, toplevel.frame_top, toplevel.frame_right, toplevel.frame_bottom,
-        g_palette->window());
 
     // Remember what produced these pixels so identical commits skip the render.
     toplevel.frame_cache = FrameCache {

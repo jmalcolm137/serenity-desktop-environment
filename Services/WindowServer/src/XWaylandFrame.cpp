@@ -13,9 +13,7 @@
 #include "XWayland.h"
 #include "XWaylandFrame.h"
 
-#include <LibGfx/Painter.h>
 #include <LibGfx/Palette.h>
-#include <LibGfx/StylePainter.h>
 #include <LibGfx/WindowTheme.h>
 #include <WindowServer/WindowType.h>
 #include <WindowServer/WindowMode.h>
@@ -65,58 +63,27 @@ void x11_update_frame(X11Toplevel& toplevel)
     toplevel.frame_bottom = frame_size.height() - content_height - toplevel.frame_top;
     toplevel.frame_size = frame_size;
 
-    // Transient canvas for exact theme painting; only the decoration strips
-    // created below are retained by the scene.
-    auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, frame_size, output_scale()).release_value_but_fixme_should_propagate_errors();
-    Gfx::Painter painter(*bitmap);
-    painter.fill_rect(Gfx::IntRect { { }, frame_size }, g_palette->window());
-
-    static auto const blank_icon = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { 16, 16 }).release_value_but_fixme_should_propagate_errors();
     // The client's icon, which is the X11 default (a big "X") drawn in the titlebar
     // text colour until/unless the client supplies its own.
-    Gfx::Bitmap const& icon = toplevel.icon ? *toplevel.icon : (g_default_window_icon ? *g_default_window_icon : *blank_icon);
-    auto buttons = theme.layout_buttons(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette, 3, false);
-    toplevel.titlebar_icon_rect = theme.titlebar_icon_rect(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, content_rect, *g_palette);
-    Gfx::IntRect leftmost_button = buttons.is_empty() ? Gfx::IntRect { } : buttons.last();
-    auto state = toplevel.frame_active ? Gfx::WindowTheme::WindowState::Active : Gfx::WindowTheme::WindowState::Inactive;
-    // The Alt-Tab switcher draws the highlighted window in the theme's
-    // Highlighted state (WindowSwitcher), like the xdg path in toplevel_update_frame.
-    if (&toplevel == WindowSwitcher::highlighted_x11())
-        state = Gfx::WindowTheme::WindowState::Highlighted;
+    Gfx::Bitmap const* icon = toplevel.icon ? toplevel.icon.ptr() : g_default_window_icon.ptr();
     StringView title { xsurface->title ? xsurface->title : "", xsurface->title ? strlen(xsurface->title) : 0 };
-    theme.paint_normal_frame(painter, state, Gfx::WindowTheme::WindowMode::Other, content_rect, title, icon, *g_palette, leftmost_button, 0, false);
-
-    toplevel.button_rects.clear_with_capacity();
-    float icon_opacity = toplevel.frame_active ? 1.0f : (g_palette->window_title_button_inactive_alpha() / 255.0f);
-    for (size_t index = 0; index < buttons.size(); ++index) {
-        auto button_rect = buttons[index];
-        toplevel.button_rects.append(button_rect);
-        bool pressed = toplevel.pressed_button == static_cast<int>(index);
-        bool hovered = toplevel.hovered_button == static_cast<int>(index);
-        if (!g_palette->title_buttons_icon_only())
-            Gfx::StylePainter::paint_button(painter, button_rect, *g_palette, Gfx::ButtonStyle::Normal, pressed, hovered);
-        RefPtr<Gfx::Bitmap> button_icon;
-        if (index == 0)
-            button_icon = g_frame_icons.close;
-        else if (index == 1)
-            button_icon = toplevel.maximized ? g_frame_icons.restore : g_frame_icons.maximize;
-        else if (index == 2)
-            button_icon = g_frame_icons.minimize;
-        if (button_icon) {
-            auto icon_location = button_rect.center().translated(-(button_icon->width() / 2), -(button_icon->height() / 2));
-            if (pressed)
-                icon_location.translate_by(1, 1);
-            painter.blit(icon_location, *button_icon, button_icon->rect(), icon_opacity);
-        }
-    }
-
-    // Keep only the titlebar/border strips; the content area is a scene rect.
-    // The scene tree is the *frame* origin (as for xdg toplevels): the frame is
-    // drawn at (0,0) and the client content is inset by the frame, so a window
-    // that asks to be at (0,0) shows its titlebar on-screen.
-    frame_buffers_update(toplevel.frame_buffers, toplevel.scene_tree, *bitmap,
-        frame_size, toplevel.frame_left, toplevel.frame_top, toplevel.frame_right, toplevel.frame_bottom,
-        g_palette->window());
+    auto painted = paint_and_update_frame_buffers(toplevel.frame_buffers, toplevel.scene_tree, {
+        .content_rect = content_rect,
+        .frame_size = frame_size,
+        .frame_left = toplevel.frame_left,
+        .frame_top = toplevel.frame_top,
+        .frame_right = toplevel.frame_right,
+        .frame_bottom = toplevel.frame_bottom,
+        .title = title,
+        .icon = icon,
+        .active = toplevel.frame_active,
+        .highlighted = &toplevel == WindowSwitcher::highlighted_x11(),
+        .maximized = toplevel.maximized,
+        .hovered_button = toplevel.hovered_button,
+        .pressed_button = toplevel.pressed_button,
+    });
+    toplevel.titlebar_icon_rect = painted.titlebar_icon_rect;
+    toplevel.button_rects = move(painted.button_rects);
     if (toplevel.scene)
         wlr_scene_node_set_position(&toplevel.scene->buffer->node, toplevel.frame_left, toplevel.frame_top);
     dbgln("WindowServer: X11 frame '{}' {}x{} (content {}x{})", title, frame_size.width(), frame_size.height(), content_width, content_height);

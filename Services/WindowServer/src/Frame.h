@@ -25,11 +25,35 @@ struct FrameHit {
     Gfx::IntPoint local;
 };
 
-// Split a fully painted server-side frame into decoration-only strip buffers.
-// The content area becomes a solid scene rect, so a window only retains the
-// titlebar/border pixels instead of a full-window bitmap.
-void frame_buffers_update(FrameBuffers& buffers, wlr_scene_tree* parent, Gfx::Bitmap const& painted_frame,
-    Gfx::IntSize frame_size, int frame_left, int frame_top, int frame_right, int frame_bottom, Gfx::Color background);
+// Inputs for painting a SerenityOS server-side window frame (shared by both
+// Wayland xdg-toplevels and XWayland windows).
+struct FramePaintParams {
+    Gfx::IntRect content_rect;
+    Gfx::IntSize frame_size;
+    int frame_left { 0 };
+    int frame_top { 0 };
+    int frame_right { 0 };
+    int frame_bottom { 0 };
+    StringView title;
+    Gfx::Bitmap const* icon { nullptr };
+    bool active { false };
+    bool highlighted { false };
+    bool maximized { false };
+    int hovered_button { -1 };
+    int pressed_button { -1 };
+    char const* dump_path { nullptr };
+};
+
+struct FramePaintResult {
+    Gfx::IntRect titlebar_icon_rect;
+    Vector<Gfx::IntRect> button_rects;
+};
+
+// Paint a server-side frame using the active WindowTheme and upload the
+// resulting decoration strips to `buffers` (the content area is a solid scene
+// rect, so a window retains only the titlebar/border pixels).
+FramePaintResult paint_and_update_frame_buffers(
+    FrameBuffers& buffers, wlr_scene_tree* parent, FramePaintParams const& params);
 void frame_buffers_set_visible(FrameBuffers& buffers, bool visible);
 
 FrameHit hit_test_frame(Server& server, double x, double y);
