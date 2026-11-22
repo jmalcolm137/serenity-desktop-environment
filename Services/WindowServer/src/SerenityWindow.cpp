@@ -5,6 +5,7 @@
  */
 
 #include "Compositor.h"
+#include "Appearance.h"
 #include "Frame.h"
 #include "Resources.h"
 #include "SerenityWindow.h"
@@ -231,7 +232,7 @@ static void serenity_window_manager_get_toplevel(wl_client* client, wl_resource*
         dbgln("WindowServer: get_toplevel for an unknown surface; returning an inert handle");
     }
 
-    auto* chrome = wl_resource_create(client, &serenity_toplevel_interface, min(wl_resource_get_version(resource), 3u), id);
+    auto* chrome = wl_resource_create(client, &serenity_toplevel_interface, min(wl_resource_get_version(resource), 4u), id);
     if (!chrome) {
         wl_client_post_no_memory(client);
         return;
@@ -289,8 +290,6 @@ static Optional<HostSettingLocation> host_setting_location(StringView key)
         add("cursor.highlight_color"sv, "cursor.ini", "Highlight", "Color");
         add("workspaces.rows"sv, "WindowServer.ini", "Workspaces", "Rows");
         add("workspaces.columns"sv, "WindowServer.ini", "Workspaces", "Columns");
-        add("theme.name"sv, "WindowServer.ini", "Theme", "Name");
-        add("theme.path"sv, "WindowServer.ini", "Theme", "Path");
         add("effects.show_geometry"sv, "WindowServer.ini", "Effects", "ShowGeometry");
         add("effects.tile_window"sv, "WindowServer.ini", "Effects", "TileWindow");
         add("output.default_scale"sv, "WindowServer.ini", "Output", "DefaultScale");
@@ -324,8 +323,11 @@ static ByteString host_settings_blob()
     add("keyboard.variant"sv, input.keyboard.variant);
     add("keyboard.model"sv, input.keyboard.model);
     add("keyboard.options"sv, input.keyboard.options);
-    add("theme.name"sv, Config::theme().name);
-    add("theme.path"sv, Config::theme().path);
+    auto const theme = effective_theme();
+    add("theme.name"sv, theme.name);
+    add("theme.path"sv, theme.path);
+    auto const& fonts = Config::fonts();
+    add("fonts"sv, ByteString::formatted("{};{};{}", fonts.default_query, fonts.fixed_width_query, fonts.window_title_query));
     add("effects.show_geometry"sv, Config::effects().show_geometry);
     add("effects.tile_window"sv, Config::effects().tile_window);
     add("workspaces.rows"sv, ByteString::number(Config::workspaces().rows));
@@ -342,6 +344,7 @@ static ByteString host_settings_blob()
         layout.appendff(";{},{},{},{},{},{},{}", output.mode, output.device, output.left, output.top, output.width, output.height, output.scale);
     add("screenlayout"sv, layout.string_view());
     add("wallpaper.mode"sv, g_wallpaper_mode);
+    add("wallpaper.file"sv, Config::state_file("wallpaper.raw"sv));
     return builder.to_byte_string();
 }
 
@@ -447,6 +450,24 @@ static void serenity_window_manager_set_host_setting(wl_client*, wl_resource* re
             broadcast_host_settings(*server);
         return;
     }
+    // The theme and fonts go through their session brokers, whose watchers apply,
+    // persist and broadcast them: one path whichever process made the choice.
+    if (StringView { key, strlen(key) } == "theme.path"sv) {
+        publish_theme_to_broker(ByteString { value, strlen(value) });
+        return;
+    }
+    if (StringView { key, strlen(key) } == "fonts"sv) {
+        auto fields = StringView { value, strlen(value) }.split_view(';', SplitBehavior::KeepEmpty);
+        Config::Fonts fonts;
+        if (fields.size() > 0)
+            fonts.default_query = fields[0];
+        if (fields.size() > 1)
+            fonts.fixed_width_query = fields[1];
+        if (fields.size() > 2)
+            fonts.window_title_query = fields[2];
+        publish_fonts_to_broker(fonts);
+        return;
+    }
 
     auto location = host_setting_location(StringView { key, strlen(key) });
     if (!location.has_value()) {
@@ -481,7 +502,7 @@ static void serenity_window_manager_request_capture(wl_client*, wl_resource* res
 static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t version, uint32_t id)
 {
     auto& server = *static_cast<Server*>(data);
-    auto* resource = wl_resource_create(client, &serenity_window_manager_interface, min(version, 3u), id);
+    auto* resource = wl_resource_create(client, &serenity_window_manager_interface, min(version, 4u), id);
     if (!resource) {
         wl_client_post_no_memory(client);
         return;
@@ -499,9 +520,9 @@ static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t
     // (the workspace grid and the input-setting bounds); hand it to the shim so it
     // answers those requests without reading our config file. See docs/24.
     serenity_window_manager_send_host_settings(resource, host_settings_blob().characters());
-    // The wallpaper is *not* pushed here. Most clients never use it, and copying
-    // the image into every process costs a full wallpaper-sized bitmap each. The
-    // shim reads the persisted wallpaper state on demand (get_wallpaper()).
+    // The wallpaper is *not* pushed. Most clients never use it, and copying the
+    // image into every process costs a full wallpaper-sized bitmap each; the host
+    // settings name the file (`wallpaper.file`) and the shim reads it on demand.
     serenity_window_manager_send_host_config(resource,
         static_cast<uint32_t>(Config::workspaces().rows), static_cast<uint32_t>(Config::workspaces().columns),
         wl_fixed_from_double(Config::input_ranges().accel_min), wl_fixed_from_double(Config::input_ranges().accel_max),
@@ -510,5 +531,5 @@ static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t
 
 void initialize_serenity_window(Server& server)
 {
-    wl_global_create(server.display, &serenity_window_manager_interface, 3, &server, serenity_window_manager_bind);
+    wl_global_create(server.display, &serenity_window_manager_interface, 4, &server, serenity_window_manager_bind);
 }

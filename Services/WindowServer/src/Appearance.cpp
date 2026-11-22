@@ -61,6 +61,15 @@ ByteString high_contrast_theme_path()
     return ByteString::formatted("{}/themes/Contrast.ini", g_resource_root);
 }
 
+Config::Theme effective_theme()
+{
+    if (Config::accessibility().high_contrast) {
+        auto path = high_contrast_theme_path();
+        return { LexicalPath(path).title(), path };
+    }
+    return Config::theme();
+}
+
 // Publish a theme to the broker: that is how a live theme choice reaches every
 // client (Display Settings writes it when the user picks one).
 void publish_theme_to_broker(ByteString const& theme_path)
@@ -95,8 +104,12 @@ void watch_theme_broker(Server& server)
             auto requested = StringView { contents.value() }.trim_whitespace().to_byte_string();
             auto const forced = high_contrast_theme_path();
             dbgln("WindowServer: high contrast is on; ignoring the theme broker ('{}')", requested);
-            if (requested != forced)
+            if (requested != forced) {
                 publish_theme_to_broker(forced);
+                // A client that picked a theme has already restyled itself; the
+                // host settings still carry the forced one, so this restores it.
+                broadcast_host_settings(server);
+            }
             return;
         }
         auto file = Core::File::open(path, Core::File::OpenMode::Read);
@@ -172,8 +185,23 @@ static void read_and_apply_fonts(Server& server)
     if (lines.size() > 2)
         window_title_query = lines[2].trim_whitespace().to_byte_string();
     apply_font_queries(server, default_query, fixed_width_query, window_title_query);
-    if (!default_query.is_empty())
-        Config::set_fonts({ default_query, fixed_width_query, window_title_query });
+    if (default_query.is_empty())
+        return;
+    Config::set_fonts({ default_query, fixed_width_query, window_title_query });
+    // Clients take the system fonts from the host settings.
+    broadcast_host_settings(server);
+}
+
+void publish_fonts_to_broker(Config::Fonts const& fonts)
+{
+    auto file = Core::File::open(fonts_broker_path(), Core::File::OpenMode::Write | Core::File::OpenMode::Truncate);
+    if (file.is_error()) {
+        warnln("WindowServer: could not open the font broker: {}", file.error());
+        return;
+    }
+    auto contents = ByteString::formatted("{}\n{}\n{}\n", fonts.default_query, fonts.fixed_width_query, fonts.window_title_query);
+    if (auto written = file.value()->write_until_depleted(contents.bytes()); written.is_error())
+        warnln("WindowServer: could not publish the fonts to the broker: {}", written.error());
 }
 
 void watch_fonts_broker(Server& server)

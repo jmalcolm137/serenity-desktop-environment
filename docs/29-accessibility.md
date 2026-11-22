@@ -20,8 +20,8 @@ the compositor plus LibGUI that have to expose the accessibility tree.
 * **A magnifier application.** SerenityOS's `Magnifier` is built (`docs/04`,
   Demos/Utilities; `scripts/run-demos-test.sh`). It captures the screen itself.
 * **A theme broker.** Changing the theme in Display Settings publishes it to
-  `/run/user/<uid>/sde-theme` and the port applies it to every client
-  (`WindowServerConnection::apply_theme_from_broker`), so one place can change the
+  `/run/user/<uid>/sde-theme`, and the compositor hands the theme in effect to
+  every client in its host settings (`theme.path`), so one place can change the
   whole desktop's palette at runtime.
 * **Input routing to test.** `Tools/virtual-input-test.c` injects key and pointer
   events through the wlroots virtual-input protocols and reads back what a client
@@ -48,10 +48,11 @@ InputCapture. Guarded by `scripts/run-sticky-keys-test.sh`.
 **Done.** `[Accessibility] HighContrast` (default off).
 
 When it is on the compositor applies the `Contrast` palette to its own chrome *and*
-publishes it to the theme broker, so every client follows; and a theme change
-through the broker does not turn the mode off; the compositor says so in its log
-and puts the broker back to what is actually applied (only when they differ, so
-this cannot loop). Guarded by `scripts/run-high-contrast-test.sh`, which asserts the
+advertises it as the theme in effect in its host settings, so every client follows;
+and a theme change does not turn the mode off: the compositor says so in its log,
+puts the broker back to what is actually applied (only when they differ, so this
+cannot loop) and re-sends the host settings, so a client that restyled itself
+returns to the Contrast palette. Guarded by `scripts/run-high-contrast-test.sh`, which asserts the
 control (off is inert) as well.
 
 ## 3. Screen magnifier

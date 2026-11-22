@@ -32,8 +32,8 @@ ByteString g_wallpaper_mode { "center" };
 static Optional<Gfx::Color> g_background_color;
 
 // Raw-pixel wallpaper state (no PNG encode: that costs ~800ms and would stall
-// the applying application). Must match WallpaperHeader in the client shim
-// (libgui-wayland/src/WindowServerConnection.cpp).
+// the applying application). Clients read it through the `wallpaper.file` host
+// setting, so this is the layout serenity-window.xml documents.
 struct WallpaperHeader {
     u32 magic;
     u32 format;
