@@ -54,6 +54,9 @@
 #include "remote-desktop.h"
 #include "screencast.h"
 #include "usb.h"
+#include <LibXDG/Trash.h>
+#include <limits.h>
+#include <unistd.h>
 
 namespace {
 
@@ -82,6 +85,7 @@ constexpr StringView wallpaper_interface = "org.freedesktop.impl.portal.Wallpape
 constexpr StringView secret_interface = "org.freedesktop.impl.portal.Secret"sv;
 constexpr StringView dynamiclauncher_interface = "org.freedesktop.impl.portal.DynamicLauncher"sv;
 constexpr StringView access_interface = "org.freedesktop.impl.portal.Access"sv;
+constexpr StringView trash_interface = "org.freedesktop.impl.portal.Trash"sv;
 
 constexpr u32 response_success = to_underlying(Portal::Response::Success);
 constexpr u32 response_cancelled = to_underlying(Portal::Response::Cancelled);
@@ -1344,6 +1348,34 @@ ErrorOr<int> serenity_main(Main::Arguments)
     register_portal_interface(*service,
         access_interface.to_byte_string(),
         [](Portal::MethodCall& call) { handle_access(call); },
+        [](StringView property) { return generic_version_property(property, 1); },
+        Vector<ByteString> { "version"sv });
+
+    register_portal_interface(*service,
+        trash_interface.to_byte_string(),
+        [](Portal::MethodCall& call) {
+            if (call.member() != "TrashFile"sv) {
+                call.reply_error(Portal::ErrorName::UnknownMethod, "unknown method"sv);
+                return;
+            }
+            auto const* fd_arg = call.argument(0);
+            if (!fd_arg || !fd_arg->is(Portal::Value::Type::UnixFd)) {
+                call.reply({ Portal::Value::make_uint32(0) });
+                return;
+            }
+            int fd = fd_arg->as_unix_fd();
+            char link_buf[PATH_MAX];
+            auto proc_path = ByteString::formatted("/proc/self/fd/{}", fd);
+            ssize_t len = ::readlink(proc_path.characters(), link_buf, sizeof(link_buf) - 1);
+            if (len <= 0) {
+                call.reply({ Portal::Value::make_uint32(0) });
+                return;
+            }
+            link_buf[len] = '\0';
+            auto res = XDG::trash_file(StringView { link_buf, static_cast<size_t>(len) });
+            // org.freedesktop.impl.portal.Trash: 1 = succeeded, 0 = failed.
+            call.reply({ Portal::Value::make_uint32(res.is_error() ? 0u : 1u) });
+        },
         [](StringView property) { return generic_version_property(property, 1); },
         Vector<ByteString> { "version"sv });
 

@@ -61,6 +61,7 @@ desktop that builds and tests them. Their library halves stayed in the port.
 | [`0027`](0027-displaysettings-theme-selection.patch) (`0062`) | DisplaySettings: select the running theme |
 | [`0028`](0028-displaysettings-linux-drm-modes.patch) (`0070`) | DisplaySettings: DRM connector modes |
 | [`0029`](0029-filemanager-desktop-skip-wallpaper.patch) (`0076`) | FileManager: the desktop leaves the wallpaper to the compositor |
+| [`0030`](0030-filemanager-xdg-trash.patch) | FileManager: route Delete through `sde-trash` (`$XDG_DATA_HOME/Trash`) with fallback to permanent delete |
 
 `libgui-wayland`'s former `0035` (an empty stub left behind when its targets moved
 into `0008`) is removed too.

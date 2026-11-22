@@ -1,0 +1,55 @@
+diff --git a/Userland/Applications/FileManager/FileUtils.cpp b/Userland/Applications/FileManager/FileUtils.cpp
+--- a/Userland/Applications/FileManager/FileUtils.cpp
++++ b/Userland/Applications/FileManager/FileUtils.cpp
+@@ -13,12 +13,41 @@
+ #include <LibFileSystem/FileSystem.h>
+ #include <LibGUI/Event.h>
+ #include <LibGUI/MessageBox.h>
++#include <stdlib.h>
++#include <sys/wait.h>
+ #include <unistd.h>
+ 
+ namespace FileManager {
+ 
+ HashTable<NonnullRefPtr<GUI::Window>> file_operation_windows;
+ 
++static bool try_move_to_xdg_trash(Vector<ByteString> const& paths)
++{
++    if (paths.is_empty())
++        return false;
++    ByteString trash_bin = "sde-trash";
++    if (auto const* app_bin = getenv("LIBWM_APP_BIN_DIR"); app_bin && *app_bin) {
++        auto candidate = ByteString::formatted("{}/sde-trash", app_bin);
++        if (::access(candidate.characters(), X_OK) == 0)
++            trash_bin = move(candidate);
++    }
++    pid_t pid = ::fork();
++    if (pid < 0)
++        return false;
++    if (pid == 0) {
++        Vector<char*> argv;
++        argv.append(const_cast<char*>(trash_bin.characters()));
++        argv.append(const_cast<char*>("trash"));
++        for (auto const& path : paths)
++            argv.append(const_cast<char*>(path.characters()));
++        argv.append(nullptr);
++        ::execvp(argv[0], argv.data());
++        _exit(127);
++    }
++    int status = 0;
++    return ::waitpid(pid, &status, 0) == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0;
++}
++
+ void delete_paths(Vector<ByteString> const& paths, bool should_confirm, GUI::Window* parent_window)
+ {
+     ByteString message;
+@@ -38,6 +67,9 @@ void delete_paths(Vector<ByteString> const& paths, bool should_confirm, GUI::Win
+         if (result == GUI::MessageBox::ExecResult::Cancel)
+             return;
+     }
++
++    if (should_confirm && try_move_to_xdg_trash(paths))
++        return;
+ 
+     if (run_file_operation(FileOperation::Delete, paths, {}, parent_window).is_error())
+         _exit(1);

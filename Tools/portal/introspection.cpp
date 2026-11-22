@@ -708,6 +708,14 @@ constexpr InterfaceIntrospection s_interfaces[] = {
       <arg type='u' name='serial' direction='out'/>
       </signal>
       </interface>)XML"sv },
+    { "org.freedesktop.impl.portal.Trash"sv,
+      R"XML(<interface name='org.freedesktop.impl.portal.Trash'>
+      <method name='TrashFile'>
+      <arg type='h' name='fd' direction='in'/>
+      <arg type='u' name='result' direction='out'/>
+      </method>
+      <property name='version' type='u' access='read'/>
+      </interface>)XML"sv },
     { "org.freedesktop.impl.portal.Request"sv,
       R"XML(<interface name='org.freedesktop.impl.portal.Request'>
       <method name='Close'/>

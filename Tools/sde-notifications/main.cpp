@@ -26,6 +26,7 @@
 #include <AK/NonnullOwnPtr.h>
 #include <AK/NonnullRefPtr.h>
 #include <AK/Optional.h>
+#include <AK/StringBuilder.h>
 #include <AK/StringView.h>
 #include <AK/Vector.h>
 #include <LibCore/EventLoop.h>
@@ -193,7 +194,52 @@ RefPtr<Gfx::Bitmap> resolve_icon(ByteString const& app_icon, Portal::Value const
 
 String notification_text(ByteString const& value)
 {
-    return MUST(String::from_utf8(value.view()));
+    // Strip basic freedesktop notification HTML markup (<b>, <i>, <u>, <a ...>,
+    // <br>) and unescape common entities so SerenityOS's plain-text banner never
+    // shows raw tags.
+    StringBuilder out;
+    StringView view = value.view();
+    for (size_t i = 0; i < view.length(); ++i) {
+        if (view[i] == '<') {
+            if (auto close = view.find('>', i + 1); close.has_value()) {
+                auto tag = view.substring_view(i + 1, close.value() - i - 1).trim_whitespace();
+                if (tag.equals_ignoring_ascii_case("br"sv) || tag.equals_ignoring_ascii_case("br/"sv))
+                    out.append('\n');
+                i = close.value();
+                continue;
+            }
+        }
+        if (view[i] == '&') {
+            auto rest = view.substring_view(i);
+            if (rest.starts_with("&amp;"sv)) {
+                out.append('&');
+                i += 4;
+                continue;
+            }
+            if (rest.starts_with("&lt;"sv)) {
+                out.append('<');
+                i += 3;
+                continue;
+            }
+            if (rest.starts_with("&gt;"sv)) {
+                out.append('>');
+                i += 3;
+                continue;
+            }
+            if (rest.starts_with("&quot;"sv)) {
+                out.append('"');
+                i += 5;
+                continue;
+            }
+            if (rest.starts_with("&apos;"sv)) {
+                out.append('\'');
+                i += 5;
+                continue;
+            }
+        }
+        out.append(view[i]);
+    }
+    return MUST(String::from_utf8(out.string_view()));
 }
 
 u8 urgency_from_hints(Portal::Value const* hints)

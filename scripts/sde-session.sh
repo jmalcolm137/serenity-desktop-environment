@@ -313,6 +313,14 @@ if [[ "${SDE_USER_DIRS_UPDATE:-1}" == "1" ]]; then
     "$SDE_ROOT/scripts/sde-user-dirs.sh" --update >/dev/null 2>&1 || true
 fi
 
+# Best-effort org.freedesktop.secrets provider: if gnome-keyring-daemon is
+# installed on the host and not already running, start its secrets component so
+# Chromium/VS Code/libsecret apps have a working keyring.
+if [[ "${SDE_KEYRING:-1}" == "1" ]] && command -v gnome-keyring-daemon >/dev/null 2>&1; then
+    eval "$(gnome-keyring-daemon --start --components=secrets 2>/dev/null)" || true
+    [ -n "${GNOME_KEYRING_CONTROL:-}" ] && export GNOME_KEYRING_CONTROL
+fi
+
 run_desktop_entry() {
     local entry="$1" line="" exec_line="" hidden="" enabled=""
     while IFS= read -r line || [ -n "$line" ]; do

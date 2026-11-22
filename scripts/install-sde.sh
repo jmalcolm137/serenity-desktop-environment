@@ -95,7 +95,7 @@ install_if_executable "$SDE_ROOT/build/AuthDialog/sde-auth-dialog"
 for applet in "$SDE_ROOT"/build/Applets/*; do
     [[ -f "$applet" && -x "$applet" ]] && install_if_executable "$applet"
 done
-for tool in sde-idle sde-dpms sde-settings-portal xdg-desktop-portal-serenity sde-notifications sde-lock sde-polkit-agent sde-autostart sde-open; do
+for tool in sde-idle sde-dpms sde-settings-portal xdg-desktop-portal-serenity sde-notifications sde-lock sde-polkit-agent sde-autostart sde-open sde-trash; do
     install_if_executable "$SDE_ROOT/build/tools/$tool"
 done
 # The portal's LibGUI dialogs are spawned by the backend through the app bin dir.
