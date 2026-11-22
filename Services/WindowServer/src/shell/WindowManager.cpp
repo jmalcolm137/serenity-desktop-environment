@@ -27,7 +27,9 @@
 #include "AppletManager.h"
 #include "Compositor.h"
 #include "Config.h"
+#include "Frame.h"
 #include "Trace.h"
+#include "XWaylandFrame.h"
 #include <WindowServer/SystemEffects.h>
 #include "Overlays.h"
 #include "WindowManagerServerDefaultStub.h"
@@ -542,8 +544,17 @@ void update_toplevel_visibility(Toplevel& toplevel)
 {
     // A minimized window is unmapped as far as the stack is concerned; the tile
     // and workspace rules are the same for xdg and X11 windows (WindowRules.h).
-    wlr_scene_node_set_enabled(&toplevel.scene_tree->node,
-        WindowServer::window_visible_on_workspace(toplevel.workspace_row, toplevel.workspace_column, s_current_row, s_current_column, !toplevel.minimized));
+    bool const was_visible = toplevel.scene_tree->node.enabled;
+    bool const visible = WindowServer::window_visible_on_workspace(
+        toplevel.workspace_row, toplevel.workspace_column, s_current_row, s_current_column, !toplevel.minimized);
+    wlr_scene_node_set_enabled(&toplevel.scene_tree->node, visible);
+    if (!visible) {
+        // Release decoration strip buffers while minimized or on another workspace.
+        toplevel.frame_cache.clear();
+        frame_buffers_set_visible(toplevel.frame_buffers, false);
+    } else if (!was_visible && !toplevel.client_side_decorations && !toplevel.fullscreen) {
+        toplevel_update_frame(toplevel);
+    }
 }
 
 void on_toplevel_mapped(Toplevel& toplevel)
@@ -620,8 +631,14 @@ void update_x11_toplevel_visibility(X11Toplevel& toplevel)
     // An X11 window that is withdrawn/minimized is already unmapped (disabled);
     // keep it hidden regardless of the stack. Override-redirect windows (menus,
     // tooltips) are unmanaged/transient: they are never workspace-hid.
+    bool const was_visible = toplevel.scene_tree->node.enabled;
     bool const visible = WindowServer::window_visible_on_workspace(toplevel.workspace_row, toplevel.workspace_column, s_current_row, s_current_column, toplevel.mapped, toplevel.override_redirect);
     wlr_scene_node_set_enabled(&toplevel.scene_tree->node, visible);
+    if (!visible) {
+        frame_buffers_set_visible(toplevel.frame_buffers, false);
+    } else if (!was_visible && toplevel.frame_decorated) {
+        x11_update_frame(toplevel);
+    }
     dbgln("WindowServer: X11 window {} workspace {},{} visible={}", toplevel.wm_id, toplevel.workspace_row, toplevel.workspace_column, visible);
 }
 
@@ -827,11 +844,16 @@ static bool start_window_stack_transition(Server& server, u32 new_row, u32 new_c
     for (auto& toplevel : server.toplevels) {
         if (toplevel->minimized)
             continue;
+        if (toplevel->workspace_row == new_row && toplevel->workspace_column == new_column
+            && !toplevel->client_side_decorations && !toplevel->fullscreen)
+            toplevel_update_frame(*toplevel);
         add(toplevel->scene_tree, toplevel->workspace_row, toplevel->workspace_column);
     }
     for (auto& toplevel : server.x11_toplevels) {
         if (!toplevel->scene_tree || !toplevel->mapped || toplevel->override_redirect)
             continue;
+        if (toplevel->workspace_row == new_row && toplevel->workspace_column == new_column && toplevel->frame_decorated)
+            x11_update_frame(*toplevel);
         add(toplevel->scene_tree, toplevel->workspace_row, toplevel->workspace_column);
     }
 
