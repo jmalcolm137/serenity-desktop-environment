@@ -135,9 +135,9 @@ click was already handled and returned earlier).
   [`10-font-parity-decision.md`](10-font-parity-decision.md), with the guard test
   `scripts/run-font-parity-test.sh`.
 - **Theme switching (Taskbar ▸ Themes)**: works: the list is read under the resource
-  root, the theme is loaded/recoloured in-process, and a shared broker file
-  (`$XDG_RUNTIME_DIR/sde-theme`) is watched by every client and the compositor so
-  a switch restyles all running apps and the window chrome. As in SerenityOS
+  root, the theme is loaded/recoloured in-process, and the compositor applies it
+  and hands it to every client in its host settings, so a switch restyles all
+  running apps and the window chrome. As in SerenityOS
   (`keep_desktop_background=false` clears `Background/Color`), a theme switch
   changes the desktop **colour** but does not replace a wallpaper **image**; a
   set wallpaper stays and covers the colour. This is intentional parity, not a
@@ -223,7 +223,7 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal`; see
   the supervisor. Verified by `scripts/run-session-test.sh` and the extended
   `scripts/run-idle-test.sh`. The Taskbar `ShutdownDialog` is wired: the
   supervisor installs `/bin` shadow helpers (`shutdown`/`reboot`/`logout`) in
-  `SDE_SESSION_BIN_DIR`, which the port's `resolve_executable_path()` honours, so
+  `LIBWM_SESSION_BIN_DIR`, which the port's `resolve_executable_path()` honours, so
   the unmodified menu routes to logind (verified by `scripts/run-binpath-test.sh`).
   **Session restore** (`xdg-session-management-v1`, R4.2) landed: the compositor
   serves the standard protocol and persists per-session toplevel geometry under
@@ -320,7 +320,7 @@ provider chain, and degrades gracefully with no `xdg-desktop-portal`; see
   The **Debugger** is now Linux-native too: it drives `ptrace` directly, with
   `PTRACE_GETREGSET`/`NT_PRSTATUS` for the register set (some host kernels reject
   `PTRACE_GETREGS` with `EFAULT`), `__WALL` for `waitpid`, and Linux single-step
-  semantics. It is built by the port (patches 0050/0052) and verified by
+  semantics. It is built by the SDE (patch 0023, on the port's LibDebug patch 0052) and verified by
   `scripts/run-debugger-test.sh` (breakpoint, registers, backtrace, disassembly
   against a real host process). The **CrashReporter** GUI is built and reads a
   native Linux ELF core dump: `LibELF` tolerates a section-table-less ELF and
@@ -580,7 +580,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   framework build into an image so a job only builds the SDE. Both repositories
   are public, so standard GitHub-hosted runners are free and unlimited (never use
   a *larger* runner; those are always billed). Each test gets its own
-  `SDE_SESSION_DIR` (which fixed `run-setting-test.sh`'s cross-session failure)
+  `LIBWM_SESSION_DIR` (which fixed `run-setting-test.sh`'s cross-session failure)
   and `SDE_XWAYLAND=0`; the five X11 tests re-exec in a private network namespace,
   which is what makes them safe, and runnable, next to a live session. That work
   also found and fixed a real compositor crash (a dead Xwayland taking the session
@@ -962,7 +962,7 @@ The corresponding upstream changes are the `libgui-wayland` patches
   scene. `DisplaySettings`' Monitor tab is **live**: Resolution, Position (X/Y) and
   the **Display scale** control (1x/1.25x/1.5x/2x) apply on **Apply**: the shim
   writes `screenlayout.ini` (mode/position) and `[Output] DefaultScale` (scale,
-  as v120 over a new `set_output_scale` IPC; libgui-wayland patch `0042`), and the
+  as v120 over a new `set_output_scale` IPC; libgui-wayland patch `0057`), and the
   compositor applies both live.
 
 - **Suspend/resume hooks (R4.3/R6).** `scripts/sde-sleep.sh` watches logind's
@@ -986,7 +986,7 @@ The corresponding upstream changes are the `libgui-wayland` patches
   exports `XDG_SEAT` (default `seat0`) and `XDG_VTNR` (logind, else the active
   VT), and the session namespaces its runtime **per seat**: the Wayland socket
   (`SDE_SESSION_DISPLAY`, `sde` → `sde-<seat>`), the supervisor pid file, the
-  `/bin` shadow dir, and the WindowManagerServer socket (`SDE_WM_PORTAL_PATH`,
+  `/bin` shadow dir, and the WindowManagerServer socket (`LIBWM_WM_PORTAL_PATH`,
   `/tmp/portal/wm` → `/tmp/portal/wm-<seat>`; `seat0` keeps the bare names). The
   port relocates the WM portal for clients (libgui-wayland patch `0041`), and the
   compositor logs its seat and gives guidance when the DRM/libinput backend cannot

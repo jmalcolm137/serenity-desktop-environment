@@ -1,6 +1,6 @@
 # The libgui-wayland / SDE boundary: outstanding cleanup
 
-**Status:** in progress · **Updated:** 2026-10-14
+**Status:** done · **Updated:** 2026-11-19
 **Related:** [`06-service-layering.md`](06-service-layering.md) ·
 [`03-engineering-conventions.md`](03-engineering-conventions.md) ·
 `libgui-wayland/DESIGN.md`
@@ -50,7 +50,7 @@ first (they currently assume the port's patch defines the target).
 The port defines and builds it (`libgui-wayland/src/CMakeLists.txt`, from
 Serenity's `Userland/Services/NotificationServer`), and the SDE builds the
 identical thing as a session service (`Services/NotificationServer/`, staged into
-`SDE_APP_BIN_DIR`, spawned on the notify portal). Notifications are the desktop's;
+`LIBWM_APP_BIN_DIR`, spawned on the notify portal). Notifications are the desktop's;
 the port's copy is redundant and is not part of any port build target list.
 
 **Fix:** drop the port's target; keep the SDE's.
@@ -68,10 +68,8 @@ values over the WindowServer protocol. The shim no longer opens any of them
   the input-setting bounds.
 - `serenity_window_manager.host_settings(...)` (on bind, and re-sent after a
   change): the input values, the keyboard layout, the cursor theme/highlight,
-  the theme, the effect choices, the workspace grid, the output layout and the
-  wallpaper mode, as `key=value` lines.
-- `serenity_window_manager.wallpaper(...)` (on bind, and after a change): the
-  wallpaper as raw pixels over an fd.
+  the theme and fonts, the effect choices, the workspace grid, the output
+  layout, the wallpaper mode and the wallpaper file, as `key=value` lines (§7).
 - `serenity_window_manager.set_host_setting(key, value)` and
   `set_wallpaper(...)`: an application's change; the compositor applies and
   persists it in its own config/state (`input.ini`, `cursor.ini`,
@@ -83,7 +81,7 @@ values over the WindowServer protocol. The shim no longer opens any of them
 rest.
 
 The session app-directory variable is generalised too: `LIBWM_APP_BIN_DIR`
-(generic), with `SDE_APP_BIN_DIR` still honoured as its older name.
+(see §7 for the others).
 
 ### 4. SDE-specific patches in the port's patch set: **done**
 
@@ -122,6 +120,38 @@ desktop's, not the application framework's.
   hunk stays with the framework) and `0044` (CertificateSettings, an app) were
   trimmed or dropped accordingly.
 
+### 7. A second pass (2026-11): **done**
+
+The constraints for this pass: modify the SerenityOS source no more than before
+(patches move between the repositories but do not grow), and add no round trips
+or copies to the paths that matter for speed and memory.
+
+- **The port read the SDE's files again.** The on-demand wallpaper read
+  `$SDE_STATE_DIR/wallpaper.raw`, duplicating the compositor's state-directory
+  logic and its file format, and every client read, wrote and inotify-watched the
+  SDE's theme and font brokers (`sde-theme`, `sde-fonts`). Now the host settings
+  carry `theme.path`/`theme.name` (the theme *in effect*, so high contrast still
+  reaches clients), `fonts` and `wallpaper.file` (the path of the raw wallpaper,
+  still read on demand and now straight into the bitmap, without a file-sized
+  buffer). The brokers remain the SDE's own session interface: the compositor
+  publishes a theme or font choice to them, their watchers apply, persist and
+  broadcast, and the settings portal reads `sde-theme`. Each client lost two
+  inotify watches, and a client that sets a wallpaper no longer keeps a private
+  copy of it.
+- **The protocol belongs to the port.** `serenity-window.xml` is libgui-wayland's,
+  documents every host-settings key, and is copied here verbatim. Version 4 drops
+  the `wallpaper` event, which no compositor sent any more.
+- **SDE branding and application ports in the port's series.** The About-dialog
+  branding and the port's 19 application patches (the Settings apps,
+  FileManager, SystemMonitor, Debugger, CrashReporter, Terminal, ...) moved here
+  as `0010`–`0029` (see [`../patches/README.md`](../patches/README.md)); their
+  library halves (LibCore's process statistics, LibCoredump, LibELF) stayed in
+  the port. The resulting SerenityOS tree is identical.
+- **SDE names for generic mechanisms.** The variables both sides use are now
+  `LIBWM_SESSION_DIR`, `LIBWM_WM_PORTAL_PATH`, `LIBWM_SESSION_BIN_DIR`,
+  `LIBWM_APP_BIN_DIR` and `LIBWM_CLIENT_SCALE`, with no fallback to the old names:
+  the two repositories are deployed together.
+
 ## Not SDE-specific (leave in the port)
 
 - `libeglgpu/`: a Mesa/EGL-backed `GPU::Device`.
@@ -155,3 +185,6 @@ the compositor serves it, not LibWM, so that separation is done.
 - [x] **6. Build the applications here, not in the framework**:
       `scripts/build-apps.sh`, with the target definitions in
       `patches/0008-sde-lagom-targets.patch`. See §6.
+- [x] **7. Second pass**: settings over the protocol only, the protocol owned by
+      the port, the application patches and branding here, generic variable
+      names. See §7.
