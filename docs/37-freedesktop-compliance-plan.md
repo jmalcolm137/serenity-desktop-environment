@@ -1,6 +1,6 @@
 # Freedesktop.org Compliance Plan
 
-**Status:** Proposed · **Date:** 2026-11-22
+**Status:** In progress (Phase F1 landed) · **Date:** 2026-11-22
 **Related:** [`03-engineering-conventions.md`](03-engineering-conventions.md) ·
 [`06-service-layering.md`](06-service-layering.md) ·
 [`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md) ·
@@ -105,7 +105,7 @@ Libraries/LibXDG/
 
 ## 4. Phased Implementation Plan
 
-### Phase F1 — Session & Base Directory Foundations
+### Phase F1 — Session & Base Directory Foundations *(Implemented)*
 **Goal:** Make the session lifecycle, config/state layout, and autostart strictly
 spec-compliant before layering higher-level XDG features.
 **SerenityOS upstream patches:** 0.

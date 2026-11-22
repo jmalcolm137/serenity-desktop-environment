@@ -17,6 +17,7 @@
 #include <LibCore/File.h>
 #include <LibCore/FileWatcher.h>
 #include <LibCore/Timer.h>
+#include <LibXDG/BaseDirs.h>
 #include <stdlib.h>
 #include <xkbcommon/xkbcommon.h>
 
@@ -100,13 +101,7 @@ static void add_bindings(Vector<Binding>& out, Action action, StringView combos)
 
 ByteString state_directory()
 {
-    if (auto const* dir = getenv("SDE_STATE_DIR"); dir && *dir)
-        return ByteString(dir);
-    if (auto const* config = getenv("XDG_CONFIG_HOME"); config && *config)
-        return ByteString::formatted("{}/sde", config);
-    if (auto const* home = getenv("HOME"); home && *home)
-        return ByteString::formatted("{}/.config/sde", home);
-    return ByteString { "/tmp/sde" };
+    return XDG::sde_config_dir();
 }
 
 ByteString state_file(StringView name)
@@ -150,6 +145,13 @@ ByteString file_path()
 
 static ByteString default_config_path()
 {
+    // XDG Base Directory layering: a system-wide $XDG_CONFIG_DIRS/sde/WindowServer.ini
+    // (e.g. /etc/xdg/sde/WindowServer.ini) overrides the built-in SerenityOS defaults.
+    for (auto const& dir : XDG::config_dirs()) {
+        auto candidate = ByteString::formatted("{}/sde/WindowServer.ini", dir);
+        if (Core::File::open(candidate, Core::File::OpenMode::Read).is_error() == false)
+            return candidate;
+    }
     // The SerenityOS defaults ship with the resource tree.
     if (auto const* root = getenv("SERENITY_RES_ROOT"); root && *root)
         return ByteString::formatted("{}/../etc/WindowServer.ini", root);

@@ -253,16 +253,19 @@ export WAYLAND_DISPLAY="$SESSION_DISPLAY"
 # without logind.
 export SDE_SESSION_PID_FILE="${SDE_SESSION_PID_FILE:-${XDG_RUNTIME_DIR:-/tmp}/sde-session$SEAT_SUFFIX.pid}"
 echo $$ > "$SDE_SESSION_PID_FILE"
-trap 'rm -f "$SDE_SESSION_PID_FILE"' EXIT
+SYSTEMD_SESSION_STARTED=0
+stop_systemd_session() {
+    [ "$SYSTEMD_SESSION_STARTED" = "1" ] || return 0
+    command -v systemctl >/dev/null 2>&1 || return 0
+    systemctl --user stop sde-session.target >/dev/null 2>&1 || true
+}
+trap 'stop_systemd_session; rm -f "$SDE_SESSION_PID_FILE"' EXIT
 
 # Best-effort: publish the session environment to the D-Bus activation
-# environment so D-Bus-activated services (portals) see a Wayland session. This
-# needs neither systemd nor the helper to be present; failure is ignored.
+# environment (and systemd --user when present) so activated services (portals,
+# user units) see a Wayland session. Failure is ignored when systemd or the
+# helper is absent.
 push_dbus_activation_env() {
-    [ -n "${SDE_DBUS_ENV_CMD:-}" ] || command -v dbus-update-activation-environment >/dev/null 2>&1 || return 0
-    local cmd="${SDE_DBUS_ENV_CMD:-dbus-update-activation-environment}"
-    # Only pass variables that are actually set (an unset name makes
-    # dbus-update-activation-environment fail).
     local vars="XDG_SESSION_TYPE XDG_SESSION_CLASS XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION WAYLAND_DISPLAY XDG_SEAT XDG_DATA_DIRS"
     [ -n "${XDG_VTNR:-}" ] && vars="$vars XDG_VTNR"
     [ -n "${XDG_SESSION_ID:-}" ] && vars="$vars XDG_SESSION_ID"
@@ -270,10 +273,28 @@ push_dbus_activation_env() {
     # session's service binaries and private portal directory.
     [ -n "${LIBWM_APP_BIN_DIR:-}" ] && vars="$vars LIBWM_APP_BIN_DIR"
     [ -n "${LIBWM_SESSION_DIR:-}" ] && vars="$vars LIBWM_SESSION_DIR"
-    # shellcheck disable=SC2086
-    WAYLAND_DISPLAY="$SESSION_DISPLAY" "$cmd" $vars >/dev/null 2>&1 || true
+
+    if [ -n "${SDE_DBUS_ENV_CMD:-}" ] || command -v dbus-update-activation-environment >/dev/null 2>&1; then
+        local cmd="${SDE_DBUS_ENV_CMD:-dbus-update-activation-environment}"
+        # shellcheck disable=SC2086
+        WAYLAND_DISPLAY="$SESSION_DISPLAY" "$cmd" $vars >/dev/null 2>&1 || true
+    fi
+
+    if [ "${SDE_SYSTEMD_USER:-1}" = "1" ] && command -v systemctl >/dev/null 2>&1; then
+        # shellcheck disable=SC2086
+        WAYLAND_DISPLAY="$SESSION_DISPLAY" systemctl --user import-environment $vars >/dev/null 2>&1 || true
+    fi
 }
 push_dbus_activation_env
+
+start_systemd_session() {
+    [ "${SDE_SYSTEMD_USER:-1}" = "1" ] || return 0
+    [ "$SYSTEMD_SESSION_STARTED" = "0" ] || return 0
+    command -v systemctl >/dev/null 2>&1 || return 0
+    if systemctl --user start --no-block sde-session.target >/dev/null 2>&1; then
+        SYSTEMD_SESSION_STARTED=1
+    fi
+}
 
 # XDG user directories (the freedesktop spec's updater): create user-dirs.dirs
 # and the standard directories on first login, before applications ask for them.
@@ -307,6 +328,19 @@ run_desktop_entry() {
 
 run_autostart() {
     [ "$RUN_AUTOSTART" = "1" ] || return 0
+    local autostart_bin="${SDE_AUTOSTART_BIN:-$SDE_ROOT/build/tools/sde-autostart}"
+    if [ ! -x "$autostart_bin" ] && [ -x "${APP_BIN:-}/sde-autostart" ]; then
+        autostart_bin="$APP_BIN/sde-autostart"
+    fi
+    if [ -x "$autostart_bin" ]; then
+        if [ -n "${SDE_SESSION_AUTOSTART_DIR:-}" ]; then
+            "$autostart_bin" --dir "$AUTOSTART_DIR" || true
+        else
+            "$autostart_bin" || true
+        fi
+        return 0
+    fi
+    # Fallback when sde-autostart is not built yet.
     [ -d "$AUTOSTART_DIR" ] || return 0
     local entry
     for entry in "$AUTOSTART_DIR"/*.desktop; do
@@ -616,9 +650,12 @@ while :; do
     # the loop so they are relaunched after a compositor restart (they were
     # disconnected when the old compositor exited), and never before the socket
     # exists. The shell is (re)launched by the compositor's own -s command.
-    if [ "$RUN_AUTOSTART" = "1" ] && [ "$stopping" -eq 0 ] && [ "$restart_requested" -eq 0 ]; then
+    if [ "$stopping" -eq 0 ] && [ "$restart_requested" -eq 0 ]; then
         wait_for_socket || true
-        run_autostart
+        start_systemd_session
+        if [ "$RUN_AUTOSTART" = "1" ]; then
+            run_autostart
+        fi
     fi
 
     # Then the applications the previous compositor had open (R4.2).

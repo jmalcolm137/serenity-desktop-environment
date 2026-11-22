@@ -217,10 +217,22 @@ sde_portal_tool(sde-polkit-agent
     SOURCES sde-polkit-agent/main.cpp portal/dbus.cpp
     LAGOM ${PORTAL_LAGOM})
 
+# sde-autostart: freedesktop.org Desktop Application Autostart launcher
+# ($XDG_CONFIG_HOME/autostart + $XDG_CONFIG_DIRS/autostart).
+add_executable(sde-autostart sde-autostart/main.cpp)
+set_target_properties(sde-autostart PROPERTIES CXX_STANDARD 26 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+target_compile_options(sde-autostart PRIVATE -fno-exceptions -Wno-literal-suffix -O2 -Wall)
+target_link_options(sde-autostart PRIVATE "LINKER:--as-needed")
+target_link_libraries(sde-autostart PRIVATE sde-xdg ${LAGOM_main})
+set_target_properties(sde-autostart PROPERTIES
+    BUILD_RPATH "${SERENITY_BUILD_DIR}/lib"
+    INSTALL_RPATH "${SERENITY_BUILD_DIR}/lib")
+
 # One target for the whole group (scripts/build-tools.sh). The portals and the
 # test clients are scripts/build-tools.sh's "SDE tools"; the Lagom-linked portal
 # backends come with it.
 add_custom_target(sde-tools DEPENDS
     sde-idle sde-dpms sde-screenshot native-app-test wayland-fuzz-test layer-fuzz-test data-device-fuzz-test
     ext-workspace-test output-management-test capture-probe screencast-consumer
-    virtual-input-test sde-settings-portal xdg-desktop-portal-serenity sde-notifications sde-lock sde-polkit-agent)
+    virtual-input-test sde-settings-portal xdg-desktop-portal-serenity sde-notifications sde-lock sde-polkit-agent
+    sde-autostart)

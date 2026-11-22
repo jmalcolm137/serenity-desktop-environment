@@ -95,7 +95,7 @@ install_if_executable "$SDE_ROOT/build/AuthDialog/sde-auth-dialog"
 for applet in "$SDE_ROOT"/build/Applets/*; do
     [[ -f "$applet" && -x "$applet" ]] && install_if_executable "$applet"
 done
-for tool in sde-idle sde-dpms sde-settings-portal xdg-desktop-portal-serenity sde-notifications sde-lock sde-polkit-agent; do
+for tool in sde-idle sde-dpms sde-settings-portal xdg-desktop-portal-serenity sde-notifications sde-lock sde-polkit-agent sde-autostart; do
     install_if_executable "$SDE_ROOT/build/tools/$tool"
 done
 # The portal's LibGUI dialogs are spawned by the backend through the app bin dir.
@@ -124,6 +124,11 @@ sed "s|^Exec=.*|Exec=$PREFIX/bin/sde-notifications|" \
     "$SDE_ROOT/Base/dbus-1/services/org.freedesktop.Notifications.service" \
     > "$DESTDIR/usr/share/dbus-1/services/org.freedesktop.Notifications.service"
 chmod 0644 "$DESTDIR/usr/share/dbus-1/services/org.freedesktop.Notifications.service"
+
+# systemd user session target (graphical-session.target integration).
+install -d "$DESTDIR/usr/lib/systemd/user"
+install -m 0644 "$SDE_ROOT/Base/systemd/user/sde-session.target" \
+    "$DESTDIR/usr/lib/systemd/user/sde-session.target"
 
 # Help hardcodes /usr/share/man as its manual root. The Serenity source has the
 # manual pages, and Base/res does not contain them, so install the manual tree

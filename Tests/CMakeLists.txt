@@ -218,3 +218,7 @@ add_sde_unit_test(libwm-wifi-client-test SOURCE WifiClientTest.cpp
     LIBS ${DBUS_LIBRARIES})
 target_include_directories(libwm-wifi-client-test PRIVATE "${CMAKE_SOURCE_DIR}/Applets/WiFi/src" ${DBUS_INCLUDE_DIRS})
 target_link_directories(libwm-wifi-client-test PRIVATE ${DBUS_LIBRARY_DIRS})
+
+# LibXDG pure-logic unit tests (Phase F1: BaseDirs + Autostart).
+add_sde_unit_test(libwm-xdg-basedirs-test SOURCE XdgBaseDirsTest.cpp LIBS sde-xdg)
+add_sde_unit_test(libwm-xdg-autostart-test SOURCE XdgAutostartTest.cpp LIBS sde-xdg)

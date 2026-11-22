@@ -78,6 +78,9 @@ set(SDE_ROOT "${CMAKE_SOURCE_DIR}")
 # component's build output where it has always been (build/WindowServer/,
 # build/WifiApplet/, build/tools/, ...), whichever group its source sits in.
 
+# Shared SDE libraries (zero-GLib XDG parsers, etc.).
+add_subdirectory(Libraries/LibXDG LibXDG)
+
 # The compositor.
 add_subdirectory(Services/WindowServer WindowServer)
 

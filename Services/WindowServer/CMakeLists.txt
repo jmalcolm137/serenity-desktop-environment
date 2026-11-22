@@ -264,7 +264,8 @@ target_link_libraries(WindowServer PRIVATE
     ${LAGOM_filesystem}
     ${LAGOM_url}
     ${LAGOM_threading}
-    ${LAGOM_main})
+    ${LAGOM_main}
+    sde-xdg)
 
 # R5 InputCapture: link libeis when present (see src/InputCapture.cpp).
 if (LIBEIS_FOUND)
