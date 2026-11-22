@@ -52,8 +52,8 @@ strict memory discipline ([`25-performance.md`](25-performance.md)).
 | 3 | **XDG User Directories** (`user-dirs.dirs`) | **Done** | `libgui-wayland` patch `0072` + `scripts/sde-user-dirs.sh` ([`35-xdg-user-dirs.md`](35-xdg-user-dirs.md)) | Optional `user-dirs.locale` localized defaults | None |
 | 4 | **Cursor Theme** (`XCURSOR_THEME` / `XCURSOR_SIZE`) | **Done** | `Services/WindowServer/src/chrome/Appearance.cpp` + `patches/0017` | None | None |
 | 5 | **Wayland Activation** (`xdg-activation-v1`) | **Done** | `Services/WindowServer/src/Interop.cpp` | Pass activation tokens from `LaunchServer` / Taskbar when launching `StartupNotify=true` apps | None |
-| 6 | **Desktop Menu** (`applications.menu`, `.directory`) | **Implemented (opt-in)** | `patches/0009` + `Base/xdg/menus/` + `Base/xdg/desktop-directories/` ([`36-xdg-desktop-menu.md`](36-xdg-desktop-menu.md)) | `XDG::IconTheme` icons; live reload via `inotify`; evaluate defaulting `XDGMenu=true` for Linux sessions | None (extends existing SDE-only `patches/0009`) |
-| 7 | **Desktop Entry** (`.desktop` v1.5) | **Partial** | `scripts/generate-desktop-entries.sh`, `XdgMenu.cpp`, `sde-session.sh` | Field-code expansion (`%f`/`%F`/`%u`/`%U`/`%i`/`%c`/`%k`), `Path=`, `DBusActivatable=`, `Desktop Actions` | None |
+| 6 | **Desktop Menu** (`applications.menu`, `.directory`) | **Partial (opt-in)** | `patches/0009` + `Base/xdg/menus/` + `Base/xdg/desktop-directories/` ([`36-xdg-desktop-menu.md`](36-xdg-desktop-menu.md)) | Fix `XDG_DATA_DIRS` clobbering `/usr/local/share:/usr/share` in `sde-session.sh`; evaluate defaulting `[Taskbar] XDGMenu=true`; `XDG::IconTheme` icons; live reload via `inotify` | None (extends existing SDE-only `patches/0009`) |
+| 7 | **Desktop Entry** (`.desktop` v1.5) | **Partial** | `scripts/generate-desktop-entries.sh`, `XdgMenu.cpp`, `sde-session.sh` | Cross-desktop Serenity entries (drop blanket `OnlyShowIn=SDE;`, host `Exec`/`TryExec` via `sde-app` wrapper, install into `/usr/share/applications/serenity-*.desktop` + `/usr/share/icons/hicolor/`); field-code expansion (`%f`/`%F`/`%u`/`%U`/`%i`/`%c`/`%k`), `Path=`, `DBusActivatable=`, `Desktop Actions` | None |
 | 8 | **Desktop Application Autostart** | **Partial** | `scripts/sde-session.sh` scans `$XDG_CONFIG_HOME/autostart/*.desktop` | `$XDG_CONFIG_DIRS/autostart` precedence/override, `OnlyShowIn`/`NotShowIn`, `Hidden=true`, `TryExec=` | None |
 | 9 | **XDG Base Directory** | **Partial** | `XDG_CONFIG_HOME`, `XDG_DATA_DIRS`, `XDG_RUNTIME_DIR` used | Separate `XDG_STATE_HOME` (`wallpaper.raw`, `sessions/`, `secrets/`, `xwayland-display`) and `XDG_CACHE_HOME` from `XDG_CONFIG_HOME`; `XDG_CONFIG_DIRS` layering | None |
 | 10 | **MIME Applications Associations** (`mimeapps.list`) | **Missing** | `LaunchServer` uses Serenity `LaunchServer.ini` only | Full spec lookup order + `[Default Applications]` / `[Added/Removed Associations]` + `Base/xdg/sde-mimeapps.list` | None |
@@ -140,17 +140,45 @@ spec-compliant before layering higher-level XDG features.
 
 ---
 
-### Phase F2 — MIME Associations (`shared-mime-info`, `mimeapps.list`) & Full `.desktop` Launching
-**Goal:** Clicking any file or URL—in a Serenity app, a host Linux app, or a
-Flatpak—opens the user's configured default Linux or Serenity application.
+### Phase F2 — Cross-Desktop App Menu, `.desktop` Interop & MIME Associations (`shared-mime-info`, `mimeapps.list`)
+**Goal:** (a) The SDE Taskbar menu shows the full set of installed Linux + Serenity
+applications just like other desktops, (b) SerenityOS applications appear with
+real icons and launch cleanly from other Linux desktops (KDE, GNOME, XFCE, …),
+and (c) clicking any file or URL opens the user's configured default Linux or
+Serenity application everywhere.
 **SerenityOS upstream patches:** 0.
 
-1. **`Libraries/LibXDG/MimeDatabase` (`shared-mime-info`):**
+1. **Fix Taskbar menu visibility (`scripts/sde-session.sh` & `[Taskbar] XDGMenu`):**
+   - Fix `XDG_DATA_DIRS` in `scripts/sde-session.sh` so prepending `$SDE_XDG_DATA`
+     preserves `${XDG_DATA_DIRS:-/usr/local/share:/usr/share}` (plus Flatpak
+     export dirs if present) instead of wiping out `/usr/share/applications`
+     when `XDG_DATA_DIRS` is unset at login.
+   - Make `[Taskbar] XDGMenu=true` the default for Linux sessions (keeping
+     `XDGMenu=false` available for classic Serenity-only `.af` mode).
+2. **Make SerenityOS apps first-class citizens in other Linux desktops (`generate-desktop-entries.sh`, `sde-app`, `install-sde.sh`):**
+   - Add a tiny `sde-app` launcher wrapper (`$PREFIX/bin/sde-app <App> [args...]`)
+     that sets `SERENITY_RES_ROOT`, `LD_LIBRARY_PATH`, and `LIBWM_APP_BIN_DIR`
+     when launched outside an SDE session, then `exec`s the real Serenity binary.
+   - Update `scripts/generate-desktop-entries.sh` to:
+     - drop the blanket `OnlyShowIn=SDE;` (keeping `OnlyShowIn=SDE;` only for
+       SDE-session-specific settings tools like `DisplaySettings`,
+       `MouseSettings`, `KeyboardSettings`, `NetworkSettings`);
+     - emit real host `TryExec=$PREFIX/bin/<App>` and `Exec=$PREFIX/bin/sde-app <App> %U`
+       (instead of Serenity-only `/bin/<App>` which fails `TryExec` on Linux);
+     - use `serenity-<id>.desktop` filenames to avoid colliding with host
+       `Terminal.desktop` / `Calculator.desktop` / `Browser.desktop`;
+     - emit host-resolvable `Icon=` names/paths and include `MimeType=` lines
+       from `.af` metadata.
+   - Update `scripts/install-sde.sh` to install the generated
+     `serenity-*.desktop` files into `$DESTDIR/usr/share/applications/` and the
+     Serenity app PNG icons into `$DESTDIR/usr/share/icons/hicolor/{16x16,32x32}/apps/`
+     so KDE, GNOME, XFCE, and `xdg-open` discover them with real icons.
+3. **`Libraries/LibXDG/MimeDatabase` (`shared-mime-info`):**
    - Parse `globs2` (weighted glob matching, case sensitivity), `aliases`,
      `subclasses` (e.g. `text/x-c++src` → `text/plain`), and `magic` (header
      sniffing when globs are absent or ambiguous) across `$XDG_DATA_HOME/mime`
      and `$XDG_DATA_DIRS/mime`.
-2. **`Libraries/LibXDG/MimeApps` (`mimeapps.list`):**
+4. **`Libraries/LibXDG/MimeApps` (`mimeapps.list`):**
    - Implement exact spec search order:
      1. `$XDG_CONFIG_HOME/$desktop-mimeapps.list`
      2. `$XDG_CONFIG_HOME/mimeapps.list`
@@ -161,29 +189,30 @@ Flatpak—opens the user's configured default Linux or Serenity application.
      `[Removed Associations]`, and MIME subclass inheritance.
    - Ship `Base/xdg/sde-mimeapps.list` mapping common types to Serenity apps
      when installed, with standard Linux fallbacks.
-3. **Full `.desktop` execution in `Libraries/LibXDG/DesktopEntry`:**
+5. **Full `.desktop` execution in `Libraries/LibXDG/DesktopEntry`:**
    - Implement `Exec=` quoting and field codes (`%f`, `%F`, `%u`, `%U`, `%i`,
      `%c`, `%k`), `Path=`, `Terminal=true` (spawning Serenity `Terminal`),
      `DBusActivatable=true` (calling `org.freedesktop.Application.Activate` /
      `Open` over `Tools/portal/dbus.h`), and `Desktop Actions`.
    - When `StartupNotify=true`, request an `xdg-activation-v1` token and export
      `XDG_ACTIVATION_TOKEN` / `DESKTOP_STARTUP_ID` to the launched child.
-4. **Wire into SDE services:**
+6. **Wire into SDE services:**
    - **`Services/LaunchServer/`:** resolve file/URL handlers via `LibXDG`
      (`MimeDatabase` + `MimeApps` + `DesktopEntry`) first, falling back to
      Serenity's `LaunchServer.ini` for Serenity-specific handlers.
    - **`Tools/portal/backend.cpp` (`OpenURI`, `AppChooser`) & `Dialogs/AppChooser/`:**
      use `LibXDG` for candidate app discovery, default selection, and
      persisting "Always open with" choices to `$XDG_CONFIG_HOME/mimeapps.list`.
-   - **Update `scripts/generate-desktop-entries.sh`:** include `MimeType=` lines
-     from Serenity's `.af` metadata so `xdg-open` and `mimeapps.list` know which
-     Serenity apps handle which MIME types.
 
 **Verification:**
 - `Tests/XdgMimeTest.cpp` (globs, subclasses, aliases, `mimeapps.list` precedence,
   `Removed Associations`, `Exec=` field-code expansion).
 - `scripts/run-mimeapps-test.sh` (end-to-end `LaunchServer` + `OpenURI` portal
   with custom `mimeapps.list` and fake `.desktop` handlers).
+- `scripts/run-taskbar-xdg-menu-test.sh` & `scripts/run-install-layout-test.sh`
+  extended to verify `XDG_DATA_DIRS` preserves `/usr/share/applications` and
+  generated `serenity-*.desktop` entries pass `TryExec` / `OnlyShowIn` / icon
+  checks for non-SDE desktops.
 
 ---
 
@@ -327,10 +356,10 @@ managers.
 
 ## 6. Recommended Execution Order
 
-| Order | Phase | User-visible impact | Effort | Upstream patches |
-|---|---|---|---|---|
-| 1 | **F1** (BaseDirs, full Autostart, `systemd --user`) | Clean `~/.config` vs `~/.local/state`; system autostart apps & systemd user services work properly | Small | 0 |
-| 2 | **F2** (`LibXDG` + `shared-mime-info` + `mimeapps.list` + full `.desktop` exec) | Clicking any file/URL opens the right Linux or Serenity default app everywhere | Medium | 0 |
-| 3 | **F3** (`XDG::IconTheme` + `StatusNotifierItem` tray + live XDG menu) | Real icons for all Linux apps + Discord/Steam/Fcitx5/Nextcloud tray icons in Taskbar | Medium | 0 |
-| 4 | **F4** (Trash, XDG thumbnails, Notifications v1.2, keyring wiring) | Shared Trash & thumbnail cache with host Linux file managers; cleaner notifications | Medium | 0–1 tiny optional hook |
-| 5 | **F5** (`recently-used.xbel`, Sound Theme, `user-dirs.locale`) | Long-tail desktop polish | Small | 0 |
+| Order | Phase | Status | User-visible impact | Effort | Upstream patches |
+|---|---|---|---|---|---|
+| 1 | **F1** (BaseDirs, full Autostart, `systemd --user`) | **Done** | Clean `~/.config` vs `~/.local/state`; system autostart apps & systemd user services work properly | Small | 0 |
+| 2 | **F2** (Cross-desktop app menu & `.desktop` interop + `shared-mime-info` + `mimeapps.list` + full `.desktop` exec) | Next | Taskbar menu shows all Linux + Serenity apps; Serenity apps appear with real icons and launch cleanly in KDE/GNOME/XFCE; clicking any file/URL opens the right default app | Medium | 0 |
+| 3 | **F3** (`XDG::IconTheme` + `StatusNotifierItem` tray + live XDG menu) | Planned | Real icons for all Linux apps + Discord/Steam/Fcitx5/Nextcloud tray icons in Taskbar | Medium | 0 |
+| 4 | **F4** (Trash, XDG thumbnails, Notifications v1.2, keyring wiring) | Planned | Shared Trash & thumbnail cache with host Linux file managers; cleaner notifications | Medium | 0–1 tiny optional hook |
+| 5 | **F5** (`recently-used.xbel`, Sound Theme, `user-dirs.locale`) | Planned | Long-tail desktop polish | Small | 0 |
