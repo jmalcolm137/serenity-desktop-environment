@@ -23,10 +23,10 @@ sde_test_compositor
 
 SESSION_DIR="$RUNTIME/session"
 mkdir -p "$SESSION_DIR/portal"
-export SDE_SESSION_DIR="$SESSION_DIR"
+export LIBWM_SESSION_DIR="$SESSION_DIR"
 
 env WAYLAND_DISPLAY="$SOCK" \
-    SDE_SESSION_DIR="$SESSION_DIR" \
+    LIBWM_SESSION_DIR="$SESSION_DIR" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     "$TEST" > "$RUNTIME/test.log" 2>&1 &

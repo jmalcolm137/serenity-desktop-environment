@@ -34,7 +34,7 @@ for entry in "${SERENITY_RES_ROOT:-$SERENITY/Base/res}"/*; do
 done
 
 sde_test_compositor --startup "$BUILD/bin/Taskbar" \
-    SERENITY_RES_ROOT="$RES" SDE_SESSION_BIN_DIR="$RUNTIME/sbin"
+    SERENITY_RES_ROOT="$RES" LIBWM_SESSION_BIN_DIR="$RUNTIME/sbin"
 sde_test_wait_log "$RUNTIME/comp.log" "layer surface namespace='serenity-taskbar'" 300 || true
 sleep 1
 

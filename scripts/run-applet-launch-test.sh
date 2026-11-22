@@ -2,7 +2,7 @@
 # Headless test: clicking the ResourceGraph taskbar applet opens SystemMonitor.
 #
 # Covers two regressions:
-#   * Process::resolve_executable_path() must consult SDE_APP_BIN_DIR: the applet
+#   * Process::resolve_executable_path() must consult LIBWM_APP_BIN_DIR: the applet
 #     lives in build/Applets, so "/bin/SystemMonitor" must resolve to the session's
 #     SystemMonitor (in the port's bin dir), not to <applet-dir>/SystemMonitor
 #     (libgui-wayland patch 0011);
@@ -40,11 +40,11 @@ stop_compositor() {
 }
 
 # The Taskbar and the ResourceGraph applet; the applet's click handler spawns
-# /bin/SystemMonitor, resolved via SDE_APP_BIN_DIR (the port's bin dir).
+# /bin/SystemMonitor, resolved via LIBWM_APP_BIN_DIR (the port's bin dir).
 STARTUP="$BUILD/bin/Taskbar & $APPLET --cpu=CPUGraph,#00bb00 --memory=MemoryGraph,#00bbbb --network=NetworkGraph,#bbbb00"
 
 # setsid makes it a session/group leader, so the trap can kill the whole group.
-sde_test_compositor --startup "$STARTUP" SDE_WM_PORTAL_PATH="$RUNTIME/wm" SDE_APP_BIN_DIR="$BUILD/bin"
+sde_test_compositor --startup "$STARTUP" LIBWM_WM_PORTAL_PATH="$RUNTIME/wm" LIBWM_APP_BIN_DIR="$BUILD/bin"
 
 # The applet strip sits at the right of the taskbar. Click across it (the exact
 # placement depends on the theme/font, so sweep a few positions); clicking empty

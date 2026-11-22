@@ -66,7 +66,7 @@ run_case() {
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 SDE_OUTPUT_SCALE=1 \
         SDE_STATE_DIR="$runtime" \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-        LD_LIBRARY_PATH="$BUILD/lib" SDE_APP_BIN_DIR="$BUILD/bin" \
+        LD_LIBRARY_PATH="$BUILD/lib" LIBWM_APP_BIN_DIR="$BUILD/bin" \
         "$COMP" -n "$sock" -s "$startup" \
         > "$runtime/comp.log" 2>&1 &
     comp_pid=$!
@@ -105,7 +105,7 @@ run_x11_case() {
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 SDE_OUTPUT_SCALE=1 \
         SDE_STATE_DIR="$runtime" \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-        LD_LIBRARY_PATH="$BUILD/lib" SDE_APP_BIN_DIR="$BUILD/bin" \
+        LD_LIBRARY_PATH="$BUILD/lib" LIBWM_APP_BIN_DIR="$BUILD/bin" \
         "$COMP" -n "$sock" -s "$BUILD/bin/Taskbar" \
         > "$runtime/comp.log" 2>&1 &
     comp_pid=$!

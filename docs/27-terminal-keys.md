@@ -142,5 +142,5 @@ A separate failure turned up while verifying this, and has been fixed: the
 `LexicalPath`, and several call sites stored one taken from a temporary). The path
 was garbage, so `run-launch-exec-test.sh` fell through to the `TextEditor` handler
 instead of running the executable, and `Process::resolve_executable_path` missed its
-`SDE_SESSION_BIN_DIR`/`SDE_APP_BIN_DIR` lookups. See
+`LIBWM_SESSION_BIN_DIR`/`LIBWM_APP_BIN_DIR` lookups. See
 `patches/0060-libcore-lexicalpath-basename-lifetime.patch`.

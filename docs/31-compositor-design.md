@@ -231,7 +231,7 @@ unmodified LibGUI applications run as ordinary Wayland clients
 ([`24-libgui-wayland-sde-boundary.md`](24-libgui-wayland-sde-boundary.md)).
 
 The **WindowManagerServer** *is* served here: `Core::LocalServer` on
-`/tmp/portal/wm` (or `SDE_WM_PORTAL_PATH`), accepted in the same loop, carrying
+`/tmp/portal/wm` (or `LIBWM_WM_PORTAL_PATH`), accepted in the same loop, carrying
 window state, workspace and applet-area events to the Taskbar and applets. It is
 a push protocol: the compositor emits state; the Taskbar reacts. There is no
 synchronous request/reply between them on the hot path.
@@ -250,7 +250,7 @@ The session's other processes are separate and have their own lifecycle:
 
 None of those processes may call into the compositor's `Server`. Their only
 contract is their protocol and the environment (`WAYLAND_DISPLAY`,
-`SDE_APP_BIN_DIR`, `SDE_WM_PORTAL_PATH`, `AT_SPI_BUS_ADDRESS`, …).
+`LIBWM_APP_BIN_DIR`, `LIBWM_WM_PORTAL_PATH`, `AT_SPI_BUS_ADDRESS`, …).
 
 ## 7. Configuration and state
 

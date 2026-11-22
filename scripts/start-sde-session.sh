@@ -78,7 +78,7 @@ if [[ ! -x "$COMP" ]]; then
 fi
 
 # R4.3/R6 multi-seat: seat identity + per-seat runtime namespaces (see
-# scripts/sde-seat.sh). SDE_SESSION_DISPLAY and SDE_WM_PORTAL_PATH are exported so
+# scripts/sde-seat.sh). SDE_SESSION_DISPLAY and LIBWM_WM_PORTAL_PATH are exported so
 # the supervisor, the session services and the apps all agree.
 # shellcheck source=scripts/sde-seat.sh
 . "$SDE_ROOT/scripts/sde-seat.sh"
@@ -87,11 +87,11 @@ export SDE_SESSION_DISPLAY="${SDE_SESSION_DISPLAY:-sde$(sde_seat_suffix)}"
 # Only a non-default seat relocates the WindowManagerServer socket; seat0 uses the
 # default (/tmp/portal/wm), which the compositor creates. Exporting the default
 # would make the compositor skip creating /tmp/portal (see WindowServer main.cpp).
-if [[ -z "${SDE_WM_PORTAL_PATH:-}" && -n "$(sde_seat_suffix)" ]]; then
-    SDE_WM_PORTAL_PATH="$(sde_wm_portal_path)"
-    export SDE_WM_PORTAL_PATH
+if [[ -z "${LIBWM_WM_PORTAL_PATH:-}" && -n "$(sde_seat_suffix)" ]]; then
+    LIBWM_WM_PORTAL_PATH="$(sde_wm_portal_path)"
+    export LIBWM_WM_PORTAL_PATH
 fi
-echo "SDE: seat '${XDG_SEAT}'${XDG_VTNR:+ vt$XDG_VTNR} display '$SDE_SESSION_DISPLAY' wm-portal '${SDE_WM_PORTAL_PATH:-/tmp/portal/wm}'"
+echo "SDE: seat '${XDG_SEAT}'${XDG_VTNR:+ vt$XDG_VTNR} display '$SDE_SESSION_DISPLAY' wm-portal '${LIBWM_WM_PORTAL_PATH:-/tmp/portal/wm}'"
 
 # R4.3/R6: a native (DRM+libinput) session needs a seat and a DRM device. Give
 # actionable guidance instead of a loop of opaque backend failures. Override with
@@ -162,7 +162,7 @@ fi
 # The applications run from this build's bin directory; the session LaunchServer
 # (below) is not built next to them, so point it there. See
 # docs/06-service-layering.md.
-export SDE_APP_BIN_DIR="${SDE_APP_BIN_DIR:-$BUILD/bin}"
+export LIBWM_APP_BIN_DIR="${LIBWM_APP_BIN_DIR:-$BUILD/bin}"
 
 # The portal backend launches these LibGUI dialogs by absolute path. Source
 # builds keep the dialogs under build/<name>/<name>; installed trees expose them
@@ -171,8 +171,8 @@ portal_dialog() {
     local name="$1"
     if [[ -x "$SDE_ROOT/build/$name/$name" ]]; then
         printf '%s' "$SDE_ROOT/build/$name/$name"
-    elif [[ -x "$SDE_APP_BIN_DIR/$name" ]]; then
-        printf '%s' "$SDE_APP_BIN_DIR/$name"
+    elif [[ -x "$LIBWM_APP_BIN_DIR/$name" ]]; then
+        printf '%s' "$LIBWM_APP_BIN_DIR/$name"
     fi
 }
 export SDE_PORTAL_FILE_CHOOSER="${SDE_PORTAL_FILE_CHOOSER:-$(portal_dialog FileChooserDialog)}"
@@ -210,8 +210,8 @@ SERENITY="$SERENITY" "$SDE_ROOT/scripts/seed-serenity-home.sh"
 # the applets themselves knowing anything about it.
 APPLET_SUPERVISOR="$SDE_ROOT/scripts/sde-supervise-applet.sh"
 BATTERY_APPLET="${SDE_BATTERY_APPLET:-$SDE_ROOT/build/BatteryApplet/BatteryApplet}"
-if [[ ! -x "$BATTERY_APPLET" && -x "$SDE_APP_BIN_DIR/BatteryApplet" ]]; then
-    BATTERY_APPLET="$SDE_APP_BIN_DIR/BatteryApplet"
+if [[ ! -x "$BATTERY_APPLET" && -x "$LIBWM_APP_BIN_DIR/BatteryApplet" ]]; then
+    BATTERY_APPLET="$LIBWM_APP_BIN_DIR/BatteryApplet"
 fi
 if [[ ! -x "$BATTERY_APPLET" ]]; then
     "$SDE_ROOT/scripts/build-battery-applet.sh" >/dev/null 2>&1 \
@@ -220,8 +220,8 @@ fi
 
 # The Wi-Fi applet (a LibGUI app that fronts NetworkManager; docs/19).
 WIFI_APPLET="${SDE_WIFI_APPLET:-$SDE_ROOT/build/WifiApplet/WifiApplet}"
-if [[ ! -x "$WIFI_APPLET" && -x "$SDE_APP_BIN_DIR/WifiApplet" ]]; then
-    WIFI_APPLET="$SDE_APP_BIN_DIR/WifiApplet"
+if [[ ! -x "$WIFI_APPLET" && -x "$LIBWM_APP_BIN_DIR/WifiApplet" ]]; then
+    WIFI_APPLET="$LIBWM_APP_BIN_DIR/WifiApplet"
 fi
 if [[ ! -x "$WIFI_APPLET" ]]; then
     "$SDE_ROOT/scripts/build-wifi-applet.sh" >/dev/null 2>&1 \

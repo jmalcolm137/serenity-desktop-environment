@@ -270,7 +270,7 @@ export SDE_TEST_ENV=runner
 # Nothing a test starts may reach the live session's files, sockets or services.
 # The session exports these to everything it runs — including the shell this driver
 # is launched from — so drop them and give the tests their own.
-unset SDE_HEARTBEAT_FILE SDE_SESSION_LOG SDE_SESSION_DISPLAY SDE_WM_PORTAL_PATH \
+unset SDE_HEARTBEAT_FILE SDE_SESSION_LOG SDE_SESSION_DISPLAY LIBWM_WM_PORTAL_PATH \
       SDE_STATE_DIR SDE_SESSION_SHELL SDE_SESSION_IDLE_SECONDS \
       SDE_SESSION_WATCHDOG_SECONDS SDE_SESSION_SAFE_MODE SDE_LOCK_CMD \
       SDE_SESSION_IDLE_DPMS_SECONDS SDE_SESSION_COMPOSITOR_SAFE
@@ -290,13 +290,13 @@ for name in "${selected[@]}"; do
     # services instead of the compositor the test started (the failure mode that
     # made `run-audio-test.sh` red until it isolated itself). Tests that need
     # their own path still set it and win.
-    SDE_SESSION_DIR="$RUN_DIR/session-$name"
+    LIBWM_SESSION_DIR="$RUN_DIR/session-$name"
     # The portal directory has to exist before a service is spawned there: LibWM
     # binds the listening socket for a spawned service (AudioServer, NotificationServer)
-    # at "$SDE_SESSION_DIR/portal/<name>" and gives up silently if the bind fails, so a
+    # at "$LIBWM_SESSION_DIR/portal/<name>" and gives up silently if the bind fails, so a
     # missing directory reads as "the service is not there".
-    mkdir -p "$SDE_SESSION_DIR/portal"
-    export SDE_SESSION_DIR
+    mkdir -p "$LIBWM_SESSION_DIR/portal"
+    export LIBWM_SESSION_DIR
 
     # And no X server. Xwayland's display names live in the global
     # /tmp/.X11-unix, so a test compositor that starts one competes with a live

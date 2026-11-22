@@ -101,7 +101,7 @@ the service, owns the listening socket, mirroring SystemServer.
 > `Services/SQLServer/` and `Services/NotificationServer/` projects, via `scripts/build-services.sh`):
 > they are session services, so they belong with the session, not in the
 > compositor-agnostic libgui-wayland client stack. The session assembles an
-> **SDE-owned app directory** (`SDE_APP_BIN_DIR`, `scripts/sde-session.sh`) that
+> **SDE-owned app directory** (`LIBWM_APP_BIN_DIR`, `scripts/sde-session.sh`) that
 > links the port's applications and overlays these services, so the shell, the
 > LaunchServer and LibWM all resolve `/bin/X` and the services from one place;
 > libgui-wayland keeps only its own fallback. Verified: `Help` renders the man
@@ -118,19 +118,19 @@ need it.
 
 SerenityOS's WindowServer serves the WindowManagerServer at `/tmp/portal/wm`. Ours
 is served by the **compositor** (`Services/WindowServer/src/main.cpp`), which also relays
-window events to the Taskbar. `SDE_WM_PORTAL_PATH` relocates the socket (the
+window events to the Taskbar. `LIBWM_WM_PORTAL_PATH` relocates the socket (the
 headless tests use it so they cannot disturb a live session).
 
 ### 2.5 Session runtime directory, `/res`, `/etc`, `/bin`
 
 - `/tmp/session/%sid/portal/…` is computed by
   `Core::SessionManagement::parse_path_with_sid()`. On Linux `root_session_id()`
-  is always **0**, so `%sid` → `/tmp/session/0`; the `SDE_SESSION_DIR` seam
+  is always **0**, so `%sid` → `/tmp/session/0`; the `LIBWM_SESSION_DIR` seam
   relocates the whole directory (used by the tests so they never touch a live
   session).
 - The SerenityOS resource tree (`/res`, `/etc`, `/bin`) is redirected to a host
   tree via `SERENITY_RES_ROOT` / `LIBWM_DEFAULT_RES`, and `/bin/X` handler paths
-  map to host binaries (`Process::resolve_executable_path`, `SDE_APP_BIN_DIR`).
+  map to host binaries (`Process::resolve_executable_path`, `LIBWM_APP_BIN_DIR`).
 - SerenityOS's CA bundle lives at `/etc/cacert.pem`; the host has none, so
   `LibTLS` falls back to the system trust store
   (`/etc/ssl/certs/ca-certificates.crt`, …), patch `0024`. DNS already uses the

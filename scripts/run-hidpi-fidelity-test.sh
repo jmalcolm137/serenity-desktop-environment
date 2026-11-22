@@ -33,9 +33,9 @@ dump_at() { # $1 = scale, $2 = output png, $3 = expected WxH (optional)
     env -u WAYLAND_DISPLAY -u DISPLAY \
         SDE_OUTPUT_SCALE="$scale" \
         SDE_STATE_DIR="$RUNTIME/state-$scale" \
-        SDE_SESSION_DIR="$RUNTIME/session-$scale" \
+        LIBWM_SESSION_DIR="$RUNTIME/session-$scale" \
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
-        SDE_WM_PORTAL_PATH="$RUNTIME/wm-$scale" \
+        LIBWM_WM_PORTAL_PATH="$RUNTIME/wm-$scale" \
         SERENITY_RES_ROOT="$SERENITY/Base/res" \
         LD_LIBRARY_PATH="$BUILD/lib" \
         LIBWM_DUMP="$out" \

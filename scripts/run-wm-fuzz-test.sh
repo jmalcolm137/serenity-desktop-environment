@@ -48,8 +48,8 @@ trap cleanup EXIT
 
 setsid env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 SDE_OUTPUT_SCALE=1 SDE_XWAYLAND=0 \
-    SDE_STATE_DIR="$RUNTIME/state" SDE_SESSION_DIR="$RUNTIME/session" \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
+    SDE_STATE_DIR="$RUNTIME/state" LIBWM_SESSION_DIR="$RUNTIME/session" \
+    LIBWM_WM_PORTAL_PATH="$RUNTIME/wm" \
     SDE_HEARTBEAT_FILE="$RUNTIME/heartbeat" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
@@ -73,7 +73,7 @@ for _ in $(seq 1 100); do
 done
 
 echo "=== sending $CASES WindowManagerServer requests (seed $SEED) ==="
-env SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
+env LIBWM_WM_PORTAL_PATH="$RUNTIME/wm" \
     SDE_FUZZ_SEED="$SEED" SDE_FUZZ_CASES="$CASES" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     "$FUZZ" > "$RUNTIME/fuzz.log" 2>&1 || {

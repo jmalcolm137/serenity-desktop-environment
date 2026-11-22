@@ -118,7 +118,7 @@ sde_test_compositor() {
         SDE_OUTPUT_SCALE=1 \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SDE_TEST_SERENITY/Base/res}" \
         LD_LIBRARY_PATH="$SDE_TEST_BUILD/lib" \
-        SDE_APP_BIN_DIR="$SDE_TEST_BUILD/bin" \
+        LIBWM_APP_BIN_DIR="$SDE_TEST_BUILD/bin" \
         "${assignments[@]}" \
         "$SDE_TEST_COMPOSITOR" -n "$SOCK" "${startup[@]}" > "$RUNTIME/comp.log" 2>&1 &
     SDE_TEST_COMPOSITOR_PID=$!
@@ -172,7 +172,7 @@ sde_test_case_compositor() {
         SDE_OUTPUT_SCALE=1 \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SDE_TEST_SERENITY/Base/res}" \
         LD_LIBRARY_PATH="$SDE_TEST_BUILD/lib" \
-        SDE_APP_BIN_DIR="$SDE_TEST_BUILD/bin" \
+        LIBWM_APP_BIN_DIR="$SDE_TEST_BUILD/bin" \
         "${assignments[@]}" \
         "$SDE_TEST_COMPOSITOR" -n "$CASE_SOCK" "${startup[@]}" > "$CASE_RUNTIME/comp.log" 2>&1 &
     SDE_TEST_COMPOSITOR_PID=$!

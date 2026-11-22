@@ -48,7 +48,7 @@ sde_test_compositor
 # SQLStudio is the one DevTools app with a service dependency: it talks to the
 # ported SQLServer. A session starts that service (sde-session.sh's
 # SESSION_SERVICES), and LibWM also spawns it on demand — but spawning resolves the
-# binary through SDE_SESSION_BIN_DIR, and this test gave the clients none, so the
+# binary through LIBWM_SESSION_BIN_DIR, and this test gave the clients none, so the
 # spawn failed and SQLStudio faulted on startup while the other three (which need
 # nothing) mapped their windows. Give them a session app directory with it.
 SESSION_DIR="$RUNTIME/session"
@@ -81,8 +81,8 @@ for tool in "${TOOLS[@]}"; do
     env WAYLAND_DISPLAY="$SOCK" \
         LD_LIBRARY_PATH="$BUILD/lib" \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-        SDE_SESSION_DIR="$SESSION_DIR" \
-        SDE_SESSION_BIN_DIR="$APP_BIN" \
+        LIBWM_SESSION_DIR="$SESSION_DIR" \
+        LIBWM_SESSION_BIN_DIR="$APP_BIN" \
         timeout 6 "$BUILD/bin/$tool" > "$LOG" 2>&1 || true
     after="$(grep -c "toplevel mapped" "$RUNTIME/comp.log" || true)"
     if [[ "$after" -gt "$before" ]]; then

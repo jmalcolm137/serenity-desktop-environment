@@ -31,7 +31,7 @@ mkdir -p "$RUNTIME/state"
 # override wins over the persisted layout by design, and this test is about the
 # layout being applied.
 sde_test_compositor SDE_OUTPUT_SCALE= SDE_STATE_DIR="$RUNTIME/state" \
-    SDE_SESSION_DIR="$RUNTIME/session" SDE_HEARTBEAT_FILE="$RUNTIME/heartbeat" SDE_XWAYLAND=0
+    LIBWM_SESSION_DIR="$RUNTIME/session" SDE_HEARTBEAT_FILE="$RUNTIME/heartbeat" SDE_XWAYLAND=0
 sde_test_wait_log "$RUNTIME/comp.log" "applied screen layout" 200 || true
 sleep 0.5
 

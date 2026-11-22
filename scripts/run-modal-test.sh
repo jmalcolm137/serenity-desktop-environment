@@ -36,9 +36,9 @@ run_case() {
     sock="sde-modal-$$-$name"
     env -u WAYLAND_DISPLAY -u DISPLAY \
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
-        SDE_STATE_DIR="$runtime" SDE_WM_PORTAL_PATH="$runtime/wm" \
+        SDE_STATE_DIR="$runtime" LIBWM_WM_PORTAL_PATH="$runtime/wm" \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-        LD_LIBRARY_PATH="$BUILD/lib" SDE_APP_BIN_DIR="$BUILD/bin" \
+        LD_LIBRARY_PATH="$BUILD/lib" LIBWM_APP_BIN_DIR="$BUILD/bin" \
         "$COMP" -n "$sock" -s "$startup" > "$runtime/comp.log" 2>&1 &
     comp_pid=$!
     for _ in $(seq 1 80); do

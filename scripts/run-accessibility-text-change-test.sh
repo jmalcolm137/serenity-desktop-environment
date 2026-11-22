@@ -31,13 +31,13 @@ DBUS_PID="$(sed -n '2p' <<<"$DBUS_INFO")"
 
 SESSION_DIR="$RUNTIME/session"
 mkdir -p "$SESSION_DIR/portal"
-export SDE_SESSION_DIR="$SESSION_DIR"
+export LIBWM_SESSION_DIR="$SESSION_DIR"
 
 sde_test_compositor
 
 status=0
 env WAYLAND_DISPLAY="$SOCK" \
-    SDE_SESSION_DIR="$SESSION_DIR" \
+    LIBWM_SESSION_DIR="$SESSION_DIR" \
     AT_SPI_BUS_ADDRESS="$DBUS_ADDRESS" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \

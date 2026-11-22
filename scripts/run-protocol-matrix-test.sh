@@ -28,7 +28,7 @@ cleanup() {
     for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"
 }
 
-sde_test_compositor SDE_WM_PORTAL_PATH="$RUNTIME/wm"
+sde_test_compositor LIBWM_WM_PORTAL_PATH="$RUNTIME/wm"
 
 env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/wayland-globals-test" > "$RUNTIME/globals.log" 2>&1 || true
 

@@ -5,7 +5,7 @@ project(WebContent CXX)
 #
 # WebView applications (Browser, Mail, Help, ...) reach the renderer through the
 # Serenity webcontent portal; LibWM spawns this binary on demand from the session
-# app directory (SDE_APP_BIN_DIR). It is a *session* service, so SDE builds it --
+# app directory (LIBWM_APP_BIN_DIR). It is a *session* service, so SDE builds it --
 # libgui-wayland stays a compositor-agnostic client stack and keeps only its own
 # fallback. See ../../docs/06-service-layering.md and ../../docs/07-systemserver-roles.md
 # (section 2.3).

@@ -131,7 +131,7 @@ sock="sde-config-$$"
 env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
     SDE_STATE_DIR="$RUNTIME" \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
+    LIBWM_WM_PORTAL_PATH="$RUNTIME/wm" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     "$COMP" -n "$sock" > "$RUNTIME/comp.log" 2>&1 &
@@ -160,7 +160,7 @@ env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
     SDE_LOG_LEVEL=info \
     SDE_STATE_DIR="$RUNTIME" \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm-log" \
+    LIBWM_WM_PORTAL_PATH="$RUNTIME/wm-log" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     "$COMP" -n "$sock_log" > "$RUNTIME/log-level.log" 2>&1 &

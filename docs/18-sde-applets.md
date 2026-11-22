@@ -43,7 +43,7 @@ The remaining applets read **no** kernel interface:
 
 When an applet **launches a Serenity application** (ResourceGraph opens
 `/bin/SystemMonitor` on click), the path resolves through the port's
-`Process::resolve_executable_path()`: the session sets **`SDE_APP_BIN_DIR`** to the
+`Process::resolve_executable_path()`: the session sets **`LIBWM_APP_BIN_DIR`** to the
 port's bin directory, so `/bin/SystemMonitor` reaches it even though the applet
 itself lives in `build/Applets` (libgui-wayland patch `0011`). Covered by
 `scripts/run-applet-launch-test.sh`.

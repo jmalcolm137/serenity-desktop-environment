@@ -42,7 +42,7 @@ STARTUP="$BUILD/bin/Taskbar & $BUILD/bin/FileManager -d"
 [[ -n "$APPLET_CMDS" ]] && STARTUP="$STARTUP & $APPLET_CMDS"
 [[ -x "$BATTERY_APPLET" ]] && STARTUP="$STARTUP & $BATTERY_APPLET"
 
-sde_test_compositor --startup "$STARTUP" SDE_WM_PORTAL_PATH="$RUNTIME/portal/wm" SDE_APP_BIN_DIR="$BUILD/bin" SDE_SESSION_BIN_DIR="$RUNTIME/sbin"
+sde_test_compositor --startup "$STARTUP" LIBWM_WM_PORTAL_PATH="$RUNTIME/portal/wm" LIBWM_APP_BIN_DIR="$BUILD/bin" LIBWM_SESSION_BIN_DIR="$RUNTIME/sbin"
 # Both shell processes have to finish mapping their layer surfaces. Wait for
 # both, not just the Desktop: on a loaded runner the Taskbar can still be
 # connecting to the WM portal when the Desktop is already up, and stopping the

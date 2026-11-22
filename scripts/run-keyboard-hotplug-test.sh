@@ -68,7 +68,7 @@ RepeatDelay=200
 RepeatRate=20
 EOF
 
-sde_test_compositor SDE_WM_PORTAL_PATH="$RUNTIME/wm"
+sde_test_compositor LIBWM_WM_PORTAL_PATH="$RUNTIME/wm"
 
 # The client connects before any keyboard exists, so it starts with no
 # wl_keyboard (seat capability without KEYBOARD). It stays up across both

@@ -40,7 +40,7 @@ start_compositor() {
     env -u WAYLAND_DISPLAY -u DISPLAY \
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS="$outputs" \
         SDE_STATE_DIR="$RUNTIME" \
-        SDE_WM_PORTAL_PATH="$RUNTIME/wm-$sock" \
+        LIBWM_WM_PORTAL_PATH="$RUNTIME/wm-$sock" \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
         LD_LIBRARY_PATH="$BUILD/lib" \
         "$COMP" -n "$sock" > "$RUNTIME/comp-$sock.log" 2>&1 &

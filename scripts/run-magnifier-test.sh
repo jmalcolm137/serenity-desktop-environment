@@ -24,8 +24,8 @@ APP="$BUILD/bin/Magnifier"
 # The capture portal lives in the runtime directory and the session directory,
 # both of which a live session uses too.
 sde_test_private_runtime_dir
-export SDE_SESSION_DIR="$RUNTIME/session"
-mkdir -p "$SDE_SESSION_DIR/portal"
+export LIBWM_SESSION_DIR="$RUNTIME/session"
+mkdir -p "$LIBWM_SESSION_DIR/portal"
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 [[ -x "$APP" ]] || { echo "SKIP: Magnifier not built"; exit 0; }
@@ -33,7 +33,7 @@ mkdir -p "$SDE_SESSION_DIR/portal"
 sde_test_compositor SDE_XWAYLAND=0 SERENITY_RES_ROOT="$RES_ROOT"
 sleep 1
 
-sde_test_client env WAYLAND_DISPLAY="$SOCK" SDE_APP_BIN_DIR="$BUILD/bin" SERENITY_RES_ROOT="$RES_ROOT" \
+sde_test_client env WAYLAND_DISPLAY="$SOCK" LIBWM_APP_BIN_DIR="$BUILD/bin" SERENITY_RES_ROOT="$RES_ROOT" \
     LD_LIBRARY_PATH="$BUILD/lib" timeout 20 "$APP" > "$RUNTIME/app.log" 2>&1
 APP_PID=$SDE_TEST_CLIENT_PID
 sleep 4

@@ -36,18 +36,18 @@ export SDE_STATE_DIR="$RUNTIME"
 chmod 700 "$RUNTIME"
 trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME" "$APP_BIN"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock 2>/dev/null || true' EXIT
 
-# A private per-session runtime directory (the SDE_SESSION_DIR seam), so the
+# A private per-session runtime directory (the LIBWM_SESSION_DIR seam), so the
 # notify portal sockets of a live session are left alone.
 SESSION_DIR="$RUNTIME/session"
 mkdir -p "$SESSION_DIR/portal"
-export SDE_SESSION_DIR="$SESSION_DIR"
+export LIBWM_SESSION_DIR="$SESSION_DIR"
 
 SOCK="sde-notify-$$"
 
 env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless \
     WLR_HEADLESS_OUTPUTS=1 \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
+    LIBWM_WM_PORTAL_PATH="$RUNTIME/wm" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     "$COMP" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
@@ -62,8 +62,8 @@ sleep 1
 # A notification with an icon + launch URL, an iconless one, and an in-place
 # update - the whole LibGUI::Notification surface, through the notify portal.
 env WAYLAND_DISPLAY="$SOCK" \
-    SDE_SESSION_DIR="$SESSION_DIR" \
-    SDE_APP_BIN_DIR="$APP_BIN" \
+    LIBWM_SESSION_DIR="$SESSION_DIR" \
+    LIBWM_APP_BIN_DIR="$APP_BIN" \
     LIBWM_TRACE=1 \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \

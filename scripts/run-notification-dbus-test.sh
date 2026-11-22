@@ -41,10 +41,10 @@ chmod 700 "$RUNTIME"
 # here, not in the live session's /run/user.
 export XDG_RUNTIME_DIR="$RUNTIME/run"
 export SDE_STATE_DIR="$RUNTIME/state"
-export SDE_SESSION_DIR="$RUNTIME/session"
-export SDE_WM_PORTAL_PATH="$RUNTIME/wm"
-mkdir -p "$XDG_RUNTIME_DIR" "$SDE_SESSION_DIR/portal" "$SDE_STATE_DIR"
-chmod 700 "$XDG_RUNTIME_DIR" "$SDE_SESSION_DIR"
+export LIBWM_SESSION_DIR="$RUNTIME/session"
+export LIBWM_WM_PORTAL_PATH="$RUNTIME/wm"
+mkdir -p "$XDG_RUNTIME_DIR" "$LIBWM_SESSION_DIR/portal" "$SDE_STATE_DIR"
+chmod 700 "$XDG_RUNTIME_DIR" "$LIBWM_SESSION_DIR"
 
 APP_BIN="$RUNTIME/bin"
 mkdir -p "$APP_BIN"
@@ -73,7 +73,7 @@ done
 sleep 0.5
 
 env WAYLAND_DISPLAY="$SOCK" \
-    SDE_APP_BIN_DIR="$APP_BIN" \
+    LIBWM_APP_BIN_DIR="$APP_BIN" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     "$DAEMON" > "$RUNTIME/daemon.log" 2>&1 &

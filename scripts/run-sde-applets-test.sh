@@ -34,7 +34,7 @@ done
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-applets.XXXXXX")"
 chmod 700 "$RUNTIME"
 export SDE_STATE_DIR="$RUNTIME"
-WM_PORTAL="${SDE_WM_PORTAL_PATH:-/tmp/portal/wm}"
+WM_PORTAL="${LIBWM_WM_PORTAL_PATH:-/tmp/portal/wm}"
 trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME" "$APP_BIN"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock "$WM_PORTAL" 2>/dev/null || true' EXIT
 
 SOCK="sde-applets-$$"
@@ -53,7 +53,7 @@ env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless \
     WLR_HEADLESS_OUTPUTS=1 \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-    LD_LIBRARY_PATH="$BUILD/lib" SDE_APP_BIN_DIR="$APP_BIN" \
+    LD_LIBRARY_PATH="$BUILD/lib" LIBWM_APP_BIN_DIR="$APP_BIN" \
     "$COMP" -n "$SOCK" -s "$STARTUP" > "$RUNTIME/comp.log" 2>&1 &
 COMP_PID=$!
 

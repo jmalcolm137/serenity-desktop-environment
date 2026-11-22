@@ -54,10 +54,10 @@ fi
 echo "  ok: manual pages are in the installed tree"
 
 # The compositor and Help use the installed prefix, not the source/build tree.
-SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
-SDE_SESSION_DIR="$RUNTIME/session" \
-SDE_SESSION_BIN_DIR="$PREFIX/bin" \
-SDE_APP_BIN_DIR="$PREFIX/bin" \
+LIBWM_WM_PORTAL_PATH="$RUNTIME/wm" \
+LIBWM_SESSION_DIR="$RUNTIME/session" \
+LIBWM_SESSION_BIN_DIR="$PREFIX/bin" \
+LIBWM_APP_BIN_DIR="$PREFIX/bin" \
 sde_test_compositor
 
 echo "=== launch installed Help with the installed manuals mounted at /usr/share/man ==="
@@ -65,10 +65,10 @@ setsid env -u DISPLAY -u WAYLAND_DISPLAY \
     WAYLAND_DISPLAY="$SOCK" \
     XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
     SDE_STATE_DIR="$RUNTIME" \
-    SDE_SESSION_DIR="$RUNTIME/session" \
-    SDE_SESSION_BIN_DIR="$PREFIX/bin" \
-    SDE_APP_BIN_DIR="$PREFIX/bin" \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
+    LIBWM_SESSION_DIR="$RUNTIME/session" \
+    LIBWM_SESSION_BIN_DIR="$PREFIX/bin" \
+    LIBWM_APP_BIN_DIR="$PREFIX/bin" \
+    LIBWM_WM_PORTAL_PATH="$RUNTIME/wm" \
     SERENITY_RES_ROOT="$PREFIX/share/res" \
     LD_LIBRARY_PATH="$PREFIX/lib" \
     unshare -Urnm sh -c 'mount --bind "$1" /usr/share/man; shift; exec "$@"' \

@@ -25,7 +25,7 @@ check() {
     fi
 }
 
-sde_test_compositor SDE_STATE_DIR="$RUNTIME" SDE_WM_PORTAL_PATH="$RUNTIME/wm"
+sde_test_compositor SDE_STATE_DIR="$RUNTIME" LIBWM_WM_PORTAL_PATH="$RUNTIME/wm"
 LOG="$RUNTIME/comp.log"
 
 echo "=== (A) the default 2x2 grid over ext-workspace-v1 ==="

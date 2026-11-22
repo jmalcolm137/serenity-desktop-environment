@@ -21,7 +21,7 @@ cc -O2 "$SDE_ROOT/Tools/wayland-globals-test.c" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/wayland-globals-test"
 
-sde_test_compositor SDE_RENDERER=vulkan SDE_WM_PORTAL_PATH="$RUNTIME/wm"
+sde_test_compositor SDE_RENDERER=vulkan LIBWM_WM_PORTAL_PATH="$RUNTIME/wm"
 
 env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/wayland-globals-test" > "$RUNTIME/globals.log" 2>&1 || true
 

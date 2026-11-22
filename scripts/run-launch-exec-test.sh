@@ -27,8 +27,8 @@ touch "$RUNTIME/ran"
 EOF
 chmod +x "$RUNTIME/bin/DisplaySettings"
 
-env SDE_APP_BIN_DIR="$RUNTIME/bin" \
-    SDE_SESSION_DIR="$RUNTIME/session" \
+env LIBWM_APP_BIN_DIR="$RUNTIME/bin" \
+    LIBWM_SESSION_DIR="$RUNTIME/session" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     WAYLAND_DISPLAY="sde-launch-exec-none" \
     LD_LIBRARY_PATH="$BUILD/lib" \

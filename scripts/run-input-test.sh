@@ -65,7 +65,7 @@ chmod 700 "$RUNTIME"
 
 SOCK="sde-input-$$"
 
-sde_test_compositor SDE_WM_PORTAL_PATH="$RUNTIME/wm" WINDOWSERVER_DUMP_THUMBNAIL="$RUNTIME"
+sde_test_compositor LIBWM_WM_PORTAL_PATH="$RUNTIME/wm" WINDOWSERVER_DUMP_THUMBNAIL="$RUNTIME"
 # A normal client to have a titlebar to click on. It must outlive the whole
 # sequence below: every later step assumes a window exists, and one that exits
 # early fails in confusing ways -- with no window left the window switcher's list is

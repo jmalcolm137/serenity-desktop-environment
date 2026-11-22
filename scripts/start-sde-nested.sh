@@ -35,7 +35,7 @@ XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
 
 export SERENITY_RES_ROOT="$SERENITY/Base/res"
 export LD_LIBRARY_PATH="$BUILD/lib"
-export SDE_APP_BIN_DIR="$BUILD/bin"
+export LIBWM_APP_BIN_DIR="$BUILD/bin"
 # R5 accessibility: make the accessibility bus visible to the session's clients
 # (inherited from the host when it already set one).
 # shellcheck source=scripts/sde-accessibility.sh
@@ -43,10 +43,10 @@ export SDE_APP_BIN_DIR="$BUILD/bin"
 sde_export_at_spi_bus
 # A nested session is still private: using the live session's /tmp/portal/wm
 # would make its WindowServer unlink and rebind the live Taskbar's socket.
-if [[ -z "${SDE_WM_PORTAL_PATH:-}" ]]; then
-    SDE_WM_PORTAL_PATH="$XDG_RUNTIME_DIR/sde-nested-wm-$SESSION_DISPLAY"
+if [[ -z "${LIBWM_WM_PORTAL_PATH:-}" ]]; then
+    LIBWM_WM_PORTAL_PATH="$XDG_RUNTIME_DIR/sde-nested-wm-$SESSION_DISPLAY"
 fi
-export SDE_WM_PORTAL_PATH
+export LIBWM_WM_PORTAL_PATH
 export SDE_LOCK_CMD="${SDE_LOCK_CMD:-swaylock}"
 export SDE_SESSION_IDLE_SECONDS="${SDE_SESSION_IDLE_SECONDS:-0}"
 # Seed a fresh state directory with the intended default wallpaper, as

@@ -41,7 +41,7 @@ start_compositor() {
         LIBWM_TRACE=1 \
         XDG_RUNTIME_DIR="$RUNTIME" \
         SDE_STATE_DIR="$RUNTIME" \
-        SDE_WM_PORTAL_PATH="$RUNTIME/wm-$sock" \
+        LIBWM_WM_PORTAL_PATH="$RUNTIME/wm-$sock" \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
         LD_LIBRARY_PATH="$BUILD/lib" \
         "$COMP" -n "$sock" "${startup_args[@]}" > "$RUNTIME/comp-$sock.log" 2>&1 &

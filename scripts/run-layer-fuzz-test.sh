@@ -23,8 +23,8 @@ CASES="${SDE_FUZZ_CASES:-500}"
 [[ -x "$FUZZ" ]] || { echo "SKIP: layer-fuzz-test not built"; exit 0; }
 [[ -x "$NATIVE" ]] || { echo "SKIP: native-app-test not built"; exit 0; }
 
-sde_test_compositor SDE_XWAYLAND=0 SDE_STATE_DIR="$RUNTIME/state" SDE_SESSION_DIR="$RUNTIME/session" \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm" SDE_HEARTBEAT_FILE="$RUNTIME/heartbeat"
+sde_test_compositor SDE_XWAYLAND=0 SDE_STATE_DIR="$RUNTIME/state" LIBWM_SESSION_DIR="$RUNTIME/session" \
+    LIBWM_WM_PORTAL_PATH="$RUNTIME/wm" SDE_HEARTBEAT_FILE="$RUNTIME/heartbeat"
 sleep 0.3
 
 echo "=== sending $CASES layer-shell operations (seed $SEED) ==="

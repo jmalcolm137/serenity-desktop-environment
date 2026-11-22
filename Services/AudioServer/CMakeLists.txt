@@ -5,7 +5,7 @@ project(AudioServer CXX)
 # protocols served over the session portals, backed by PipeWire.
 #
 # It is an *out-of-process* session service: LibWM spawns it on demand from the
-# session app directory (SDE_APP_BIN_DIR) when an application connects to
+# session app directory (LIBWM_APP_BIN_DIR) when an application connects to
 # /tmp/session/<sid>/portal/audio. Applications that speak the AudioServer
 # protocol directly (Piano, SoundPlayer, aplay, the Audio applet) reach it there.
 # LibAudio itself stays a compositor/desktop-agnostic client library — with its

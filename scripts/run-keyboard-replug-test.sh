@@ -25,7 +25,7 @@ KEY_B=48
 "$SDE_ROOT/scripts/build-tests.sh" libwm-keyboard-replug-test >/dev/null
 VI="$(sde_test_vi)"
 
-sde_test_compositor SDE_WM_PORTAL_PATH="$RUNTIME/wm"
+sde_test_compositor LIBWM_WM_PORTAL_PATH="$RUNTIME/wm"
 
 # How often the client has reported a seat without a usable keyboard: once at
 # startup (no keyboard exists yet), and once more each time it lets go of one.

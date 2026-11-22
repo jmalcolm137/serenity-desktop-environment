@@ -38,7 +38,7 @@ export SDE_SESSION_CPU_PRESSURE_FILE="$RUNTIME/low-pressure"
 export SDE_SESSION_MEMINFO_FILE="$RUNTIME/meminfo-low"
 
 # Keep the session's /bin-shadow helpers inside the test runtime dir.
-export SDE_SESSION_BIN_DIR="$RUNTIME/sbin"
+export LIBWM_SESSION_BIN_DIR="$RUNTIME/sbin"
 
 fail=0
 check() {
@@ -179,7 +179,7 @@ check "idle-to-lock after 300s via 'sde-lock-test'" "$RUNTIME/session-d.log"
 echo "== (E) /bin power helpers are installed and route =="
 env SDE_SESSION_COMPOSITOR="sleep 0.3" \
     SDE_SESSION_AUTOSTART=0 \
-    SDE_SESSION_BIN_DIR="$RUNTIME/sbin" \
+    LIBWM_SESSION_BIN_DIR="$RUNTIME/sbin" \
     SDE_SESSION_RESTART_DELAY=0 \
     "$SDE" > "$RUNTIME/session-e.log" 2>&1 || true
 for helper in shutdown reboot logout; do

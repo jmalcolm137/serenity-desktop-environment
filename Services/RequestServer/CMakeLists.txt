@@ -5,7 +5,7 @@ project(RequestServer CXX)
 #
 # WebContent and the WebView applications reach it through the Serenity request
 # portal; LibWM spawns this binary on demand from the session app directory
-# (SDE_APP_BIN_DIR). It is a *session* service, so SDE builds it. See
+# (LIBWM_APP_BIN_DIR). It is a *session* service, so SDE builds it. See
 # ../../docs/06-service-layering.md and ../../docs/07-systemserver-roles.md (section 2.3).
 
 set(CMAKE_CXX_STANDARD 26)

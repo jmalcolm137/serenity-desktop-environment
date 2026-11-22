@@ -58,7 +58,7 @@ sleep 0.5
 STARTUP="$WIFI_APPLET"
 [[ -x "$BATTERY_APPLET" ]] && STARTUP="$STARTUP & $BATTERY_APPLET"
 
-sde_test_compositor --startup "$STARTUP" WIFI_APPLET_LOG_LAYOUT=1 SDE_WM_PORTAL_PATH="$RUNTIME/wm"
+sde_test_compositor --startup "$STARTUP" WIFI_APPLET_LOG_LAYOUT=1 LIBWM_WM_PORTAL_PATH="$RUNTIME/wm"
 
 # --- drive the popup: connect to a secured network by typing a passphrase -----
 # Open the applet, click the secured, unsaved OpenGuest network (it opens in

@@ -7,7 +7,7 @@
 #   faulting. This catches a whole class of regressions -- the WindowServer IPC
 #   `MessageID` is positional, so inserting a method mid-interface breaks every
 #   app built against the old enum ("Failed to parse IPC message") until it is
-#   rebuilt (new methods must be appended; see libgui-wayland patch 0042).
+#   rebuilt (new methods must be appended; see libgui-wayland patch 0057).
 #
 # Phase B (settings work): the settings each dialog manages actually apply and
 #   persist -- the compositor-side backends are exercised by the focused tests
@@ -76,7 +76,7 @@ start_compositor() {
         XDG_RUNTIME_DIR="$RUNTIME_DIR" \
         XDG_CONFIG_HOME="$RUNTIME/config" \
         SDE_STATE_DIR="$RUNTIME" \
-        SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
+        LIBWM_WM_PORTAL_PATH="$RUNTIME/wm" \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
         LD_LIBRARY_PATH="$BUILD/lib" \
         "$COMP" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
@@ -105,7 +105,7 @@ for app in "${SETTINGS_APPS[@]}" "${EXTRA_APPS[@]}"; do
         XDG_CONFIG_HOME="$RUNTIME/config" \
         LD_LIBRARY_PATH="$BUILD/lib" \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-        SDE_APP_BIN_DIR="$BUILD/bin" \
+        LIBWM_APP_BIN_DIR="$BUILD/bin" \
         timeout 6 "$BUILD/bin/$app" > "$log" 2>&1 || true
     after="$(grep -c 'toplevel mapped' "$RUNTIME/comp.log" || true)"
     faults="$(grep -ciE 'Failed to parse IPC message|SIGSEGV|Segmentation fault|ASSERTION FAILED|VERIFICATION FAILED|Runtime error' "$log" || true)"

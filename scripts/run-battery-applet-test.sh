@@ -56,7 +56,7 @@ run_case() {
     env -u WAYLAND_DISPLAY -u DISPLAY \
         WLR_BACKENDS=headless \
         WLR_HEADLESS_OUTPUTS=1 \
-        SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
+        LIBWM_WM_PORTAL_PATH="$RUNTIME/wm" \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
         LD_LIBRARY_PATH="$BUILD/lib" \
         "$COMP" -n "$sock" -s "$APPLET --power-supply-root $fixture" > "$log" 2>&1 &
@@ -157,7 +157,7 @@ DPMS_APPLET_LOG="$RUNTIME/dpms-applet.log"
 env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless \
     WLR_HEADLESS_OUTPUTS=1 \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
+    LIBWM_WM_PORTAL_PATH="$RUNTIME/wm" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     "$COMP" -n "$DPMS_SOCK" > "$DPMS_LOG" 2>&1 &

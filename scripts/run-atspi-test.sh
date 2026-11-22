@@ -51,7 +51,7 @@ DBUS_PID="$(sed -n '2p' <<<"$DBUS_INFO")"
 
 setsid env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 SDE_OUTPUT_SCALE=1 SDE_XWAYLAND=0 \
-    XDG_RUNTIME_DIR="$RUNTIME/run" SDE_STATE_DIR="$RUNTIME/state" SDE_SESSION_DIR="$RUNTIME/session" \
+    XDG_RUNTIME_DIR="$RUNTIME/run" SDE_STATE_DIR="$RUNTIME/state" LIBWM_SESSION_DIR="$RUNTIME/session" \
     SERENITY_RES_ROOT="$SERENITY/Base/res" LD_LIBRARY_PATH="$BUILD/lib" \
     "$COMP" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
 COMP_PID=$!
@@ -59,7 +59,7 @@ for _ in $(seq 1 80); do [[ -e "$RUNTIME/run/$SOCK" ]] && break; sleep 0.1; done
 sleep 1
 
 env WAYLAND_DISPLAY="$SOCK" XDG_RUNTIME_DIR="$RUNTIME/run" SDE_STATE_DIR="$RUNTIME/state" \
-    SDE_SESSION_DIR="$RUNTIME/session" AT_SPI_BUS_ADDRESS="$DBUS_ADDRESS" \
+    LIBWM_SESSION_DIR="$RUNTIME/session" AT_SPI_BUS_ADDRESS="$DBUS_ADDRESS" \
     SERENITY_RES_ROOT="$SERENITY/Base/res" LD_LIBRARY_PATH="$BUILD/lib" \
     timeout 20 "$APP" > "$RUNTIME/app.log" 2>&1 &
 APP_PID=$!

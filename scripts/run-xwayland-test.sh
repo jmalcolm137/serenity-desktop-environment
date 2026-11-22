@@ -169,7 +169,7 @@ fi
 # The LaunchServer spawns apps; it must adopt the session Xwayland DISPLAY (not
 # the host's), or X11 apps it spawns open on the host X server.
 if [[ -x "$LAUNCH_SERVER" && -n "$DISP" ]]; then
-    SDE_STATE_DIR="$R" SDE_SESSION_DIR="$R/session" WAYLAND_DISPLAY="$SOCK" "$LAUNCH_SERVER" > "$R/launch.log" 2>&1 &
+    SDE_STATE_DIR="$R" LIBWM_SESSION_DIR="$R/session" WAYLAND_DISPLAY="$SOCK" "$LAUNCH_SERVER" > "$R/launch.log" 2>&1 &
     LP=$!
     for _ in $(seq 1 40); do grep -q "using session Xwayland DISPLAY=" "$R/launch.log" && break; sleep 0.1; done
     if grep -q "using session Xwayland DISPLAY=${DISP}" "$R/launch.log"; then

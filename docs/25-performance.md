@@ -189,7 +189,7 @@ was the one we expected:
 
 Session PSS fell from **53.9 MB to 46.6 MB** with no behaviour change.
 
-One test note: `run-audio-test.sh` now runs with a private `SDE_SESSION_DIR`.
+One test note: `run-audio-test.sh` now runs with a private `LIBWM_SESSION_DIR`.
 LibWM *defers* to a service already listening on the session's portal path, so
 without it the test was answered by a live session's AudioServer instead of
 spawning its own (its spawn assertions failed, and it would have replaced the

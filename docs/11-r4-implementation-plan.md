@@ -224,7 +224,7 @@ command after `SDE_SESSION_IDLE_SECONDS`. `scripts/sde-power.sh` routes
 
 **Power routing landed.** The supervisor writes `sde-power` **`/bin` shadow**
 helpers (`shutdown`, `reboot`, `logout`, `suspend`) into a session bin dir and
-exports `SDE_SESSION_BIN_DIR`; the port's
+exports `LIBWM_SESSION_BIN_DIR`; the port's
 `Core::Process::resolve_executable_path()` consults that dir **first** (port
 change, `patches/0011`), so the unmodified Taskbar `ShutdownDialog`
 (`/bin/shutdown --now`, `/bin/reboot`, `/bin/logout`) now routes to logind. Verified
@@ -612,7 +612,7 @@ Documented so they are not lost; none blocks R4.
   `XDG_SEAT`/`XDG_VTNR` (from the display manager, else logind, else the active
   VT) and the session namespaces its runtime **per seat**: the Wayland socket,
   the supervisor pid file, the `/bin` shadow dir and the WindowManagerServer
-  socket (`SDE_SESSION_DISPLAY`/`SDE_WM_PORTAL_PATH`, with `seat0` keeping the
+  socket (`SDE_SESSION_DISPLAY`/`LIBWM_WM_PORTAL_PATH`, with `seat0` keeping the
   bare names). `start-sde-session.sh` preflights the DRM device and gives
   actionable guidance (and the compositor explains a failed backend). Covered by
   `scripts/run-multiseat-test.sh`; the port relocates the WM portal socket

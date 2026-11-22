@@ -66,7 +66,7 @@ EOF
         SDE_STATE_DIR="$RUNTIME" \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
         LD_LIBRARY_PATH="$BUILD/lib" \
-        SDE_APP_BIN_DIR="$BUILD/bin" \
+        LIBWM_APP_BIN_DIR="$BUILD/bin" \
         "$COMP" -n "$sock" -s "$BUILD/bin/Taskbar & $BUILD/bin/TextEditor" > "$log" 2>&1 &
     COMP_PID=$!
     for _ in $(seq 1 60); do

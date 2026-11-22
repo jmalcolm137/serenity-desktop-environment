@@ -33,9 +33,9 @@ RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-taskbar-xdg.XXXXXX")"
 chmod 700 "$RUNTIME"
 export XDG_RUNTIME_DIR="$RUNTIME/run"
 export SDE_STATE_DIR="$RUNTIME/state"
-export SDE_SESSION_DIR="$RUNTIME/session"
-export SDE_WM_PORTAL_PATH="$RUNTIME/wm"
-mkdir -p "$XDG_RUNTIME_DIR" "$SDE_STATE_DIR" "$SDE_SESSION_DIR/portal" "$SDE_SESSION_DIR/sbin"
+export LIBWM_SESSION_DIR="$RUNTIME/session"
+export LIBWM_WM_PORTAL_PATH="$RUNTIME/wm"
+mkdir -p "$XDG_RUNTIME_DIR" "$SDE_STATE_DIR" "$LIBWM_SESSION_DIR/portal" "$LIBWM_SESSION_DIR/sbin"
 mkdir -p "$RUNTIME/config/menus" "$RUNTIME/config-dirs/menus" \
     "$RUNTIME/empty-config" "$RUNTIME/empty-config-dirs" \
     "$RUNTIME/data-home/applications" "$RUNTIME/data-home/desktop-directories"
@@ -212,8 +212,8 @@ EOF
         XDG_CURRENT_DESKTOP=SDE \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
         LD_LIBRARY_PATH="$BUILD/lib" \
-        SDE_APP_BIN_DIR="$BUILD/bin" \
-        SDE_SESSION_BIN_DIR="$SDE_SESSION_DIR/sbin" \
+        LIBWM_APP_BIN_DIR="$BUILD/bin" \
+        LIBWM_SESSION_BIN_DIR="$LIBWM_SESSION_DIR/sbin" \
         XDG_DATA_DIRS="$XDG_DATA" \
         "$@" \
         "$COMP" -n "$sock" -s "$BUILD/bin/Taskbar" > "$RUNTIME/comp-$label.log" 2>&1 &

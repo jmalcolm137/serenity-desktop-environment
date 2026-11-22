@@ -43,7 +43,7 @@ cc -O2 -I "$TOOLS_BUILD" \
     $(pkg-config --cflags --libs wayland-client xkbcommon) \
     -o "$TOOLS_BUILD/virtual-input-test"
 
-sde_test_compositor SDE_WM_PORTAL_PATH="$RUNTIME/wm"
+sde_test_compositor LIBWM_WM_PORTAL_PATH="$RUNTIME/wm"
 
 env WAYLAND_DISPLAY="$SOCK" timeout 10 "$TOOLS_BUILD/pointer-warp-test" > "$RUNTIME/client.log" 2>&1 &
 CLIENT_PID=$!

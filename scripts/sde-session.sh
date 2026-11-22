@@ -14,7 +14,7 @@
 #   SDE_SESSION_SHELL        shell startup command (only used for the default)
 #   SDE_SESSION_APP_BIN_DIR  session app directory, where the apps and the SDE
 #                            services are resolved from (default: a per-seat dir
-#                            under XDG_RUNTIME_DIR). See the SDE_APP_BIN_DIR block.
+#                            under XDG_RUNTIME_DIR). See the LIBWM_APP_BIN_DIR block.
 #   SDE_SESSION_AUTOSTART_DIR  autostart dir (default $XDG_CONFIG_HOME/autostart)
 #   SDE_SESSION_MAX_RESTARTS   restart budget on non-zero exit (default 3)
 #   SDE_SESSION_RESTART_DELAY  seconds between restarts (default 1)
@@ -42,7 +42,7 @@
 #
 # Seat (R4.3/R6 multi-seat): XDG_SEAT/XDG_VTNR come from the display manager,
 # logind or the active VT (scripts/sde-seat.sh). The runtime names are namespaced
-# per seat -- SDE_SESSION_DISPLAY (Wayland socket) and SDE_WM_PORTAL_PATH (the
+# per seat -- SDE_SESSION_DISPLAY (Wayland socket) and LIBWM_WM_PORTAL_PATH (the
 # WindowManagerServer socket), plus the pid file and the /bin shadow dir; seat0
 # keeps the bare names.
 set -u
@@ -127,12 +127,12 @@ SESSION_DISPLAY="${SDE_SESSION_DISPLAY:-sde$SEAT_SUFFIX}"
 export SDE_SESSION_DISPLAY="$SESSION_DISPLAY"
 # Multi-seat: the WindowManagerServer socket is global in SerenityOS, so a
 # non-default seat gets its own path. Both the compositor and the port's clients
-# honour SDE_WM_PORTAL_PATH; seat0 keeps /tmp/portal/wm.
-if [ -z "${SDE_WM_PORTAL_PATH:-}" ] && [ -n "$SEAT_SUFFIX" ]; then
-    SDE_WM_PORTAL_PATH="$(sde_wm_portal_path)"
+# honour LIBWM_WM_PORTAL_PATH; seat0 keeps /tmp/portal/wm.
+if [ -z "${LIBWM_WM_PORTAL_PATH:-}" ] && [ -n "$SEAT_SUFFIX" ]; then
+    LIBWM_WM_PORTAL_PATH="$(sde_wm_portal_path)"
 fi
-if [ -n "${SDE_WM_PORTAL_PATH:-}" ]; then
-    export SDE_WM_PORTAL_PATH
+if [ -n "${LIBWM_WM_PORTAL_PATH:-}" ]; then
+    export LIBWM_WM_PORTAL_PATH
 fi
 
 SDE_SESSION_SHELL="${SDE_SESSION_SHELL:-$SDE_ROOT/scripts/sde-shell.sh $BUILD/bin/Taskbar $BUILD/bin/Terminal & $BUILD/bin/FileManager -d}"
@@ -268,8 +268,8 @@ push_dbus_activation_env() {
     [ -n "${XDG_SESSION_ID:-}" ] && vars="$vars XDG_SESSION_ID"
     # D-Bus-activated SDE services (the notification daemon) must find the
     # session's service binaries and private portal directory.
-    [ -n "${SDE_APP_BIN_DIR:-}" ] && vars="$vars SDE_APP_BIN_DIR"
-    [ -n "${SDE_SESSION_DIR:-}" ] && vars="$vars SDE_SESSION_DIR"
+    [ -n "${LIBWM_APP_BIN_DIR:-}" ] && vars="$vars LIBWM_APP_BIN_DIR"
+    [ -n "${LIBWM_SESSION_DIR:-}" ] && vars="$vars LIBWM_SESSION_DIR"
     # shellcheck disable=SC2086
     WAYLAND_DISPLAY="$SESSION_DISPLAY" "$cmd" $vars >/dev/null 2>&1 || true
 }
@@ -475,8 +475,8 @@ watch_compositor_hang() {
 # the unmodified Taskbar "Exit..." menu (whose ShutdownDialog spawns
 # /bin/shutdown, /bin/reboot, /bin/logout) routes to logind instead of failing on
 # host binaries. The port's Process::resolve_executable_path() consults
-# SDE_SESSION_BIN_DIR first. Serenity-stdlib convention, standard backend.
-SESSION_BIN="${SDE_SESSION_BIN_DIR:-${XDG_RUNTIME_DIR:-/tmp}/sde-session-bin$SEAT_SUFFIX}"
+# LIBWM_SESSION_BIN_DIR first. Serenity-stdlib convention, standard backend.
+SESSION_BIN="${LIBWM_SESSION_BIN_DIR:-${XDG_RUNTIME_DIR:-/tmp}/sde-session-bin$SEAT_SUFFIX}"
 mkdir -p "$SESSION_BIN"
 for action in shutdown reboot logout suspend; do
     cat > "$SESSION_BIN/$action" <<EOF
@@ -485,14 +485,14 @@ exec "$SDE_ROOT/scripts/sde-power.sh" $action "\$@"
 EOF
     chmod +x "$SESSION_BIN/$action"
 done
-export SDE_SESSION_BIN_DIR="$SESSION_BIN"
+export LIBWM_SESSION_BIN_DIR="$SESSION_BIN"
 echo "SDE session: power helpers in $SESSION_BIN (/bin shadow)"
 
 # Session app directory (SDE-owned). libgui-wayland is a compositor-agnostic
 # client stack, so it does not build the session's out-of-process services: SDE
 # builds them (WebContent, RequestServer, SQLServer, NotificationServer) and owns
 # the directory everything resolves "/bin/X" through. LibWM and the LaunchServer
-# resolve service and application binaries from SDE_APP_BIN_DIR, so it must hold
+# resolve service and application binaries from LIBWM_APP_BIN_DIR, so it must hold
 # both: link the port's applications here and overlay the SDE services. See
 # docs/06-service-layering.md and docs/07-systemserver-roles.md (section 2.3).
 SESSION_SERVICES=(WebContent RequestServer SQLServer NotificationServer AudioServer WebWorker ImageDecoder MediaServer VideoDecoderServer)
@@ -538,9 +538,9 @@ for service in "${SESSION_SERVICES[@]}"; do
         ln -sf "$service_path" "$APP_BIN/$service"
     fi
 done
-export SDE_APP_BIN_DIR="$APP_BIN"
+export LIBWM_APP_BIN_DIR="$APP_BIN"
 # WebContent and the SDE services spawn helpers by name (WebWorker,
-# ImageDecoder, ...). posix_spawnp searches PATH, not SDE_APP_BIN_DIR, so the
+# ImageDecoder, ...). posix_spawnp searches PATH, not LIBWM_APP_BIN_DIR, so the
 # session app directory and the libexec helpers have to be on PATH too.
 export PATH="$APP_BIN:${SDE_SERVICE_BIN_DIR:-$SDE_ROOT/libexec}:${BUILD:-$SDE_ROOT/bin}${PATH:+:$PATH}"
 echo "SDE session: session app directory $APP_BIN"

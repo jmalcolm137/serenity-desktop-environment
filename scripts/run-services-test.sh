@@ -28,14 +28,14 @@ RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-services.XXXXXX")"
 chmod 700 "$RUNTIME"
 trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME"' EXIT
 
-# A private per-session runtime directory (see the SDE_SESSION_DIR seam), so the
+# A private per-session runtime directory (see the LIBWM_SESSION_DIR seam), so the
 # fixed "/tmp/session/0/portal/..." paths of a live session are left alone.
 SESSION_DIR="$RUNTIME/session"
 mkdir -p "$SESSION_DIR/portal"
-export SDE_SESSION_DIR="$SESSION_DIR"
+export LIBWM_SESSION_DIR="$SESSION_DIR"
 
 export SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}"
-export SDE_APP_BIN_DIR="${SDE_APP_BIN_DIR:-$BUILD/bin}"
+export LIBWM_APP_BIN_DIR="${LIBWM_APP_BIN_DIR:-$BUILD/bin}"
 # LibWM's "deferring to the session service" line is informational and off by
 # default; the checks below read it (and its absence in case A).
 export LIBWM_TRACE=1

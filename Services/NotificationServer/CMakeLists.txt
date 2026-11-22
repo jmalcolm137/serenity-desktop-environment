@@ -5,7 +5,7 @@ project(NotificationServer CXX)
 #
 # The unmodified SerenityOS service (spike outcome: reuse; docs/09 section 3).
 # LibWM binds its listening socket and hands it over, so it is spawned once from
-# the session app directory (SDE_APP_BIN_DIR). It is a *session* service, so SDE
+# the session app directory (LIBWM_APP_BIN_DIR). It is a *session* service, so SDE
 # builds it. See ../../docs/06-service-layering.md.
 
 set(CMAKE_CXX_STANDARD 26)

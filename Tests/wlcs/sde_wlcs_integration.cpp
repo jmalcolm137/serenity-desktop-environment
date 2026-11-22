@@ -278,8 +278,8 @@ void start(WlcsDisplayServer* server)
         setenv("SDE_SESSION_PORTAL", "0", 1);
         setenv("SDE_OUTPUT_SCALE", "1", 1);
         setenv("SDE_STATE_DIR", state_dir.c_str(), 1);
-        setenv("SDE_SESSION_DIR", session_dir.c_str(), 1);
-        setenv("SDE_WM_PORTAL_PATH", wm_portal.c_str(), 1);
+        setenv("LIBWM_SESSION_DIR", session_dir.c_str(), 1);
+        setenv("LIBWM_WM_PORTAL_PATH", wm_portal.c_str(), 1);
         setenv("SDE_WLCS_CONTROL", "1", 1);
         if (!getenv("SERENITY_RES_ROOT")) {
             auto res = std::string(getenv("SDE_ROOT") ? getenv("SDE_ROOT") : ".") + "/../libgui-wayland/serenity/Base/res";

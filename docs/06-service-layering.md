@@ -153,5 +153,5 @@ Covered by a headless test: `scripts/run-services-test.sh` runs the same client
 once with the SDE `LaunchServer` and `ImageDecoder` running, and asserts that the
 in-process fallback answers in the first case and LibWM **defers** to the services
 in the second, for both the launch and image portals. It needs no compositor and
-uses a private session directory (`SDE_SESSION_DIR`, patch `0023`) so it never
+uses a private session directory (`LIBWM_SESSION_DIR`, patch `0023`) so it never
 touches a live session.

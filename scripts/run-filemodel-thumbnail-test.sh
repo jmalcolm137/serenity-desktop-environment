@@ -28,7 +28,7 @@ IMAGE_PID=""
 # deliberately blocked.
 SESSION_DIR="$RUNTIME/session"
 mkdir -p "$SESSION_DIR/portal"
-export SDE_SESSION_DIR="$SESSION_DIR"
+export LIBWM_SESSION_DIR="$SESSION_DIR"
 
 sde_test_cleanup_extra() {
     [[ -n "$IMAGE_PID" ]] && kill "$IMAGE_PID" 2>/dev/null || true
@@ -49,7 +49,7 @@ sde_test_wait_log "$RUNTIME/imagedecoder.log" 'ImageDecoder: listening on' 80 ||
 
 status=0
 env WAYLAND_DISPLAY="$SOCK" \
-    SDE_SESSION_DIR="$SESSION_DIR" \
+    LIBWM_SESSION_DIR="$SESSION_DIR" \
     SDE_IMAGEDECODER_LOG="$RUNTIME/imagedecoder.log" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \

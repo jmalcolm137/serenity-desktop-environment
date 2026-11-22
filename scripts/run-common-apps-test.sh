@@ -71,10 +71,10 @@ trap cleanup EXIT INT TERM
 env -u WAYLAND_DISPLAY -u DISPLAY -u SDE_XWAYLAND \
     WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 SDE_OUTPUT_SCALE=1 \
     SDE_STATE_DIR="$RUNTIME" \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
-    SDE_SESSION_DIR="$RUNTIME/session" \
-    SDE_SESSION_BIN_DIR="$RUNTIME/session-bin" \
-    SDE_APP_BIN_DIR="$BUILD/bin" \
+    LIBWM_WM_PORTAL_PATH="$RUNTIME/wm" \
+    LIBWM_SESSION_DIR="$RUNTIME/session" \
+    LIBWM_SESSION_BIN_DIR="$RUNTIME/session-bin" \
+    LIBWM_APP_BIN_DIR="$BUILD/bin" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     "$COMP" -n "$SOCK" > "$COMP_LOG" 2>&1 &
@@ -191,9 +191,9 @@ run_wayland_native() {
     fi
 
     setsid env -u DISPLAY WAYLAND_DISPLAY="$SOCK" \
-        SDE_STATE_DIR="$RUNTIME" SDE_SESSION_DIR="$RUNTIME/session" \
-        SDE_SESSION_BIN_DIR="$RUNTIME/session-bin" SDE_APP_BIN_DIR="$BUILD/bin" \
-        SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
+        SDE_STATE_DIR="$RUNTIME" LIBWM_SESSION_DIR="$RUNTIME/session" \
+        LIBWM_SESSION_BIN_DIR="$RUNTIME/session-bin" LIBWM_APP_BIN_DIR="$BUILD/bin" \
+        LIBWM_WM_PORTAL_PATH="$RUNTIME/wm" \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
         LD_LIBRARY_PATH="$BUILD/lib" "$@" > "$log" 2>&1 &
     APP_PID=$!

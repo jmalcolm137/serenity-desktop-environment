@@ -36,7 +36,7 @@ export SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$LIBGUI_WAYLAND_ROOT/serenity/Bas
 # vacuously.
 
 # Nothing a test starts may reach a live session's files, sockets or services.
-unset SDE_HEARTBEAT_FILE SDE_SESSION_LOG SDE_SESSION_DISPLAY SDE_WM_PORTAL_PATH \
+unset SDE_HEARTBEAT_FILE SDE_SESSION_LOG SDE_SESSION_DISPLAY LIBWM_WM_PORTAL_PATH \
       SDE_STATE_DIR SDE_SESSION_SHELL SDE_SESSION_IDLE_SECONDS \
       SDE_SESSION_WATCHDOG_SECONDS SDE_SESSION_SAFE_MODE SDE_LOCK_CMD \
       SDE_SESSION_IDLE_DPMS_SECONDS SDE_SESSION_COMPOSITOR_SAFE
@@ -46,7 +46,7 @@ unset SDE_HEARTBEAT_FILE SDE_SESSION_LOG SDE_SESSION_DISPLAY SDE_WM_PORTAL_PATH 
 _sde_test_env_dir="${TMPDIR:-/tmp}/sde-standalone-$(id -u)/$(basename "${BASH_SOURCE[1]:-$0}" .sh)"
 mkdir -p "$_sde_test_env_dir/session/portal"
 chmod 700 "${TMPDIR:-/tmp}/sde-standalone-$(id -u)" 2>/dev/null || true
-export SDE_SESSION_DIR="$_sde_test_env_dir/session"
+export LIBWM_SESSION_DIR="$_sde_test_env_dir/session"
 export SDE_HEARTBEAT_FILE="$_sde_test_env_dir/heartbeat"
 unset _sde_test_env_dir
 

@@ -70,7 +70,7 @@ STOP_FN = re.compile(r'\n(?:stop_compositor|stop_comp|kill_compositor)\(\) \{\n(
 LIBRARY_LINE = re.compile(
     r'COMP_PID|\$\{CP\}|\bCP\b|RUNTIME|xdg_runtime_dir|XDG_RUNTIME_DIR')
 
-# Only what the library always sets the same way. SDE_APP_BIN_DIR and SDE_STATE_DIR
+# Only what the library always sets the same way. LIBWM_APP_BIN_DIR and SDE_STATE_DIR
 # are kept when a script sets them: a test may point them at its own
 # directories (an app dir it built symlinks into, a state dir beside the runtime).
 SET_FOR_YOU = ('SERENITY_RES_ROOT=', 'LD_LIBRARY_PATH=', 'WLR_BACKENDS=',

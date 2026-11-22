@@ -23,7 +23,7 @@ if [[ ! -x "$APP" ]]; then
 fi
 
 sde_test_compositor --startup "$APP -t graphs" \
-    SDE_OUTPUT_SCALE=2 SDE_WM_PORTAL_PATH="$RUNTIME/wm" LIBWM_DUMP="$RUNTIME/2x.png"
+    SDE_OUTPUT_SCALE=2 LIBWM_WM_PORTAL_PATH="$RUNTIME/wm" LIBWM_DUMP="$RUNTIME/2x.png"
 
 # The app dumps its 2x backing store once it has painted.
 for _ in $(seq 1 80); do

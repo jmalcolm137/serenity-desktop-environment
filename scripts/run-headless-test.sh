@@ -72,14 +72,14 @@ chmod 700 "$RUNTIME"
 SOCK="sde-headless-$$"
 
 # No WAYLAND_DISPLAY/DISPLAY so wlr_backend_autocreate uses the requested backend.
-# SDE_WM_PORTAL_PATH keeps the WindowManagerServer socket out of /tmp/portal/wm,
+# LIBWM_WM_PORTAL_PATH keeps the WindowManagerServer socket out of /tmp/portal/wm,
 # so the test cannot disturb a live session.
 # R6/N4: the compositor writes a liveness heartbeat for the session watchdog.
 # Seed a long value from a "previous session": the in-place writer must replace it
 # with a plain epoch, not leave trailing digits behind.
 printf '%064d' 0 > "$RUNTIME/heartbeat"
 
-sde_test_compositor --startup "$BUILD/bin/TextEditor" SDE_WM_PORTAL_PATH="$RUNTIME/wm" SDE_HEARTBEAT_FILE="$RUNTIME/heartbeat"
+sde_test_compositor --startup "$BUILD/bin/TextEditor" LIBWM_WM_PORTAL_PATH="$RUNTIME/wm" SDE_HEARTBEAT_FILE="$RUNTIME/heartbeat"
 env WAYLAND_DISPLAY="$SOCK" timeout 4 "$TOOLS_BUILD/layer-shell-test" > "$RUNTIME/layer.log" 2>&1 || true
 env WAYLAND_DISPLAY="$SOCK" timeout 4 "$TOOLS_BUILD/native-app-test" > "$RUNTIME/native.log" 2>&1 || true
 # Give the LibWindowServer app a moment to map its toplevel.
@@ -190,7 +190,7 @@ env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_HEADLESS_OUTPUTS=1 \
     WLR_RENDERER=gles2 \
     WLR_RENDER_DRM_DEVICE=/nonexistent/render-node \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm-fallback" \
+    LIBWM_WM_PORTAL_PATH="$RUNTIME/wm-fallback" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     "$COMP" -n "$SOCK_FALLBACK" > "$RUNTIME/comp-fallback.log" 2>&1 &
@@ -223,7 +223,7 @@ env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless \
     WLR_HEADLESS_OUTPUTS=1 \
     SDE_RENDERER=pixman \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm-explicit" \
+    LIBWM_WM_PORTAL_PATH="$RUNTIME/wm-explicit" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     "$COMP" -n "$SOCK_EXPLICIT" > "$RUNTIME/comp-explicit.log" 2>&1 &
@@ -243,7 +243,7 @@ SOCK_CRASH="sde-crash-$$"
 env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless \
     WLR_HEADLESS_OUTPUTS=1 \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm-crash" \
+    LIBWM_WM_PORTAL_PATH="$RUNTIME/wm-crash" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     "$COMP" -n "$SOCK_CRASH" > "$RUNTIME/comp-crash.log" 2>&1 &
@@ -276,7 +276,7 @@ env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless \
     WLR_HEADLESS_OUTPUTS=1 \
     SDE_OUTPUT_SCALE=1.5 \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm-frac" \
+    LIBWM_WM_PORTAL_PATH="$RUNTIME/wm-frac" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     "$COMP" -n "$SOCK_FRAC" > "$RUNTIME/comp-frac.log" 2>&1 &

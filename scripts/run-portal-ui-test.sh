@@ -21,7 +21,7 @@ if ! command -v convert >/dev/null 2>&1; then
     exit 0
 fi
 
-sde_test_compositor SDE_WM_PORTAL_PATH="$RUNTIME/wm"
+sde_test_compositor LIBWM_WM_PORTAL_PATH="$RUNTIME/wm"
 sleep 0.4
 
 convert -size 64x64 gradient:red-blue "$RUNTIME/gradient.png" 2>/dev/null || true

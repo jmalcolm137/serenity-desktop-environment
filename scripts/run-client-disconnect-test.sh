@@ -51,11 +51,11 @@ cleanup() {
 trap cleanup EXIT
 
 # Everything isolated: the client must not reach a live session's portals either,
-# which is why it gets SDE_SESSION_DIR as well as the compositor.
+# which is why it gets LIBWM_SESSION_DIR as well as the compositor.
 setsid env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 SDE_OUTPUT_SCALE=1 \
     XDG_RUNTIME_DIR="$RUNTIME" \
-    SDE_STATE_DIR="$RUNTIME/state" SDE_SESSION_DIR="$RUNTIME/session" \
+    SDE_STATE_DIR="$RUNTIME/state" LIBWM_SESSION_DIR="$RUNTIME/session" \
     SDE_HEARTBEAT_FILE="$RUNTIME/heartbeat" SDE_XWAYLAND=0 \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
@@ -69,7 +69,7 @@ done
 env WAYLAND_DISPLAY="$SOCK" XDG_RUNTIME_DIR="$RUNTIME" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
-    SDE_STATE_DIR="$RUNTIME/state" SDE_SESSION_DIR="$RUNTIME/session" \
+    SDE_STATE_DIR="$RUNTIME/state" LIBWM_SESSION_DIR="$RUNTIME/session" \
     SDE_HEARTBEAT_FILE="$RUNTIME/heartbeat" SDE_XWAYLAND=0 \
     "$CLIENT" > "$RUNTIME/client.log" 2>&1 &
 CLIENT_PID=$!

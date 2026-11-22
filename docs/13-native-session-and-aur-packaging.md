@@ -99,7 +99,7 @@ apps sit in `…/sde/bin` and libs in `…/sde/lib`; and a single
 3. **Strip everything.** Lagom libs are ~305 MB unstripped and debug-heavy;
    stripping is a large size win.
 4. **Resource root.** Set `SERENITY_RES_ROOT=/usr/lib/sde/share/res`.
-5. **App resolution.** Set `SDE_APP_BIN_DIR=/usr/lib/sde/bin` so the shell and the
+5. **App resolution.** Set `LIBWM_APP_BIN_DIR=/usr/lib/sde/bin` so the shell and the
    Serenity "launch `/bin/X`" paths find the apps.
 6. **The compositor builds against the Serenity *source + Lagom build tree*, not
    just installed libs.** `scripts/build-window-server.sh` requires `SERENITY_SRC`
@@ -356,6 +356,6 @@ and the compositor applies both live (it watches the files). We deliberately ski
 SerenityOS's "Do you want to keep the new screen layout?" revert dialog:
 `SettingsWindow` applies every tab, so a modal there would freeze the window. The
 scale is also sent as v120 over a `set_output_scale` WindowServer-IPC method
-(libgui-wayland patch `0042`) because Serenity's `ScreenLayout` `ScaleFactor` is an
+(libgui-wayland patch `0057`) because Serenity's `ScreenLayout` `ScaleFactor` is an
 integer and cannot carry `1.5`; the Position spin boxes are meaningful with
 multiple outputs (`normalize()` keeps a single screen at 0,0).

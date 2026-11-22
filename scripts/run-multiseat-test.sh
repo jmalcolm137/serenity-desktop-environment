@@ -5,7 +5,7 @@
 #   (B) seat0 keeps the bare runtime names;
 #   (C) XDG_VTNR is propagated to the session environment;
 #   (D) the native preflight gives guidance (and fails) with no DRM device;
-#   (E) a client honours SDE_WM_PORTAL_PATH, so a relocated WM portal works
+#   (E) a client honours LIBWM_WM_PORTAL_PATH, so a relocated WM portal works
 #       (the port's LibCore::SessionManagement relocation; libgui-wayland 0041).
 #
 # (A)-(D) use stub commands and need no compositor; (E) needs the headless
@@ -38,7 +38,7 @@ check_absent() { if grep -qE "$1" <<<"$2"; then echo "  UNEXPECTED ($2): $1"; fa
 # A stub compositor: record the session env we care about, then exit cleanly.
 cat > "$RUNTIME/stub-comp" <<'EOF'
 #!/bin/sh
-env | grep -E '^(SDE_SESSION_DISPLAY|XDG_SEAT|XDG_VTNR|SDE_WM_PORTAL_PATH|SDE_SESSION_PID_FILE|SDE_SESSION_BIN_DIR)=' | sort > "$SDE_TEST_ENV_FILE"
+env | grep -E '^(SDE_SESSION_DISPLAY|XDG_SEAT|XDG_VTNR|LIBWM_WM_PORTAL_PATH|SDE_SESSION_PID_FILE|LIBWM_SESSION_BIN_DIR)=' | sort > "$SDE_TEST_ENV_FILE"
 sleep 0.3
 EOF
 chmod +x "$RUNTIME/stub-comp"
@@ -46,7 +46,7 @@ chmod +x "$RUNTIME/stub-comp"
 run_session() {
     # $1 = env file, $2 = seat (empty = let it default), $3 = vt (optional)
     local env_file="$1" seat="$2" vt="${3:-}"
-    env -u XDG_SEAT -u XDG_VTNR -u SDE_WM_PORTAL_PATH \
+    env -u XDG_SEAT -u XDG_VTNR -u LIBWM_WM_PORTAL_PATH \
         ${seat:+XDG_SEAT="$seat"} ${vt:+XDG_VTNR="$vt"} \
         SDE_TEST_ENV_FILE="$env_file" \
         SDE_SESSION_COMPOSITOR="$RUNTIME/stub-comp" \
@@ -63,9 +63,9 @@ check "vt7" "$(cat "$RUNTIME/a.log")"
 check "SDE_SESSION_DISPLAY=sde-seat1" "$env_a"
 check "XDG_SEAT=seat1" "$env_a"
 check "XDG_VTNR=7" "$env_a"
-check "SDE_WM_PORTAL_PATH=/tmp/portal/wm-seat1" "$env_a"
+check "LIBWM_WM_PORTAL_PATH=/tmp/portal/wm-seat1" "$env_a"
 check "SDE_SESSION_PID_FILE=$RUNTIME/sde-session-seat1.pid" "$env_a"
-check "SDE_SESSION_BIN_DIR=$RUNTIME/sde-session-bin-seat1" "$env_a"
+check "LIBWM_SESSION_BIN_DIR=$RUNTIME/sde-session-bin-seat1" "$env_a"
 
 echo "== (B) seat0 keeps the bare runtime names =="
 run_session "$RUNTIME/env-b" "" > "$RUNTIME/b.log" 2>&1 || true
@@ -75,8 +75,8 @@ check "seat 'seat0'" "$(cat "$RUNTIME/b.log")"
 check "SDE_SESSION_DISPLAY=sde" "$env_b"
 check "XDG_SEAT=seat0" "$env_b"
 check "SDE_SESSION_PID_FILE=$RUNTIME/sde-session.pid" "$env_b"
-check "SDE_SESSION_BIN_DIR=$RUNTIME/sde-session-bin" "$env_b"
-check_absent "^SDE_WM_PORTAL_PATH=" "$env_b"
+check "LIBWM_SESSION_BIN_DIR=$RUNTIME/sde-session-bin" "$env_b"
+check_absent "^LIBWM_WM_PORTAL_PATH=" "$env_b"
 
 echo "== (C) XDG_VTNR is inherited when already set by the display manager =="
 run_session "$RUNTIME/env-c" seat0 3 > "$RUNTIME/c.log" 2>&1 || true
@@ -98,14 +98,14 @@ else
     check "no DRM device" "$(cat "$RUNTIME/d.log")"
 fi
 
-echo "== (E) clients honour SDE_WM_PORTAL_PATH (relocated WM portal) =="
+echo "== (E) clients honour LIBWM_WM_PORTAL_PATH (relocated WM portal) =="
 if [[ -x "$COMP" && -x "$BUILD/bin/Taskbar" ]]; then
     "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
     sock="sde-multiseat-$$"
     portal="$RUNTIME/portal-wm"
     env -u WAYLAND_DISPLAY -u DISPLAY \
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
-        SDE_WM_PORTAL_PATH="$portal" \
+        LIBWM_WM_PORTAL_PATH="$portal" \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
         LD_LIBRARY_PATH="$BUILD/lib" \
         "$COMP" -n "$sock" > "$RUNTIME/comp.log" 2>&1 &
@@ -119,8 +119,8 @@ if [[ -x "$COMP" && -x "$BUILD/bin/Taskbar" ]]; then
     else
         echo "  MISSING: compositor did not listen on $portal"; fail=1
     fi
-    env WAYLAND_DISPLAY="$sock" SDE_WM_PORTAL_PATH="$portal" \
-        SDE_APP_BIN_DIR="$BUILD/bin" \
+    env WAYLAND_DISPLAY="$sock" LIBWM_WM_PORTAL_PATH="$portal" \
+        LIBWM_APP_BIN_DIR="$BUILD/bin" \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
         LD_LIBRARY_PATH="$BUILD/lib" \
         timeout 4 "$BUILD/bin/Taskbar" > "$RUNTIME/taskbar.log" 2>&1 || true

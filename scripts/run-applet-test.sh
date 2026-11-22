@@ -38,7 +38,7 @@ chmod 700 "$RUNTIME"
 
 # This test changes the output scale while it runs, and SDE_OUTPUT_SCALE (which
 # the library sets to 1) would override that: clear it.
-sde_test_compositor SDE_OUTPUT_SCALE= SDE_WM_PORTAL_PATH="$RUNTIME/wm"
+sde_test_compositor SDE_OUTPUT_SCALE= LIBWM_WM_PORTAL_PATH="$RUNTIME/wm"
 
 # Three applets. CPUGraph is in [Applet] Order (index 1); Alpha/Beta are not
 # (index 0), so CPUGraph sorts first and, laid right-to-left, ends up rightmost.

@@ -42,15 +42,15 @@ chmod 700 "$RUNTIME"
 
 SESSION_DIR="$RUNTIME/session"
 mkdir -p "$SESSION_DIR/portal"
-export SDE_SESSION_DIR="$SESSION_DIR"
+export LIBWM_SESSION_DIR="$SESSION_DIR"
 
 SOCK="sde-tooltip-$$"
 
-sde_test_compositor SDE_WM_PORTAL_PATH="$RUNTIME/wm"
+sde_test_compositor LIBWM_WM_PORTAL_PATH="$RUNTIME/wm"
 
 env WAYLAND_DISPLAY="$SOCK" \
-    SDE_SESSION_DIR="$SESSION_DIR" \
-    SDE_APP_BIN_DIR="$BUILD/bin" \
+    LIBWM_SESSION_DIR="$SESSION_DIR" \
+    LIBWM_APP_BIN_DIR="$BUILD/bin" \
     LIBWM_TRACE=1 \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \

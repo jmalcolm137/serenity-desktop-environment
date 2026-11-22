@@ -34,7 +34,7 @@ run_case() {
         echo "Windows=SDE Native Test:0,0,400,300"
         [[ -n "$3" ]] && printf '%s\n' "$3"
     } > "$CASE_RUNTIME/WindowServer.ini"
-    sde_test_case_compositor SDE_WM_PORTAL_PATH="$CASE_RUNTIME/wm"
+    sde_test_case_compositor LIBWM_WM_PORTAL_PATH="$CASE_RUNTIME/wm"
 
     env WAYLAND_DISPLAY="$CASE_SOCK" setsid timeout 8 "$NATIVE" > "$CASE_RUNTIME/native.log" 2>&1 &
     sde_test_wait_log "$CASE_RUNTIME/comp.log" "toplevel mapped" 40 || true

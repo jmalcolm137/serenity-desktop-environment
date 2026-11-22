@@ -31,13 +31,13 @@ APPLET="$SDE_ROOT/build/Applets/Audio"
 
 chmod 700 "$RUNTIME"
 
-# A private per-session runtime directory (see the SDE_SESSION_DIR seam), so the
+# A private per-session runtime directory (see the LIBWM_SESSION_DIR seam), so the
 # fixed "/tmp/session/0/portal/..." paths of a live session are left alone: LibWM
 # *defers* to a service that is already listening there, so without this the test
 # would be answered by the live session's AudioServer instead of spawning its own.
 SESSION_DIR="$RUNTIME/session"
 mkdir -p "$SESSION_DIR/portal"
-export SDE_SESSION_DIR="$SESSION_DIR"
+export LIBWM_SESSION_DIR="$SESSION_DIR"
 
 # The session app directory LibWM resolves services and applications from.
 APP_BIN="$RUNTIME/app-bin"
@@ -59,7 +59,7 @@ done
 
 # LIBWM_TRACE: the check below reads LibWM's "spawned AudioServer" line, which is
 # informational output and off by default.
-sde_test_compositor --startup "$APP_BIN/Piano & $APP_BIN/SoundPlayer & $APPLET" SDE_STATE_DIR="$RUNTIME" SDE_APP_BIN_DIR="$APP_BIN" SDE_SESSION_DIR="$SESSION_DIR" PIPEWIRE_RUNTIME_DIR="${PW_RUNTIME:-$RUNTIME}" LIBWM_TRACE=1
+sde_test_compositor --startup "$APP_BIN/Piano & $APP_BIN/SoundPlayer & $APPLET" SDE_STATE_DIR="$RUNTIME" LIBWM_APP_BIN_DIR="$APP_BIN" LIBWM_SESSION_DIR="$SESSION_DIR" PIPEWIRE_RUNTIME_DIR="${PW_RUNTIME:-$RUNTIME}" LIBWM_TRACE=1
 # The startup clients race the compositor's socket: the test used to signal it as
 # soon as the socket existed, so a slower client (Piano) had not mapped yet and
 # the run failed intermittently. Wait for the workload instead of a fixed delay.

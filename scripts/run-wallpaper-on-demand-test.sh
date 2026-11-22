@@ -5,13 +5,13 @@
 # The compositor used to send a full copy of the wallpaper when a client bound
 # serenity_window_manager. Every applet then kept its own ~3 MB bitmap (and a
 # 2560x1600 wallpaper would cost 16 MB per process). Only the desktop/Display
-# Settings need the image, so the shim now reads the compositor's persisted raw
-# state when get_wallpaper() is first called.
+# Settings need the image, so the protocol has no such event: the host settings
+# name the compositor's raw wallpaper file, which the shim reads when
+# get_wallpaper() is first called.
 #
 # This runs a private headless session with a wallpaper, the Taskbar and (when
 # built) the desktop. It asserts:
 #   * the Taskbar has no wallpaper-sized anonymous mapping;
-#   * the compositor did not push "host wallpaper";
 #   * the desktop does not read the image back or send it to the compositor: the
 #     compositor owns the wallpaper and paints it behind the transparent desktop.
 set -euo pipefail
@@ -44,18 +44,15 @@ if [[ -x "$DESKTOP" ]]; then
     STARTUP="$STARTUP & $DESKTOP -d"
 fi
 
-# LIBWM_TRACE: the regression check below asserts that clients never see LibWM's
-# "host wallpaper" line, and that line is informational output, off by default.
 setsid env -u WAYLAND_DISPLAY -u DISPLAY \
-    LIBWM_TRACE=1 \
     XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
     WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 SDE_OUTPUT_SCALE=1 SDE_XWAYLAND=0 \
     SDE_STATE_DIR="$R" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     SDE_WALLPAPER=blue-grid.png SDE_WALLPAPER_MODE=fill \
     LD_LIBRARY_PATH="$BUILD/lib" \
-    SDE_APP_BIN_DIR="$BUILD/bin" SDE_SESSION_BIN_DIR="$BUILD/bin" \
-    SDE_SESSION_DIR="$R/session" SDE_WM_PORTAL_PATH="$R/wm.sock" \
+    LIBWM_APP_BIN_DIR="$BUILD/bin" LIBWM_SESSION_BIN_DIR="$BUILD/bin" \
+    LIBWM_SESSION_DIR="$R/session" LIBWM_WM_PORTAL_PATH="$R/wm.sock" \
     "$COMP" -n "$SOCK" -s "$STARTUP" > "$R/comp.log" 2>&1 &
 CP=$!
 cleanup() {
@@ -103,7 +100,6 @@ if [[ -x "$DESKTOP" ]]; then
 fi
 
 check "the wallpaper state was persisted" "[[ -s '$R/wallpaper.raw' ]]"
-check "no client received a pushed wallpaper" "! grep -q 'LibWM: host wallpaper' '$R/comp.log'"
 if [[ -n "$CLIENT_PID" ]]; then
     # A wallpaper copy is an anonymous mapping of (roughly) width*height*4 bytes.
     # The Taskbar is a thin panel; any resident anonymous mapping this large is

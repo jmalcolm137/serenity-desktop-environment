@@ -15,7 +15,7 @@
 // protocol implementation (LibWM::LaunchServerConnection) as the fallback, so
 // behaviour is identical whether or not SDE is present.
 //
-// The applications' host directory must be given via SDE_APP_BIN_DIR: they are
+// The applications' host directory must be given via LIBWM_APP_BIN_DIR: they are
 // not built next to this service.
 
 #include <AK/LexicalPath.h>

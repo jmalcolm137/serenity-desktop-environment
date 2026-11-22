@@ -102,7 +102,7 @@ start_compositor() {
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
         XDG_RUNTIME_DIR="$RUNTIME/run" \
         SDE_STATE_DIR="$RUNTIME/state" \
-        SDE_SESSION_DIR="$RUNTIME/session" \
+        LIBWM_SESSION_DIR="$RUNTIME/session" \
         SDE_XWAYLAND=0 \
         SERENITY_RES_ROOT="$SERENITY/Base/res" \
         LD_LIBRARY_PATH="$BUILD/lib" \
@@ -114,7 +114,7 @@ start_compositor() {
 
 start_terminal() {
     env WAYLAND_DISPLAY="$SOCK" XDG_RUNTIME_DIR="$RUNTIME/run" \
-        SDE_STATE_DIR="$RUNTIME/state" SDE_SESSION_DIR="$RUNTIME/session" \
+        SDE_STATE_DIR="$RUNTIME/state" LIBWM_SESSION_DIR="$RUNTIME/session" \
         SDE_XWAYLAND=0 \
         SERENITY_RES_ROOT="$SERENITY/Base/res" LD_LIBRARY_PATH="$BUILD/lib" \
         SHELL="$1" "$TERMINAL" -e "$1" > "$2" 2>&1 &

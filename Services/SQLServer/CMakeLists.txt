@@ -5,7 +5,7 @@ project(SQLServer CXX)
 #
 # A multi-client service (IPC::MultiServer): LibWM binds its listening socket and
 # hands it over, so it is spawned once from the session app directory
-# (SDE_APP_BIN_DIR). Browser needs it for history, bookmarks and cookies. It is a
+# (LIBWM_APP_BIN_DIR). Browser needs it for history, bookmarks and cookies. It is a
 # *session* service, so SDE builds it. See ../../docs/06-service-layering.md and
 # ../../docs/07-systemserver-roles.md (section 2.3).
 

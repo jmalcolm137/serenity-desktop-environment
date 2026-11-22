@@ -43,7 +43,7 @@ sde_seat_suffix() {
 }
 
 # The WindowManagerServer socket path for the current seat (the compositor and the
-# port's clients both honour SDE_WM_PORTAL_PATH; seat0 keeps the global default).
+# port's clients both honour LIBWM_WM_PORTAL_PATH; seat0 keeps the global default).
 sde_wm_portal_path() {
     local suffix
     suffix="$(sde_seat_suffix)"

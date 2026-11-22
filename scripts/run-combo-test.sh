@@ -24,8 +24,8 @@ export SDE_STATE_DIR="$RUNTIME"
 # Keep the whole run hermetic: applications must not reach a live session's
 # portals, and the compositor sockets live under this directory.
 export XDG_RUNTIME_DIR="$RUNTIME/run"
-export SDE_SESSION_DIR="$RUNTIME/session"
-mkdir -p "$XDG_RUNTIME_DIR" "$SDE_SESSION_DIR/portal"
+export LIBWM_SESSION_DIR="$RUNTIME/session"
+mkdir -p "$XDG_RUNTIME_DIR" "$LIBWM_SESSION_DIR/portal"
 chmod 700 "$RUNTIME"
 COMP_PID=""
 COMP2_PID=""
@@ -43,8 +43,8 @@ env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless \
     WLR_HEADLESS_OUTPUTS=1 \
     XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
-    SDE_SESSION_DIR="$SDE_SESSION_DIR" \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm" \
+    LIBWM_SESSION_DIR="$LIBWM_SESSION_DIR" \
+    LIBWM_WM_PORTAL_PATH="$RUNTIME/wm" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     "$COMP" -n "$SOCK" > "$RUNTIME/comp.log" 2>&1 &
@@ -65,7 +65,7 @@ run_case() {
     local log="$RUNTIME/combo-$label.log"
     env WAYLAND_DISPLAY="$SOCK" \
         XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
-        SDE_SESSION_DIR="$SDE_SESSION_DIR" \
+        LIBWM_SESSION_DIR="$LIBWM_SESSION_DIR" \
         LIBWM_TRACE=1 \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
         LD_LIBRARY_PATH="$BUILD/lib" \
@@ -116,9 +116,9 @@ SOCK2="sde-combo-move-$$"
 env -u WAYLAND_DISPLAY -u DISPLAY \
     WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
     XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
-    SDE_SESSION_DIR="$SDE_SESSION_DIR" \
+    LIBWM_SESSION_DIR="$LIBWM_SESSION_DIR" \
     SDE_STATE_DIR="$RUNTIME2" \
-    SDE_WM_PORTAL_PATH="$RUNTIME/wm2" \
+    LIBWM_WM_PORTAL_PATH="$RUNTIME/wm2" \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \
     "$COMP" -n "$SOCK2" > "$RUNTIME2/comp.log" 2>&1 &
@@ -130,7 +130,7 @@ done
 sleep 1
 env WAYLAND_DISPLAY="$SOCK2" \
     XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
-    SDE_SESSION_DIR="$SDE_SESSION_DIR" \
+    LIBWM_SESSION_DIR="$LIBWM_SESSION_DIR" \
     LIBWM_TRACE=1 \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     LD_LIBRARY_PATH="$BUILD/lib" \

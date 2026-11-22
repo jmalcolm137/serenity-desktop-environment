@@ -14,7 +14,7 @@
 #include <unistd.h>
 
 // Verifies the session /bin shadow (SDE R4.2): Process::resolve_executable_path()
-// consults SDE_SESSION_BIN_DIR, so an unmodified SerenityOS app that spawns
+// consults LIBWM_SESSION_BIN_DIR, so an unmodified SerenityOS app that spawns
 // /bin/shutdown (the Taskbar "Exit..." menu's ShutdownDialog) reaches the
 // session's sde-power helper. Needs no compositor.
 ErrorOr<int> serenity_main(Main::Arguments)
@@ -35,12 +35,12 @@ ErrorOr<int> serenity_main(Main::Arguments)
     (void)::write(fd, "#!/bin/sh\nexit 0\n", 17);
     ::close(fd);
 
-    setenv("SDE_SESSION_BIN_DIR", dir, 1);
+    setenv("LIBWM_SESSION_BIN_DIR", dir, 1);
 
     auto resolved = Core::Process::resolve_executable_path("/bin/shutdown"sv);
     outln("BINPATH-TEST: /bin/shutdown -> {}", resolved);
     bool shadowed = resolved == helper;
-    outln("BINPATH-TEST: shadowed by SDE_SESSION_BIN_DIR={}", shadowed);
+    outln("BINPATH-TEST: shadowed by LIBWM_SESSION_BIN_DIR={}", shadowed);
 
     // A path with no session helper falls through to the normal mapping.
     auto settings = Core::Process::resolve_executable_path("/bin/Settings"sv);
@@ -48,7 +48,7 @@ ErrorOr<int> serenity_main(Main::Arguments)
     bool falls_through = !settings.is_empty() && settings != ByteString::formatted("{}/Settings", dir);
     outln("BINPATH-TEST: falls through={}", falls_through);
 
-    // SDE_APP_BIN_DIR: the session's app directory. SDE builds some apps (the
+    // LIBWM_APP_BIN_DIR: the session's app directory. SDE builds some apps (the
     // taskbar applets) outside the port's bin dir, so an applet spawning
     // /bin/SystemMonitor must resolve to the session's SystemMonitor, not to a
     // non-existent <applet-dir>/SystemMonitor.
@@ -63,11 +63,11 @@ ErrorOr<int> serenity_main(Main::Arguments)
     (void)::write(mfd, "#!/bin/sh\nexit 0\n", 17);
     ::close(mfd);
 
-    setenv("SDE_APP_BIN_DIR", app_dir.characters(), 1);
+    setenv("LIBWM_APP_BIN_DIR", app_dir.characters(), 1);
     auto app_resolved = Core::Process::resolve_executable_path("/bin/SystemMonitor"sv);
     outln("BINPATH-TEST: /bin/SystemMonitor -> {}", app_resolved);
     bool from_app_bin = app_resolved == monitor;
-    outln("BINPATH-TEST: from SDE_APP_BIN_DIR={}", from_app_bin);
+    outln("BINPATH-TEST: from LIBWM_APP_BIN_DIR={}", from_app_bin);
 
     ::unlink(monitor.characters());
     ::rmdir(app_dir.characters());

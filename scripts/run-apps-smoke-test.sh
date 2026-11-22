@@ -6,7 +6,7 @@
 # This catches a whole class of regressions: the WindowServer IPC `MessageID` is
 # positional, so inserting a method mid-interface shifts every later id and breaks
 # apps built against the old enum ("Failed to parse IPC message") until everything
-# is rebuilt. New methods must be appended (see libgui-wayland patch 0042).
+# is rebuilt. New methods must be appended (see libgui-wayland patch 0057).
 #
 # Runs headless (no host compositor, no DRM), so it is CI-friendly.
 set -euo pipefail
@@ -23,7 +23,7 @@ APPS=(MouseSettings KeyboardSettings DisplaySettings SystemMonitor FileManager T
 
 "$SDE_ROOT/scripts/build-window-server.sh" >/dev/null
 
-sde_test_compositor SDE_WM_PORTAL_PATH="$RUNTIME/wm"
+sde_test_compositor LIBWM_WM_PORTAL_PATH="$RUNTIME/wm"
 
 FAULTS='Failed to parse IPC message|SIGSEGV|Segmentation fault|ASSERTION FAILED|VERIFICATION FAILED|Runtime error'
 echo "=== each app maps a window without faulting ==="
@@ -34,7 +34,7 @@ for app in "${APPS[@]}"; do
         continue
     fi
     log="$RUNTIME/$app.log"
-    env WAYLAND_DISPLAY="$SOCK" SDE_APP_BIN_DIR="$BUILD/bin" \
+    env WAYLAND_DISPLAY="$SOCK" LIBWM_APP_BIN_DIR="$BUILD/bin" \
         timeout 5 "$BUILD/bin/$app" > "$log" 2>&1 || true
     after="$(grep -c 'toplevel mapped' "$RUNTIME/comp.log" || true)"
     if grep -qiE "$FAULTS" "$log"; then

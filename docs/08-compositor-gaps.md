@@ -29,7 +29,7 @@ until proven otherwise.
   master handover and device access stay with `libseat`/`wlr_backend_autocreate`
   (by design). SDE owns the seat identity and failure story: it derives/exports
   `XDG_SEAT`/`XDG_VTNR`, namespaces its runtime per seat (Wayland socket, pid file,
-  `/bin` shadow dir, `SDE_WM_PORTAL_PATH`), and fails with actionable guidance when
+  `/bin` shadow dir, `LIBWM_WM_PORTAL_PATH`), and fails with actionable guidance when
   there is no seat/DRM device (`scripts/run-multiseat-test.sh`). Suspend/resume
   hooks are in `scripts/sde-sleep.sh` (lock on suspend, re-apply DPMS on resume).
   Still open: real-hardware verification of the portable `seatd` and `builtin`

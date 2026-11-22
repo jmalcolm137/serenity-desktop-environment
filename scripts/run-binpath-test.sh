@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Headless test for the session /bin shadow (R4.2, docs/11): the port's
-# Process::resolve_executable_path() must consult SDE_SESSION_BIN_DIR, so an
+# Process::resolve_executable_path() must consult LIBWM_SESSION_BIN_DIR, so an
 # unmodified SerenityOS app spawning /bin/shutdown (the Taskbar "Exit..." menu)
 # reaches the session's sde-power helper. Needs no compositor.
 set -euo pipefail
