@@ -69,7 +69,11 @@ session_state_dir() {
 # SDE's own fallback menu file, used when the host has no applications.menu.
 SDE_XDG_DATA="$(session_state_dir)/xdg-data"
 if [[ "${SDE_XDG_DATA_UPDATE:-1}" == "1" ]]; then
-    "${SDE_ROOT}/scripts/generate-desktop-entries.sh" --output "$SDE_XDG_DATA" >/dev/null 2>&1 || true
+    # Use the same `serenity-` desktop-id prefix as /usr/share/applications so
+    # the XDG menu deduplicates them instead of showing every Serenity app twice,
+    # and clear any stale unprefixed .desktop files from older sessions.
+    rm -rf "$SDE_XDG_DATA/applications"
+    "${SDE_ROOT}/scripts/generate-desktop-entries.sh" --id-prefix serenity- --output "$SDE_XDG_DATA" >/dev/null 2>&1 || true
 fi
 # Preserve the XDG Base Directory default (/usr/local/share:/usr/share) when
 # XDG_DATA_DIRS is unset: setting a non-empty value without it hides all host

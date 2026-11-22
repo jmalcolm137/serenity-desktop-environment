@@ -223,10 +223,12 @@ APP_WRAPPER
 chmod 0755 "$BIN/sde-app"
 
 # The .desktop entries for the Serenity apps: installed into both the SDE prefix
-# and /usr/share/applications (with serenity- prefix, host Exec/TryExec via
-# sde-app, and hicolor icons) so other Linux desktops discover and launch them.
+# and /usr/share/applications using the same `serenity-` desktop-id prefix so
+# the XDG menu deduplicates them (no duplicates when XDGMenu=true) and other
+# Linux desktops discover and launch them with hicolor icons.
+rm -rf "$SHARE/applications"
 "$SDE_ROOT/scripts/generate-desktop-entries.sh" \
-    --source "$SERENITY/Base/res/apps" --output "$SHARE" >/dev/null 2>&1 || true
+    --source "$SERENITY/Base/res/apps" --id-prefix "serenity-" --output "$SHARE" >/dev/null 2>&1 || true
 install -d "$DESTDIR/usr/share/applications" "$DESTDIR/usr/share/icons/hicolor"
 "$SDE_ROOT/scripts/generate-desktop-entries.sh" \
     --source "$SERENITY/Base/res/apps" \
