@@ -19,6 +19,7 @@
 
 #include "BatteryWidget.h"
 #include "NetworkManagerClient.h"
+#include "StatusNotifierHost.h"
 #include "WifiWidget.h"
 
 // Defined in Applets/Network/main.cpp and Applets/ResourceGraph/main.cpp when
@@ -37,6 +38,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     bool enable_wifi = false;
     bool enable_network = false;
     bool enable_resource_graph = false;
+    bool enable_tray = false;
 
     ByteString battery_name = "Battery";
     ByteString power_supply_root = "/sys/class/power_supply";
@@ -56,6 +58,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     args_parser.add_option(enable_wifi, "Host the Wi-Fi applet", "wifi");
     args_parser.add_option(enable_network, "Host the Network applet", "network");
     args_parser.add_option(enable_resource_graph, "Host the ResourceGraph applets", "resource-graph");
+    args_parser.add_option(enable_tray, "Host the StatusNotifierItem system tray watcher", "tray");
     args_parser.add_option(battery_name, "Battery applet name", "battery-name", 0, "name");
     args_parser.add_option(battery_icon_only, "Show only the battery icon", "battery-icon-only");
     args_parser.add_option(power_supply_root, "Override sysfs power-supply directory", "power-supply-root", 0, "path");
@@ -67,16 +70,18 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     args_parser.add_option(network_graph_spec, "Network graph spec (name,#rrggbb)", "network-graph", 0, "spec");
     args_parser.parse(arguments);
 
-    // If no individual applet flags were passed, host all four by default.
-    if (!enable_battery && !enable_wifi && !enable_network && !enable_resource_graph) {
+    // If no individual applet flags were passed, host all applets by default.
+    if (!enable_battery && !enable_wifi && !enable_network && !enable_resource_graph && !enable_tray) {
         enable_battery = true;
         enable_wifi = true;
         enable_network = true;
         enable_resource_graph = true;
+        enable_tray = true;
     }
 
     Vector<NonnullRefPtr<GUI::Window>> windows;
     RefPtr<NetworkManagerClient> nm_client;
+    RefPtr<SDE::StatusNotifierHost> tray_host;
 
     if (enable_resource_graph) {
         auto graphs = create_resource_graph_applet_windows(cpu_spec, memory_spec, network_graph_spec);
@@ -125,7 +130,15 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
         }
     }
 
-    if (windows.is_empty()) {
+    if (enable_tray) {
+        auto tray_or_error = SDE::StatusNotifierHost::try_create();
+        if (tray_or_error.is_error())
+            warnln("sde-applet-host: StatusNotifier tray unavailable: {}", tray_or_error.error());
+        else
+            tray_host = tray_or_error.release_value();
+    }
+
+    if (windows.is_empty() && !tray_host) {
         warnln("sde-applet-host: no applets started");
         return 1;
     }

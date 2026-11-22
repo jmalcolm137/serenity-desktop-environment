@@ -29,6 +29,8 @@
 
 #include <fcntl.h>
 #include <stdlib.h>
+#include <LibGfx/Bitmap.h>
+#include <LibXDG/IconTheme.h>
 #include <string.h>
 
 #include "Wlroots.h"
@@ -566,10 +568,26 @@ static void toplevel_set_title(wl_listener* listener, void*)
     toplevel_update_foreign(*toplevel);
 }
 
+static void toplevel_load_fallback_icon(Toplevel& toplevel)
+{
+    if (toplevel.icon || !toplevel.xdg_toplevel || !toplevel.xdg_toplevel->app_id || !*toplevel.xdg_toplevel->app_id)
+        return;
+    StringView app_id { toplevel.xdg_toplevel->app_id, strlen(toplevel.xdg_toplevel->app_id) };
+    auto icon_path = XDG::find_app_icon(app_id, 16, output_scale());
+    if (!icon_path.has_value())
+        return;
+    if (auto bitmap = Gfx::Bitmap::load_from_file(icon_path.value(), 1, Gfx::IntSize { 16, 16 }); !bitmap.is_error()) {
+        toplevel.icon = bitmap.release_value();
+        toplevel_update_frame(toplevel);
+        WindowManager::emit_window_icon(toplevel);
+    }
+}
+
 static void toplevel_set_app_id(wl_listener* listener, void*)
 {
     Toplevel* toplevel = nullptr;
     toplevel = wl_container_of(listener, toplevel, set_app_id);
+    toplevel_load_fallback_icon(*toplevel);
     toplevel_update_foreign(*toplevel);
 }
 

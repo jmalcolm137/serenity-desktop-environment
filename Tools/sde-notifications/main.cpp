@@ -35,6 +35,7 @@
 #include <LibGfx/Bitmap.h>
 #include <LibGUI/Notification.h>
 #include <LibMain/Main.h>
+#include <LibXDG/IconTheme.h>
 
 #include "dbus.h"
 
@@ -118,6 +119,10 @@ RefPtr<Gfx::Bitmap> load_icon_path(ByteString const& path)
         bitmap = Gfx::Bitmap::load_from_file(path.substring_view(7), 1, ideal_size);
     else if (path.contains("://"sv))
         bitmap = Gfx::Bitmap::load_from_uri(path, 1, ideal_size);
+    else if (path.starts_with('/'))
+        bitmap = Gfx::Bitmap::load_from_file(path, 1, ideal_size);
+    else if (auto themed = XDG::find_icon(path, 32); themed.has_value())
+        bitmap = Gfx::Bitmap::load_from_file(themed.value(), 1, ideal_size);
     else
         bitmap = Gfx::Bitmap::load_from_file(path, 1, ideal_size);
 

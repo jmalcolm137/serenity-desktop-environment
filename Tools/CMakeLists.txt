@@ -195,7 +195,7 @@ find_library(SDE_WINDOWSERVER NAMES windowserver PATHS "${SDE_LAGOM_BUILD_DIR}/l
 sde_portal_tool(sde-notifications
     SOURCES sde-notifications/main.cpp portal/dbus.cpp
     LAGOM ${PORTAL_LAGOM} gfx gui ipc url desktop
-    LIBRARIES ${SDE_WINDOWSERVER})
+    LIBRARIES ${SDE_WINDOWSERVER} sde-xdg)
 
 # sde-lock: the native session locker (docs/11 §10). A plain
 # ext-session-lock-v1 client drawn with LibGfx rather than LibGUI: LibGUI goes

@@ -118,12 +118,16 @@ add_executable(sde-applet-host
     WiFi/src/WifiIcon.cpp
     WiFi/src/NetworkManagerClient.cpp
     WiFi/src/WifiPopup.cpp
-    WiFi/src/WifiWidget.cpp)
+    WiFi/src/WifiWidget.cpp
+    StatusNotifier/StatusNotifierHost.cpp
+    "${SDE_ROOT}/Tools/portal/dbus.cpp")
 set_property(GLOBAL APPEND PROPERTY SDE_APPLET_TARGETS sde-applet-host)
 target_compile_definitions(sde-applet-host PRIVATE SDE_APPLET_HOST_EMBEDDED)
 target_include_directories(sde-applet-host BEFORE PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/Battery/src"
     "${CMAKE_CURRENT_SOURCE_DIR}/WiFi/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/StatusNotifier"
+    "${SDE_ROOT}/Tools/portal"
     "${SDE_ROOT}/Libraries/Compat")
 target_include_directories(sde-applet-host PRIVATE
     "${SERENITY_SRC}"
@@ -143,6 +147,7 @@ target_link_libraries(sde-applet-host PRIVATE
     ${LAGOM_ak} ${LAGOM_coreminimal} ${LAGOM_corebasic} ${LAGOM_core}
     ${LAGOM_gfx} ${LAGOM_gui} ${LAGOM_ipc} ${LAGOM_threading} ${LAGOM_main}
     ${WINDOWSERVER}
+    sde-xdg
     ${DBUS_LIBRARIES})
 set_target_properties(sde-applet-host PROPERTIES
     BUILD_RPATH "${SERENITY_BUILD_DIR}/lib"

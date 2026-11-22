@@ -78,7 +78,7 @@ sde_applet_specs() {
     fi
 
     if [[ "$use_host" -eq 1 ]]; then
-        local -a host_args=(--resource-graph --network)
+        local -a host_args=(--resource-graph --network --tray)
         if [[ -n "$battery" && -x "$battery" ]]; then
             host_args+=(--battery)
         fi

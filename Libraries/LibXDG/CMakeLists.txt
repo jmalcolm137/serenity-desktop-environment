@@ -22,7 +22,8 @@ add_library(sde-xdg STATIC
     Autostart.cpp
     DesktopEntry.cpp
     MimeDatabase.cpp
-    MimeApps.cpp)
+    MimeApps.cpp
+    IconTheme.cpp)
 
 target_include_directories(sde-xdg PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/.."
