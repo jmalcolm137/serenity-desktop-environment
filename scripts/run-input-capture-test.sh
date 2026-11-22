@@ -26,7 +26,7 @@ mkdir -p "$TOOLS_BUILD"
 wayland-scanner client-header "$XML" "$TOOLS_BUILD/serenity-input-capture-client-protocol.h"
 wayland-scanner private-code  "$XML" "$TOOLS_BUILD/serenity-input-capture-protocol.c"
 cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/Tools/input-capture-test.c" \
+    "$SDE_ROOT/Tools/testing/input-capture-test.c" \
     "$TOOLS_BUILD/serenity-input-capture-protocol.c" \
     $(pkg-config --cflags --libs wayland-client libei-1.0) \
     -o "$TOOLS_BUILD/input-capture-test"
@@ -38,7 +38,7 @@ wayland-scanner private-code  "$VK_XML" "$TOOLS_BUILD/virtual-keyboard-unstable-
 wayland-scanner client-header "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-client-protocol.h"
 wayland-scanner private-code  "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c"
 cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/Tools/virtual-input-test.c" \
+    "$SDE_ROOT/Tools/testing/virtual-input-test.c" \
     "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c" \
     "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c" \
     $(pkg-config --cflags --libs wayland-client xkbcommon) \

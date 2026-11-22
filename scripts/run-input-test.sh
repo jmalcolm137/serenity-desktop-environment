@@ -45,7 +45,7 @@ wayland-scanner client-header "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstab
 wayland-scanner private-code  "$VP_XML" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c"
 
 cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/Tools/native-app-test.c" \
+    "$SDE_ROOT/Tools/testing/native-app-test.c" \
     "$TOOLS_BUILD/xdg-shell-protocol.c" \
     "$TOOLS_BUILD/serenity-window-protocol.c" \
     "$TOOLS_BUILD/presentation-time-protocol.c" \
@@ -54,7 +54,7 @@ cc -O2 -I "$TOOLS_BUILD" \
     $(pkg-config --cflags --libs wayland-client) \
     -o "$TOOLS_BUILD/native-app-test"
 cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/Tools/virtual-input-test.c" \
+    "$SDE_ROOT/Tools/testing/virtual-input-test.c" \
     "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c" \
     "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c" \
     $(pkg-config --cflags --libs wayland-client xkbcommon) \

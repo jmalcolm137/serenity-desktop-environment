@@ -24,7 +24,7 @@ wayland-scanner private-code  "$XDG_SHELL_XML" "$TOOLS_BUILD/xdg-shell-protocol.
 wayland-scanner client-header "$SESSION_XML" "$TOOLS_BUILD/xdg-session-management-v1-client-protocol.h"
 wayland-scanner private-code  "$SESSION_XML" "$TOOLS_BUILD/xdg-session-management-v1-protocol.c"
 cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/Tools/session-test.c" \
+    "$SDE_ROOT/Tools/testing/session-test.c" \
     "$TOOLS_BUILD/xdg-shell-protocol.c" \
     "$TOOLS_BUILD/xdg-session-management-v1-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) \

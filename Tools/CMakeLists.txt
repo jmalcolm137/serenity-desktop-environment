@@ -51,33 +51,33 @@ sde_wayland_client_protocol(protocols NAME serenity-window XML "${SDE_PROTOCOLS}
 sde_wayland_client_protocol(protocols NAME presentation-time XML "${WP}/stable/presentation-time/presentation-time.xml")
 sde_wayland_client_protocol(protocols NAME fractional-scale-v1 XML "${WP}/staging/fractional-scale/fractional-scale-v1.xml")
 sde_wayland_client_protocol(protocols NAME xdg-decoration XML "${WP}/unstable/xdg-decoration/xdg-decoration-unstable-v1.xml")
-sde_c_tool(native-app-test SOURCES native-app-test.c ${protocols})
+sde_c_tool(native-app-test SOURCES testing/native-app-test.c ${protocols})
 
 # wayland-fuzz-test (R6/N8): valid-but-extreme xdg-shell requests, for the
 # protocol fuzz harness (run-wayland-fuzz-test.sh).
 set(protocols)
 sde_wayland_client_protocol(protocols NAME xdg-shell XML "${WP}/stable/xdg-shell/xdg-shell.xml")
-sde_c_tool(wayland-fuzz-test SOURCES wayland-fuzz-test.c ${protocols})
+sde_c_tool(wayland-fuzz-test SOURCES testing/wayland-fuzz-test.c ${protocols})
 
 # layer-fuzz-test (R6/N8): the layer-shell arrange path with extreme values.
 set(protocols)
 sde_wayland_client_protocol(protocols NAME xdg-shell XML "${WP}/stable/xdg-shell/xdg-shell.xml")
 sde_wayland_client_protocol(protocols NAME wlr-layer-shell-unstable-v1 XML "${WLR_PROTOCOLS}/wlr-layer-shell-unstable-v1.xml")
-sde_c_tool(layer-fuzz-test SOURCES layer-fuzz-test.c ${protocols})
+sde_c_tool(layer-fuzz-test SOURCES testing/layer-fuzz-test.c ${protocols})
 
 # data-device-fuzz-test (R6/N8): selection/drag source ownership and cleanup.
-sde_c_tool(data-device-fuzz-test SOURCES data-device-fuzz-test.c)
+sde_c_tool(data-device-fuzz-test SOURCES testing/data-device-fuzz-test.c)
 
 # ext-workspace-test (R4.8): a scripted ext-workspace-v1 client.
 set(protocols)
 sde_wayland_client_protocol(protocols NAME ext-workspace-v1 XML "${WP}/staging/ext-workspace/ext-workspace-v1.xml")
-sde_c_tool(ext-workspace-test SOURCES ext-workspace-test.c ${protocols})
+sde_c_tool(ext-workspace-test SOURCES testing/ext-workspace-test.c ${protocols})
 
 # output-management-test (R6/N5): disable or re-enable an output through
 # zwlr_output_management_v1 (run-output-hotplug-test.sh).
 set(protocols)
 sde_wayland_client_protocol(protocols NAME wlr-output-management-unstable-v1 XML "${WLR_PROTOCOLS}/wlr-output-management-unstable-v1.xml")
-sde_c_tool(output-management-test SOURCES output-management-test.c ${protocols})
+sde_c_tool(output-management-test SOURCES testing/output-management-test.c ${protocols})
 
 # The capture protocols, shared by the ScreenCast backend and capture-probe.
 set(capture_protocols)
@@ -91,14 +91,14 @@ sde_wayland_client_protocol(capture_protocols NAME linux-dmabuf-v1 XML "${WP}/st
 pkg_check_modules(GBM REQUIRED IMPORTED_TARGET gbm)
 pkg_check_modules(LIBDRM REQUIRED IMPORTED_TARGET libdrm)
 sde_c_tool(capture-probe
-    SOURCES capture-probe.c ${capture_protocols}
+    SOURCES testing/capture-probe.c ${capture_protocols}
     LIBRARIES PkgConfig::GBM PkgConfig::LIBDRM
     OPTIONS -Wall -Wextra)
 
 # screencast-consumer (R5): reads the ScreenCast PipeWire node and reports the
 # buffer type and cursor metadata (docs/15 §6.2/§6.3).
 pkg_check_modules(PIPEWIRE REQUIRED IMPORTED_TARGET libpipewire-0.3)
-add_executable(screencast-consumer screencast-consumer.c)
+add_executable(screencast-consumer testing/screencast-consumer.c)
 target_compile_options(screencast-consumer PRIVATE -O2 -Wall -Wextra)
 target_link_libraries(screencast-consumer PRIVATE PkgConfig::PIPEWIRE PkgConfig::LIBDRM)
 
@@ -111,7 +111,7 @@ sde_wayland_client_protocol(protocols NAME virtual-keyboard-unstable-v1 XML "${W
 sde_wayland_client_protocol(protocols NAME wlr-virtual-pointer-unstable-v1 XML "${WLR_PROTOCOLS}/wlr-virtual-pointer-unstable-v1.xml")
 sde_wayland_client_protocol(protocols NAME serenity-virtual-input XML "${SDE_PROTOCOLS}/serenity-virtual-input.xml")
 sde_c_tool(virtual-input-test
-    SOURCES virtual-input-test.c ${protocols}
+    SOURCES testing/virtual-input-test.c ${protocols}
     LIBRARIES PkgConfig::XKBCOMMON
     OPTIONS -DSDE_HAVE_VIRTUAL_INPUT)
 set_target_properties(virtual-input-test PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/input-test")

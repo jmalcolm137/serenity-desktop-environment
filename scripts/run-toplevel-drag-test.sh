@@ -25,7 +25,7 @@ wayland-scanner private-code "$XDG_XML" "$TOOLS_BUILD/xdg-shell-protocol.c"
 wayland-scanner client-header "$DRAG_XML" "$TOOLS_BUILD/xdg-toplevel-drag-v1-client-protocol.h"
 wayland-scanner private-code "$DRAG_XML" "$TOOLS_BUILD/xdg-toplevel-drag-v1-protocol.c"
 cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/Tools/toplevel-drag-test.c" \
+    "$SDE_ROOT/Tools/testing/toplevel-drag-test.c" \
     "$TOOLS_BUILD/xdg-shell-protocol.c" \
     "$TOOLS_BUILD/xdg-toplevel-drag-v1-protocol.c" \
     $(pkg-config --cflags --libs wayland-client) \
@@ -36,7 +36,7 @@ wayland-scanner private-code "$WLROOTS_SRC/protocol/virtual-keyboard-unstable-v1
 wayland-scanner client-header "$WLROOTS_SRC/protocol/wlr-virtual-pointer-unstable-v1.xml" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-client-protocol.h"
 wayland-scanner private-code "$WLROOTS_SRC/protocol/wlr-virtual-pointer-unstable-v1.xml" "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c"
 cc -O2 -I "$TOOLS_BUILD" \
-    "$SDE_ROOT/Tools/virtual-input-test.c" \
+    "$SDE_ROOT/Tools/testing/virtual-input-test.c" \
     "$TOOLS_BUILD/virtual-keyboard-unstable-v1-protocol.c" \
     "$TOOLS_BUILD/wlr-virtual-pointer-unstable-v1-protocol.c" \
     $(pkg-config --cflags --libs wayland-client xkbcommon) \

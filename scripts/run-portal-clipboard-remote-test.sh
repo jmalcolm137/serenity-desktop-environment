@@ -115,10 +115,10 @@ if command -v wayland-scanner >/dev/null && pkg-config --exists wayland-client d
     DC_XML="$(pkg-config --variable=pkgdatadir wayland-protocols)/staging/ext-data-control/ext-data-control-v1.xml"
     wayland-scanner client-header "$DC_XML" "$DC_DIR/ext-data-control-v1-client-protocol.h"
     wayland-scanner private-code  "$DC_XML" "$DC_DIR/ext-data-control-v1-protocol.c"
-    cc -O2 -I "$DC_DIR" "$SDE_ROOT/Tools/clipboard-owner-test.c" \
+    cc -O2 -I "$DC_DIR" "$SDE_ROOT/Tools/testing/clipboard-owner-test.c" \
         "$DC_DIR/ext-data-control-v1-protocol.c" \
         $(pkg-config --cflags --libs wayland-client) -o "$DC_DIR/owner" 2> "$RUNTIME/owner-build.log" || true
-    cc -O2 "$SDE_ROOT/Tools/clipboard-read-test.c" \
+    cc -O2 "$SDE_ROOT/Tools/testing/clipboard-read-test.c" \
         $(pkg-config --cflags --libs dbus-1) -o "$DC_DIR/reader" 2> "$RUNTIME/reader-build.log" || true
     if [[ -x "$DC_DIR/owner" && -x "$DC_DIR/reader" ]]; then
         env -u DISPLAY WAYLAND_DISPLAY="$SOCK" "$DC_DIR/owner" > "$RUNTIME/owner.log" 2>&1 &
@@ -149,7 +149,7 @@ check "handed an EIS fd" "$(cat "$RUNTIME/portal.log")"
 
 if pkg-config --exists dbus-1 libei-1.0; then
     EIS_TEST="$RUNTIME/remote-desktop-eis-test"
-    cc -O2 "$SDE_ROOT/Tools/remote-desktop-eis-test.c" \
+    cc -O2 "$SDE_ROOT/Tools/testing/remote-desktop-eis-test.c" \
         $(pkg-config --cflags --libs dbus-1 libei-1.0) -o "$EIS_TEST" 2> "$RUNTIME/eis-build.log" || {
         echo "  note: could not build the libei sender test"
         tail -10 "$RUNTIME/eis-build.log" | sed 's/^/    /'
