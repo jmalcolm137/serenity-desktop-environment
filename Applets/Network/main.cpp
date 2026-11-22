@@ -208,6 +208,25 @@ private:
     NonnullRefPtr<Gfx::Bitmap> m_disconnected_icon;
 };
 
+ErrorOr<NonnullRefPtr<GUI::Window>> create_network_applet_window(StringView name, bool display_notifications)
+{
+    if (name.is_empty())
+        name = "Network"sv;
+
+    auto window = GUI::Window::construct();
+    window->set_title(name);
+    window->set_window_type(GUI::WindowType::Applet);
+    window->set_has_alpha_channel(true);
+    window->resize(16, 16);
+    auto icon = TRY(NetworkWidget::try_create(display_notifications));
+    window->set_main_widget(icon);
+    icon->load_from_file("/res/icons/16x16/network.png"sv);
+    window->resize(16, 16);
+    window->show();
+    return window;
+}
+
+#ifndef SDE_APPLET_HOST_EMBEDDED
 ErrorOr<int> serenity_main(Main::Arguments arguments)
 {
     TRY(Core::System::pledge("stdio recvfd sendfd rpath unix proc exec"));
@@ -225,19 +244,8 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     args_parser.add_option(name, "Applet name used by WindowServer.ini to set the applet order", "name", 'n', "name");
     args_parser.parse(arguments);
 
-    if (name.is_empty())
-        name = "Network"sv;
-
-    auto window = GUI::Window::construct();
-    window->set_title(name);
-    window->set_window_type(GUI::WindowType::Applet);
-    window->set_has_alpha_channel(true);
-    window->resize(16, 16);
-    auto icon = TRY(NetworkWidget::try_create(display_notifications));
-    window->set_main_widget(icon);
-    icon->load_from_file("/res/icons/16x16/network.png"sv);
-    window->resize(16, 16);
-    window->show();
+    [[maybe_unused]] auto window = TRY(create_network_applet_window(name, display_notifications));
 
     return app->exec();
 }
+#endif

@@ -305,28 +305,8 @@ private:
     String m_tooltip;
 };
 
-ErrorOr<int> serenity_main(Main::Arguments arguments)
+ErrorOr<Vector<NonnullRefPtr<GUI::Window>>> create_resource_graph_applet_windows(StringView cpu, StringView memory, StringView network)
 {
-    TRY(Core::System::pledge("stdio recvfd sendfd proc exec rpath unix"));
-
-    auto app = TRY(GUI::Application::create(arguments));
-
-    TRY(Core::System::pledge("stdio recvfd sendfd proc exec rpath"));
-
-    StringView cpu {};
-    StringView memory {};
-    StringView network {};
-    Core::ArgsParser args_parser;
-    args_parser.add_option(cpu, "Create CPU graph", "cpu", 'C', "cpu");
-    args_parser.add_option(memory, "Create memory graph", "memory", 'M', "memory");
-    args_parser.add_option(network, "Create network graph", "network", 'N', "network");
-    args_parser.parse(arguments);
-
-    if (cpu.is_empty() && memory.is_empty() && network.is_empty()) {
-        printf("At least one of --cpu, --memory, or --network must be used");
-        return 1;
-    }
-
     Vector<NonnullRefPtr<GUI::Window>> applet_windows;
 
     auto create_applet = [&](GraphType graph_type, StringView spec) -> ErrorOr<void> {
@@ -359,9 +339,38 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     if (!network.is_empty())
         TRY(create_applet(GraphType::Network, network));
 
+    return applet_windows;
+}
+
+#ifndef SDE_APPLET_HOST_EMBEDDED
+ErrorOr<int> serenity_main(Main::Arguments arguments)
+{
+    TRY(Core::System::pledge("stdio recvfd sendfd proc exec rpath unix"));
+
+    auto app = TRY(GUI::Application::create(arguments));
+
+    TRY(Core::System::pledge("stdio recvfd sendfd proc exec rpath"));
+
+    StringView cpu {};
+    StringView memory {};
+    StringView network {};
+    Core::ArgsParser args_parser;
+    args_parser.add_option(cpu, "Create CPU graph", "cpu", 'C', "cpu");
+    args_parser.add_option(memory, "Create memory graph", "memory", 'M', "memory");
+    args_parser.add_option(network, "Create network graph", "network", 'N', "network");
+    args_parser.parse(arguments);
+
+    if (cpu.is_empty() && memory.is_empty() && network.is_empty()) {
+        printf("At least one of --cpu, --memory, or --network must be used");
+        return 1;
+    }
+
+    [[maybe_unused]] auto applet_windows = TRY(create_resource_graph_applet_windows(cpu, memory, network));
+
     TRY(Core::System::unveil("/res", "r"));
     TRY(Core::System::unveil("/bin/SystemMonitor", "x"));
     TRY(Core::System::unveil(nullptr, nullptr));
 
     return app->exec();
 }
+#endif

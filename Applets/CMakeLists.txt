@@ -104,6 +104,50 @@ add_sde_applet(Keymap SOURCES KeymapStatusWindow.cpp KeymapStatusWidget.cpp main
 add_sde_applet(Audio SOURCES main.cpp LIBS SDEAudioClient ${LAGOM_config})
 add_sde_applet(ClipboardHistory SOURCES ClipboardHistoryModel.cpp main.cpp LIBS ${LAGOM_config})
 
+# Consolidated multi-window host for SDE's own applets (ResourceGraph, Network,
+# Battery, WiFi) so they share one LibGUI process, Wayland connection and font/
+# theme cache (~3-4 MB PSS saved vs. four separate processes).
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(DBUS REQUIRED dbus-1)
+add_executable(sde-applet-host
+    Host/main.cpp
+    Network/main.cpp
+    ResourceGraph/main.cpp
+    Battery/src/Battery.cpp
+    Battery/src/BatteryWidget.cpp
+    WiFi/src/WifiIcon.cpp
+    WiFi/src/NetworkManagerClient.cpp
+    WiFi/src/WifiPopup.cpp
+    WiFi/src/WifiWidget.cpp)
+set_property(GLOBAL APPEND PROPERTY SDE_APPLET_TARGETS sde-applet-host)
+target_compile_definitions(sde-applet-host PRIVATE SDE_APPLET_HOST_EMBEDDED)
+target_include_directories(sde-applet-host BEFORE PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/Battery/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/WiFi/src"
+    "${SDE_ROOT}/Libraries/Compat")
+target_include_directories(sde-applet-host PRIVATE
+    "${SERENITY_SRC}"
+    "${SERENITY_SRC}/Userland"
+    "${SERENITY_SRC}/Userland/Libraries"
+    "${SERENITY_SRC}/Userland/Services"
+    "${SERENITY_BUILD_DIR}"
+    "${SERENITY_BUILD_DIR}/Userland"
+    "${SERENITY_BUILD_DIR}/Userland/Libraries"
+    "${SERENITY_BUILD_DIR}/Userland/Services"
+    "${LIBGUI_WAYLAND_SRC}/src"
+    ${DBUS_INCLUDE_DIRS})
+target_compile_options(sde-applet-host PRIVATE -Wno-literal-suffix -fno-exceptions)
+target_link_options(sde-applet-host PRIVATE "LINKER:--no-as-needed")
+target_link_directories(sde-applet-host PRIVATE "${SERENITY_BUILD_DIR}/lib" ${DBUS_LIBRARY_DIRS})
+target_link_libraries(sde-applet-host PRIVATE
+    ${LAGOM_ak} ${LAGOM_coreminimal} ${LAGOM_corebasic} ${LAGOM_core}
+    ${LAGOM_gfx} ${LAGOM_gui} ${LAGOM_ipc} ${LAGOM_threading} ${LAGOM_main}
+    ${WINDOWSERVER}
+    ${DBUS_LIBRARIES})
+set_target_properties(sde-applet-host PROPERTIES
+    BUILD_RPATH "${SERENITY_BUILD_DIR}/lib"
+    INSTALL_RPATH "${SERENITY_BUILD_DIR}/lib")
+
 # One target for the whole group (scripts/build-applets.sh).
 get_property(SDE_APPLET_TARGETS GLOBAL PROPERTY SDE_APPLET_TARGETS)
 add_custom_target(sde-applets DEPENDS ${SDE_APPLET_TARGETS})

@@ -49,16 +49,23 @@ sde_applet_specs() {
     local battery="${2:-}"
     local wifi="${3:-}"
     local applets="${SDE_APPLET_DIR:-$root/build/Applets}"
+    local host_bin="${SDE_APPLET_HOST:-$applets/sde-applet-host}"
+    local use_host=0
+    if [[ "${SDE_CONSOLIDATED_APPLETS:-1}" != 0 && -x "$host_bin" ]]; then
+        use_host=1
+    fi
 
     if [[ -x "$applets/WorkspacePicker" ]]; then
         _sde_emit_applet_spec WorkspacePicker "$applets/WorkspacePicker"
     fi
-    if [[ -x "$applets/ResourceGraph" ]]; then
-        _sde_emit_applet_spec ResourceGraph \
-            "$applets/ResourceGraph" --cpu=CPUGraph,#00bb00 --memory=MemoryGraph,#00bbbb --network=NetworkGraph,#bbbb00
-    fi
-    if [[ -x "$applets/Network" ]]; then
-        _sde_emit_applet_spec Network "$applets/Network" --name=Network
+    if [[ "$use_host" -eq 0 ]]; then
+        if [[ -x "$applets/ResourceGraph" ]]; then
+            _sde_emit_applet_spec ResourceGraph \
+                "$applets/ResourceGraph" --cpu=CPUGraph,#00bb00 --memory=MemoryGraph,#00bbbb --network=NetworkGraph,#bbbb00
+        fi
+        if [[ -x "$applets/Network" ]]; then
+            _sde_emit_applet_spec Network "$applets/Network" --name=Network
+        fi
     fi
     if [[ -x "$applets/ClipboardHistory" ]]; then
         _sde_emit_applet_spec ClipboardHistory "$applets/ClipboardHistory"
@@ -70,11 +77,22 @@ sde_applet_specs() {
         _sde_emit_applet_spec Keymap "$applets/Keymap"
     fi
 
-    if [[ -n "$battery" && -x "$battery" ]]; then
-        _sde_emit_applet_spec BatteryApplet "$battery"
-    fi
-    if [[ -n "$wifi" && -x "$wifi" ]]; then
-        _sde_emit_applet_spec WifiApplet "$wifi"
+    if [[ "$use_host" -eq 1 ]]; then
+        local -a host_args=(--resource-graph --network)
+        if [[ -n "$battery" && -x "$battery" ]]; then
+            host_args+=(--battery)
+        fi
+        if [[ -n "$wifi" && -x "$wifi" ]]; then
+            host_args+=(--wifi)
+        fi
+        _sde_emit_applet_spec sde-applet-host "$host_bin" "${host_args[@]}"
+    else
+        if [[ -n "$battery" && -x "$battery" ]]; then
+            _sde_emit_applet_spec BatteryApplet "$battery"
+        fi
+        if [[ -n "$wifi" && -x "$wifi" ]]; then
+            _sde_emit_applet_spec WifiApplet "$wifi"
+        fi
     fi
     return 0
 }
