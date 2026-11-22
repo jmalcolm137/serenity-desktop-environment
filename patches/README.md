@@ -27,9 +27,11 @@ rebased tip.
 | Terminal: link the SDE system library | SDE `0006` | removed: entirely contained in `0002` | SDE-only (see `0002`). | n/a |
 | [`0001`](0001-taskbar-system-menu.patch) Taskbar: the system menu and quick launch for SDE apps | SDE | SDE | SDE behaviour: the SDE's menu layout and app-file resolution against its session app directory. | n/a |
 | [`0002`](0002-terminal-shell-environment.patch) Terminal: the shell environment, LibSerenitySystem | SDE | SDE | SDE behaviour: the session's environment and the SDE's host-integration library. | n/a |
+| [`0003`](0003-space-analyzer-linux-mounts.patch) SpaceAnalyzer: read mounted filesystems from `/proc/mounts` | SDE | SDE | Linux port: SerenityOS's `/sys/kernel/df` does not exist on Linux; `/proc/mounts` provides the mount table. | n/a |
 | [`0004`](0004-profiler-libserenitysystem.patch) Profiler: link LibSerenitySystem | SDE | SDE | The SDE's host profiling backend; not a SerenityOS concept. | n/a |
 | [`0005`](0005-taskbar-window-grouping.patch) Taskbar window grouping, and its LibGUI/IPC half (app id, `taskbar_group_windows`) | SDE | SDE | The IPC change only has a sender in the SDE's compositor. SerenityOS's own WindowServer would need a matching change and has no app-id concept to send, so it is not sensible in isolation as it stands. | Would need a SerenityOS WindowServer change first |
 | [`0006`](0006-taskbar-lock-menu.patch) Taskbar: a Lock item, first in the system menu | SDE | SDE | SDE behaviour: the entry locks through `SDE_LOCK_CMD`, which the SDE session exports (and which selects `sde-lock` or a third-party locker). | n/a |
+| [`0007`](0007-3dfileviewer-default-model.patch) 3DFileViewer: resolve the default model under `$HOME` | SDE | SDE | SDE/Linux behaviour: replaces SerenityOS's hardcoded `/home/anon/Documents/3D Models/teapot.obj` with `$HOME/Documents/3DModels/teapot.obj`. | n/a |
 | [`0008`](0008-sde-lagom-targets.patch) The SDE's Lagom targets (the Taskbar, the app suite) | SDE | SDE | SDE build integration: which SerenityOS programs the desktop builds on Lagom. | n/a |
 | [`0009`](0009-taskbar-xdg-menu.patch) Taskbar: the XDG system menu (the full freedesktop Menu specification) | SDE | SDE | SDE behaviour: the freedesktop menu data dirs, menu file, `.directory` entries and `.desktop` entries are a host-desktop concept; the menu is selected by `[Taskbar] XDGMenu` and the entries come from the SDE's generator. See [`../docs/36-xdg-desktop-menu.md`](../docs/36-xdg-desktop-menu.md). | n/a |
 
@@ -65,9 +67,17 @@ into `0008`) is removed too.
 
 ## Checking the stack
 
-`scripts/build.sh` reports `N applied, N already applied, N unverifiable`. On a
+Run `scripts/check-patches.sh` to validate the patch queue itself:
+- every patch follows `NNNN-slug.patch` with a unique 4-digit sequence number,
+- every patch parses cleanly with `git apply --stat`, and
+- every patch on disk is documented in this `README.md` (and no dead links remain).
+
+Pass `--apply-check` (or `--tree <serenity-src>`) to dry-run every patch against
+the SerenityOS checkout without modifying it or triggering a build.
+
+`scripts/build.sh` also reports `N applied, N already applied, N unverifiable`. On a
 fresh checkout the last two must both be 0. "Already applied" means a patch is
-redundant (as `0003` and `0006` were, each entirely inside another patch), and
+redundant (as old `0003` and `0006` were, each entirely inside another patch), and
 "unverifiable" means it no longer matches the tree. Before this reorganisation the
 stack reported three patches as "already applied", which is how the duplicates went
 unnoticed and why the order of the stack mattered (`0006` conflicted when applied
