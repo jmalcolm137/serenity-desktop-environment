@@ -104,6 +104,7 @@ struct NotificationEntry {
 };
 
 HashMap<u32, OwnPtr<NotificationEntry>> s_notifications;
+RefPtr<Core::Timer> s_poll_timer;
 u32 s_next_id { 1 };
 
 RefPtr<Gfx::Bitmap> load_icon_path(ByteString const& path)
@@ -214,6 +215,8 @@ void remove_notification(Portal::Service& service, u32 id, u32 reason)
     (*entry)->notification->close();
     service.emit_signal(notifications_interface, "NotificationClosed"sv,
         { Portal::Value::make_uint32(id), Portal::Value::make_uint32(reason) });
+    if (s_notifications.is_empty() && s_poll_timer && s_poll_timer->is_active())
+        s_poll_timer->stop();
 }
 
 void arm_expiry(Portal::Service& service, u32 id, int expire_timeout, u8 urgency)
@@ -317,6 +320,8 @@ void handle_notify(Portal::Service& service, Portal::MethodCall& call)
     }
 
     arm_expiry(service, id, expire_timeout, urgency);
+    if (s_poll_timer && !s_poll_timer->is_active())
+        s_poll_timer->start();
     call.reply({ Portal::Value::make_uint32(id) });
 }
 
@@ -363,7 +368,8 @@ ErrorOr<int> serenity_main(Main::Arguments)
 
     // The window has no dismiss affordance, but the connection can still go away
     // (the server exiting, or a future close gesture): report those as dismissed.
-    auto poll_timer = Core::Timer::create_repeating(500, [&notifications] {
+    // Only run the timer while at least one notification is live (zero idle wakeups).
+    s_poll_timer = Core::Timer::create_repeating(500, [&notifications] {
         Vector<u32> gone;
         for (auto& it : s_notifications) {
             if (!it.value->notification->is_showing())
@@ -372,7 +378,6 @@ ErrorOr<int> serenity_main(Main::Arguments)
         for (auto id : gone)
             remove_notification(notifications, id, reason_dismissed);
     });
-    poll_timer->start();
 
     dbgln("sde-notifications: serving {} on {}", notifications_object_path, notifications_bus_name);
     return event_loop.exec();

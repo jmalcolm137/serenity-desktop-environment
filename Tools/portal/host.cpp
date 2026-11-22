@@ -23,6 +23,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <sys/syscall.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -117,9 +118,19 @@ struct AsyncCommand {
     Core::Process process;
     Function<void(Optional<ByteString>)> on_done;
     RefPtr<Core::Notifier> notifier;
+    RefPtr<Core::Notifier> reap_notifier;
     RefPtr<Core::Timer> reap_timer;
     StringBuilder buffer;
     int read_fd { -1 };
+    int pid_fd { -1 };
+
+    ~AsyncCommand()
+    {
+        if (reap_notifier)
+            reap_notifier->close();
+        if (pid_fd >= 0)
+            ::close(pid_fd);
+    }
 };
 
 Vector<NonnullOwnPtr<AsyncCommand>>& running_commands()
@@ -163,6 +174,27 @@ void reap_then_drop(AsyncCommand& command)
         Core::deferred_invoke([command_pointer] { drop_command(command_pointer); });
         return;
     }
+
+#ifdef SYS_pidfd_open
+    // Event-driven child exit notification (zero polling wakeups).
+    int pidfd = static_cast<int>(::syscall(SYS_pidfd_open, pid, 0));
+    if (pidfd >= 0) {
+        if (try_reap(pid)) {
+            ::close(pidfd);
+            Core::deferred_invoke([command_pointer] { drop_command(command_pointer); });
+            return;
+        }
+        command.pid_fd = pidfd;
+        command.reap_notifier = Core::Notifier::construct(pidfd, Core::Notifier::Type::Read);
+        command.reap_notifier->on_activation = [command_pointer, pid] {
+            if (!try_reap(pid))
+                return;
+            command_pointer->reap_notifier->close();
+            Core::deferred_invoke([command_pointer] { drop_command(command_pointer); });
+        };
+        return;
+    }
+#endif
 
     command.reap_timer = Core::Timer::create_repeating(50, [command_pointer, pid] {
         if (!try_reap(pid))
