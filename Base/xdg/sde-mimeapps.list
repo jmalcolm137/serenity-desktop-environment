@@ -1,0 +1,24 @@
+# Default MIME application associations for Serenity Desktop Environment (SDE).
+# Installed to /etc/xdg/sde-mimeapps.list. User overrides in
+# $XDG_CONFIG_HOME/sde-mimeapps.list or $XDG_CONFIG_HOME/mimeapps.list take
+# precedence per the freedesktop.org MIME Applications Associations spec.
+[Default Applications]
+text/plain=serenity-TextEditor.desktop;
+text/markdown=serenity-TextEditor.desktop;
+application/pdf=serenity-PDFViewer.desktop;
+image/png=serenity-ImageViewer.desktop;
+image/jpeg=serenity-ImageViewer.desktop;
+image/gif=serenity-ImageViewer.desktop;
+image/bmp=serenity-ImageViewer.desktop;
+image/webp=serenity-ImageViewer.desktop;
+image/svg+xml=serenity-ImageViewer.desktop;
+audio/wav=serenity-SoundPlayer.desktop;
+audio/mpeg=serenity-SoundPlayer.desktop;
+audio/ogg=serenity-SoundPlayer.desktop;
+audio/flac=serenity-SoundPlayer.desktop;
+video/mp4=serenity-VideoPlayer.desktop;
+video/webm=serenity-VideoPlayer.desktop;
+inode/directory=serenity-FileManager.desktop;
+text/html=serenity-Browser.desktop;
+x-scheme-handler/http=serenity-Browser.desktop;
+x-scheme-handler/https=serenity-Browser.desktop;

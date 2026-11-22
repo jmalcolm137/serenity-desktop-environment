@@ -228,6 +228,17 @@ set_target_properties(sde-autostart PROPERTIES
     BUILD_RPATH "${SERENITY_BUILD_DIR}/lib"
     INSTALL_RPATH "${SERENITY_BUILD_DIR}/lib")
 
+# sde-open: freedesktop.org MIME/URI opener backed by LibXDG (shared-mime-info +
+# mimeapps.list + DesktopEntry Exec= expansion).
+add_executable(sde-open sde-open/main.cpp)
+set_target_properties(sde-open PROPERTIES CXX_STANDARD 26 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+target_compile_options(sde-open PRIVATE -fno-exceptions -Wno-literal-suffix -O2 -Wall)
+target_link_options(sde-open PRIVATE "LINKER:--as-needed")
+target_link_libraries(sde-open PRIVATE sde-xdg ${LAGOM_main})
+set_target_properties(sde-open PROPERTIES
+    BUILD_RPATH "${SERENITY_BUILD_DIR}/lib"
+    INSTALL_RPATH "${SERENITY_BUILD_DIR}/lib")
+
 # One target for the whole group (scripts/build-tools.sh). The portals and the
 # test clients are scripts/build-tools.sh's "SDE tools"; the Lagom-linked portal
 # backends come with it.
@@ -235,4 +246,4 @@ add_custom_target(sde-tools DEPENDS
     sde-idle sde-dpms sde-screenshot native-app-test wayland-fuzz-test layer-fuzz-test data-device-fuzz-test
     ext-workspace-test output-management-test capture-probe screencast-consumer
     virtual-input-test sde-settings-portal xdg-desktop-portal-serenity sde-notifications sde-lock sde-polkit-agent
-    sde-autostart)
+    sde-autostart sde-open)

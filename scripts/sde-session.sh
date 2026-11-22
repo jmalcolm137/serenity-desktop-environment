@@ -71,7 +71,16 @@ SDE_XDG_DATA="$(session_state_dir)/xdg-data"
 if [[ "${SDE_XDG_DATA_UPDATE:-1}" == "1" ]]; then
     "${SDE_ROOT}/scripts/generate-desktop-entries.sh" --output "$SDE_XDG_DATA" >/dev/null 2>&1 || true
 fi
-export XDG_DATA_DIRS="$SDE_XDG_DATA${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+# Preserve the XDG Base Directory default (/usr/local/share:/usr/share) when
+# XDG_DATA_DIRS is unset: setting a non-empty value without it hides all host
+# /usr/share/applications entries from the Taskbar XDG menu and portals.
+_base_xdg_data_dirs="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+for _flatpak_dir in "$HOME/.local/share/flatpak/exports/share" "/var/lib/flatpak/exports/share"; do
+    if [[ -d "$_flatpak_dir" && ":$_base_xdg_data_dirs:" != *":$_flatpak_dir:"* ]]; then
+        _base_xdg_data_dirs="$_base_xdg_data_dirs:$_flatpak_dir"
+    fi
+done
+export XDG_DATA_DIRS="$SDE_XDG_DATA:$_base_xdg_data_dirs"
 export SDE_MENU_DIR="${SDE_MENU_DIR:-$SDE_ROOT/Base/xdg/menus}"
 
 # Assign a session variable from the file only when the environment did not set it.

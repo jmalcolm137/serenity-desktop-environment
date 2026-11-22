@@ -95,7 +95,7 @@ install_if_executable "$SDE_ROOT/build/AuthDialog/sde-auth-dialog"
 for applet in "$SDE_ROOT"/build/Applets/*; do
     [[ -f "$applet" && -x "$applet" ]] && install_if_executable "$applet"
 done
-for tool in sde-idle sde-dpms sde-settings-portal xdg-desktop-portal-serenity sde-notifications sde-lock sde-polkit-agent sde-autostart; do
+for tool in sde-idle sde-dpms sde-settings-portal xdg-desktop-portal-serenity sde-notifications sde-lock sde-polkit-agent sde-autostart sde-open; do
     install_if_executable "$SDE_ROOT/build/tools/$tool"
 done
 # The portal's LibGUI dialogs are spawned by the backend through the app bin dir.
@@ -207,10 +207,40 @@ for script in \
     install -m 0755 "$SDE_ROOT/scripts/$script" "$SCRIPTS/$script"
 done
 
-# The .desktop entries for the Serenity apps: the Taskbar's XDG menu and host
-# application menus read $XDG_DATA_DIRS/applications.
+# Wrapper so SerenityOS apps launch cleanly from other Linux desktops (KDE,
+# GNOME, XFCE, ...) where SERENITY_RES_ROOT / LD_LIBRARY_PATH are not set.
+cat > "$BIN/sde-app" <<'APP_WRAPPER'
+#!/bin/sh
+self="$(readlink -f "$0")"
+prefix="$(CDPATH= cd -- "$(dirname -- "$self")/.." && pwd)"
+export SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$prefix/share/res}"
+export LIBWM_APP_BIN_DIR="${LIBWM_APP_BIN_DIR:-$prefix/bin}"
+export LD_LIBRARY_PATH="$prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+app="${1:?sde-app needs an application name}"
+shift
+exec "$prefix/bin/$app" "$@"
+APP_WRAPPER
+chmod 0755 "$BIN/sde-app"
+
+# The .desktop entries for the Serenity apps: installed into both the SDE prefix
+# and /usr/share/applications (with serenity- prefix, host Exec/TryExec via
+# sde-app, and hicolor icons) so other Linux desktops discover and launch them.
 "$SDE_ROOT/scripts/generate-desktop-entries.sh" \
     --source "$SERENITY/Base/res/apps" --output "$SHARE" >/dev/null 2>&1 || true
+install -d "$DESTDIR/usr/share/applications" "$DESTDIR/usr/share/icons/hicolor"
+"$SDE_ROOT/scripts/generate-desktop-entries.sh" \
+    --source "$SERENITY/Base/res/apps" \
+    --res-root "$SERENITY/Base/res" \
+    --output "$DESTDIR/usr/share" \
+    --bin-dir "$PREFIX/bin" \
+    --launcher "$PREFIX/bin/sde-app" \
+    --id-prefix "serenity-" \
+    --icon-dir "$DESTDIR/usr/share/icons/hicolor" >/dev/null 2>&1 || true
+
+# Default SDE MIME application associations (/etc/xdg/sde-mimeapps.list).
+install -d "$DESTDIR/etc/xdg"
+install -m 0644 "$SDE_ROOT/Base/xdg/sde-mimeapps.list" \
+    "$DESTDIR/etc/xdg/sde-mimeapps.list"
 
 # The SDE's default freedesktop menu file and its .directory entries. The
 # Taskbar prefers a host ${XDG_MENU_PREFIX}applications.menu and falls back here.

@@ -19,7 +19,10 @@ endforeach()
 
 add_library(sde-xdg STATIC
     BaseDirs.cpp
-    Autostart.cpp)
+    Autostart.cpp
+    DesktopEntry.cpp
+    MimeDatabase.cpp
+    MimeApps.cpp)
 
 target_include_directories(sde-xdg PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/.."
