@@ -118,6 +118,12 @@ void ChromeNode::set_rect(Gfx::IntRect rect)
 void ChromeNode::set_visible(bool visible)
 {
     wlr_scene_node_set_enabled(&m_buffer->node, visible);
+    if (!visible) {
+        // Drop the pixel backing store while hidden so transient overlays
+        // (switcher, tile preview, window menu, HUD, cursor highlight) do not
+        // stay resident in RAM for the rest of the session.
+        wlr_scene_buffer_set_buffer(m_buffer, nullptr);
+    }
 }
 
 bool ChromeNode::is_visible() const

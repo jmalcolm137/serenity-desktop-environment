@@ -187,56 +187,13 @@ void frame_buffers_set_visible(FrameBuffers& buffers, bool visible)
 {
     if (buffers.tree)
         wlr_scene_node_set_enabled(&buffers.tree->node, visible);
-}
-
-static void frame_buffers_update(FrameBuffers& buffers, wlr_scene_tree* parent, Gfx::Bitmap const& painted_frame,
-    Gfx::IntSize frame_size, int frame_left, int frame_top, int frame_right, int frame_bottom, Gfx::Color background)
-{
-    if (frame_size.is_empty())
-        return;
-
-    if (!buffers.tree) {
-        buffers.tree = wlr_scene_tree_create(parent);
-        wlr_scene_node_lower_to_bottom(&buffers.tree->node);
-    }
-    wlr_scene_node_set_enabled(&buffers.tree->node, true);
-
-    if (!buffers.background) {
-        float const transparent[4] = { 0, 0, 0, 0 };
-        buffers.background = wlr_scene_rect_create(buffers.tree, frame_size.width(), frame_size.height(), transparent);
-    }
-    wlr_scene_rect_set_size(buffers.background, frame_size.width(), frame_size.height());
-    set_scene_rect_color(buffers.background, background);
-    wlr_scene_node_set_position(&buffers.background->node, 0, 0);
-
-    auto update_strip = [&](wlr_scene_buffer*& node, Gfx::IntRect rect, int x, int y) {
-        if (!node)
-            node = wlr_scene_buffer_create(buffers.tree, nullptr);
-        if (rect.is_empty()) {
-            wlr_scene_node_set_enabled(&node->node, false);
-            return;
+    if (!visible) {
+        // Release strip pixel buffers while hidden (e.g. fullscreen or CSD).
+        for (wlr_scene_buffer* strip : { buffers.top, buffers.bottom, buffers.left, buffers.right }) {
+            if (strip)
+                wlr_scene_buffer_set_buffer(strip, nullptr);
         }
-        auto cropped = painted_frame.cropped(rect);
-        if (cropped.is_error()) {
-            wlr_scene_node_set_enabled(&node->node, false);
-            return;
-        }
-        auto* buffer = bitmap_buffer_create(cropped.release_value());
-        wlr_scene_buffer_set_buffer(node, buffer);
-        wlr_buffer_drop(buffer);
-        wlr_scene_node_set_position(&node->node, x, y);
-        wlr_scene_buffer_set_dest_size(node, rect.width(), rect.height());
-        use_nearest_filter(&node->node);
-        wlr_scene_node_set_enabled(&node->node, true);
-    };
-
-    int const content_height = max(0, frame_size.height() - frame_top - frame_bottom);
-    update_strip(buffers.top, { 0, 0, frame_size.width(), frame_top }, 0, 0);
-    update_strip(buffers.bottom, { 0, frame_size.height() - frame_bottom, frame_size.width(), frame_bottom },
-        0, frame_size.height() - frame_bottom);
-    update_strip(buffers.left, { 0, frame_top, frame_left, content_height }, 0, frame_top);
-    update_strip(buffers.right, { frame_size.width() - frame_right, frame_top, frame_right, content_height },
-        frame_size.width() - frame_right, frame_top);
+    }
 }
 
 FramePaintResult paint_and_update_frame_buffers(
@@ -253,51 +210,106 @@ FramePaintResult paint_and_update_frame_buffers(
     auto buttons = theme.layout_buttons(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, params.content_rect, *g_palette, 3, false);
     result.titlebar_icon_rect = theme.titlebar_icon_rect(Gfx::WindowTheme::WindowType::Normal, Gfx::WindowTheme::WindowMode::Other, params.content_rect, *g_palette);
     Gfx::IntRect leftmost_button = buttons.is_empty() ? Gfx::IntRect { } : buttons.last();
+    for (auto const& button_rect : buttons)
+        result.button_rects.append(button_rect);
 
     auto state = params.active ? Gfx::WindowTheme::WindowState::Active : Gfx::WindowTheme::WindowState::Inactive;
     if (params.highlighted)
         state = Gfx::WindowTheme::WindowState::Highlighted;
 
-    auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, params.frame_size, output_scale()).release_value_but_fixme_should_propagate_errors();
-    Gfx::Painter painter(*bitmap);
-    painter.fill_rect(Gfx::IntRect { { }, params.frame_size }, g_palette->window());
-    theme.paint_normal_frame(painter, state, Gfx::WindowTheme::WindowMode::Other, params.content_rect, params.title, icon, *g_palette, leftmost_button, 0, false);
-
-    float icon_opacity = params.active ? 1.0f : (g_palette->window_title_button_inactive_alpha() / 255.0f);
-    for (size_t index = 0; index < buttons.size(); ++index) {
-        auto button_rect = buttons[index];
-        result.button_rects.append(button_rect);
-        bool pressed = params.pressed_button == static_cast<int>(index);
-        bool hovered = params.hovered_button == static_cast<int>(index);
-        if (!g_palette->title_buttons_icon_only())
-            Gfx::StylePainter::paint_button(painter, button_rect, *g_palette, Gfx::ButtonStyle::Normal, pressed, hovered);
-        RefPtr<Gfx::Bitmap> button_icon;
-        if (index == 0)
-            button_icon = g_frame_icons.close;
-        else if (index == 1)
-            button_icon = params.maximized ? g_frame_icons.restore : g_frame_icons.maximize;
-        else if (index == 2)
-            button_icon = g_frame_icons.minimize;
-        if (button_icon) {
-            auto icon_location = button_rect.center().translated(-(button_icon->width() / 2), -(button_icon->height() / 2));
-            if (pressed)
-                icon_location.translate_by(1, 1);
-            painter.blit(icon_location, *button_icon, button_icon->rect(), icon_opacity);
+    float const icon_opacity = params.active ? 1.0f : (g_palette->window_title_button_inactive_alpha() / 255.0f);
+    auto paint_frame = [&](Gfx::Painter& painter, bool include_buttons) {
+        painter.fill_rect(Gfx::IntRect { { }, params.frame_size }, g_palette->window());
+        theme.paint_normal_frame(painter, state, Gfx::WindowTheme::WindowMode::Other, params.content_rect, params.title, icon, *g_palette, leftmost_button, 0, false);
+        if (!include_buttons)
+            return;
+        for (size_t index = 0; index < buttons.size(); ++index) {
+            auto button_rect = buttons[index];
+            bool pressed = params.pressed_button == static_cast<int>(index);
+            bool hovered = params.hovered_button == static_cast<int>(index);
+            if (!g_palette->title_buttons_icon_only())
+                Gfx::StylePainter::paint_button(painter, button_rect, *g_palette, Gfx::ButtonStyle::Normal, pressed, hovered);
+            RefPtr<Gfx::Bitmap> button_icon;
+            if (index == 0)
+                button_icon = g_frame_icons.close;
+            else if (index == 1)
+                button_icon = params.maximized ? g_frame_icons.restore : g_frame_icons.maximize;
+            else if (index == 2)
+                button_icon = g_frame_icons.minimize;
+            if (button_icon) {
+                auto icon_location = button_rect.center().translated(-(button_icon->width() / 2), -(button_icon->height() / 2));
+                if (pressed)
+                    icon_location.translate_by(1, 1);
+                painter.blit(icon_location, *button_icon, button_icon->rect(), icon_opacity);
+            }
         }
+    };
+
+    if (!buffers.tree) {
+        buffers.tree = wlr_scene_tree_create(parent);
+        wlr_scene_node_lower_to_bottom(&buffers.tree->node);
     }
+    wlr_scene_node_set_enabled(&buffers.tree->node, true);
+
+    if (!buffers.background) {
+        float const transparent[4] = { 0, 0, 0, 0 };
+        buffers.background = wlr_scene_rect_create(buffers.tree, params.frame_size.width(), params.frame_size.height(), transparent);
+    }
+    wlr_scene_rect_set_size(buffers.background, params.frame_size.width(), params.frame_size.height());
+    set_scene_rect_color(buffers.background, g_palette->window());
+    wlr_scene_node_set_position(&buffers.background->node, 0, 0);
+
+    // Paint directly into each decoration strip using Painter translation, so
+    // we never allocate a full-window scratch bitmap (which would be ~33 MB at
+    // 4K/2x HiDPI) or perform a second cropped() copy.
+    int const scale = output_scale();
+    auto paint_strip = [&](wlr_scene_buffer*& node, Gfx::IntRect rect, bool include_buttons) {
+        if (!node)
+            node = wlr_scene_buffer_create(buffers.tree, nullptr);
+        if (rect.is_empty()) {
+            wlr_scene_node_set_enabled(&node->node, false);
+            wlr_scene_buffer_set_buffer(node, nullptr);
+            return;
+        }
+        auto strip_or_error = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, rect.size(), scale);
+        if (strip_or_error.is_error()) {
+            wlr_scene_node_set_enabled(&node->node, false);
+            wlr_scene_buffer_set_buffer(node, nullptr);
+            return;
+        }
+        auto strip = strip_or_error.release_value();
+        Gfx::Painter painter(*strip);
+        painter.translate(-rect.location());
+        paint_frame(painter, include_buttons);
+
+        auto* buffer = bitmap_buffer_create(move(strip));
+        wlr_scene_buffer_set_buffer(node, buffer);
+        wlr_buffer_drop(buffer);
+        wlr_scene_node_set_position(&node->node, rect.x(), rect.y());
+        wlr_scene_buffer_set_dest_size(node, rect.width(), rect.height());
+        use_nearest_filter(&node->node);
+        wlr_scene_node_set_enabled(&node->node, true);
+    };
+
+    int const content_height = max(0, params.frame_size.height() - params.frame_top - params.frame_bottom);
+    paint_strip(buffers.top, { 0, 0, params.frame_size.width(), params.frame_top }, true);
+    paint_strip(buffers.bottom, { 0, params.frame_size.height() - params.frame_bottom, params.frame_size.width(), params.frame_bottom }, false);
+    paint_strip(buffers.left, { 0, params.frame_top, params.frame_left, content_height }, false);
+    paint_strip(buffers.right, { params.frame_size.width() - params.frame_right, params.frame_top, params.frame_right, content_height }, false);
 
     if (params.dump_path && *params.dump_path) {
-        if (auto encoded = Gfx::PNGWriter::encode(*bitmap); !encoded.is_error()) {
-            if (auto file = Core::File::open(StringView { params.dump_path, strlen(params.dump_path) }, Core::File::OpenMode::Write); !file.is_error()) {
-                if (auto write_result = file.value()->write_until_depleted(encoded.value()); write_result.is_error())
-                    warnln("WindowServer: could not write the frame dump: {}", write_result.error());
+        if (auto dump_bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, params.frame_size, scale); !dump_bitmap.is_error()) {
+            Gfx::Painter painter(*dump_bitmap.value());
+            paint_frame(painter, true);
+            if (auto encoded = Gfx::PNGWriter::encode(*dump_bitmap.value()); !encoded.is_error()) {
+                if (auto file = Core::File::open(StringView { params.dump_path, strlen(params.dump_path) }, Core::File::OpenMode::Write); !file.is_error()) {
+                    if (auto write_result = file.value()->write_until_depleted(encoded.value()); write_result.is_error())
+                        warnln("WindowServer: could not write the frame dump: {}", write_result.error());
+                }
             }
         }
     }
 
-    frame_buffers_update(buffers, parent, *bitmap,
-        params.frame_size, params.frame_left, params.frame_top, params.frame_right, params.frame_bottom,
-        g_palette->window());
     return result;
 }
 
