@@ -20,6 +20,7 @@
 #include <LibXDG/DesktopEntry.h>
 #include <LibXDG/MimeApps.h>
 #include <LibXDG/MimeDatabase.h>
+#include <LibXDG/RecentlyUsed.h>
 
 #include <fcntl.h>
 #include <stdlib.h>
@@ -110,5 +111,6 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
         return 0;
     }
 
+    (void)XDG::record_recently_used(target, mime, app->name, app->exec);
     return spawn_desktop_entry(app.value(), targets);
 }

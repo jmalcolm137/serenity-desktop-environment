@@ -1,6 +1,6 @@
 # Freedesktop.org Compliance Plan
 
-**Status:** In progress (Phases F1–F4 landed) · **Date:** 2026-11-22
+**Status:** Implemented (Phases F1–F5 landed) · **Date:** 2026-11-22
 **Related:** [`03-engineering-conventions.md`](03-engineering-conventions.md) ·
 [`06-service-layering.md`](06-service-layering.md) ·
 [`12-r4.3-portable-session-integration.md`](12-r4.3-portable-session-integration.md) ·
@@ -316,7 +316,7 @@ managers.
 
 ---
 
-### Phase F5 — Polish: Recently Used Files, Sound Themes & Localized User Dirs
+### Phase F5 — Polish: Recently Used Files, Sound Themes & Localized User Dirs *(Implemented)*
 **Goal:** Complete the long tail of desktop standards.
 **SerenityOS upstream patches:** 0.
 
@@ -362,4 +362,4 @@ managers.
 | 2 | **F2** (Cross-desktop app menu & `.desktop` interop + `shared-mime-info` + `mimeapps.list` + full `.desktop` exec) | **Done** | Taskbar menu shows all Linux + Serenity apps; Serenity apps appear with real icons and launch cleanly in KDE/GNOME/XFCE; clicking any file/URL opens the right default app | Medium | 0 |
 | 3 | **F3** (`XDG::IconTheme` + `StatusNotifierItem` tray + live XDG menu) | **Done** | Real icons for all Linux apps + Discord/Steam/Fcitx5/Nextcloud tray icons in Taskbar | Medium | 0 |
 | 4 | **F4** (Trash, FileManager Trash hook, Notifications v1.2 markup, keyring wiring) | **Done** | Shared Trash with host Linux file managers + FileManager Delete -> XDG Trash; cleaner notifications & keyring unlock | Medium | 1 small hook (`patches/0030`) |
-| 5 | **F5** (`recently-used.xbel`, Sound Theme, `user-dirs.locale`) | **Next** | Long-tail desktop polish | Small | 0 |
+| 5 | **F5** (`recently-used.xbel`, Sound Theme, `user-dirs.locale`) | **Done** | Long-tail desktop polish | Small | 0 |

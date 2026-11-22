@@ -55,6 +55,13 @@ read_dir() {
 
 update() {
     mkdir -p "$config"
+    # Prefer the host's xdg-user-dirs-update when installed so localized
+    # directory names (user-dirs.locale) are handled per the specification.
+    if [[ "${SDE_USER_DIRS_BUILTIN:-0}" != "1" ]] && command -v xdg-user-dirs-update >/dev/null 2>&1; then
+        if xdg-user-dirs-update >/dev/null 2>&1; then
+            return 0
+        fi
+    fi
     if [[ ! -f "$file" ]]; then
         {
             printf '%s\n' '# This file is written by sde-user-dirs.sh (XDG User Directories).'

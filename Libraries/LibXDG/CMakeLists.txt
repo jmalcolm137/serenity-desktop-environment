@@ -24,7 +24,9 @@ add_library(sde-xdg STATIC
     MimeDatabase.cpp
     MimeApps.cpp
     IconTheme.cpp
-    Trash.cpp)
+    Trash.cpp
+    RecentlyUsed.cpp
+    SoundTheme.cpp)
 
 target_include_directories(sde-xdg PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/.."
