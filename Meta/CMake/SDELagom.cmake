@@ -136,3 +136,5 @@ if (NOT SDE_PREBUILT_FRAMEWORK)
         USES_TERMINAL
         VERBATIM)
 endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/SDEGuiApp.cmake")
