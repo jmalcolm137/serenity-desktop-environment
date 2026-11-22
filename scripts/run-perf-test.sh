@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ci-serial: true
 # Headless performance / latency budget test (R6, N3).
 #
 # N3's budget: "low, predictable input latency; smooth 60 Hz; a software

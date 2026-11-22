@@ -13,6 +13,12 @@
 # just works.
 set -euo pipefail
 
+# When run-all-tests.sh --no-build is used (e.g. right after build-full-sde.sh),
+# skip redundant configure/build invocations inside individual test scripts.
+if [[ "${SDE_TEST_NO_BUILD:-0}" == 1 ]]; then
+    exit 0
+fi
+
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-$SDE_ROOT/build}"
 JOBS="${JOBS:-$(nproc)}"
@@ -22,6 +28,14 @@ LIBGUI_WAYLAND_ROOT="${LIBGUI_WAYLAND_ROOT:-$SDE_ROOT/../libgui-wayland}"
 SERENITY_SRC="${SERENITY_SRC:-$LIBGUI_WAYLAND_ROOT/serenity}"
 LAGOM_BUILD_DIR="${SERENITY_BUILD_DIR:-${BUILD:-$LIBGUI_WAYLAND_ROOT/build/lagom}}"
 WLROOTS_SRC="${WLROOTS_SRC:-$SDE_ROOT/third_party/wlroots}"
+
+# Serialize CMake/Ninja access to BUILD_DIR so parallel test workers cannot race
+# on CMakeCache.txt, build.ninja or .ninja_log.
+mkdir -p "$BUILD_DIR"
+if command -v flock >/dev/null 2>&1; then
+    exec 9>"$BUILD_DIR/.sde-build.lock"
+    flock 9
+fi
 
 if [[ ! -f "$WLROOTS_SRC/install/lib/pkgconfig/wlroots-0.20.pc" ]]; then
     "$SDE_ROOT/scripts/fetch-wlroots.sh"

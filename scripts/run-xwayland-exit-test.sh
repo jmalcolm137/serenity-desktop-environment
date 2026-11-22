@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # ci-tier: full
+# ci-serial: true
 # XWayland regression (R5): an X11 client exiting must NOT abort the compositor.
 #
 # wlroots' xwayland_surface_destroy() asserts that every listener list on the

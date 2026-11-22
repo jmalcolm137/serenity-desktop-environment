@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ci-serial: true
 # Session memory budget test (R6, docs/25-performance.md §4).
 #
 # The compositor's performance meter reports the memory of every client it has

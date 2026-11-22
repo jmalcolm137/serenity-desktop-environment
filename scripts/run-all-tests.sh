@@ -23,13 +23,24 @@
 #
 #     # ci-timeout: 1800
 #
+# A test that measures timing/memory budgets or touches global host state
+# (Xwayland, valgrind, sanitizer builds) opts out of parallel execution with:
+#
+#     # ci-serial: true
+#
 # Usage:
 #   scripts/run-all-tests.sh [--tier fast|full|all] [--only <glob>] [--skip <glob>]
+#                            [--jobs <N|auto>] [--no-build]
 #                            [--timeout <seconds>] [--log-dir <dir>] [--list]
 #
 #   --tier fast|full|all  which tests to run (default: fast)
 #   --only <glob>         restrict to matching names (repeatable)
 #   --skip <glob>         exclude matching names (repeatable)
+#   -j, --jobs <N|auto>   max concurrent tests (default: $SDE_TEST_JOBS or 1;
+#                         `auto` uses nproc). Tests marked `# ci-serial: true`
+#                         always run alone after the parallel pool finishes.
+#   --no-build            export SDE_TEST_NO_BUILD=1 so tests skip per-test
+#                         build-target.sh calls (use after build-full-sde.sh)
 #   --timeout <seconds>   per-test timeout (default: 300)
 #   --log-dir <dir>       keep each test's output there (default: a temp dir)
 #   --list                print the selection with its tiers and exit
@@ -50,6 +61,8 @@ DEFAULT_TIMEOUT=300
 
 TIER="fast"
 TIMEOUT="$DEFAULT_TIMEOUT"
+JOBS="${SDE_TEST_JOBS:-1}"
+NO_BUILD=0
 LOG_DIR=""
 LIST_ONLY=0
 CHECK_GUARD=0
@@ -61,11 +74,13 @@ while [[ $# -gt 0 ]]; do
         --tier) TIER="${2:?--tier needs a value}"; shift 2 ;;
         --only) ONLY+=("${2:?--only needs a glob}"); shift 2 ;;
         --skip) SKIP+=("${2:?--skip needs a glob}"); shift 2 ;;
+        -j|--jobs) JOBS="${2:?--jobs needs a value}"; shift 2 ;;
+        --no-build) NO_BUILD=1; shift ;;
         --timeout) TIMEOUT="${2:?--timeout needs a value}"; shift 2 ;;
         --log-dir) LOG_DIR="${2:?--log-dir needs a path}"; shift 2 ;;
         --list) LIST_ONLY=1; shift ;;
         --check-guard) CHECK_GUARD=1; shift ;;
-        -h|--help) sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,46p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -75,6 +90,10 @@ case "$TIER" in
     *) echo "--tier must be fast, full or all (got '$TIER')" >&2; exit 2 ;;
 esac
 [[ "$TIMEOUT" =~ ^[0-9]+$ ]] || { echo "--timeout must be a number (got '$TIMEOUT')" >&2; exit 2; }
+if [[ "$JOBS" == "auto" ]]; then
+    JOBS="$(nproc 2>/dev/null || echo 1)"
+fi
+[[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || { echo "--jobs must be a positive integer or 'auto' (got '$JOBS')" >&2; exit 2; }
 
 tier_of() {
     local marker
@@ -90,6 +109,10 @@ timeout_of() {
     else
         echo "$TIMEOUT"
     fi
+}
+
+is_serial() {
+    grep -qE '^# ci-serial:[[:space:]]*true([[:space:]]|$)' "$1" 2>/dev/null
 }
 
 matches_any() { # $1 = name, rest = globs
@@ -235,15 +258,6 @@ if [[ -z "$LOG_DIR" ]]; then
 fi
 mkdir -p "$LOG_DIR"
 
-# A private runtime directory for the whole run. In a container the one inherited
-# from the runner may not exist or may not be writable, and then *every* test's
-# compositor fails to create its Wayland socket — the single largest cause of
-# failure in the first CI run ("could not add socket 'sde-…'"). The tests use it for
-# their sockets and pass the name to their clients, so they need nothing else.
-export XDG_RUNTIME_DIR="$RUN_DIR/runtime"
-mkdir -p "$XDG_RUNTIME_DIR"
-chmod 700 "$XDG_RUNTIME_DIR"
-
 # The backend every test's compositor should use. A CI container has no DRM device
 # and no libinput, so a compositor that autoselects the real backend cannot start at
 # all ("WindowServer: failed to create wlr_backend", and the test's client then
@@ -267,6 +281,10 @@ export SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$LIBGUI_WAYLAND_ROOT/serenity/Bas
 # a test is run by hand. Here they are already set (per test, below), so say so.
 export SDE_TEST_ENV=runner
 
+if [[ "$NO_BUILD" -eq 1 ]]; then
+    export SDE_TEST_NO_BUILD=1
+fi
+
 # Nothing a test starts may reach the live session's files, sockets or services.
 # The session exports these to everything it runs — including the shell this driver
 # is launched from — so drop them and give the tests their own.
@@ -275,48 +293,45 @@ unset SDE_HEARTBEAT_FILE SDE_SESSION_LOG SDE_SESSION_DISPLAY LIBWM_WM_PORTAL_PAT
       SDE_SESSION_WATCHDOG_SECONDS SDE_SESSION_SAFE_MODE SDE_LOCK_CMD \
       SDE_SESSION_IDLE_DPMS_SECONDS SDE_SESSION_COMPOSITOR_SAFE
 
-started_at="$(date +%s)"
-passed=0; failed=0; skipped=0; timed_out=0
-results=()
+# Clean up worker subshells and the temporary runtime dir on Ctrl+C / SIGTERM.
+active_pids=()
+cleanup_workers() {
+    local pid
+    for pid in "${active_pids[@]}"; do
+        kill -- -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+    done
+    wait 2>/dev/null || true
+    rm -rf "$RUN_DIR"
+    exit 130
+}
+trap cleanup_workers INT TERM
 
-echo "=== SDE test suite: tier '$TIER', ${#selected[@]} test(s), ${TIMEOUT}s default per test ==="
-echo
+run_one_test() {
+    local idx="$1" name="$2"
+    local log="$LOG_DIR/$name.log"
+    local res_file="$RUN_DIR/res-$idx"
 
-for name in "${selected[@]}"; do
-    log="$LOG_DIR/$name.log"
-    # Give every test its own session directory. The shim's LibWM *defers* to a
-    # process already listening on the session's portal path, so without this a
-    # test run on a machine with a live session is answered by that session's
-    # services instead of the compositor the test started (the failure mode that
-    # made `run-audio-test.sh` red until it isolated itself). Tests that need
-    # their own path still set it and win.
-    LIBWM_SESSION_DIR="$RUN_DIR/session-$name"
-    # The portal directory has to exist before a service is spawned there: LibWM
-    # binds the listening socket for a spawned service (AudioServer, NotificationServer)
-    # at "$LIBWM_SESSION_DIR/portal/<name>" and gives up silently if the bind fails, so a
-    # missing directory reads as "the service is not there".
-    mkdir -p "$LIBWM_SESSION_DIR/portal"
-    export LIBWM_SESSION_DIR
+    # Give every test its own short private runtime, session, state and
+    # heartbeat paths so concurrent tests cannot collide on Wayland sockets,
+    # theme/font brokers or portal directories (and socket paths stay well
+    # under the 108-byte sockaddr_un.sun_path limit).
+    local test_runtime="$RUN_DIR/r-$idx"
+    local test_session="$RUN_DIR/s-$idx"
+    local test_state="$RUN_DIR/st-$idx"
+    local test_heartbeat="$RUN_DIR/h-$idx"
+    mkdir -p "$test_runtime" "$test_session/portal" "$test_state"
+    chmod 700 "$test_runtime"
 
-    # And no X server. Xwayland's display names live in the global
-    # /tmp/.X11-unix, so a test compositor that starts one competes with a live
-    # session's — which is how a suite run killed the session's Xwayland and, from
-    # there, the session (docs/26-ci.md §6). Only the tests that exercise X11 ask
-    # for it back (they unset this and skip when a session is live).
-    export SDE_XWAYLAND=0
-
-    # Do not let the session's XDG updaters (user directories and the Serenity
-    # apps' .desktop entries) write to the developer home/config while a test runs
-    # a session.
-    export SDE_USER_DIRS_UPDATE=0
-    export SDE_XDG_DATA_UPDATE=0
-
-    # And its own liveness heartbeat, so a test that runs a supervisor — or a
-    # compositor that stops writing one — can never stall the session's watchdog.
-    export SDE_HEARTBEAT_FILE="$RUN_DIR/heartbeat-$name"
-
+    local begin elapsed status rc
     begin="$(date +%s)"
-    if timeout -k 10 "$(timeout_of "$SDE_ROOT/scripts/$name")" bash "$SDE_ROOT/scripts/$name" > "$log" 2>&1; then
+    if XDG_RUNTIME_DIR="$test_runtime" \
+        LIBWM_SESSION_DIR="$test_session" \
+        SDE_STATE_DIR="$test_state" \
+        SDE_HEARTBEAT_FILE="$test_heartbeat" \
+        SDE_XWAYLAND=0 \
+        SDE_USER_DIRS_UPDATE=0 \
+        SDE_XDG_DATA_UPDATE=0 \
+        timeout -k 10 "$(timeout_of "$SDE_ROOT/scripts/$name")" bash "$SDE_ROOT/scripts/$name" > "$log" 2>&1; then
         status="PASS"
     else
         rc=$?
@@ -334,14 +349,67 @@ for name in "${selected[@]}"; do
         status="SKIP"
     fi
 
+    printf '%s|%d|%s\n' "$status" "$elapsed" "$name" > "$res_file"
+    printf '%-8s %4ds  %s\n' "$status" "$elapsed" "$name"
+}
+
+started_at="$(date +%s)"
+passed=0; failed=0; skipped=0; timed_out=0
+results=()
+
+parallel_idxs=()
+serial_idxs=()
+for idx in "${!selected[@]}"; do
+    name="${selected[$idx]}"
+    if [[ "$JOBS" -gt 1 ]] && ! is_serial "$SDE_ROOT/scripts/$name"; then
+        parallel_idxs+=("$idx")
+    else
+        serial_idxs+=("$idx")
+    fi
+done
+
+echo "=== SDE test suite: tier '$TIER', ${#selected[@]} test(s), jobs=$JOBS, ${TIMEOUT}s default per test ==="
+echo
+
+if [[ ${#parallel_idxs[@]} -gt 0 ]]; then
+    running=0
+    for idx in "${parallel_idxs[@]}"; do
+        name="${selected[$idx]}"
+        (
+            run_one_test "$idx" "$name"
+        ) &
+        active_pids+=("$!")
+        running=$((running + 1))
+        if [[ "$running" -ge "$JOBS" ]]; then
+            wait -n 2>/dev/null || true
+            running=$((running - 1))
+        fi
+    done
+    wait 2>/dev/null || true
+    active_pids=()
+fi
+
+for idx in "${serial_idxs[@]}"; do
+    run_one_test "$idx" "${selected[$idx]}"
+done
+
+trap - INT TERM
+
+for idx in "${!selected[@]}"; do
+    res_file="$RUN_DIR/res-$idx"
+    if [[ -f "$res_file" ]]; then
+        entry="$(<"$res_file")"
+    else
+        entry="FAIL|0|${selected[$idx]}"
+    fi
+    IFS='|' read -r status elapsed name <<< "$entry"
     case "$status" in
         PASS) passed=$((passed + 1)) ;;
         SKIP) skipped=$((skipped + 1)) ;;
         TIMEOUT) timed_out=$((timed_out + 1)) ;;
         *) failed=$((failed + 1)) ;;
     esac
-    printf '%-8s %4ds  %s\n' "$status" "$elapsed" "$name"
-    results+=("$status|$elapsed|$name")
+    results+=("$entry")
 done
 
 total_elapsed=$(( $(date +%s) - started_at ))

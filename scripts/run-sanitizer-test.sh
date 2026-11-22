@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # ci-tier: full
+# ci-serial: true
 # Headless sanitizer run: build the compositor with ASan/UBSan and exercise it
 # with the R1 smoke test.
 #

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # ci-tier: full
+# ci-serial: true
 # XWayland test (R5): with [Compositor] XWayland left on (default), an X11 client
 # runs and maps a window; with XWayland=false the compositor starts no X server
 # (no DISPLAY). Runs headless.

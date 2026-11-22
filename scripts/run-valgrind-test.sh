@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # ci-tier: full
+# ci-serial: true
 # Memcheck the compositor through a complete headless start/map/shutdown.
 #
 # The test is deliberately short: Valgrind's value here is the teardown path
