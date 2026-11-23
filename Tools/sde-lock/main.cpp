@@ -536,6 +536,23 @@ void App::lock_locked(void* data, ext_session_lock_v1* lock)
     auto& app = *static_cast<App*>(data);
     app.m_locked = true;
     app.mark_all_dirty();
+
+    // Clear any session-cached polkit passwords when the screen locks.
+    if (auto const* runtime_dir = getenv("XDG_RUNTIME_DIR"); runtime_dir && *runtime_dir) {
+        auto pid_path = ByteString::formatted("{}/sde-polkit-agent.pid", runtime_dir);
+        int fd = ::open(pid_path.characters(), O_RDONLY | O_CLOEXEC);
+        if (fd >= 0) {
+            char buf[32] {};
+            ssize_t n = ::read(fd, buf, sizeof(buf) - 1);
+            ::close(fd);
+            if (n > 0) {
+                auto pid = StringView { buf, static_cast<size_t>(n) }.trim_whitespace().to_number<pid_t>();
+                if (pid.has_value() && *pid > 1)
+                    ::kill(*pid, SIGUSR1);
+            }
+        }
+    }
+
     dbgln("sde-lock: locked");
 }
 

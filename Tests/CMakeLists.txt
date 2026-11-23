@@ -161,8 +161,11 @@ add_sde_test(filemodel-thumbnail-test SOURCE FileSystemModelThumbnailTest.cpp
 add_sde_test(libipc-write-test SOURCE LibIPCWriteTest.cpp LIBS ${LAGOM_ipc})
 
 # The polkit agent must keep the password separate from the remember flag in
-# sde-auth-dialog's output.
-add_sde_unit_test(polkit-dialog-output-test SOURCE PolkitDialogOutputTest.cpp)
+# sde-auth-dialog's output, drain SUCCESS/FAILURE before EOF, and isolate
+# per-user cached passwords with TTL expiry.
+add_sde_unit_test(polkit-dialog-output-test
+    SOURCE PolkitDialogOutputTest.cpp
+    EXTRA_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../Tools/sde-polkit-agent/PolkitHelper.cpp")
 
 # A large clipboard copy must not exit the application through the clipboard
 # connection.

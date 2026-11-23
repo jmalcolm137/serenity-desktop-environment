@@ -8,4 +8,4 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/../../Meta/CMake/SDEGuiApp.cmake")
-sde_add_gui_executable(sde-auth-dialog SOURCES main.cpp NO_AS_NEEDED)
+sde_add_gui_executable(sde-auth-dialog SOURCES src/main.cpp EXTRA_LIBS sde-xdg NO_AS_NEEDED)

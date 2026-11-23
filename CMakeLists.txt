@@ -106,10 +106,10 @@ add_subdirectory(Dialogs/Print PrintDialog)
 add_subdirectory(Dialogs/ColorPicker ColorPicker)
 add_subdirectory(Dialogs/ScreenCastChooser ScreenCastChooser)
 add_subdirectory(Dialogs/ScreenshotOverlay ScreenshotOverlay)
+add_subdirectory(Dialogs/Auth AuthDialog)
 
 # The portable tools, the portal backends and the test clients.
 add_subdirectory(Tools tools)
-add_subdirectory(Tools/AuthDialog AuthDialog)
 
 # The test programs.
 add_subdirectory(Tests test)

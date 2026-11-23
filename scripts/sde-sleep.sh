@@ -32,6 +32,12 @@ run() {
 
 on_suspend() {
     echo "sde-sleep: suspending"
+    if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -r "$XDG_RUNTIME_DIR/sde-polkit-agent.pid" ]; then
+        polkit_pid="$(cat "$XDG_RUNTIME_DIR/sde-polkit-agent.pid" 2>/dev/null || true)"
+        [ -n "$polkit_pid" ] && kill -USR1 "$polkit_pid" 2>/dev/null || true
+    elif command -v pkill >/dev/null 2>&1; then
+        pkill -USR1 -x sde-polkit-agent 2>/dev/null || true
+    fi
     if [ "$LOCK_ON_SUSPEND" = "1" ] && [ -n "$LOCK_CMD" ]; then
         run "$LOCK_CMD"
     fi

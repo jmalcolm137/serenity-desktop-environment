@@ -214,7 +214,11 @@ sde_portal_tool(sde-lock
 # trusted polkit helper does the PAM conversation; this process never handles a
 # password itself beyond passing it to that helper.
 sde_portal_tool(sde-polkit-agent
-    SOURCES sde-polkit-agent/main.cpp portal/dbus.cpp
+    SOURCES
+        sde-polkit-agent/main.cpp
+        sde-polkit-agent/PolkitHelper.cpp
+        sde-polkit-agent/AuthSession.cpp
+        portal/dbus.cpp
     LAGOM ${PORTAL_LAGOM})
 
 # sde-autostart: freedesktop.org Desktop Application Autostart launcher
