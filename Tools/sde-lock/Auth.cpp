@@ -7,14 +7,13 @@
 #include "Auth.h"
 
 #include <AK/Assertions.h>
-#include <AK/ByteBuffer.h>
 #include <AK/StdLibExtras.h>
-#include <AK/StringBuilder.h>
 #include <LibThreading/Thread.h>
 
 #include <errno.h>
 #include <fcntl.h>
 #include <security/pam_appl.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -23,9 +22,16 @@ namespace SDELock {
 namespace {
 
 struct ConversationData {
-    ByteString password;
+    ByteBuffer password;
     ByteString username;
     ByteString message;
+
+    void wipe_password()
+    {
+        if (!password.is_empty())
+            explicit_bzero(password.data(), password.size());
+        password.clear();
+    }
 
     void note(char const* text)
     {
@@ -38,37 +44,67 @@ struct ConversationData {
     }
 };
 
+char* copy_c_string(ReadonlyBytes bytes)
+{
+    auto* out = static_cast<char*>(malloc(bytes.size() + 1));
+    if (!out)
+        return nullptr;
+    if (!bytes.is_empty())
+        memcpy(out, bytes.data(), bytes.size());
+    out[bytes.size()] = '\0';
+    return out;
+}
+
+void free_and_wipe_responses(pam_response* reply, int count)
+{
+    if (!reply)
+        return;
+    for (int i = 0; i < count; ++i) {
+        if (reply[i].resp) {
+            explicit_bzero(reply[i].resp, strlen(reply[i].resp));
+            free(reply[i].resp);
+        }
+    }
+    free(reply);
+}
+
 // PAM conversation: answer the password and user prompts, collect the messages.
-// PAM owns (and frees) the response array; we only allocate it.
+// PAM owns (and frees) the response array on PAM_SUCCESS; on error we wipe and
+// free every response allocated so far.
 int conversation(int count, pam_message const** messages, pam_response** responses, void* data)
 {
+    if (count <= 0 || !messages || !responses || !data)
+        return PAM_CONV_ERR;
+
     auto* context = static_cast<ConversationData*>(data);
     auto* reply = static_cast<pam_response*>(calloc(static_cast<size_t>(count), sizeof(pam_response)));
     if (!reply)
         return PAM_BUF_ERR;
 
     for (int i = 0; i < count; ++i) {
-        switch (messages[i]->msg_style) {
+        int const style = messages[i]->msg_style;
+        switch (style) {
         case PAM_PROMPT_ECHO_OFF:
-            reply[i].resp = strdup(context->password.characters());
+            reply[i].resp = copy_c_string(context->password.bytes());
+            if (!reply[i].resp) {
+                free_and_wipe_responses(reply, i);
+                return PAM_BUF_ERR;
+            }
             break;
         case PAM_PROMPT_ECHO_ON:
-            reply[i].resp = strdup(context->username.characters());
+            reply[i].resp = copy_c_string(context->username.bytes());
+            if (!reply[i].resp) {
+                free_and_wipe_responses(reply, i);
+                return PAM_BUF_ERR;
+            }
             break;
         case PAM_ERROR_MSG:
         case PAM_TEXT_INFO:
             context->note(messages[i]->msg);
             break;
         default:
-            free(reply);
+            free_and_wipe_responses(reply, i);
             return PAM_CONV_ERR;
-        }
-
-        // The two prompt styles above must produce a response; the informational
-        // ones must not.
-        if (messages[i]->msg_style <= PAM_PROMPT_ECHO_ON && !reply[i].resp) {
-            free(reply);
-            return PAM_BUF_ERR;
         }
     }
 
@@ -94,57 +130,90 @@ AuthResult result_from_pam_status(int status)
 
 }
 
+Authenticator::SharedState::~SharedState()
+{
+    if (result_pipe[0] >= 0)
+        close(result_pipe[0]);
+    if (result_pipe[1] >= 0)
+        close(result_pipe[1]);
+}
+
+void Authenticator::SharedState::finish(AuthResult result, ByteString message)
+{
+    if (result_pipe[1] < 0) {
+        busy.store(false);
+        return;
+    }
+
+    // One write below PIPE_BUF is atomic, so the reader gets a whole record.
+    static constexpr size_t max_message = 192;
+    u8 record[5 + max_message];
+    size_t length = min(message.length(), max_message);
+    record[0] = static_cast<u8>(result);
+    auto length32 = static_cast<u32>(length);
+    memcpy(record + 1, &length32, sizeof(length32));
+    memcpy(record + 5, message.characters(), length);
+
+    (void)write(result_pipe[1], record, 5 + length);
+    busy.store(false);
+}
+
 Authenticator::Authenticator(ByteString service, ByteString username)
     : m_service(move(service))
     , m_username(move(username))
+    , m_state(adopt_ref(*new SharedState))
 {
-    if (pipe2(m_result_pipe, O_CLOEXEC | O_NONBLOCK) != 0) {
-        m_result_pipe[0] = -1;
-        m_result_pipe[1] = -1;
+    if (pipe2(m_state->result_pipe, O_CLOEXEC | O_NONBLOCK) != 0) {
+        m_state->result_pipe[0] = -1;
+        m_state->result_pipe[1] = -1;
     }
 }
 
-Authenticator::~Authenticator()
+Authenticator::~Authenticator() = default;
+
+bool Authenticator::busy() const
 {
-    // A running attempt holds `this`; the process is exiting, so leaving the pipe
-    // open is safer than closing it under the thread.
-    if (m_busy.load())
-        return;
-    if (m_result_pipe[0] >= 0)
-        close(m_result_pipe[0]);
-    if (m_result_pipe[1] >= 0)
-        close(m_result_pipe[1]);
+    return m_state->busy.load();
 }
 
 Optional<int> Authenticator::result_fd() const
 {
-    if (m_result_pipe[0] < 0)
+    if (m_state->result_pipe[0] < 0)
         return {};
-    return m_result_pipe[0];
+    return m_state->result_pipe[0];
 }
 
-bool Authenticator::begin(String password)
+bool Authenticator::begin(ByteBuffer password)
 {
-    if (m_busy.exchange(true))
+    auto wipe_local = [&] {
+        if (!password.is_empty())
+            explicit_bzero(password.data(), password.size());
+        password.clear();
+    };
+
+    if (m_state->busy.exchange(true)) {
+        wipe_local();
         return false;
-    if (m_result_pipe[0] < 0 || m_result_pipe[1] < 0) {
-        m_busy.store(false);
+    }
+    if (m_state->result_pipe[0] < 0 || m_state->result_pipe[1] < 0) {
+        m_state->busy.store(false);
+        wipe_local();
         return false;
     }
 
-    // Drain a result nobody consumed before starting the next attempt.
+    // Drain any stale result before starting the next attempt.
     char discard[64];
-    while (read(m_result_pipe[0], discard, sizeof(discard)) > 0)
+    while (read(m_state->result_pipe[0], discard, sizeof(discard)) > 0)
         ;
 
-    // The password lives in one buffer owned by the worker; it is wiped as soon as
-    // PAM is done with it. (The strdup()ed copies PAM keeps are PAM's to free.)
-    auto password_buffer = MUST(ByteBuffer::copy(password.bytes()));
+    auto state = m_state;
+    auto service = m_service;
+    auto username = m_username;
 
-    m_thread = Threading::Thread::construct([this, password_buffer = move(password_buffer)]() mutable -> intptr_t {
+    m_thread = Threading::Thread::construct([state = move(state), service = move(service), username = move(username), password = move(password)]() mutable -> intptr_t {
         ConversationData context;
-        context.username = m_username;
-        context.password = ByteString { reinterpret_cast<char const*>(password_buffer.data()), password_buffer.size() };
+        context.username = move(username);
+        context.password = move(password);
 
         pam_conv conv {
             .conv = conversation,
@@ -152,11 +221,14 @@ bool Authenticator::begin(String password)
         };
 
         pam_handle_t* handle = nullptr;
-        int status = pam_start(m_service.characters(), m_username.characters(), &conv, &handle);
+        int status = pam_start(service.characters(), context.username.characters(), &conv, &handle);
         if (status == PAM_SUCCESS) {
             status = pam_authenticate(handle, PAM_DISALLOW_NULL_AUTHTOK);
-            if (status == PAM_SUCCESS)
+            if (status == PAM_SUCCESS) {
                 status = pam_acct_mgmt(handle, 0);
+                if (status == PAM_SUCCESS)
+                    (void)pam_setcred(handle, PAM_REINITIALIZE_CRED);
+            }
         }
 
         ByteString message = context.message;
@@ -172,12 +244,10 @@ bool Authenticator::begin(String password)
         if (handle)
             pam_end(handle, status);
 
-        explicit_bzero(password_buffer.data(), password_buffer.size());
-        explicit_bzero(const_cast<char*>(context.password.characters()), context.password.length());
-        context.password = {};
+        context.wipe_password();
 
         auto result = result_from_pam_status(status);
-        finish(result, move(message));
+        state->finish(result, move(message));
         return 0;
     }, "sde-lock-auth"sv);
 
@@ -186,31 +256,11 @@ bool Authenticator::begin(String password)
     return true;
 }
 
-void Authenticator::finish(AuthResult result, ByteString message)
-{
-    if (m_result_pipe[1] < 0) {
-        m_busy.store(false);
-        return;
-    }
-
-    // One write below PIPE_BUF is atomic, so the reader gets a whole record.
-    static constexpr size_t max_message = 192;
-    u8 record[5 + max_message];
-    size_t length = min(message.length(), max_message);
-    record[0] = static_cast<u8>(result);
-    auto length32 = static_cast<u32>(length);
-    memcpy(record + 1, &length32, sizeof(length32));
-    memcpy(record + 5, message.characters(), length);
-
-    (void)write(m_result_pipe[1], record, 5 + length);
-    m_busy.store(false);
-}
-
 AuthResult Authenticator::take_result(ByteString& message)
 {
     u8 record[5 + 192];
-    ssize_t n = read(m_result_pipe[0], record, sizeof(record));
-    m_busy.store(false);
+    ssize_t n = read(m_state->result_pipe[0], record, sizeof(record));
+    m_state->busy.store(false);
     if (n < 5)
         return AuthResult::Error;
 

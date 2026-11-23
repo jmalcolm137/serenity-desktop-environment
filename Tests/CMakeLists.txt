@@ -226,6 +226,14 @@ target_link_directories(libwm-wifi-client-test PRIVATE ${DBUS_LIBRARY_DIRS})
 add_sde_unit_test(libwm-xdg-basedirs-test SOURCE XdgBaseDirsTest.cpp LIBS sde-xdg)
 add_sde_unit_test(libwm-xdg-autostart-test SOURCE XdgAutostartTest.cpp LIBS sde-xdg)
 add_sde_unit_test(libwm-xdg-mime-test SOURCE XdgMimeTest.cpp LIBS sde-xdg)
+
+# sde-lock pure-logic unit tests: KeyInput, HiDPI LockRenderer layout, GECOS display name, cursor bitmap.
+add_sde_unit_test(sde-lock-unit-test
+    SOURCE LockUnitTest.cpp
+    EXTRA_SOURCES
+        "${CMAKE_SOURCE_DIR}/Tools/sde-lock/KeyInput.cpp"
+        "${CMAKE_SOURCE_DIR}/Tools/sde-lock/LockScreen.cpp"
+    LIBS ${LAGOM_gfx} xkbcommon)
 add_sde_unit_test(libwm-xdg-icon-theme-test SOURCE XdgIconThemeTest.cpp LIBS sde-xdg)
 add_sde_unit_test(libwm-xdg-trash-test SOURCE XdgTrashTest.cpp LIBS sde-xdg)
 add_sde_unit_test(libwm-xdg-f5-test SOURCE XdgF5Test.cpp LIBS sde-xdg)

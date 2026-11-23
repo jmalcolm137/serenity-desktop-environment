@@ -7,10 +7,13 @@
 #pragma once
 
 #include <AK/Atomic.h>
+#include <AK/ByteBuffer.h>
 #include <AK/ByteString.h>
+#include <AK/NonnullRefPtr.h>
 #include <AK/Optional.h>
+#include <AK/RefCounted.h>
 #include <AK/RefPtr.h>
-#include <AK/String.h>
+
 namespace Threading {
 class Thread;
 }
@@ -26,6 +29,9 @@ enum class AuthResult {
 // One PAM authentication attempt at a time, on its own thread: pam_authenticate()
 // can block (LDAP, an SSSD lookup, a smartcard prompt), and a lock screen must keep
 // painting and answering the compositor while it does.
+//
+// SharedState is RefCounted so a detached worker thread can safely finish even
+// if the lock client exits while PAM is still blocked.
 class Authenticator {
 public:
     Authenticator(ByteString service, ByteString username);
@@ -34,9 +40,11 @@ public:
     Authenticator(Authenticator const&) = delete;
     Authenticator& operator=(Authenticator const&) = delete;
 
-    // Hands the password to PAM. Returns false when an attempt is already running.
-    bool begin(String password);
-    bool busy() const { return m_busy.load(); }
+    // Hands a wipeable UTF-8 password buffer to PAM. Always wipes `password`
+    // before returning or on worker completion. Returns false when an attempt is
+    // already running.
+    bool begin(ByteBuffer password);
+    bool busy() const;
 
     // Readable when an attempt has finished; poll() it alongside the Wayland fd.
     Optional<int> result_fd() const;
@@ -45,13 +53,18 @@ public:
     AuthResult take_result(ByteString& message);
 
 private:
-    void finish(AuthResult, ByteString message);
+    struct SharedState : public RefCounted<SharedState> {
+        int result_pipe[2] { -1, -1 };
+        Atomic<bool> busy { false };
+
+        ~SharedState();
+        void finish(AuthResult, ByteString message);
+    };
 
     ByteString m_service;
     ByteString m_username;
-    int m_result_pipe[2] { -1, -1 };
+    NonnullRefPtr<SharedState> m_state;
     RefPtr<Threading::Thread> m_thread;
-    Atomic<bool> m_busy { false };
 };
 
 }

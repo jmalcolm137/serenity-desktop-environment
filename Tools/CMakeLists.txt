@@ -204,7 +204,13 @@ sde_portal_tool(sde-notifications
 set(lock_protocols)
 sde_wayland_client_protocol(lock_protocols NAME ext-session-lock-v1 XML "${WP}/staging/ext-session-lock/ext-session-lock-v1.xml")
 sde_portal_tool(sde-lock
-    SOURCES sde-lock/main.cpp sde-lock/LockScreen.cpp sde-lock/Auth.cpp ${lock_protocols}
+    SOURCES
+        sde-lock/main.cpp
+        sde-lock/LockScreen.cpp
+        sde-lock/KeyInput.cpp
+        sde-lock/WaylandSession.cpp
+        sde-lock/Auth.cpp
+        ${lock_protocols}
     LAGOM ak coreminimal corebasic core gfx threading
     LIBRARIES PkgConfig::WAYLAND_CLIENT PkgConfig::XKBCOMMON PkgConfig::PAM)
 

@@ -46,18 +46,23 @@ Gfx::Color accent_hovered() { return Gfx::Color(96, 152, 232); }
 Gfx::Color failure() { return Gfx::Color(232, 112, 112); }
 Gfx::Color warning() { return Gfx::Color(232, 184, 92); }
 
-ErrorOr<RefPtr<Gfx::Bitmap>> load_face(int diameter)
+Gfx::IntRect scale_rect(Gfx::IntRect rect, int scale)
 {
-    auto* user = getpwuid(getuid());
-    if (!user || !user->pw_dir)
-        return RefPtr<Gfx::Bitmap> {};
+    return { rect.x() * scale, rect.y() * scale, rect.width() * scale, rect.height() * scale };
+}
 
-    auto path = ByteString::formatted("{}/.face", user->pw_dir);
-    if (access(path.characters(), R_OK) != 0)
-        return RefPtr<Gfx::Bitmap> {};
+RefPtr<Gfx::Bitmap> try_load_face_from(ByteString const& path, int diameter)
+{
+    if (path.is_empty() || access(path.characters(), R_OK) != 0)
+        return {};
 
-    auto face = TRY(Gfx::Bitmap::load_from_file(path));
-    auto scaled = TRY(face->scaled_to_size({ diameter, diameter }));
+    auto face_or_error = Gfx::Bitmap::load_from_file(path);
+    if (face_or_error.is_error())
+        return {};
+    auto scaled_or_error = face_or_error.value()->scaled_to_size({ diameter, diameter });
+    if (scaled_or_error.is_error())
+        return {};
+    auto scaled = scaled_or_error.release_value();
 
     // XFCE draws the avatar in a circle; mask the corners rather than drawing a
     // square photograph over the panel.
@@ -74,7 +79,22 @@ ErrorOr<RefPtr<Gfx::Bitmap>> load_face(int diameter)
     return RefPtr<Gfx::Bitmap> { move(scaled) };
 }
 
-ErrorOr<RefPtr<Gfx::Bitmap>> make_initial_avatar(ByteString const& username, int diameter, Gfx::Font const* font)
+RefPtr<Gfx::Bitmap> load_user_avatar(ByteString const& username, int diameter)
+{
+    if (auto* user = getpwuid(getuid()); user && user->pw_dir) {
+        if (auto bmp = try_load_face_from(ByteString::formatted("{}/.face", user->pw_dir), diameter))
+            return bmp;
+        if (auto bmp = try_load_face_from(ByteString::formatted("{}/.face.icon", user->pw_dir), diameter))
+            return bmp;
+    }
+    if (!username.is_empty()) {
+        if (auto bmp = try_load_face_from(ByteString::formatted("/var/lib/AccountsService/icons/{}", username), diameter))
+            return bmp;
+    }
+    return {};
+}
+
+ErrorOr<RefPtr<Gfx::Bitmap>> make_initial_avatar(ByteString const& label, int diameter, Gfx::Font const* font)
 {
     auto avatar = TRY(Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { diameter, diameter }));
     memset(avatar->scanline_u8(0), 0, avatar->data_size());
@@ -82,8 +102,8 @@ ErrorOr<RefPtr<Gfx::Bitmap>> make_initial_avatar(ByteString const& username, int
     Gfx::Painter painter(*avatar);
     painter.fill_rect_with_rounded_corners(avatar->rect(), Gfx::Color(52, 84, 132), diameter / 2);
 
-    if (font && !username.is_empty()) {
-        auto initial = username.substring(0, 1).to_uppercase();
+    if (font && !label.is_empty()) {
+        auto initial = label.substring(0, 1).to_uppercase();
         painter.draw_text(avatar->rect().shrunken(0, 0, 2, 0), initial.view(), *font, Gfx::TextAlignment::Center, text_primary());
     }
     return RefPtr<Gfx::Bitmap> { move(avatar) };
@@ -91,10 +111,21 @@ ErrorOr<RefPtr<Gfx::Bitmap>> make_initial_avatar(ByteString const& username, int
 
 }
 
+ByteString display_name_from_gecos(ByteString const& username, StringView gecos)
+{
+    if (gecos.is_empty())
+        return username;
+    auto comma = gecos.find(',');
+    auto full_name = (comma.has_value() ? gecos.substring_view(0, *comma) : gecos).trim_whitespace();
+    if (full_name.is_empty())
+        return username;
+    return full_name.to_byte_string();
+}
+
 LockRenderer::LockRenderer() = default;
 LockRenderer::~LockRenderer() = default;
 
-RefPtr<Gfx::Font> LockRenderer::font(ByteString const& family, float size, unsigned weight) const
+RefPtr<Gfx::Font> LockRenderer::load_font(ByteString const& family, float size, unsigned weight) const
 {
     auto& database = Gfx::FontDatabase::the();
     auto make_fly_string = [](StringView name) {
@@ -106,33 +137,52 @@ RefPtr<Gfx::Font> LockRenderer::font(ByteString const& family, float size, unsig
     return database.get(make_fly_string("Katica"sv), 10, weight, 0, 0, Gfx::Font::AllowInexactSizeMatch::Yes);
 }
 
-ErrorOr<void> LockRenderer::initialize(ByteString const& resource_root, ByteString const& username)
+LockRenderer::FontSet const& LockRenderer::fonts_for_scale(int scale) const
+{
+    int const clamped = max(1, scale);
+    if (auto it = m_fonts_by_scale.find(clamped); it != m_fonts_by_scale.end())
+        return it->value;
+
+    float const s = static_cast<float>(clamped);
+    FontSet set;
+    set.clock = load_font("SerenitySans"sv, 56.0f * s, 400);
+    set.date = load_font("SerenitySans"sv, 15.0f * s, 400);
+    set.name = load_font("SerenitySans"sv, 17.0f * s, 600);
+    set.field = load_font("SerenitySans"sv, 15.0f * s, 400);
+    set.button = load_font("SerenitySans"sv, 15.0f * s, 600);
+    set.message = load_font("SerenitySans"sv, 13.0f * s, 400);
+    set.badge = load_font("SerenitySans"sv, 11.0f * s, 600);
+    m_fonts_by_scale.set(clamped, move(set));
+    return m_fonts_by_scale.find(clamped)->value;
+}
+
+ErrorOr<void> LockRenderer::initialize(ByteString const& resource_root, ByteString const& username, ByteString const& display_name)
 {
     if (!resource_root.is_empty())
         Gfx::FontDatabase::the().load_all_fonts_from_uri(ByteString::formatted("file://{}/fonts", resource_root));
 
-    m_clock_font = font("SerenitySans"sv, 56, 400);
-    m_date_font = font("SerenitySans"sv, 15, 400);
-    m_name_font = font("SerenitySans"sv, 17, 600);
-    m_field_font = font("SerenitySans"sv, 15, 400);
-    m_button_font = font("SerenitySans"sv, 15, 600);
-    m_message_font = font("SerenitySans"sv, 13, 400);
+    auto const& base_fonts = fonts_for_scale(1);
 
-    static constexpr int avatar_diameter = 84;
-    m_avatar = TRY(load_face(avatar_diameter));
-    if (!m_avatar)
-        m_avatar = TRY(make_initial_avatar(username, avatar_diameter, m_clock_font.ptr()));
+    // Render avatar at 2x (168px) so it stays crisp on both 1x and 2x displays.
+    static constexpr int avatar_source_diameter = 168;
+    m_avatar = load_user_avatar(username, avatar_source_diameter);
+    if (!m_avatar) {
+        auto const& hi_fonts = fonts_for_scale(2);
+        auto const& label = display_name.is_empty() ? username : display_name;
+        m_avatar = TRY(make_initial_avatar(label, avatar_source_diameter, hi_fonts.clock ? hi_fonts.clock.ptr() : base_fonts.clock.ptr()));
+    }
 
     return {};
 }
 
-Layout LockRenderer::layout_for(Gfx::IntSize size) const
+Layout LockRenderer::layout_for(Gfx::IntSize logical_size, int scale) const
 {
-    int const panel_width = min(460, max(size.width() - 32, 240));
-    int const panel_height = min(410, max(size.height() - 32, 320));
+    int const s = max(1, scale);
+    int const panel_width = min(460, max(logical_size.width() - 32, 240));
+    int const panel_height = min(426, max(logical_size.height() - 32, 320));
     Gfx::IntRect panel {
-        (size.width() - panel_width) / 2,
-        (size.height() - panel_height) / 2,
+        (logical_size.width() - panel_width) / 2,
+        (logical_size.height() - panel_height) / 2,
         panel_width,
         panel_height,
     };
@@ -141,29 +191,32 @@ Layout LockRenderer::layout_for(Gfx::IntSize size) const
     int const field_width = min(320, panel.width() - 40);
 
     Layout layout;
-    layout.panel = panel;
+    layout.panel = scale_rect(panel, s);
+    layout.shadow = scale_rect(panel.translated(0, 6), s);
 
     int y = panel.y() + 24;
-    layout.clock = { panel.x() + 16, y, panel.width() - 32, 60 };
+    layout.clock = scale_rect({ panel.x() + 16, y, panel.width() - 32, 60 }, s);
     y += 68;
-    layout.date = { panel.x() + 16, y, panel.width() - 32, 20 };
+    layout.date = scale_rect({ panel.x() + 16, y, panel.width() - 32, 20 }, s);
     y += 28;
-    layout.avatar = { center_x - 42, y, 84, 84 };
+    layout.avatar = scale_rect({ center_x - 42, y, 84, 84 }, s);
     y += 96;
-    layout.name = { panel.x() + 16, y, panel.width() - 32, 24 };
+    layout.name = scale_rect({ panel.x() + 16, y, panel.width() - 32, 24 }, s);
     y += 32;
-    layout.field = { center_x - field_width / 2, y, field_width, 44 };
+    layout.field = scale_rect({ center_x - field_width / 2, y, field_width, 44 }, s);
     y += 54;
-    layout.button = { center_x - field_width / 2, y, field_width, 40 };
+    layout.button = scale_rect({ center_x - field_width / 2, y, field_width, 40 }, s);
     y += 48;
-    layout.message = { panel.x() + 16, y, panel.width() - 32, 20 };
+    layout.message = scale_rect({ panel.x() + 16, y, panel.width() - 32, 20 }, s);
+    layout.layout_badge = scale_rect({ panel.right() - 108, panel.bottom() - 26, 94, 18 }, s);
     return layout;
 }
 
-void LockRenderer::render(Gfx::Bitmap& target, UiState const& state) const
+ErrorOr<NonnullRefPtr<Gfx::Bitmap>> LockRenderer::render_background(Gfx::IntSize pixel_size) const
 {
-    Gfx::Painter painter(target);
-    auto const bounds = target.rect();
+    auto bg = TRY(Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, pixel_size));
+    Gfx::Painter painter(*bg);
+    auto const bounds = bg->rect();
 
     if (m_wallpaper && m_wallpaper->width() > 0 && m_wallpaper->height() > 0) {
         // Cover the output without distorting the image.
@@ -184,101 +237,149 @@ void LockRenderer::render(Gfx::Bitmap& target, UiState const& state) const
         painter.fill_rect_with_gradient(Gfx::Orientation::Vertical, bounds, Gfx::Color(30, 38, 52), Gfx::Color(8, 10, 14));
     }
 
-    auto const layout = layout_for(bounds.size());
+    return bg;
+}
+
+void LockRenderer::render(Gfx::Bitmap& target, Gfx::Bitmap const* cached_bg, UiState const& state, Gfx::IntSize logical_size, int scale, bool show_panel, Optional<Gfx::IntRect> dirty_rect) const
+{
+    int const s = max(1, scale);
+    Gfx::Painter painter(target);
+    auto const bounds = target.rect();
+
+    Gfx::IntRect const clip = dirty_rect.has_value() ? dirty_rect->intersected(bounds) : bounds;
+    if (clip.is_empty())
+        return;
+    painter.add_clip_rect(clip);
+
+    if (cached_bg && cached_bg->size() == target.size()) {
+        painter.blit(clip.location(), *cached_bg, clip);
+    } else {
+        auto fallback = render_background(target.size());
+        if (!fallback.is_error())
+            painter.blit(clip.location(), *fallback.value(), clip);
+    }
+
+    auto const& fonts = fonts_for_scale(s);
+
+    if (!show_panel) {
+        // Secondary outputs display only the dimmed wallpaper + centered clock/date.
+        int const clock_h = 64 * s;
+        int const date_h = 22 * s;
+        int const total_h = clock_h + 8 * s + date_h;
+        int const top = (bounds.height() - total_h) / 2;
+        Gfx::IntRect clock_rect { 0, top, bounds.width(), clock_h };
+        Gfx::IntRect date_rect { 0, top + clock_h + 8 * s, bounds.width(), date_h };
+        if (fonts.clock)
+            painter.draw_text(clock_rect, state.clock.view(), *fonts.clock, Gfx::TextAlignment::Center, text_primary());
+        if (fonts.date)
+            painter.draw_text(date_rect, state.date.view(), *fonts.date, Gfx::TextAlignment::Center, text_secondary());
+        return;
+    }
+
+    auto const layout = layout_for(logical_size, s);
 
     // Panel, with a soft drop shadow and a one-pixel rounded border.
-    auto const shadow = layout.panel.translated(0, 6);
-    painter.fill_rect_with_rounded_corners(shadow, Gfx::Color(0, 0, 0, 96), 16);
-    painter.fill_rect_with_rounded_corners(layout.panel, panel_border(), 14);
-    painter.fill_rect_with_rounded_corners(layout.panel.shrunken(1, 1), panel_background(), 13);
+    painter.fill_rect_with_rounded_corners(layout.shadow, Gfx::Color(0, 0, 0, 96), 16 * s);
+    painter.fill_rect_with_rounded_corners(layout.panel, panel_border(), 14 * s);
+    painter.fill_rect_with_rounded_corners(layout.panel.shrunken(s, s), panel_background(), 13 * s);
 
-    if (m_clock_font)
-        painter.draw_text(layout.clock, state.clock.view(), *m_clock_font, Gfx::TextAlignment::Center, text_primary());
-    if (m_date_font)
-        painter.draw_text(layout.date, state.date.view(), *m_date_font, Gfx::TextAlignment::Center, text_secondary());
+    if (fonts.clock)
+        painter.draw_text(layout.clock, state.clock.view(), *fonts.clock, Gfx::TextAlignment::Center, text_primary());
+    if (fonts.date)
+        painter.draw_text(layout.date, state.date.view(), *fonts.date, Gfx::TextAlignment::Center, text_secondary());
 
     if (m_avatar)
-        painter.draw_scaled_bitmap(layout.avatar, *m_avatar, m_avatar->rect(), 1.0f, Gfx::ScalingMode::NearestNeighbor);
+        painter.draw_scaled_bitmap(layout.avatar, *m_avatar, m_avatar->rect(), 1.0f, Gfx::ScalingMode::BilinearBlend);
 
-    if (m_name_font)
-        painter.draw_text(layout.name, state.username.view(), *m_name_font, Gfx::TextAlignment::Center, text_primary());
+    if (fonts.name)
+        painter.draw_text(layout.name, state.display_name.view(), *fonts.name, Gfx::TextAlignment::Center, text_primary());
 
     // Password field.
-    painter.fill_rect_with_rounded_corners(layout.field, Gfx::Color(10, 12, 16, 224), 9);
+    painter.fill_rect_with_rounded_corners(layout.field, Gfx::Color(10, 12, 16, 224), 9 * s);
     auto const field_border = state.failed ? failure() : Gfx::Color(255, 255, 255, 46);
-    painter.draw_rect_with_thickness(layout.field, field_border, 1);
+    painter.draw_rect_with_thickness(layout.field, field_border, s);
 
+    auto const field_inner = layout.field.shrunken(14 * s, 4 * s);
     auto const field_center = layout.field.center();
+    int const dot_spacing = 13 * s;
+    int const dot_size = 6 * s;
+
+    // Cap visible dots so long passwords never overflow the input box.
+    size_t const max_visible_dots = static_cast<size_t>(max(1, (field_inner.width() - 16 * s) / dot_spacing));
+    size_t const visible_dots = min(state.password_length, max_visible_dots);
+
     if (state.password_length == 0) {
-        if (m_field_font)
-            painter.draw_text(layout.field, state.authenticating ? "Checking..."sv : "Password"sv, *m_field_font, Gfx::TextAlignment::Center, text_muted());
+        if (fonts.field)
+            painter.draw_text(layout.field, state.authenticating ? "Checking..."sv : "Password"sv, *fonts.field, Gfx::TextAlignment::Center, text_muted());
     } else {
-        constexpr int dot_spacing = 13;
-        constexpr int dot_size = 6;
-        int const total = static_cast<int>(state.password_length - 1) * dot_spacing;
+        Gfx::PainterStateSaver saver(painter);
+        painter.add_clip_rect(field_inner);
+
+        int const total = static_cast<int>(visible_dots - 1) * dot_spacing;
         int const start = field_center.x() - total / 2 - dot_size / 2;
-        for (size_t i = 0; i < state.password_length; ++i) {
+        for (size_t i = 0; i < visible_dots; ++i) {
             Gfx::IntRect dot { start + static_cast<int>(i) * dot_spacing, field_center.y() - dot_size / 2, dot_size, dot_size };
             painter.fill_rect_with_rounded_corners(dot, text_primary(), dot_size / 2);
         }
     }
 
     if (state.caret_visible && !state.authenticating) {
-        constexpr int dot_spacing = 13;
-        constexpr int dot_size = 6;
         int caret_x = field_center.x();
-        if (state.password_length > 0) {
-            int const total = static_cast<int>(state.password_length - 1) * dot_spacing;
-            caret_x = field_center.x() + total / 2 + dot_size / 2 + 6;
+        if (visible_dots > 0) {
+            int const total = static_cast<int>(visible_dots - 1) * dot_spacing;
+            caret_x = min(field_inner.right() - 2 * s, field_center.x() + total / 2 + dot_size / 2 + 6 * s);
         }
-        painter.fill_rect({ caret_x, layout.field.y() + 12, 2, layout.field.height() - 24 }, text_primary());
+        painter.fill_rect({ caret_x, layout.field.y() + 12 * s, 2 * s, layout.field.height() - 24 * s }, text_primary());
     }
 
     // Unlock button.
-    painter.fill_rect_with_rounded_corners(layout.button, state.button_hovered ? accent_hovered() : accent(), 9);
-    if (m_button_font)
-        painter.draw_text(layout.button, state.authenticating ? "Authenticating..."sv : "Unlock"sv, *m_button_font, Gfx::TextAlignment::Center, Gfx::Color(248, 250, 253));
+    painter.fill_rect_with_rounded_corners(layout.button, state.button_hovered ? accent_hovered() : accent(), 9 * s);
+    if (fonts.button)
+        painter.draw_text(layout.button, state.authenticating ? "Authenticating..."sv : "Unlock"sv, *fonts.button, Gfx::TextAlignment::Center, Gfx::Color(248, 250, 253));
 
     // Message line: PAM's, or the Caps Lock hint when there is nothing to report.
-    if (!state.message.is_empty() && m_message_font) {
-        painter.draw_text(layout.message, state.message.view(), *m_message_font, Gfx::TextAlignment::Center, state.failed ? failure() : text_secondary());
-    } else if (state.caps_lock && !state.authenticating && m_message_font) {
-        painter.draw_text(layout.message, "Caps Lock is on"sv, *m_message_font, Gfx::TextAlignment::Center, warning());
+    if (!state.message.is_empty() && fonts.message) {
+        painter.draw_text(layout.message, state.message.view(), *fonts.message, Gfx::TextAlignment::Center, state.failed ? failure() : text_secondary());
+    } else if (state.caps_lock && !state.authenticating && fonts.message) {
+        painter.draw_text(layout.message, "Caps Lock is on"sv, *fonts.message, Gfx::TextAlignment::Center, warning());
+    }
+
+    // Keyboard layout badge when multiple XKB layouts are configured.
+    if (!state.keyboard_layout.is_empty() && fonts.badge) {
+        painter.draw_text(layout.layout_badge, state.keyboard_layout.view(), *fonts.badge, Gfx::TextAlignment::CenterRight, text_muted());
     }
 }
 
 RefPtr<Gfx::Bitmap> LockRenderer::load_wallpaper(ByteString const& path)
 {
-    if (path.is_empty())
+    if (path.is_empty() || access(path.characters(), R_OK) != 0)
         return {};
 
-    auto file = Core::File::open(path, Core::File::OpenMode::Read);
-    if (file.is_error())
-        return {};
-    auto contents = file.value()->read_until_eof();
-    if (contents.is_error())
-        return {};
-    auto data = contents.release_value();
+    // First try the compositor's "PWDS" wallpaper.raw cache format.
+    if (auto file = Core::File::open(path, Core::File::OpenMode::Read); !file.is_error()) {
+        if (auto contents = file.value()->read_until_eof(); !contents.is_error()) {
+            auto data = contents.release_value();
+            if (data.size() >= sizeof(WallpaperHeader)) {
+                WallpaperHeader header {};
+                memcpy(&header, data.data(), sizeof(header));
+                if (memcmp(header.magic, "PWDS", 4) == 0 && header.version == 1
+                    && header.width > 0 && header.height > 0 && header.width <= 16384 && header.height <= 16384
+                    && data.size() >= sizeof(header) + static_cast<size_t>(header.height) * header.stride) {
+                    if (auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { static_cast<int>(header.width), static_cast<int>(header.height) }); !bitmap.is_error()) {
+                        auto result = bitmap.release_value();
+                        for (u32 y = 0; y < header.height; ++y)
+                            memcpy(result->scanline_u8(static_cast<int>(y)), data.data() + sizeof(header) + static_cast<size_t>(y) * header.stride, min(static_cast<size_t>(header.width) * 4, static_cast<size_t>(header.stride)));
+                        return result;
+                    }
+                }
+            }
+        }
+    }
 
-    if (data.size() < sizeof(WallpaperHeader))
-        return {};
-    WallpaperHeader header {};
-    memcpy(&header, data.data(), sizeof(header));
-    if (memcmp(header.magic, "PWDS", 4) != 0 || header.version != 1)
-        return {};
-    if (header.width == 0 || header.height == 0 || header.width > 16384 || header.height > 16384)
-        return {};
-    if (data.size() < sizeof(header) + static_cast<size_t>(header.height) * header.stride)
-        return {};
-
-    auto bitmap = Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { static_cast<int>(header.width), static_cast<int>(header.height) });
-    if (bitmap.is_error())
-        return {};
-
-    auto result = bitmap.release_value();
-    for (u32 y = 0; y < header.height; ++y)
-        memcpy(result->scanline_u8(static_cast<int>(y)), data.data() + sizeof(header) + static_cast<size_t>(y) * header.stride, min(static_cast<size_t>(header.width) * 4, static_cast<size_t>(header.stride)));
-    return result;
+    // Fallback: standard image file (PNG, JPEG, BMP, ...) via LibGfx.
+    if (auto loaded = Gfx::Bitmap::load_from_file(path); !loaded.is_error())
+        return loaded.release_value();
+    return {};
 }
 
 ByteString LockRenderer::default_wallpaper_path()
@@ -302,6 +403,46 @@ ByteString LockRenderer::default_wallpaper_path()
     if (access(path.characters(), R_OK) == 0)
         return path;
     return {};
+}
+
+ErrorOr<NonnullRefPtr<Gfx::Bitmap>> LockRenderer::make_cursor_bitmap(int scale)
+{
+    int const s = max(1, scale);
+    int const size = 16 * s;
+    auto bmp = TRY(Gfx::Bitmap::create(Gfx::BitmapFormat::BGRA8888, { size, size }));
+    memset(bmp->scanline_u8(0), 0, bmp->data_size());
+
+    // Crisp 16x16 arrow cursor bitmap (1 = dark border, 2 = white fill).
+    static constexpr char const* arrow[16] = {
+        "1...............",
+        "11..............",
+        "121.............",
+        "1221............",
+        "12221...........",
+        "122221..........",
+        "1222221.........",
+        "12222221........",
+        "122222221.......",
+        "1222222221......",
+        "12222211111.....",
+        "1221221.........",
+        "121.1221........",
+        "11..1221........",
+        "1....11.........",
+        "................",
+    };
+
+    Gfx::Painter painter(*bmp);
+    for (int y = 0; y < 16; ++y) {
+        for (int x = 0; x < 16; ++x) {
+            char c = arrow[y][x];
+            if (c == '1')
+                painter.fill_rect({ x * s, y * s, s, s }, Gfx::Color(16, 18, 22));
+            else if (c == '2')
+                painter.fill_rect({ x * s, y * s, s, s }, Gfx::Color(246, 248, 252));
+        }
+    }
+    return bmp;
 }
 
 }

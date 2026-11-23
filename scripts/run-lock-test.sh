@@ -157,7 +157,7 @@ echo "== (D) the native SDE locker =="
 if [[ -x "$SDE_ROOT/build/tools/sde-lock" ]]; then
     start_compositor lock-d 1
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
-        env WAYLAND_DISPLAY=lock-d timeout 60 "$SDE_ROOT/build/tools/sde-lock" > "$RUNTIME/lock-d.log" 2>&1 &
+        env WAYLAND_DISPLAY=lock-d timeout 60 "$SDE_ROOT/build/tools/sde-lock" --allow-signal-unlock > "$RUNTIME/lock-d.log" 2>&1 &
     LOCK_D_PID=$!
     for _ in $(seq 1 80); do
         grep -qF "WindowServer: session locked" "$RUNTIME/comp-lock-d.log" && break
