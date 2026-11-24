@@ -673,11 +673,24 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
         setenv("XKB_DEFAULT_VARIANT", keyboard.variant.characters(), true);
 
     // The WindowServer serves the WindowManagerServer protocol (the shell's
-    // Taskbar protocol), just like SerenityOS's WindowServer does. The socket
-    // path can be overridden so tests can run isolated from a live session.
+    // Taskbar protocol), just like SerenityOS's WindowServer does. Honour explicit
+    // overrides first, then scope the default to XDG_RUNTIME_DIR (and the Wayland
+    // socket name) so live sessions, multi-seat logins, and headless tests never
+    // collide on /tmp/portal/wm.
     ByteString wm_portal { "/tmp/portal/wm" };
-    if (auto const* override_path = getenv("LIBWM_WM_PORTAL_PATH"); override_path && *override_path)
+    if (auto const* override_path = getenv("LIBWM_WM_PORTAL_PATH"); override_path && *override_path) {
         wm_portal = override_path;
+    } else if (auto const* sde_override = getenv("SDE_WM_PORTAL_PATH"); sde_override && *sde_override) {
+        wm_portal = sde_override;
+    } else if (auto const* runtime_dir = getenv("XDG_RUNTIME_DIR"); runtime_dir && *runtime_dir) {
+        if (!socket.is_empty() && !socket.contains('/'))
+            wm_portal = ByteString::formatted("{}/sde-wm-{}", runtime_dir, socket);
+        else
+            wm_portal = ByteString::formatted("{}/sde-wm", runtime_dir);
+    }
+    // Export the resolved path so the shell (Taskbar) and applets spawned by
+    // WindowServer always agree with the compositor on the WM portal socket.
+    setenv("LIBWM_WM_PORTAL_PATH", wm_portal.characters(), true);
     // Ensure the parent directory exists: /tmp/portal is not guaranteed to survive a
     // tmp-clean, and an override may name a fresh directory. (Previously this was
     // only done for the default path, so a session that exported LIBWM_WM_PORTAL_PATH
@@ -859,6 +872,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
         perf_timer->stop();
         perf_timer = nullptr;
     }
+    ::unlink(wm_portal.characters());
     finish(*server);
     return result;
 }

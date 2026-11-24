@@ -43,11 +43,13 @@ sde_seat_suffix() {
 }
 
 # The WindowManagerServer socket path for the current seat (the compositor and the
-# port's clients both honour LIBWM_WM_PORTAL_PATH; seat0 keeps the global default).
+# port's clients both honour LIBWM_WM_PORTAL_PATH and XDG_RUNTIME_DIR).
 sde_wm_portal_path() {
     local suffix
     suffix="$(sde_seat_suffix)"
-    if [ -n "$suffix" ]; then
+    if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+        printf '%s/sde-wm-sde%s' "$XDG_RUNTIME_DIR" "$suffix"
+    elif [ -n "$suffix" ]; then
         printf '/tmp/portal/wm%s' "$suffix"
     else
         printf '/tmp/portal/wm'

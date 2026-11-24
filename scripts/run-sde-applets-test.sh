@@ -33,11 +33,12 @@ done
 
 RUNTIME="$(mktemp -d "${TMPDIR:-/tmp}/sde-applets.XXXXXX")"
 chmod 700 "$RUNTIME"
+export XDG_RUNTIME_DIR="$RUNTIME"
 export SDE_STATE_DIR="$RUNTIME"
-WM_PORTAL="${LIBWM_WM_PORTAL_PATH:-/tmp/portal/wm}"
-trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME" "$APP_BIN"; rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$* "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sde-*-$$*.lock "$WM_PORTAL" 2>/dev/null || true' EXIT
-
 SOCK="sde-applets-$$"
+WM_PORTAL="${LIBWM_WM_PORTAL_PATH:-$RUNTIME/sde-wm-$SOCK}"
+trap 'for _ in $(seq 1 60); do kill -0 "${COMP_PID:-${CP:-}}" 2>/dev/null || break; sleep 0.05; done; rm -rf "$RUNTIME" "$APP_BIN"; rm -f "$RUNTIME"/sde-*-$$* "$RUNTIME"/sde-*-$$*.lock "$WM_PORTAL" 2>/dev/null || true' EXIT
+
 rm -f "$WM_PORTAL"
 
 # The same set and arguments as the session startup (scripts/sde-applets.sh),

@@ -91,7 +91,7 @@ if [[ -z "${LIBWM_WM_PORTAL_PATH:-}" && -n "$(sde_seat_suffix)" ]]; then
     LIBWM_WM_PORTAL_PATH="$(sde_wm_portal_path)"
     export LIBWM_WM_PORTAL_PATH
 fi
-echo "SDE: seat '${XDG_SEAT}'${XDG_VTNR:+ vt$XDG_VTNR} display '$SDE_SESSION_DISPLAY' wm-portal '${LIBWM_WM_PORTAL_PATH:-/tmp/portal/wm}'"
+echo "SDE: seat '${XDG_SEAT}'${XDG_VTNR:+ vt$XDG_VTNR} display '$SDE_SESSION_DISPLAY' wm-portal '${LIBWM_WM_PORTAL_PATH:-$(sde_wm_portal_path)}'"
 
 # R4.3/R6: a native (DRM+libinput) session needs a seat and a DRM device. Give
 # actionable guidance instead of a loop of opaque backend failures. Override with

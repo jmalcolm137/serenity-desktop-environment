@@ -63,7 +63,7 @@ check "vt7" "$(cat "$RUNTIME/a.log")"
 check "SDE_SESSION_DISPLAY=sde-seat1" "$env_a"
 check "XDG_SEAT=seat1" "$env_a"
 check "XDG_VTNR=7" "$env_a"
-check "LIBWM_WM_PORTAL_PATH=/tmp/portal/wm-seat1" "$env_a"
+check "LIBWM_WM_PORTAL_PATH=$RUNTIME/sde-wm-sde-seat1" "$env_a"
 check "SDE_SESSION_PID_FILE=$RUNTIME/sde-session-seat1.pid" "$env_a"
 check "LIBWM_SESSION_BIN_DIR=$RUNTIME/sde-session-bin-seat1" "$env_a"
 
@@ -111,7 +111,7 @@ if [[ -x "$COMP" && -x "$BUILD/bin/Taskbar" ]]; then
         "$COMP" -n "$sock" > "$RUNTIME/comp.log" 2>&1 &
     comp_pid=$!
     for _ in $(seq 1 80); do
-        [[ -e "$RUNTIME/$sock" ]] && break
+        [[ -e "$RUNTIME/$sock" && -S "$portal" ]] && break
         sleep 0.1
     done
     if [[ -S "$portal" ]]; then
@@ -133,6 +133,43 @@ if [[ -x "$COMP" && -x "$BUILD/bin/Taskbar" ]]; then
     fi
     kill "$comp_pid" 2>/dev/null || true
     wait "$comp_pid" 2>/dev/null || true
+
+    echo "== (F) default WM portal scopes to XDG_RUNTIME_DIR and WAYLAND_DISPLAY =="
+    sock2="sde-xdg-$$"
+    expected_portal="$RUNTIME/sde-wm-$sock2"
+    env -u WAYLAND_DISPLAY -u DISPLAY -u LIBWM_WM_PORTAL_PATH -u SDE_WM_PORTAL_PATH \
+        WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
+        SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
+        LD_LIBRARY_PATH="$BUILD/lib" \
+        "$COMP" -n "$sock2" > "$RUNTIME/comp2.log" 2>&1 &
+    comp_pid=$!
+    for _ in $(seq 1 80); do
+        [[ -e "$RUNTIME/$sock2" && -S "$expected_portal" ]] && break
+        sleep 0.1
+    done
+    if [[ -S "$expected_portal" ]]; then
+        echo "  ok: compositor defaulted WM portal to $expected_portal"
+    else
+        echo "  MISSING: compositor did not listen on $expected_portal"; fail=1
+    fi
+    env -u LIBWM_WM_PORTAL_PATH -u SDE_WM_PORTAL_PATH \
+        WAYLAND_DISPLAY="$sock2" \
+        LIBWM_APP_BIN_DIR="$BUILD/bin" \
+        SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
+        LD_LIBRARY_PATH="$BUILD/lib" \
+        timeout 4 "$BUILD/bin/Taskbar" > "$RUNTIME/taskbar2.log" 2>&1 || true
+    if grep -q "AppletManager: applet area size" "$RUNTIME/comp2.log"; then
+        echo "  ok: the Taskbar reached the XDG_RUNTIME_DIR WM portal without overrides"
+    else
+        echo "  MISSING: the Taskbar did not reach $expected_portal"; fail=1
+    fi
+    kill "$comp_pid" 2>/dev/null || true
+    wait "$comp_pid" 2>/dev/null || true
+    if [[ ! -e "$expected_portal" ]]; then
+        echo "  ok: compositor cleaned up $expected_portal on exit"
+    else
+        echo "  MISSING: compositor left stale $expected_portal behind"; fail=1
+    fi
 else
     echo "  SKIP: $COMP or $BUILD/bin/Taskbar not built"
 fi
