@@ -616,6 +616,63 @@ if [ "$SAFE_MODE" = "1" ]; then
     enter_safe_mode
 fi
 
+# A replaced login can leave the previous session's compositor running: logind
+# keeps a "closing" session alive while any process remains, and that process
+# still owns the seat's Wayland socket. The new compositor used to fall back to
+# a generated wayland-N socket, so the session's exported WAYLAND_DISPLAY (and
+# every client) kept talking to the stale server. If that server has no active
+# output, tools report "no wl_output" for a desktop that is visibly running.
+# Claim the seat's display name back before starting. Nested sessions connect to
+# a host compositor and must not stop a live native session, so skip this there.
+stop_stale_compositor() {
+    local display="$1"
+    local runtime="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    local socket="$runtime/$display"
+    local lock="$socket.lock"
+    local pid dir cmd exe
+
+    for dir in /proc/[0-9]*; do
+        pid="${dir##*/}"
+        [ "$pid" = "$$" ] && continue
+        [ -r "$dir/cmdline" ] || continue
+        cmd="$(tr '\0' ' ' < "$dir/cmdline" 2>/dev/null || true)"
+        [ -n "$cmd" ] || continue
+        case "$cmd" in *WindowServer*) ;; *) continue ;; esac
+        # Match the compositor's --name/-n argument exactly, not a substring of
+        # another display name ("sde" must not match "sde-seat1").
+        case " $cmd " in
+            *" -n $display "* | *" --name $display "*) ;;
+            *) continue ;;
+        esac
+        exe="$(readlink "$dir/exe" 2>/dev/null || true)"
+        exe="${exe% (deleted)}"
+        [ "${exe##*/}" = "WindowServer" ] || continue
+
+        echo "SDE session: stopping stale compositor $pid on display '$display'" >&2
+        kill -TERM "$pid" 2>/dev/null || true
+        for _ in $(seq 1 50); do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 0.1
+        done
+        kill -KILL "$pid" 2>/dev/null || true
+    done
+
+    # Nothing we matched is alive. Remove a socket left behind by a killed
+    # compositor, but only if its Wayland lock is free: a held lock means a live
+    # compositor we did not match, and another session must not be disturbed.
+    if [ -e "$lock" ] && command -v flock >/dev/null 2>&1; then
+        if ! flock -n "$lock" true 2>/dev/null; then
+            echo "SDE session: display '$display' is still owned by a live compositor; leaving it alone" >&2
+            return 0
+        fi
+    fi
+    rm -f "$socket" "$lock" 2>/dev/null || true
+}
+
+if [ -z "$COMPOSITOR_DISPLAY" ] && [ "${SDE_SESSION_REPLACE_STALE:-1}" = "1" ]; then
+    stop_stale_compositor "$SESSION_DISPLAY"
+fi
+
 while :; do
     # Start from a clean heartbeat: while the compositor is starting up it has not
     # written one yet, and a stale file from the previous run must not look hung.

@@ -380,7 +380,16 @@ static ByteString add_socket(Server& server, ByteString const& requested)
     if (!requested.is_empty()) {
         if (wl_display_add_socket(server.display, requested.characters()) == 0)
             return requested;
-        warnln("WindowServer: could not add socket '{}'", requested);
+        // An explicit name is part of the session contract: the supervisor
+        // exports it as WAYLAND_DISPLAY, and the session services and the WM
+        // portal path are derived from it. Falling back to a generated socket
+        // left the session split-brained: the compositor ran on wayland-N while
+        // clients, and the session's own WAYLAND_DISPLAY, still pointed at the
+        // older compositor that owned the requested name. That old server may
+        // have no active output (grim: "no wl_output"). Fail instead; the
+        // supervisor clears a stale same-seat socket before starting us.
+        warnln("WindowServer: could not add socket '{}' (is another compositor still running?)", requested);
+        return {};
     }
     auto const* socket = wl_display_add_socket_auto(server.display);
     return socket ? ByteString(socket) : ByteString { };
