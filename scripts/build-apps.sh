@@ -15,8 +15,8 @@ SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Applications. Calculator, PDFViewer and Piano used to be built by
 # libgui-wayland's apps/ and moved here with the applications; the rest of the
-# suite was already the desktop's. Welcome and PartitionEditor have Lagom targets
-# (patches/0008) but are not part of the shipped suite.
+# suite was already the desktop's. This list is the complete SerenityOS set:
+# every application, game, demo and DevTool that has a Lagom target.
 #
 # SystemMonitor, Debugger and CrashReporter are Linux-native:
 # SystemMonitor reads /proc with a libunwind + libdw thread-stack backend,
@@ -30,6 +30,7 @@ APPS=(
     FontEditor GamesSettings Help HexEditor ImageViewer KeyboardMapper
     KeyboardSettings Mail MailSettings Maps MapsSettings MouseSettings NetworkSettings
     Presenter Run Screenshot Settings SpaceAnalyzer Spreadsheet SoundPlayer Piano
+    Welcome PartitionEditor Terminal
     SystemMonitor Debugger CrashReporter TerminalSettings TextEditor ThemeEditor UsersSettings VideoPlayer Weather
     PixelPaint
     # The games and DevTools (the Taskbar's Games and Development menus).

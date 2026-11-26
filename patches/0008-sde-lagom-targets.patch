@@ -1,6 +1,6 @@
 --- a/Meta/Lagom/CMakeLists.txt	2026-10-14 00:54:12.851672889 -0700
 +++ b/Meta/Lagom/CMakeLists.txt	2026-10-14 00:54:12.854244025 -0700
-@@ -631,6 +631,166 @@
+@@ -631,6 +631,174 @@
          # fallback; loaded at runtime by LibGPU's driver).
          add_subdirectory("${SERENITY_PROJECT_ROOT}/../libeglgpu" "${CMAKE_CURRENT_BINARY_DIR}/libeglgpu")
          # ------------------------------------------------------------------
@@ -74,6 +74,7 @@
 +            target_link_libraries(${app} PRIVATE wm)
 +            # Host compatibility headers (e.g. a stand-in errno_codes.h).
 +            target_include_directories(${app} PRIVATE "${SERENITY_PROJECT_ROOT}/../compat")
++            set_target_properties(${app} PROPERTIES EXCLUDE_FROM_ALL TRUE)
 +            if (app STREQUAL "SystemMonitor")
 +                # Serenity-specific mount flags and scheduler constant.
 +                target_compile_definitions(${app} PRIVATE THREAD_PRIORITY_MAX=99 MS_WXALLOWED=0 MS_AXALLOWED=0 MS_NOREGULAR=0)
@@ -102,12 +103,14 @@
 +            target_link_options(${game} PRIVATE "-Wl,--no-as-needed")
 +            target_link_libraries(${game} PRIVATE wm)
 +            target_include_directories(${game} PRIVATE "${SERENITY_PROJECT_ROOT}/../compat")
++            set_target_properties(${game} PROPERTIES EXCLUDE_FROM_ALL TRUE)
 +        endforeach()
 +        # The 2048 target's source directory is TwentyFourtyEight.
 +        add_serenity_subdirectory(Userland/Games/TwentyFourtyEight)
 +        target_link_options(2048 PRIVATE "-Wl,--no-as-needed")
 +        target_link_libraries(2048 PRIVATE wm)
 +        target_include_directories(2048 PRIVATE "${SERENITY_PROJECT_ROOT}/../compat")
++        set_target_properties(2048 PROPERTIES EXCLUDE_FROM_ALL TRUE)
 +        # Chess plays against this engine (spawned as a child process).
 +        add_serenity_subdirectory(Userland/Services/ChessEngine)
 +        # libgui-wayland: the SerenityOS developer tools (the Taskbar's
@@ -123,6 +126,7 @@
 +            target_link_options(${tool} PRIVATE "-Wl,--no-as-needed")
 +            target_link_libraries(${tool} PRIVATE wm)
 +            target_include_directories(${tool} PRIVATE "${SERENITY_PROJECT_ROOT}/../compat")
++            set_target_properties(${tool} PROPERTIES EXCLUDE_FROM_ALL TRUE)
 +        endforeach()
 +        # libgui-wayland: the SerenityOS demos (the Taskbar's Demos menu).
 +        set(libgui_wayland_demos
@@ -142,17 +146,20 @@
 +            target_link_options(${demo} PRIVATE "-Wl,--no-as-needed")
 +            target_link_libraries(${demo} PRIVATE wm)
 +            target_include_directories(${demo} PRIVATE "${SERENITY_PROJECT_ROOT}/../compat")
++            set_target_properties(${demo} PROPERTIES EXCLUDE_FROM_ALL TRUE)
 +        endforeach()
 +        # libgui-wayland: Magnifier (the Taskbar's Utilities menu).
 +        add_serenity_subdirectory(Userland/Applications/Magnifier)
 +        target_link_options(Magnifier PRIVATE "-Wl,--no-as-needed")
 +        target_link_libraries(Magnifier PRIVATE wm)
 +        target_include_directories(Magnifier PRIVATE "${SERENITY_PROJECT_ROOT}/../compat")
++        set_target_properties(Magnifier PROPERTIES EXCLUDE_FROM_ALL TRUE)
 +        # libgui-wayland: GL demo. Renders through the client-side LibGL/LibSoftGPU
 +        # stack like 3DFileViewer; no GPU or compositor cooperation required.
 +        add_serenity_subdirectory(Userland/Demos/Tubes)
 +        target_link_options(Tubes PRIVATE "-Wl,--no-as-needed")
 +        target_link_libraries(Tubes PRIVATE wm)
++        set_target_properties(Tubes PROPERTIES EXCLUDE_FROM_ALL TRUE)
 +
 +        # Serenity Desktop Environment: the Taskbar. It is built when SDE_ROOT is
 +        # set and links the WindowServer compatibility library only; the
@@ -163,6 +170,7 @@
 +            target_link_libraries(Taskbar PRIVATE windowserver)
 +            target_include_directories(Taskbar BEFORE PRIVATE "${SDE_ROOT}/Libraries/Compat")
 +            target_include_directories(Taskbar PRIVATE "${SERENITY_PROJECT_ROOT}/../compat")
++            set_target_properties(Taskbar PROPERTIES EXCLUDE_FROM_ALL TRUE)
 +        endif()
  
          # Lagom Utilities

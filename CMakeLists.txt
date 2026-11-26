@@ -17,8 +17,10 @@
 # that live in that tree (the Taskbar, Terminal, FileManager, the app suite).
 #
 # Built (default): the compositor, the shell, the services, the applets, the
-# portal backends, the tools/test clients and the test programs. The applications
-# live in Lagom: pass -DSDE_BUILD_APPS=ON to build them too.
+# portal backends, the tools/test clients, the test programs and — through
+# scripts/build-full-sde.sh, which sets SDE_BUILD_APPS=ON — the complete
+# SerenityOS application suite (in Lagom). A bare CMake build does not include
+# the applications unless -DSDE_BUILD_APPS=ON is passed.
 
 cmake_minimum_required(VERSION 3.20)
 project(SerenityDesktop C CXX)

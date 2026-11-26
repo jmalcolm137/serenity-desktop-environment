@@ -50,7 +50,7 @@ back in. The session package includes XWayland support.
 ### Build from source
 
 ```sh
-scripts/build-full-sde.sh --with-apps
+scripts/build-full-sde.sh
 ```
 
 ### Real hardware (DRM/KMS + libinput)

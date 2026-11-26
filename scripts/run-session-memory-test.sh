@@ -41,11 +41,12 @@ STARTUP="$BUILD/bin/Taskbar & $BUILD/bin/FileManager -d"
 [[ -n "$APPLET_CMDS" ]] && STARTUP="$STARTUP & $APPLET_CMDS"
 [[ -x "$SDE_ROOT/build/BatteryApplet/BatteryApplet" ]] && STARTUP="$STARTUP & $SDE_ROOT/build/BatteryApplet/BatteryApplet"
 
-# The desktop is FileManager -d, an *application*. A build without --with-apps leaves
+# The desktop is FileManager -d, an *application*. A build without the app suite
+# (--no-apps) leaves
 # it out, and then the wait below just times out with "the desktop never came up" --
 # which reads like a compositor fault rather than a missing binary. Say so instead.
 if [[ ! -x "$BUILD/bin/FileManager" ]]; then
-    echo "==> session memory test FAILED: $BUILD/bin/FileManager is missing (build the applications: scripts/build-full-sde.sh --with-apps)"
+    echo "==> session memory test FAILED: $BUILD/bin/FileManager is missing (build the applications: scripts/build-full-sde.sh (applications are the default; --with-apps also works))"
     exit 1
 fi
 
