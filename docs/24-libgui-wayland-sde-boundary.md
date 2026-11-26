@@ -152,6 +152,17 @@ or copies to the paths that matter for speed and memory.
   `LIBWM_APP_BIN_DIR` and `LIBWM_CLIENT_SCALE`, with no fallback to the old names:
   the two repositories are deployed together.
 
+### Requests that have no client protocol
+
+A few WindowServer requests describe things only the compositor can do. They are
+not gaps in the shim: `show_screen_numbers` is forwarded as the
+`effects.show_screen_numbers` host setting (an output overlay is the
+compositor's to draw), and global mouse tracking, pointer warping, resize
+increments/aspect ratios and shadows around a surface have no Wayland client
+protocol at all. Window stealing does not translate either: a client owns its
+surfaces and the compositor owns stacking, so `set_window_parent_from_client`
+(`xdg_toplevel.set_parent`) is the supported way to parent a transient.
+
 ### Desktop appearance and theme precedence
 
 A theme sent over `serenity-window` (`theme.path`/`theme.name`) wins. Only when
