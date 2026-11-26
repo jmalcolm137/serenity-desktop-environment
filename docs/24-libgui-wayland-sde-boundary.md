@@ -152,17 +152,35 @@ or copies to the paths that matter for speed and memory.
   `LIBWM_APP_BIN_DIR` and `LIBWM_CLIENT_SCALE`, with no fallback to the old names:
   the two repositories are deployed together.
 
+### Desktop appearance and theme precedence
+
+A theme sent over `serenity-window` (`theme.path`/`theme.name`) wins. Only when
+no desktop sends one does LibWM follow the portable
+`org.freedesktop.portal.Settings` appearance preference
+(`org.freedesktop.appearance color-scheme`), selecting the bundled Dark, Light
+or Default theme and following live changes. The SerenityDE session therefore
+keeps full control of its theme; the portal path exists for sessions that do not
+send one. Fonts, pointer/keyboard settings and the display layout have no
+portable standard and are only available over `serenity-window`.
+
 ### Primary selection
 
 SerenityOS has one clipboard; native toolkits also have PRIMARY (middle-click).
 LibWM publishes a Serenity copy as both CLIPBOARD and PRIMARY and falls back to
 PRIMARY when nothing owns CLIPBOARD, so text crosses both ways between Serenity
-and native applications. This needs the compositor's
-`zwp_primary_selection_v1` (this repository advertises it) and a serial from a
-recent input event, which the focused window has;
-`scripts/run-primary-selection-test.sh` checks the Serenity-to-native direction
-here, and the framework's clipboard suite checks both against its own test
-compositor.
+and native applications.
+
+The wlroots implementation this compositor uses governs the semantics:
+`wlr_primary_selection_v1` sends the selection only to the **keyboard-focused**
+client (`seat->keyboard_state.focused_client`), and
+`wlr_seat_request_set_primary_selection` validates the request's serial against
+a serial the client received from a recent input event. A focused application
+therefore sees the selection when it pastes, and can publish one after a
+keypress or click; a window-less or unfocused client can do neither. Headless
+tests must give the application a keyboard for that reason — this repository's
+`scripts/run-primary-selection-test.sh` does, and checks the Serenity-to-native
+direction here, while the framework's clipboard suite checks both directions
+against its own test compositor (which does not filter by focus).
 
 ## Not SDE-specific (leave in the port)
 
