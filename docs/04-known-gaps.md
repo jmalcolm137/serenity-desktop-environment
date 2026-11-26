@@ -521,7 +521,7 @@ Compositor-facing detail lives in [`08-compositor-gaps.md`](08-compositor-gaps.m
   a startup *design* cost, not a leak (§4: ~0.6 MB of it is the system menu at
   8.7 kB per installed app, linear); investigating it did surface a real bug: a
   pinned quick-launch entry whose `.af` is missing crashed the whole shell, fixed
-  in our SerenityOS fork (`fixes` 31fdfaad33; see `patches/README.md`) and covered by
+  in our SerenityOS fork (`fixes` 52f8bafc; see `patches/README.md`) and covered by
   `scripts/run-taskbar-quicklaunch-test.sh`.
 - **Crash recovery / watchdog / safe mode (N4): done.** The R4.2 supervisor
   restarts a *crashed* compositor; R6 adds a **watchdog** for a *wedged* one (the
