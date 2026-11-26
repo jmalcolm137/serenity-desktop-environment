@@ -220,7 +220,7 @@ against its own test compositor (which does not filter by focus).
 - `Libraries/Compat/`: host stand-ins for Serenity-only headers.
 - `Core::PortalServer` plumbing and spawning `WebContent`/`RequestServer`/`SQLServer`:
   the Browser application needs them.
-- The port's own tests (`run-3dfileviewer/-clipboard/-menu/-pdfviewer/-headless-tests/-lib-tests`).
+- The framework's own tests (`run-3d/-clipboard/-menu/-pdf/-headless-tests/-lib-tests`); the application tests moved here with the applications (`run-libgui-apps-test.sh`).
 
 The **WindowManagerServer** (the Taskbar's protocol) is already on the SDE side:
 the compositor serves it, not LibWM, so that separation is done.
