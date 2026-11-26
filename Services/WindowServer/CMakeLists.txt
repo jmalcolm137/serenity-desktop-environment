@@ -130,6 +130,20 @@ add_custom_command(
     VERBATIM
 )
 
+# ext-input-observation-v1: a draft (wayland-protocols MR !335) that reports the
+# pointer relative to a surface, even outside it. Not in wayland-protocols yet,
+# so the XML is vendored; LibWM's copy must stay identical.
+set(INPUT_OBSERVATION_XML "${CMAKE_CURRENT_SOURCE_DIR}/protocol/ext-input-observation-v1.xml")
+add_custom_command(
+    OUTPUT
+        "${SERENITY_WINDOW_PROTOCOL_DIR}/ext-input-observation-v1-server-protocol.h"
+        "${SERENITY_WINDOW_PROTOCOL_DIR}/ext-input-observation-v1-protocol.c"
+    COMMAND "${WAYLAND_SCANNER}" server-header "${INPUT_OBSERVATION_XML}" "${SERENITY_WINDOW_PROTOCOL_DIR}/ext-input-observation-v1-server-protocol.h"
+    COMMAND "${WAYLAND_SCANNER}" private-code "${INPUT_OBSERVATION_XML}" "${SERENITY_WINDOW_PROTOCOL_DIR}/ext-input-observation-v1-protocol.c"
+    DEPENDS "${INPUT_OBSERVATION_XML}"
+    VERBATIM
+)
+
 # xdg-toplevel-drag-v1: standard protocol; wlroots 0.20 has no manager, so the
 # compositor implements the server side (see src/XdgToplevelDrag.cpp).
 set(XDG_TOPLEVEL_DRAG_XML "${WAYLAND_PROTOCOLS_DATADIR}/staging/xdg-toplevel-drag/xdg-toplevel-drag-v1.xml")
@@ -157,6 +171,7 @@ add_executable(WindowServer
     src/WlcsControl.cpp
     # Input (pointer, keyboard, tablet, IME, DnD, EIS capture, virtual input).
     src/input/DragAndDrop.cpp
+    src/input/InputObservation.cpp
     src/input/InputCapture.cpp
     src/input/InputDevices.cpp
     src/input/InputMethod.cpp
@@ -200,6 +215,7 @@ add_executable(WindowServer
     "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-shell-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-session-management-v1-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/pointer-warp-v1-protocol.c"
+    "${SERENITY_WINDOW_PROTOCOL_DIR}/ext-input-observation-v1-protocol.c"
     "${SERENITY_WINDOW_PROTOCOL_DIR}/xdg-toplevel-drag-v1-protocol.c")
 
 target_include_directories(WindowServer PRIVATE

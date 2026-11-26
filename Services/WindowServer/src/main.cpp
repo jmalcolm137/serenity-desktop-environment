@@ -12,6 +12,7 @@
 #include "Frame.h"
 #include "Idle.h"
 #include "InputCapture.h"
+#include "InputObservation.h"
 #include "InputDevices.h"
 #include "InputMethod.h"
 #include "Interop.h"
@@ -247,6 +248,7 @@ static ErrorOr<void> initialize(Server& server)
     initialize_session_lock(server);
     initialize_input_devices(server);
     initialize_pointer(server);
+    initialize_input_observation(server);
     initialize_tablet(server);
     initialize_drag_and_drop(server);
     initialize_xdg_toplevel_drag(server);
@@ -342,6 +344,7 @@ static void finish(Server& server)
     finish_xwayland(server);
     finish_drag_and_drop(server);
     finish_tablet(server);
+    finish_input_observation(server);
     finish_pointer(server);
     finish_input_devices(server);
     finish_session_lock(server);

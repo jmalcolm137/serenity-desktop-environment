@@ -88,6 +88,7 @@ check xdg_toplevel_drag_manager_v1
 check wp_color_representation_manager_v1
 check wp_security_context_manager_v1
 check wp_pointer_warp_v1
+check ext_input_observation_manager_v1
 if grep -q 'color management enabled' "$RUNTIME/comp.log"; then
     check wp_color_manager_v1
 else

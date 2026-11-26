@@ -47,6 +47,7 @@ asserted by `scripts/run-protocol-matrix-test.sh` (the full dump is printed by t
 |---|---|---|
 | `zwp_relative_pointer_manager_v1` | v1 | relative pointer motion (games, pointer lock) |
 | `wp_pointer_warp_v1` | v1 | warp the pointer to a surface-local position (implemented by SDE; `scripts/run-pointer-warp-test.sh`) |
+| `ext_input_observation_manager_v1` | v1 | the pointer position relative to a surface, inside or outside it and regardless of focus (implemented by SDE for LibWM's global mouse tracking; a draft, not yet in wayland-protocols, so the XML is vendored in `Services/WindowServer/protocol/`; `scripts/run-input-observation-test.sh`) |
 | `zwp_pointer_constraints_v1` | v1 | pointer lock / confinement, **enforced by SDE** |
 | `zwp_pointer_gestures_v1` | v3 | swipe / pinch / hold gestures |
 | `zwp_tablet_manager_v2` | v1 | graphics tablet tools + tablet pads |

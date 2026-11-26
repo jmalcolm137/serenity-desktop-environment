@@ -157,15 +157,17 @@ or copies to the paths that matter for speed and memory.
 A few WindowServer requests describe things only the compositor can do. They are
 not gaps in the shim: `show_screen_numbers` is forwarded as the
 `effects.show_screen_numbers` host setting (an output overlay is the
-compositor's to draw), and `set_global_cursor_position` (the Taskbar putting the
-cursor back on itself) uses `wp_pointer_warp_v1`, which this compositor already
-implements. Global mouse tracking, resize increments/aspect ratios and shadows
-around a surface have no Wayland client protocol at all; window dragging and
-resizing are compositor-driven (`xdg_toplevel.move`/`resize`) rather than
-tracked by polling the pointer. Window stealing does not translate either: a
-client owns its surfaces and the compositor owns stacking, so
-`set_window_parent_from_client` (`xdg_toplevel.set_parent`) is the supported way
-to parent a transient.
+compositor's to draw), `set_global_cursor_position` (the Taskbar putting the
+cursor back on itself) uses `wp_pointer_warp_v1`, and global mouse tracking
+(`GUI::MouseTracker`, the Eyes/CatDog demos) uses `ext-input-observation-v1`.
+Both protocols are implemented by this compositor; the latter is a draft
+(wayland-protocols MR !335) whose XML is vendored on both sides. Resize
+increments/aspect ratios and shadows around a surface have no Wayland client
+protocol at all; window dragging and resizing are compositor-driven
+(`xdg_toplevel.move`/`resize`) rather than tracked by polling the pointer.
+Window stealing does not translate either: a client owns its surfaces and the
+compositor owns stacking, so `set_window_parent_from_client`
+(`xdg_toplevel.set_parent`) is the supported way to parent a transient.
 
 ### Desktop appearance and theme precedence
 
