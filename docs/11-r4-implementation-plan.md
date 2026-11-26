@@ -368,11 +368,11 @@ shortcut inhibition (`zwp_keyboard_shortcuts_inhibit_manager_v1`) and IME
 > advertises rate/delay to clients), the compositor owns key repeat: it re-sends
 > a held key after `RepeatDelay`, then every `1000/RepeatRate` ms, for keys it
 > forwards to the focused client (keybindings and non-repeating keys do not
-> repeat). Because clients also receive `wl_keyboard.repeat_info` (and a
-  spec-following client would repeat too), the compositor declares
-  `keyboard.repeat=compositor` in the host settings; LibWM stands down when it
-  sees that, and `scripts/run-key-repeat-ownership-test.sh` checks a held key
-  repeats at `RepeatRate`, not twice that. The seat's
+> repeat). The compositor advertises `RepeatDelay`/`RepeatRate` to clients as
+  `wl_keyboard.repeat_info` and leaves repeat to them, as the protocol intends:
+  LibWM repeats held keys, and toolkits that implement repeat (GTK, Qt) do too.
+  `scripts/run-key-repeat-ownership-test.sh` checks a held key repeats at
+  `RepeatRate`, not twice that, so the compositor never adds a second stream. The seat's
 > `wl_seat.capabilities` are recomputed on every input-device add *and* removal,
 > so a hotplugged keyboard appears to clients and an unplugged one disappears
 > instead of leaving a stale capability (which would hand a later client a

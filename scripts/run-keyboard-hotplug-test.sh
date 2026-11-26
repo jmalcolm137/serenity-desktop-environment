@@ -3,8 +3,8 @@
 #
 # A client that connects while no keyboard exists has no wl_keyboard. When a
 # keyboard is later hotplugged, the seat must advertise the keyboard capability,
-# the client must acquire a working wl_keyboard (keymap + enter), and input
-# (including repeat) must work. When the keyboard goes away again the capability
+# the client must acquire a working wl_keyboard (keymap + repeat_info + enter),
+# and input must work. When the keyboard goes away again the capability
 # must be withdrawn, so the seat does not keep advertising a keyboard that is not
 # there (which would hand a later client a keymap-less wl_keyboard).
 #
@@ -93,7 +93,9 @@ wait_for_count() {
 
 # Phase 1: the virtual keyboard appears; warm up with a harmless Shift (the very
 # first press may race the capability change and is allowed to be lost), pause
-# for the client to acquire the keyboard, then hold Backspace so repeat runs.
+# for the client to acquire the keyboard, then hold Backspace while the keyboard
+# is present. Repeat is the client's job (the compositor advertises repeat_info),
+# so this client sees one press and one release.
 # --linger keeps the keyboard present for a while before the process exits, and
 # its exit then removes the keyboard again.
 env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
@@ -156,10 +158,16 @@ else
     echo "  FAIL: no keyboard leave"
     fail=1
 fi
-if [[ "${presses_before_replug:-0}" -ge 3 ]]; then
-    echo "  ok: input and repeat work while the keyboard is present (${presses_before_replug} press events)"
+if [[ "${presses_before_replug:-0}" -ge 1 ]]; then
+    echo "  ok: input works while the keyboard is present (${presses_before_replug} press event(s))"
 else
-    echo "  FAIL: no repeated input (only ${presses_before_replug:-0} press events)"
+    echo "  FAIL: no input while the keyboard is present"
+    fail=1
+fi
+if grep -qE "repeat_info rate=[1-9][0-9]* delay=[0-9]+" "$RUNTIME/client.log"; then
+    echo "  ok: the client was told the repeat rate (repeat_info)"
+else
+    echo "  FAIL: no repeat_info reached the client"
     fail=1
 fi
 if [[ "$enters" -ge 2 ]]; then

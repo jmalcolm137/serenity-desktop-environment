@@ -120,7 +120,6 @@ static void focus_layer_surface(Server& server, LayerSurface* layer)
     auto* surface = layer->layer_surface->surface;
     if (!surface || server.seat->keyboard_state.focused_surface == surface)
         return;
-    stop_key_repeat();
     server.keyboard_focus_layer = layer;
     auto* keyboard = wlr_seat_get_keyboard(server.seat);
     if (keyboard)
@@ -135,7 +134,6 @@ static void restore_keyboard_focus(Server& server)
 {
     if (server.keyboard_focus_layer)
         server.keyboard_focus_layer = nullptr;
-    stop_key_repeat();
     for (auto it = server.toplevels.rbegin(); it != server.toplevels.rend(); ++it) {
         if (!(*it)->minimized) {
             focus_toplevel(server, it->ptr());

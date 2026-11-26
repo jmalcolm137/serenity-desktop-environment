@@ -67,10 +67,6 @@ static void apply_keyboard_input(Server& server)
     xkb_context_unref(context);
     for (auto& keyboard : server.input.keyboards)
         wlr_keyboard_set_repeat_info(keyboard->keyboard, settings.repeat_rate, settings.repeat_delay);
-    // Repeat is compositor-owned (wlroots 0.20 removed the timer); drop any
-    // in-flight repeat if the rate was turned off.
-    if (settings.repeat_rate <= 0)
-        stop_key_repeat();
 }
 
 // Alt+Shift: advance to the next configured keyboard layout (SerenityOS's

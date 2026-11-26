@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Key-repeat ownership.
 #
-# wl_keyboard leaves repeat to the client (repeat_info only advertises the rate).
-# This compositor repeats held keys itself, which it declares to clients in the
-# host settings as `keyboard.repeat=compositor`; LibWM must then stand down, or a
-# held key repeats twice as fast.
+# wl_keyboard leaves repeat to the client: the compositor advertises the rate and
+# delay (repeat_info) and forwards presses and releases; the client repeats the
+# held key. LibWM does that. The compositor must not repeat as well, or the key
+# repeats twice as fast.
 #
 # The test holds a key on a LibWM application for a fixed time and counts the
-# presses it receives: about RepeatRate/s (the compositor's), not twice that.
+# presses it receives: about RepeatRate/s, not twice that.
 set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -49,6 +49,12 @@ EOF
 
 sde_test_compositor LIBWM_WM_PORTAL_PATH="$RUNTIME/wm"
 
+# A keyboard must exist before the application starts: the client acquires its
+# wl_keyboard from the seat capability, and a press sent before that is lost.
+env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" --linger 15000 > "$RUNTIME/keyboard.log" 2>&1 &
+VK_PID=$!
+sleep 0.5
+
 env WAYLAND_DISPLAY="$SOCK" LD_LIBRARY_PATH="$BUILD/lib" LIBWM_TRACE=1 \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     "$BUILD/bin/libwm-test-window" > "$RUNTIME/app.log" 2>&1 &
@@ -65,6 +71,8 @@ env WAYLAND_DISPLAY="$SOCK" "$TOOLS_BUILD/virtual-input-test" \
     --key 30 press --sleep 1200 --key 30 release > "$RUNTIME/input.log" 2>&1 || true
 sleep 0.3
 
+kill "$VK_PID" 2>/dev/null || true
+wait "$VK_PID" 2>/dev/null || true
 kill "$APP_PID" 2>/dev/null || true
 wait "$APP_PID" 2>/dev/null || true
 APP_PID=""
@@ -80,9 +88,9 @@ echo "=== key-repeat ownership ==="
 echo "  presses received in 1200 ms: $presses (20/s would be ~20, doubled ~40)"
 grep -E "repeat_info|keyboard repeat|key down code_point=97" "$RUNTIME/app.log" 2>/dev/null | head -3 || true
 
-check "the shim was told the compositor repeats" "grep -q \"keyboard repeat is the compositor's\" \"$RUNTIME/app.log\""
+check "the client was told the repeat rate"     "grep -q 'repeat_info rate=20/s delay=200ms' \"$RUNTIME/app.log\""
 check "the held key repeated"                   "[[ '$presses' -ge 6 ]]"
-check "it did not repeat twice as fast"         "[[ '$presses' -le 30 ]]"
+check "the compositor did not repeat as well"   "[[ '$presses' -le 30 ]]"
 
 if [[ "$fail" -ne 0 ]]; then
     echo "--- app log (tail) ---"; tail -15 "$RUNTIME/app.log"

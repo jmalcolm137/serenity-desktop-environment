@@ -152,6 +152,18 @@ or copies to the paths that matter for speed and memory.
   `LIBWM_APP_BIN_DIR` and `LIBWM_CLIENT_SCALE`, with no fallback to the old names:
   the two repositories are deployed together.
 
+### Primary selection
+
+SerenityOS has one clipboard; native toolkits also have PRIMARY (middle-click).
+LibWM publishes a Serenity copy as both CLIPBOARD and PRIMARY and falls back to
+PRIMARY when nothing owns CLIPBOARD, so text crosses both ways between Serenity
+and native applications. This needs the compositor's
+`zwp_primary_selection_v1` (this repository advertises it) and a serial from a
+recent input event, which the focused window has;
+`scripts/run-primary-selection-test.sh` checks the Serenity-to-native direction
+here, and the framework's clipboard suite checks both against its own test
+compositor.
+
 ## Not SDE-specific (leave in the port)
 
 - `libeglgpu/`: a Mesa/EGL-backed `GPU::Device`.

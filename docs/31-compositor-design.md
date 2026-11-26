@@ -214,7 +214,7 @@ key.
 output and the compositor must not send `locked` until every output is covered.
 A size or scale change reconfigures the lock surface for that output; the lock
 test changes the mode while locked and asserts the re-configure. While locked,
-the keyboard goes to a lock surface, key repeat stops, and IME focus is cleared.
+the keyboard goes to a lock surface and IME focus is cleared.
 
 Input injection for tests uses wlroots' virtual keyboard/pointer plus the
 SDE-only `serenity-virtual-input` protocol (touch/tablet). That protocol exists

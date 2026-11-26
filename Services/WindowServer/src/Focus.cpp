@@ -101,7 +101,6 @@ void focus_toplevel(Server& server, Toplevel* toplevel)
     server.keyboard_focus_layer = nullptr;
 
     // A focus change retargets the keyboard; stop repeating into the old client.
-    stop_key_repeat();
 
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
 

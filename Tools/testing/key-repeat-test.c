@@ -5,7 +5,9 @@
  */
 
 // A minimal xdg-shell client that records the wl_keyboard key events it
-// receives, so a headless test can assert the compositor repeats a held key.
+// receives, so a headless test can assert the compositor advertises the repeat
+// rate (wl_keyboard.repeat_info) and forwards presses and releases. Repeat
+// itself is the client's job; this tool records, it does not repeat.
 // It maps a toplevel (to get keyboard focus), then dispatches for a fixed
 // duration and prints one line per press/release of the target key:
 //
@@ -208,8 +210,8 @@ static void keyboard_repeat_info(void* d, struct wl_keyboard* k, int32_t rate, i
 {
     (void)d;
     (void)k;
-    (void)rate;
-    (void)delay;
+    fprintf(stderr, "key-repeat-test: repeat_info rate=%d delay=%d\n", rate, delay);
+    fflush(stderr);
 }
 
 static struct wl_keyboard_listener const keyboard_listener = { keyboard_keymap, keyboard_enter, keyboard_leave, keyboard_key, keyboard_modifiers, keyboard_repeat_info };
@@ -255,7 +257,8 @@ static void registry_global(void* data, struct wl_registry* registry, uint32_t n
     else if (strcmp(interface, xdg_wm_base_interface.name) == 0)
         wm_base = wl_registry_bind(registry, name, &xdg_wm_base_interface, 1);
     else if (strcmp(interface, wl_seat_interface.name) == 0) {
-        seat = wl_registry_bind(registry, name, &wl_seat_interface, 1);
+        // Version 4 is where wl_keyboard.repeat_info exists.
+        seat = wl_registry_bind(registry, name, &wl_seat_interface, version < 4 ? version : 4);
         wl_seat_add_listener(seat, &seat_listener, NULL);
     }
 }

@@ -106,7 +106,6 @@ static void lock_surface_commit(wl_listener* listener, void*)
             if (auto* keyboard = wlr_seat_get_keyboard(server.seat))
                 wlr_seat_keyboard_notify_enter(server.seat, lock->lock_surface->surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
         }
-        stop_key_repeat();
         dbgln("WindowServer: session locked");
     }
 }
@@ -164,7 +163,6 @@ static void session_lock_unlock(wl_listener* listener, void*)
     // wlroots destroys the lock surfaces (and our per-surface handlers clean them
     // up) as the client destroys the lock right after this signal.
     server->lock.locked = false;
-    stop_key_repeat();
 }
 
 static void session_lock_destroy(wl_listener* listener, void*)
@@ -178,7 +176,6 @@ static void session_lock_destroy(wl_listener* listener, void*)
     wl_list_remove(&server->lock.destroy.link);
     server->lock.lock = nullptr;
     server->lock.locked = false;
-    stop_key_repeat();
 }
 
 static void session_lock_new_lock(wl_listener* listener, void* data)

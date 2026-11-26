@@ -125,7 +125,6 @@ void focus_x11_toplevel(Server& server, X11Toplevel* toplevel)
     toplevel->focus_order = ++g_focus_order_counter;
 
     server.keyboard_focus_layer = nullptr;
-    stop_key_repeat();
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
     // Keep this window's override-redirect children (menus/tooltips) above it,
     // and any always-on-top windows at the very top.
