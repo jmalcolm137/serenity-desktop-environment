@@ -29,7 +29,7 @@ sde_test_compositor SDE_STATE_DIR="$RUNTIME"
 # leaves an empty log (stdout to a file is fully buffered, so a crash loses it) and
 # the assertions below would blame the shim instead of the crash.
 APP_STATUS=0
-env WAYLAND_DISPLAY="$SOCK" LD_LIBRARY_PATH="$BUILD/lib" \
+env WAYLAND_DISPLAY="$SOCK" LD_LIBRARY_PATH="$BUILD/lib" LIBWM_TRACE=1 \
     SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
     "$TEST" > "$RUNTIME/app.log" 2>&1 || APP_STATUS=$?
 sleep 0.5
@@ -47,6 +47,8 @@ check "the shim answered the new value" "grep -q 'SETTING-TEST: accel .* -> 2.5'
 check "the shim answered the new double-click speed" "grep -q 'SETTING-TEST: double-click .* -> 321' \"$RUNTIME/app.log\""
 check "the compositor received the setting" "grep -q 'host setting mouse.acceleration=2.5' \"$RUNTIME/comp.log\""
 check "the compositor persisted it in input.ini" "grep -q '^Acceleration=2.5' \"$RUNTIME/input.ini\""
+# The compositor repeats held keys itself, so it must tell clients not to.
+check "the shim was told who repeats held keys" "grep -q \"keyboard repeat is the compositor's\" \"$RUNTIME/app.log\""
 
 if [[ "$fail" -ne 0 ]]; then
     echo "--- app log (payload exit $APP_STATUS) ---"; tail -10 "$RUNTIME/app.log"

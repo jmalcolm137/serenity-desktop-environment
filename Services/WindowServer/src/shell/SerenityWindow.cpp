@@ -323,6 +323,10 @@ static ByteString host_settings_blob()
     add("keyboard.variant"sv, input.keyboard.variant);
     add("keyboard.model"sv, input.keyboard.model);
     add("keyboard.options"sv, input.keyboard.options);
+    // This compositor repeats a held key itself (wlroots 0.20 only advertises
+    // repeat_info and leaves repeat to the client). Say so, or a client that
+    // repeats too -- LibWM does on other compositors -- doubles the rate.
+    add("keyboard.repeat"sv, "compositor"sv);
     auto const theme = effective_theme();
     add("theme.name"sv, theme.name);
     add("theme.path"sv, theme.path);
