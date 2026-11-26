@@ -41,6 +41,7 @@ run_app() {
     local before after
     before="$(grep -c 'toplevel mapped' "$RUNTIME/comp.log" || true)"
     env WAYLAND_DISPLAY="$SOCK" LIBWM_APP_BIN_DIR="$BUILD/bin" LIBWM_TRACE=1 \
+        LIBWM_DUMP="$RUNTIME/$name.png" \
         timeout "$timeout_s" "$BUILD/bin/$name" "$@" > "$log" 2>&1 || true
     after="$(grep -c 'toplevel mapped' "$RUNTIME/comp.log" || true)"
 
@@ -53,6 +54,11 @@ run_app() {
     sde_test_expect "$name mapped its window" test "$after" -gt "$before"
     sde_test_expect "$name presented a frame" grep -q 'presented window' "$log"
     sde_test_expect "$name window title" grep -q "toplevel mapped title='$title" "$RUNTIME/comp.log"
+    sde_test_expect "$name dumped a window" test -s "$RUNTIME/$name.png"
+    # A blank window compresses small; a rendered PDF page or 3D scene does not.
+    if [[ "$name" == PDFViewer || "$name" == 3DFileViewer ]]; then
+        sde_test_expect "$name rendered content" test "$(stat -c%s "$RUNTIME/$name.png")" -gt 3000
+    fi
 }
 
 run_app Calculator 'Calculator' 5
