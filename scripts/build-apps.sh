@@ -13,7 +13,12 @@ set -euo pipefail
 
 SDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Applications. SystemMonitor, Debugger and CrashReporter are Linux-native:
+# Applications. Calculator, PDFViewer and Piano used to be built by
+# libgui-wayland's apps/ and moved here with the applications; the rest of the
+# suite was already the desktop's. Welcome and PartitionEditor have Lagom targets
+# (patches/0008) but are not part of the shipped suite.
+#
+# SystemMonitor, Debugger and CrashReporter are Linux-native:
 # SystemMonitor reads /proc with a libunwind + libdw thread-stack backend,
 # Debugger drives ptrace directly, and CrashReporter reads a Linux ELF core dump
 # (patches 0013, 0023 and 0024, on libgui-wayland's LibCore, LibDebug and
