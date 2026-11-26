@@ -77,6 +77,8 @@ sudo scripts/install-session.sh    # /usr/local/bin/sde-session + /usr/share/way
 The [SDE User Manual](docs/SDE-User-Manual.pdf) provides an introductory overview of the desktop capabilities, 
 options, applications, and troubleshooting.
 
+The [SDE Accessibility Guide](docs/SDE-Accessibility-Guide.pdf) covers the accessibility and assistive-technology features across the compositor, `LibGUI`, and `LibAccessibility`.
+
 ## Reporting problems
 
 Use [GitHub Issues](https://github.com/jmalcolm137/serenity-desktop-environment/issues)
