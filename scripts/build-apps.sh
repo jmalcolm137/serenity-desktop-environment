@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Build the SerenityOS application suite (Terminal, FileManager, the demos, ...).
 #
-# The applications live in the Lagom tree, not in an SDE component, so this is a
-# wrapper around scripts/build.sh, which builds them there with the SDE's patches
-# applied.
+# The applications are the desktop's: their Lagom targets come from the SDE's
+# patches/0008-sde-lagom-targets.patch (including Calculator, PDFViewer and
+# Piano, which moved out of libgui-wayland's apps/). They are built in the Lagom
+# tree with the SDE's patches applied, through scripts/build.sh.
 #
 #   scripts/build-apps.sh            # every application
 #   scripts/build-apps.sh --list     # print the target names (used by CMake)

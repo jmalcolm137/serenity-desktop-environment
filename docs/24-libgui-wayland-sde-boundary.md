@@ -24,6 +24,17 @@ the *client library* stays a compositor/desktop-agnostic port; *service roles* a
 
 ## Findings
 
+### Applications and their assets live in the desktop
+
+`libgui-wayland` ships no application sources, resources or application-specific
+patches; the applications are the desktop's. It keeps only the framework and the
+test programs in `src/test/`. This repository defines the Lagom targets for the
+applications it ships (`patches/0008-sde-lagom-targets.patch` now includes
+`Calculator`, `PDFViewer` and `Piano`, which used to be built by libgui-wayland's
+`apps/`), builds them (`scripts/build-apps.sh`), and tests them against the real
+compositor (`scripts/run-libgui-apps-test.sh`: build the compositor first, then
+the applications, then run each headless).
+
 ### 1. The Taskbar build lives in the port's patch, and is duplicated
 
 `libgui-wayland/patches/0001-lagom-build-full-libgui.patch` builds the shell:

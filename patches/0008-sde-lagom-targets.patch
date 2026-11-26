@@ -1,6 +1,6 @@
 --- a/Meta/Lagom/CMakeLists.txt	2026-10-14 00:54:12.851672889 -0700
 +++ b/Meta/Lagom/CMakeLists.txt	2026-10-14 00:54:12.854244025 -0700
-@@ -631,6 +631,160 @@
+@@ -631,6 +631,166 @@
          # fallback; loaded at runtime by LibGPU's driver).
          add_subdirectory("${SERENITY_PROJECT_ROOT}/../libeglgpu" "${CMAKE_CURRENT_BINARY_DIR}/libeglgpu")
          # ------------------------------------------------------------------
@@ -10,6 +10,12 @@
 +        # (disabled) LibWeb/LibWebView stack are omitted.
 +        # ------------------------------------------------------------------
 +        set(libgui_wayland_apps
++            # The applications that used to be built by libgui-wayland's apps/:
++            # the framework builds the shim and its own tests, the desktop builds
++            # and tests the applications.
++            Calculator
++            PDFViewer
++            Piano
 +            About
 +            AnalogClock
 +            Assistant
