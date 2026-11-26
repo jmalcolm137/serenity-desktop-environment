@@ -161,7 +161,11 @@ compositor's to draw), `set_global_cursor_position` (the Taskbar putting the
 cursor back on itself) uses `wp_pointer_warp_v1`, and global mouse tracking
 (`GUI::MouseTracker`, the Eyes/CatDog demos) uses `ext-input-observation-v1`.
 Both protocols are implemented by this compositor; the latter is a draft
-(wayland-protocols MR !335) whose XML is vendored on both sides. Resize
+(wayland-protocols MR !335) whose XML is vendored on both sides. The two copies
+(`src/protocol/ext-input-observation-v1.xml` in libgui-wayland and
+`Services/WindowServer/protocol/` here) must stay identical: change them
+together. The compositor-side gate is that the client has bound
+`serenity_window_manager`, so only session clients can observe the pointer. Resize
 increments/aspect ratios and shadows around a surface have no Wayland client
 protocol at all; window dragging and resizing are compositor-driven
 (`xdg_toplevel.move`/`resize`) rather than tracked by polling the pointer.
