@@ -35,7 +35,7 @@ asserted by `scripts/run-protocol-matrix-test.sh` (the full dump is printed by t
 | `zwlr_layer_shell_v1` | v4 | layer surfaces (Taskbar, applets, Desktop, notifications, tooltips) |
 | `zxdg_decoration_manager_v1` | v1 | server-side decoration negotiation |
 | `xdg_toplevel_icon_v1` | v1 | client-provided window icons (`xdg-toplevel-icon-v1`) |
-| `xdg_activation_v1` | v1 | activation tokens (taskbar/portal "activate this window") |
+| `xdg_activation_v1` | v1 | activation tokens (taskbar/portal "activate this window"); LibWM requests a token when a window opens from a click and uses `XDG_ACTIVATION_TOKEN` from a launcher (`scripts/run-libgui-touch-activation-test.sh`) |
 | `xdg_system_bell_v1` | v1 | the system bell (global advertised; no audible output yet) |
 | `zwlr_foreign_toplevel_manager_v1` | v3 | taskbar-style task list from an external client |
 | `xdg_toplevel_tag_manager_v1` | v1 | per-toplevel tag and description, for window rules |

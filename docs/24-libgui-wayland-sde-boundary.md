@@ -167,6 +167,16 @@ or copies to the paths that matter for speed and memory.
   `LIBWM_APP_BIN_DIR` and `LIBWM_CLIENT_SCALE`, with no fallback to the old names:
   the two repositories are deployed together.
 
+### Touch and window activation
+
+LibWM maps `wl_touch` to the primary pointer (LibGUI has no touch event type),
+so a tap or drag reaches widgets exactly like the mouse. For window activation
+it binds `xdg-activation-v1`: a window opened from a click requests a token with
+the click's serial, and a launcher may pass `XDG_ACTIVATION_TOKEN`. This
+compositor already delivers `wl_touch` and focuses on `request_activate`, so a
+window opened by a user action is raised. `scripts/run-libgui-touch-activation-test.sh`
+runs a LibWM test window against the compositor for both paths.
+
 ### Requests that have no client protocol
 
 A few WindowServer requests describe things only the compositor can do. They are
