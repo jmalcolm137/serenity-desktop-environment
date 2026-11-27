@@ -114,7 +114,7 @@ asserted by `scripts/run-protocol-matrix-test.sh` (the full dump is printed by t
 
 | Protocol | Advertised | Purpose |
 |---|---|---|
-| `serenity_window_manager` | v3 | the compositor role of the SerenityOS WindowServer protocol used by the shell apps (window list, icons, applet area, chrome) |
+| `serenity_window_manager` | v4 | the compositor role of the SerenityOS WindowServer protocol used by the shell apps (window list, icons, applet area, chrome, and screen capture for the Magnifier/`shot`) |
 | `serenity_virtual_input_manager_v1` | v1 | test-only input injection for the headless harness (touch/pen) |
 
 ## Deliberately absent (blocked upstream)

@@ -92,9 +92,13 @@ commits: `output_commit` already fires with the state carrying the presented
 `wlr_buffer`, so the request is queued and served there — `wlr_texture_from_buffer` +
 `wlr_texture_read_pixels` into a `Gfx::Bitmap`, which works for DMA-BUF and SHM alike.
 This reads exactly what the user sees, leaves the visible frame untouched, needs no
-swapchain, and costs one refresh interval — which the push model already accepts. The
-compositor renders every frame, so a request is never waiting on a repaint that will
-not happen; a pending request is dropped if its manager resource goes away.
+swapchain, and costs one refresh interval — which the push model already accepts. A
+request is queued and answered by the next committed frame, so the request also
+schedules one: on a static screen (which is exactly when `shot` runs) nothing would
+otherwise repaint and the caller's timeout would expire. A pending request is dropped
+if its manager resource goes away. `scripts/run-libgui-capture-test.sh` captures a
+static window and covers the scheduling; `run-magnifier-test.sh` covers the
+continuously repainting app.
 
 **The display link is paced by the window surface.** SerenityOS drives
 `DisplayLink` from the window server's frame loop. Here the shim arms one

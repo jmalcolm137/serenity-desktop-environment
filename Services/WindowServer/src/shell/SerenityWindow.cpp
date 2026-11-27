@@ -494,9 +494,17 @@ static void serenity_window_manager_set_host_setting(wl_client*, wl_resource* re
 // Pushed back as `captured`; see the protocol description for why this is a push.
 static void serenity_window_manager_request_capture(wl_client*, wl_resource* resource, uint32_t serial, int32_t x, int32_t y, int32_t width, int32_t height)
 {
-    if (!wl_resource_get_user_data(resource))
+    auto* data = wl_resource_get_user_data(resource);
+    if (!data)
         return;
+    auto& server = *static_cast<Server*>(data);
     queue_capture_request(resource, serial, { x, y, width, height });
+    // A capture is answered from a committed output frame. A static screen (which
+    // is exactly when `shot` runs) produces no further commits on its own, so ask
+    // for one now; otherwise the request would wait for unrelated damage and the
+    // caller's timeout would expire.
+    for (auto& output : server.outputs)
+        wlr_output_schedule_frame(output->output);
 }
 
 static void serenity_window_manager_bind(wl_client* client, void* data, uint32_t version, uint32_t id)

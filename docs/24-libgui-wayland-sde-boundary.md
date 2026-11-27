@@ -177,6 +177,23 @@ compositor already delivers `wl_touch` and focuses on `request_activate`, so a
 window opened by a user action is raised. `scripts/run-libgui-touch-activation-test.sh`
 runs a LibWM test window against the compositor for both paths.
 
+### Screen capture
+
+`serenity_window_manager.request_capture` / `captured` is the direct path: LibWM asks
+for a region, this compositor answers from the next committed output frame, and the
+shim caches the bitmap for the Magnifier, `shot` and the colour picker. A capture of a
+static screen has no frame of its own, so `request_capture` schedules one; without
+that, `shot` would wait for unrelated damage and time out. The colour picker samples a
+one-pixel region through the same request.
+
+On a compositor without `serenity-window`, LibWM falls back to the standard
+`org.freedesktop.portal.Screenshot` (non-interactive, briefly cached; the
+output-pixel PNG is cropped to the requested logical region); that path is the framework's
+`libwm.settings-portal` suite. Here the direct path is covered by
+`scripts/run-magnifier-test.sh` (the app, repainting) and
+`scripts/run-libgui-capture-test.sh` (a static window, regions and the colour under
+the pointer).
+
 ### Requests that have no client protocol
 
 A few WindowServer requests describe things only the compositor can do. They are
