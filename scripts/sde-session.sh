@@ -140,7 +140,7 @@ SESSION_DISPLAY="${SDE_SESSION_DISPLAY:-sde$SEAT_SUFFIX}"
 export SDE_SESSION_DISPLAY="$SESSION_DISPLAY"
 # Multi-seat: the WindowManagerServer socket is global in SerenityOS, so a
 # non-default seat gets its own path. Both the compositor and the port's clients
-# honour LIBWM_WM_PORTAL_PATH; seat0 keeps /tmp/portal/wm.
+# honour LIBWM_WM_PORTAL_PATH; seat0 keeps the compositor's runtime default.
 if [ -z "${LIBWM_WM_PORTAL_PATH:-}" ] && [ -n "$SEAT_SUFFIX" ]; then
     LIBWM_WM_PORTAL_PATH="$(sde_wm_portal_path)"
 fi

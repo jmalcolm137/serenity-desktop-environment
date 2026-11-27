@@ -617,7 +617,7 @@ Documented so they are not lost; none blocks R4.
   VT) and the session namespaces its runtime **per seat**: the Wayland socket,
   the supervisor pid file, the `/bin` shadow dir and the WindowManagerServer
   socket (`SDE_SESSION_DISPLAY`/`LIBWM_WM_PORTAL_PATH`, with `seat0` keeping the
-  bare names). `start-sde-session.sh` preflights the DRM device and gives
+  bare default). `start-sde-session.sh` preflights the DRM device and gives
   actionable guidance (and the compositor explains a failed backend). Covered by
   `scripts/run-multiseat-test.sh`; the port relocates the WM portal socket
   (libgui-wayland patch `0041`).

@@ -63,7 +63,7 @@ check "vt7" "$(cat "$RUNTIME/a.log")"
 check "SDE_SESSION_DISPLAY=sde-seat1" "$env_a"
 check "XDG_SEAT=seat1" "$env_a"
 check "XDG_VTNR=7" "$env_a"
-check "LIBWM_WM_PORTAL_PATH=$RUNTIME/sde-wm-sde-seat1" "$env_a"
+check "LIBWM_WM_PORTAL_PATH=$RUNTIME/libgui-wm-seat1" "$env_a"
 check "SDE_SESSION_PID_FILE=$RUNTIME/sde-session-seat1.pid" "$env_a"
 check "LIBWM_SESSION_BIN_DIR=$RUNTIME/sde-session-bin-seat1" "$env_a"
 
@@ -136,8 +136,8 @@ if [[ -x "$COMP" && -x "$BUILD/bin/Taskbar" ]]; then
 
     echo "== (F) default WM portal scopes to XDG_RUNTIME_DIR and WAYLAND_DISPLAY =="
     sock2="sde-xdg-$$"
-    expected_portal="$RUNTIME/sde-wm-$sock2"
-    env -u WAYLAND_DISPLAY -u DISPLAY -u LIBWM_WM_PORTAL_PATH -u SDE_WM_PORTAL_PATH \
+    expected_portal="$RUNTIME/libgui-wm-$sock2"
+    env -u WAYLAND_DISPLAY -u DISPLAY -u LIBWM_WM_PORTAL_PATH \
         WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \
         LD_LIBRARY_PATH="$BUILD/lib" \
@@ -152,7 +152,7 @@ if [[ -x "$COMP" && -x "$BUILD/bin/Taskbar" ]]; then
     else
         echo "  MISSING: compositor did not listen on $expected_portal"; fail=1
     fi
-    env -u LIBWM_WM_PORTAL_PATH -u SDE_WM_PORTAL_PATH \
+    env -u LIBWM_WM_PORTAL_PATH \
         WAYLAND_DISPLAY="$sock2" \
         LIBWM_APP_BIN_DIR="$BUILD/bin" \
         SERENITY_RES_ROOT="${SERENITY_RES_ROOT:-$SERENITY/Base/res}" \

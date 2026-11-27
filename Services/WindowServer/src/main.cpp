@@ -692,13 +692,11 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     ByteString wm_portal { "/tmp/portal/wm" };
     if (auto const* override_path = getenv("LIBWM_WM_PORTAL_PATH"); override_path && *override_path) {
         wm_portal = override_path;
-    } else if (auto const* sde_override = getenv("SDE_WM_PORTAL_PATH"); sde_override && *sde_override) {
-        wm_portal = sde_override;
     } else if (auto const* runtime_dir = getenv("XDG_RUNTIME_DIR"); runtime_dir && *runtime_dir) {
         if (!socket.is_empty() && !socket.contains('/'))
-            wm_portal = ByteString::formatted("{}/sde-wm-{}", runtime_dir, socket);
+            wm_portal = ByteString::formatted("{}/libgui-wm-{}", runtime_dir, socket);
         else
-            wm_portal = ByteString::formatted("{}/sde-wm", runtime_dir);
+            wm_portal = ByteString::formatted("{}/libgui-wm", runtime_dir);
     }
     // Export the resolved path so the shell (Taskbar) and applets spawned by
     // WindowServer always agree with the compositor on the WM portal socket.

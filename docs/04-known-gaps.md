@@ -987,7 +987,7 @@ The corresponding upstream changes are the `libgui-wayland` patches
   VT), and the session namespaces its runtime **per seat**: the Wayland socket
   (`SDE_SESSION_DISPLAY`, `sde` → `sde-<seat>`), the supervisor pid file, the
   `/bin` shadow dir, and the WindowManagerServer socket (`LIBWM_WM_PORTAL_PATH`,
-  `/tmp/portal/wm` → `/tmp/portal/wm-<seat>`; `seat0` keeps the bare names). The
+  `$XDG_RUNTIME_DIR/libgui-wm[-<display>]`; `seat0` keeps the bare default). The
   port relocates the WM portal for clients (libgui-wayland patch `0041`), and the
   compositor logs its seat and gives guidance when the DRM/libinput backend cannot
   start; `start-sde-session.sh` preflights the DRM device. Covered by

@@ -48,7 +48,7 @@ sde_wm_portal_path() {
     local suffix
     suffix="$(sde_seat_suffix)"
     if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
-        printf '%s/sde-wm-sde%s' "$XDG_RUNTIME_DIR" "$suffix"
+        printf '%s/libgui-wm%s' "$XDG_RUNTIME_DIR" "$suffix"
     elif [ -n "$suffix" ]; then
         printf '/tmp/portal/wm%s' "$suffix"
     else
