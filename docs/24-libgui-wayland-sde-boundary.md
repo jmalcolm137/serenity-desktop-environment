@@ -161,7 +161,9 @@ or copies to the paths that matter for speed and memory.
   FileManager, SystemMonitor, Debugger, CrashReporter, Terminal, ...) moved here
   as `0010`–`0029` (see [`../patches/README.md`](../patches/README.md)); their
   library halves (LibCore's process statistics, LibCoredump, LibELF) stayed in
-  the port. The resulting SerenityOS tree is identical.
+  the port. The resulting SerenityOS tree is identical. The SDE's blue-grid
+  wallpaper followed them as `0031`; it is a desktop asset, not a framework
+  resource.
 - **SDE names for generic mechanisms.** The variables both sides use are now
   `LIBWM_SESSION_DIR`, `LIBWM_WM_PORTAL_PATH`, `LIBWM_SESSION_BIN_DIR`,
   `LIBWM_APP_BIN_DIR` and `LIBWM_CLIENT_SCALE`, with no fallback to the old names:
