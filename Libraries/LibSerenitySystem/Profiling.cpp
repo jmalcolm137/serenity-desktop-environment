@@ -34,7 +34,7 @@ static size_t s_ring_size { 0 };
 static u64 s_data_tail { 0 };
 static pthread_t s_reader { };
 static bool s_running { false };
-static pid_t s_pid { -1 };
+[[maybe_unused]] static pid_t s_pid { -1 };
 static JsonArray s_events;
 
 // Profiler timestamps are milliseconds: Profile::length_in_ms() is a raw
